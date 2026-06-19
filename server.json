@@ -1,0 +1,50 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.houtini-ai/seo-audit-console",
+  "description": "Merge Google Search Console history with site-crawl data for technical SEO audits, joined on a normalised URL key.",
+  "repository": {
+    "url": "https://github.com/houtini-ai/seo-audit-console",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@houtini/seo-audit-console",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "description": "Path to the Google service-account JSON key with Search Console access.",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "SAC_DATA_DIR",
+          "description": "Directory for per-property SQLite databases. Defaults to ~/seo-audits/seo-audit-console.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "DATAFORSEO_USERNAME",
+          "description": "DataForSEO API username (optional, enables SERP/keyword/domain checks).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "DATAFORSEO_PASSWORD",
+          "description": "DataForSEO API password (optional).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

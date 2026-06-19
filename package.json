@@ -1,0 +1,52 @@
+{
+  "name": "@houtini/seo-audit-console",
+  "version": "0.1.0",
+  "mcpName": "io.github.houtini-ai/seo-audit-console",
+  "description": "MCP server that merges Google Search Console history with site-crawl data for technical SEO audits, joined on a normalised URL key.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "seo-audit-console": "dist/index.js"
+  },
+  "author": "Richard Baxter <hello@houtini.com>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/houtini-ai/seo-audit-console.git"
+  },
+  "keywords": [
+    "mcp",
+    "seo",
+    "technical-seo",
+    "google-search-console",
+    "crawler",
+    "sqlite",
+    "model-context-protocol"
+  ],
+  "scripts": {
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:server",
+    "dev": "tsc -p tsconfig.server.json --watch",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test dist/**/*.test.js",
+    "clean": "rimraf dist"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.11.1",
+    "cheerio": "^1.0.0",
+    "crawlee": "^3.13.0",
+    "googleapis": "^173.0.0",
+    "zod": "^3.25.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.11.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3"
+  }
+}
