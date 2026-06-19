@@ -47,6 +47,14 @@ export class GscClient {
     return sites.map((site: any) => ({ siteUrl: site.siteUrl, permissionLevel: site.permissionLevel }));
   }
 
+  /** URL Inspection API — authoritative per-URL index status. Quota-limited (~2k/day). */
+  async inspectUrl(siteUrl: string, inspectionUrl: string): Promise<any> {
+    const res: any = await withRetry(() =>
+      this.searchconsole.urlInspection.index.inspect({ requestBody: { inspectionUrl, siteUrl } }),
+    );
+    return res.data.inspectionResult ?? {};
+  }
+
   /**
    * Fetch search analytics, streaming each 25k-row page to `onPage` so callers
    * commit to the DB immediately instead of buffering everything in memory.

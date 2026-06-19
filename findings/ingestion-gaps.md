@@ -6,6 +6,11 @@ type: findings
 
 # Ingestion gaps (from live API probes)
 
+> **Resolution (this session):** gaps #1, #2, #3 are CLOSED — security/caching headers
+> are now captured on the crawl write path, and a `url_inspection` table + `inspect_urls`
+> tool ingest the GSC URL Inspection API (verified: surfaced "/contact: Crawled – currently
+> not indexed"). Gap #4 (searchAppearance) deferred to a later optional sync pass.
+
 Run anytime with `npm run probe:crawl <url>` and `npm run probe:gsc <property> <url>`.
 Probed live against houtini.com on this session. Four gaps found — all data we receive and should store.
 

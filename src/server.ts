@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { urlKey, hostFormForProperty } from './core/url-key.js';
 import { GscClient } from './core/GscClient.js';
 import { GscSync } from './core/GscSync.js';
+import { UrlInspector } from './core/UrlInspector.js';
 import { Crawler } from './core/Crawler.js';
 import { JobManager } from './core/JobManager.js';
 import type { FetchOptions } from './core/types.js';
@@ -37,6 +38,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   const gsc = credPath ? new GscClient(credPath) : null;
   const sync = gsc ? new GscSync(gsc, dataDir()) : null;
+  const inspector = gsc ? new UrlInspector(gsc, dataDir()) : null;
   const crawler = new Crawler(dataDir()); // no GSC credentials required
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
@@ -132,6 +134,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       }
       const all = jobs.list();
       return { content: [{ type: 'text', text: `${all.length} jobs` }], structuredContent: { jobs: all } };
+    },
+  );
+
+  server.registerTool(
+    'inspect_urls',
+    {
+      title: 'Inspect URLs (GSC URL Inspection API)',
+      description: 'Fetch authoritative per-URL index status (coverage, indexing, Google-vs-declared canonical, last crawl) for top URLs into url_inspection. Quota-limited — samples top pages by clicks. Async job.',
+      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(500).optional() },
+    },
+    async ({ siteUrl, limit }) => {
+      const insp = requireGsc(inspector);
+      const jobId = jobs.start('inspect', (update, signal) => insp.run(siteUrl, { limit }, update, signal));
+      return {
+        content: [{ type: 'text', text: `Inspection started for ${siteUrl} (job ${jobId}). Poll check_sync_status.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
+      };
     },
   );
 

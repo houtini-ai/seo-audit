@@ -99,8 +99,13 @@ export class AuditDatabase {
         url_key TEXT NOT NULL,           -- urlKey(url) — the join key
         status_code INTEGER,
         content_type TEXT,
+        content_encoding TEXT,           -- br/gzip (compression war-story W6)
+        cache_control TEXT,
+        last_modified TEXT,
+        etag TEXT,
+        vary TEXT,                       -- Vary:User-Agent war-story (#54)
         bytes INTEGER,                   -- transfer/decoded size (excessive-resource check)
-        response_time_ms INTEGER,
+        response_time_ms INTEGER,        -- TTFB proxy
         depth INTEGER,
         is_internal INTEGER,
         indexable INTEGER,               -- derived: 200 + not noindex + self-canonical
@@ -170,6 +175,27 @@ export class AuditDatabase {
         FOREIGN KEY (crawl_id) REFERENCES crawl_metadata(crawl_id)
       );
       CREATE INDEX IF NOT EXISTS idx_errors_type ON errors(error_type);
+    `);
+
+    // ── GSC URL Inspection (authoritative per-URL index status) ─────────────
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS url_inspection (
+        url_key TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        verdict TEXT,
+        coverage_state TEXT,
+        indexing_state TEXT,
+        robots_txt_state TEXT,
+        page_fetch_state TEXT,
+        last_crawl_time TEXT,
+        google_canonical TEXT,           -- Google-selected canonical
+        user_canonical TEXT,             -- declared canonical (mismatch = D5 finding)
+        crawled_as TEXT,
+        mobile_usability TEXT,
+        rich_results TEXT,               -- JSON of detected rich-result types/issues
+        inspected_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_inspection_coverage ON url_inspection(coverage_state);
     `);
 
     // ── Audit results (new) ────────────────────────────────────────────────

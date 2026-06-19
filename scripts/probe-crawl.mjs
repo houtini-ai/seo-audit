@@ -8,7 +8,13 @@ const body = await res.text();
 const headers = Object.fromEntries(res.headers.entries());
 
 // What the `pages` table currently persists from the HTTP response.
-const STORED_HEADERS = new Set(['content-type', 'content-length', 'x-robots-tag']);
+const STORED_HEADERS = new Set([
+  'content-type', 'content-length', 'x-robots-tag',
+  'content-encoding', 'cache-control', 'last-modified', 'etag', 'vary',
+  // security_headers JSON: HSTS / X-Frame / X-Content-Type / Referrer-Policy / Permissions-Policy / CSP / server
+  'strict-transport-security', 'x-frame-options', 'x-content-type-options',
+  'referrer-policy', 'permissions-policy', 'content-security-policy', 'server',
+]);
 // Headers that matter for the checks in our research but aren't stored yet.
 const SEO_RELEVANT = [
   'cache-control', 'last-modified', 'etag', 'vary', 'content-encoding',
@@ -36,6 +42,5 @@ for (const [k, v] of Object.entries(ex)) {
   if (k === 'links') { console.log(`  links: ${ex.links.length}`); continue; }
   console.log(`  ${k}: ${JSON.stringify(v)?.slice(0, 60)}`);
 }
-console.log('\n## known ingestion gaps');
-console.log('  - pages.security_headers column EXISTS but extractor does not populate CSP/HSTS/X-Frame/Referrer yet.');
-console.log('  - no TTFB / last-modified / etag / vary / content-encoding columns (needed for 304, Vary, compression, CWV-proxy checks).');
+console.log('\n## ingestion status');
+console.log('  security headers + content-encoding/cache-control/last-modified/etag/vary now stored (gaps #1/#2 closed).');

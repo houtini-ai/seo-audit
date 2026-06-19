@@ -31,6 +31,12 @@ interface FetchOutcome {
   finalUrl: string;
   status: number;
   contentType: string;
+  contentEncoding: string | null;
+  cacheControl: string | null;
+  lastModified: string | null;
+  etag: string | null;
+  vary: string | null;
+  securityHeaders: string | null; // JSON {csp,hsts,xFrame,xContentType,referrerPolicy,permissionsPolicy,server}
   body: string;
   redirects: RedirectHop[];
   xRobotsTag: string | null;
@@ -59,14 +65,31 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
     const contentType = res.headers.get('content-type') ?? '';
     const isHtml = contentType.includes('text/html') || contentType.includes('xhtml');
     const body = isHtml ? await res.text() : '';
+    const h = (name: string): string | null => res.headers.get(name);
+    const sec: Record<string, string> = {};
+    for (const [k, name] of [
+      ['csp', 'content-security-policy'], ['hsts', 'strict-transport-security'],
+      ['xFrame', 'x-frame-options'], ['xContentType', 'x-content-type-options'],
+      ['referrerPolicy', 'referrer-policy'], ['permissionsPolicy', 'permissions-policy'],
+      ['server', 'server'],
+    ] as const) {
+      const v = h(name);
+      if (v) sec[k] = v;
+    }
     return {
       finalUrl: current,
       status: res.status,
       contentType,
+      contentEncoding: h('content-encoding'),
+      cacheControl: h('cache-control'),
+      lastModified: h('last-modified'),
+      etag: h('etag'),
+      vary: h('vary'),
+      securityHeaders: Object.keys(sec).length ? JSON.stringify(sec) : null,
       body,
       redirects,
-      xRobotsTag: res.headers.get('x-robots-tag'),
-      bytes: Number(res.headers.get('content-length')) || Buffer.byteLength(body),
+      xRobotsTag: h('x-robots-tag'),
+      bytes: Number(h('content-length')) || Buffer.byteLength(body),
       timeMs: Date.now() - start,
     };
   }
@@ -107,14 +130,16 @@ export class Crawler {
     const robots = await fetchRobots(origin, ua);
 
     const pageInsert = db.db.prepare(
-      `INSERT INTO pages (crawl_id, url, url_key, status_code, content_type, bytes, response_time_ms, depth,
+      `INSERT INTO pages (crawl_id, url, url_key, status_code, content_type, content_encoding, cache_control,
+         last_modified, etag, vary, bytes, response_time_ms, depth,
          is_internal, indexable, noindex, title, title_length, meta_description, meta_description_length,
          h1, h1_count, word_count, lang, charset, canonical_url, canonical_key, robots, x_robots_tag, viewport,
-         json_ld, og_tags, hreflang, redirects, internal_links, external_links)
-       VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@bytes,@response_time_ms,@depth,
+         json_ld, og_tags, hreflang, redirects, internal_links, external_links, security_headers)
+       VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@content_encoding,@cache_control,
+         @last_modified,@etag,@vary,@bytes,@response_time_ms,@depth,
          @is_internal,@indexable,@noindex,@title,@title_length,@meta_description,@meta_description_length,
          @h1,@h1_count,@word_count,@lang,@charset,@canonical_url,@canonical_key,@robots,@x_robots_tag,@viewport,
-         @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links)
+         @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links,@security_headers)
        ON CONFLICT(url_key) DO NOTHING`,
     );
     const linkInsert = db.db.prepare(
@@ -166,7 +191,9 @@ export class Crawler {
 
         pageBuf.push({
           crawl_id: crawlId, url: r.finalUrl, url_key: finalKey, status_code: r.status,
-          content_type: r.contentType, bytes: r.bytes, response_time_ms: r.timeMs, depth: item.depth,
+          content_type: r.contentType, content_encoding: r.contentEncoding, cache_control: r.cacheControl,
+          last_modified: r.lastModified, etag: r.etag, vary: r.vary,
+          bytes: r.bytes, response_time_ms: r.timeMs, depth: item.depth,
           is_internal: 1, indexable, noindex: ex?.noindex ? 1 : 0,
           title: ex?.title ?? null, title_length: ex?.titleLength ?? 0,
           meta_description: ex?.metaDescription ?? null, meta_description_length: ex?.metaDescriptionLength ?? 0,
@@ -177,6 +204,7 @@ export class Crawler {
           json_ld: ex?.jsonLd ?? null, og_tags: ex?.ogTags ?? null, hreflang: ex?.hreflang ?? null,
           redirects: r.redirects.length ? JSON.stringify(r.redirects) : null,
           internal_links: ex?.internalLinks ?? 0, external_links: ex?.externalLinks ?? 0,
+          security_headers: r.securityHeaders,
         });
 
         if (ex) {
