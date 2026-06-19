@@ -1,0 +1,31 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+
+# Secrets — NEVER commit. API scope notes + credential pointers live here.
+.secrets/
+*.key
+*-credentials.json
+gsc-access-*.json
+
+# Local Claude Code session config
+.claude/
+
+# Local databases / crawl output
+*.db
+*.db-wal
+*.db-shm
+seo-audits/
+crawlee-storage*/
+
+# Crawl artefacts — large, regenerable
+crawl-tests/**/*.json
+crawl-tests/**/*.html
+crawl-tests/**/raw/
+
+# OS
+.DS_Store
+Thumbs.db
