@@ -10,6 +10,7 @@ import { GscClient } from './core/GscClient.js';
 import { GscSync } from './core/GscSync.js';
 import { UrlInspector } from './core/UrlInspector.js';
 import { Crawler } from './core/Crawler.js';
+import { Refresh } from './core/Refresh.js';
 import { JobManager } from './core/JobManager.js';
 import type { FetchOptions } from './core/types.js';
 
@@ -40,6 +41,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const sync = gsc ? new GscSync(gsc, dataDir()) : null;
   const inspector = gsc ? new UrlInspector(gsc, dataDir()) : null;
   const crawler = new Crawler(dataDir()); // no GSC credentials required
+  const refresh = new Refresh(sync, crawler, inspector);
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
     return v;
@@ -90,11 +92,40 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
   );
 
+  // refresh_property — the "sync everything" verb (GSC + crawl + inspection in one job).
+  // Skip flags let the same tool do "just update X".
+  server.registerTool(
+    'refresh_property',
+    {
+      title: 'Refresh a property (sync + crawl + inspect)',
+      description: 'Full refresh for a property in one async job: GSC sync → site crawl → URL inspection. Set gsc/crawl/inspect=false to run just part. Poll with check_sync_status. Use this for "sync everything"; use sync_gsc / start_crawl / inspect_urls to update just one thing.',
+      inputSchema: {
+        siteUrl: z.string(),
+        gsc: z.boolean().optional(),
+        crawl: z.boolean().optional(),
+        inspect: z.boolean().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+        maxPages: z.number().int().min(1).max(50000).optional(),
+        inspectLimit: z.number().int().min(1).max(500).optional(),
+      },
+    },
+    async ({ siteUrl, gsc: doGsc, crawl, inspect, startDate, endDate, maxPages, inspectLimit }) => {
+      const jobId = jobs.start('refresh', (update, signal) =>
+        refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, startDate, endDate, maxPages, inspectLimit }, update, signal),
+      );
+      return {
+        content: [{ type: 'text', text: `Refresh started for ${siteUrl} (job ${jobId}). Poll check_sync_status.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
+      };
+    },
+  );
+
   server.registerTool(
     'sync_gsc',
     {
-      title: 'Sync Search Console data',
-      description: 'Fetch GSC search analytics into the local database (async job — poll with check_sync_status). Default range: last 90 days.',
+      title: 'Sync Search Console data (just GSC)',
+      description: 'Update just the GSC search-analytics history (async job — poll with check_sync_status). Default range: last 90 days. For a full refresh use refresh_property.',
       inputSchema: {
         siteUrl: z.string(),
         startDate: z.string().optional(),
@@ -140,8 +171,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   server.registerTool(
     'inspect_urls',
     {
-      title: 'Inspect URLs (GSC URL Inspection API)',
-      description: 'Fetch authoritative per-URL index status (coverage, indexing, Google-vs-declared canonical, last crawl) for top URLs into url_inspection. Quota-limited — samples top pages by clicks. Async job.',
+      title: 'Inspect URLs (just URL inspection)',
+      description: 'Update just the GSC URL Inspection data (coverage, indexing, Google-vs-declared canonical, last crawl) for top URLs into url_inspection. Quota-limited — samples top pages by clicks. Async job. For a full refresh use refresh_property.',
       inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(500).optional() },
     },
     async ({ siteUrl, limit }) => {
@@ -158,8 +189,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   server.registerTool(
     'start_crawl',
     {
-      title: 'Crawl a site',
-      description: 'Crawl a property into the local database (async job — poll with check_crawl_status). HTTP crawl; respects robots.txt.',
+      title: 'Crawl a site (just the crawl)',
+      description: 'Update just the crawl: fetch the site into the local database (async job — poll with check_crawl_status). HTTP crawl; respects robots.txt. For a full refresh use refresh_property.',
       inputSchema: {
         siteUrl: z.string(),
         maxPages: z.number().int().min(1).max(50000).optional(),
