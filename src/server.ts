@@ -11,6 +11,7 @@ import { GscSync } from './core/GscSync.js';
 import { UrlInspector } from './core/UrlInspector.js';
 import { Crawler } from './core/Crawler.js';
 import { Refresh } from './core/Refresh.js';
+import { DataForSeoClient } from './core/DataForSeoClient.js';
 import { JobManager } from './core/JobManager.js';
 import type { FetchOptions } from './core/types.js';
 
@@ -42,8 +43,19 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const inspector = gsc ? new UrlInspector(gsc, dataDir()) : null;
   const crawler = new Crawler(dataDir()); // no GSC credentials required
   const refresh = new Refresh(sync, crawler, inspector);
+
+  const dfsUser = process.env.DATAFORSEO_USERNAME;
+  const dfsPass = process.env.DATAFORSEO_PASSWORD;
+  const dfsCacheDays = Number(process.env.DATAFORSEO_CACHE_DAYS) || 20;
+  const dfs = dfsUser && dfsPass
+    ? new DataForSeoClient(dfsUser, dfsPass, path.join(dataDir(), 'dataforseo-cache.db'), dfsCacheDays)
+    : null;
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
+    return v;
+  };
+  const requireDfs = <T>(v: T | null): T => {
+    if (!v) throw new Error('DATAFORSEO_USERNAME / DATAFORSEO_PASSWORD not set — required for DataForSEO.');
     return v;
   };
 
@@ -226,6 +238,31 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       }
       const all = jobs.list();
       return { content: [{ type: 'text', text: `${all.length} jobs` }], structuredContent: { jobs: all } };
+    },
+  );
+
+  // ── DataForSEO (cached 20 days, single-worker) ──────────────────────────
+  server.registerTool(
+    'keyword_volume',
+    {
+      title: 'Keyword search volume (DataForSEO)',
+      description: 'True monthly search volume + CPC + competition for keywords (DataForSEO KEYWORDS_DATA). Served from a 20-day cache; live calls are serialised. Default location: United States (2840).',
+      inputSchema: {
+        keywords: z.array(z.string()).min(1).max(700),
+        locationCode: z.number().int().optional(),
+        languageCode: z.string().optional(),
+      },
+    },
+    async ({ keywords, locationCode, languageCode }) => {
+      const client = requireDfs(dfs);
+      const r = await client.searchVolume(keywords, locationCode, languageCode);
+      const items = (r.tasks[0]?.result ?? []).map((k: any) => ({
+        keyword: k.keyword, searchVolume: k.search_volume, cpc: k.cpc, competition: k.competition,
+      }));
+      return {
+        content: [{ type: 'text', text: `${items.length} keywords${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
+        structuredContent: { keywords: items, cached: r.cached, cost: r.cost },
+      };
     },
   );
 
