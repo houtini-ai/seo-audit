@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { urlKey, hostFormForProperty } from './core/url-key.js';
 import { GscClient } from './core/GscClient.js';
 import { GscSync } from './core/GscSync.js';
+import { Crawler } from './core/Crawler.js';
 import { JobManager } from './core/JobManager.js';
 import type { FetchOptions } from './core/types.js';
 
@@ -36,6 +37,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   const gsc = credPath ? new GscClient(credPath) : null;
   const sync = gsc ? new GscSync(gsc, dataDir()) : null;
+  const crawler = new Crawler(dataDir()); // no GSC credentials required
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
     return v;
@@ -120,6 +122,50 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     {
       title: 'Check sync status',
       description: 'Poll a sync job by id, or omit to list recent jobs.',
+      inputSchema: { jobId: z.string().optional() },
+    },
+    async ({ jobId }) => {
+      if (jobId) {
+        const job = jobs.get(jobId);
+        if (!job) return { content: [{ type: 'text', text: `No job ${jobId}` }], structuredContent: { error: 'not_found', jobId } };
+        return { content: [{ type: 'text', text: `Job ${jobId}: ${job.state}` }], structuredContent: job as unknown as Record<string, unknown> };
+      }
+      const all = jobs.list();
+      return { content: [{ type: 'text', text: `${all.length} jobs` }], structuredContent: { jobs: all } };
+    },
+  );
+
+  // ── Crawl ─────────────────────────────────────────────────────────────────
+  server.registerTool(
+    'start_crawl',
+    {
+      title: 'Crawl a site',
+      description: 'Crawl a property into the local database (async job — poll with check_crawl_status). HTTP crawl; respects robots.txt.',
+      inputSchema: {
+        siteUrl: z.string(),
+        maxPages: z.number().int().min(1).max(50000).optional(),
+        maxDepth: z.number().int().min(1).max(20).optional(),
+        maxConcurrency: z.number().int().min(1).max(16).optional(),
+        delayMs: z.number().int().min(0).max(10000).optional(),
+        userAgent: z.string().optional(),
+      },
+    },
+    async ({ siteUrl, maxPages, maxDepth, maxConcurrency, delayMs, userAgent }) => {
+      const jobId = jobs.start('crawl', (update, signal) =>
+        crawler.run(siteUrl, { maxPages, maxDepth, maxConcurrency, delayMs, userAgent }, update, signal),
+      );
+      return {
+        content: [{ type: 'text', text: `Crawl started for ${siteUrl} (job ${jobId}). Poll check_crawl_status.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
+      };
+    },
+  );
+
+  server.registerTool(
+    'check_crawl_status',
+    {
+      title: 'Check crawl status',
+      description: 'Poll a crawl job by id, or omit to list recent jobs.',
       inputSchema: { jobId: z.string().optional() },
     },
     async ({ jobId }) => {

@@ -1,0 +1,250 @@
+import { randomUUID } from 'node:crypto';
+import { AuditDatabase } from './AuditDatabase.js';
+import { dbPathFor } from './paths.js';
+import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
+import { extractPage } from './extract.js';
+import { fetchRobots } from './robots.js';
+
+export interface CrawlOptions {
+  maxPages?: number;
+  maxDepth?: number;
+  maxConcurrency?: number;
+  delayMs?: number;
+  userAgent?: string;
+}
+
+export interface CrawlResult {
+  crawlId: string;
+  siteUrl: string;
+  crawled: number;
+  failed: number;
+  skipped: number;
+}
+
+const DEFAULT_UA = 'Mozilla/5.0 (compatible; seo-audit-console/0.1; +https://github.com/houtini-ai/seo-audit-console)';
+const FETCH_TIMEOUT_MS = 20000;
+const FLUSH_EVERY = 50;
+
+interface RedirectHop { from: string; to: string; status: number; }
+
+interface FetchOutcome {
+  finalUrl: string;
+  status: number;
+  contentType: string;
+  body: string;
+  redirects: RedirectHop[];
+  xRobotsTag: string | null;
+  bytes: number;
+  timeMs: number;
+}
+
+async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise<FetchOutcome> {
+  const redirects: RedirectHop[] = [];
+  let current = url;
+  let hops = 0;
+  const start = Date.now();
+  while (true) {
+    const res = await fetch(current, {
+      redirect: 'manual',
+      headers: { 'user-agent': ua, accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (res.status >= 300 && res.status < 400 && res.headers.get('location') && hops < maxHops) {
+      const loc = new URL(res.headers.get('location')!, current).toString();
+      redirects.push({ from: current, to: loc, status: res.status });
+      current = loc;
+      hops++;
+      continue;
+    }
+    const contentType = res.headers.get('content-type') ?? '';
+    const isHtml = contentType.includes('text/html') || contentType.includes('xhtml');
+    const body = isHtml ? await res.text() : '';
+    return {
+      finalUrl: current,
+      status: res.status,
+      contentType,
+      body,
+      redirects,
+      xRobotsTag: res.headers.get('x-robots-tag'),
+      bytes: Number(res.headers.get('content-length')) || Buffer.byteLength(body),
+      timeMs: Date.now() - start,
+    };
+  }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
+
+/** Self-contained, stdio-safe HTTP crawler writing into a property's AuditDatabase. */
+export class Crawler {
+  constructor(private readonly dataDir: string) {}
+
+  async run(
+    siteUrl: string,
+    opts: CrawlOptions,
+    update: (p: Record<string, unknown>) => void,
+    signal: AbortSignal,
+  ): Promise<CrawlResult> {
+    const maxPages = opts.maxPages ?? 1000;
+    const maxDepth = opts.maxDepth ?? 10;
+    const concurrency = Math.max(1, Math.min(opts.maxConcurrency ?? 4, 16));
+    const delayMs = opts.delayMs ?? 250;
+    const ua = opts.userAgent ?? DEFAULT_UA;
+
+    const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : siteUrl;
+    const baseHost = new URL(seed).hostname;
+    const keyOpts: UrlKeyOptions = { hostForm: hostFormForProperty(siteUrl) };
+    const origin = new URL(seed).origin;
+
+    const db = new AuditDatabase(dbPathFor(this.dataDir, siteUrl));
+    db.upsertProperty(siteUrl, keyOpts.hostForm ?? 'asis');
+    const crawlId = randomUUID().slice(0, 8);
+    const startedAt = new Date().toISOString();
+    db.db.prepare(
+      `INSERT INTO crawl_metadata (crawl_id, base_url, base_domain, status, max_depth, max_pages, user_agent, started_at)
+       VALUES (?, ?, ?, 'running', ?, ?, ?, ?)`,
+    ).run(crawlId, seed, baseHost, maxDepth, maxPages, ua, startedAt);
+
+    const robots = await fetchRobots(origin, ua);
+
+    const pageInsert = db.db.prepare(
+      `INSERT INTO pages (crawl_id, url, url_key, status_code, content_type, bytes, response_time_ms, depth,
+         is_internal, indexable, noindex, title, title_length, meta_description, meta_description_length,
+         h1, h1_count, word_count, lang, charset, canonical_url, canonical_key, robots, x_robots_tag, viewport,
+         json_ld, og_tags, hreflang, redirects, internal_links, external_links)
+       VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@bytes,@response_time_ms,@depth,
+         @is_internal,@indexable,@noindex,@title,@title_length,@meta_description,@meta_description_length,
+         @h1,@h1_count,@word_count,@lang,@charset,@canonical_url,@canonical_key,@robots,@x_robots_tag,@viewport,
+         @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links)
+       ON CONFLICT(url_key) DO NOTHING`,
+    );
+    const linkInsert = db.db.prepare(
+      `INSERT INTO links (crawl_id, source_url, source_key, target_url, target_key, anchor_text, is_internal, placement, rel)
+       VALUES (@crawl_id,@source_url,@source_key,@target_url,@target_key,@anchor_text,@is_internal,@placement,@rel)`,
+    );
+    const errorInsert = db.db.prepare(
+      `INSERT INTO errors (crawl_id, url, error_type, error_message) VALUES (?, ?, ?, ?)`,
+    );
+    const flushPages = db.db.transaction((rows: Record<string, unknown>[]) => { for (const r of rows) pageInsert.run(r); });
+    const flushLinks = db.db.transaction((rows: Record<string, unknown>[]) => { for (const r of rows) linkInsert.run(r); });
+
+    const pageBuf: Record<string, unknown>[] = [];
+    const linkBuf: Record<string, unknown>[] = [];
+    const visited = new Set<string>();
+    const frontier: { url: string; depth: number }[] = [];
+    let crawled = 0, failed = 0, skipped = 0, discovered = 0;
+
+    const enqueue = (url: string, depth: number): void => {
+      const key = urlKey(url, keyOpts);
+      if (visited.has(key)) return;
+      visited.add(key);
+      discovered++;
+      frontier.push({ url, depth });
+    };
+    enqueue(seed, 0);
+
+    const flush = (final = false): void => {
+      if (pageBuf.length && (final || pageBuf.length >= FLUSH_EVERY)) { flushPages(pageBuf.splice(0)); }
+      if (linkBuf.length && (final || linkBuf.length >= FLUSH_EVERY)) { flushLinks(linkBuf.splice(0)); }
+    };
+    const saveProgress = (): void => {
+      db.db.prepare(`UPDATE crawl_metadata SET urls_discovered=?, urls_crawled=?, urls_failed=?, urls_skipped=? WHERE crawl_id=?`)
+        .run(discovered, crawled, failed, skipped, crawlId);
+      update({ crawlId, crawled, discovered, failed, skipped });
+    };
+
+    const processOne = async (item: { url: string; depth: number }): Promise<void> => {
+      if (delayMs) await sleep(delayMs);
+      const path = (() => { try { return new URL(item.url).pathname; } catch { return '/'; } })();
+      if (!robots.isAllowed(path)) { skipped++; return; }
+      try {
+        const r = await fetchWithRedirects(item.url, ua);
+        const finalKey = urlKey(r.finalUrl, keyOpts);
+        const isHtml = r.contentType.includes('text/html') || r.contentType.includes('xhtml');
+        const ex = isHtml && r.status === 200 ? extractPage(r.body, r.finalUrl, baseHost, keyOpts, r.xRobotsTag) : null;
+        const indexable = r.status === 200 && !(ex?.noindex ?? /noindex/i.test(r.xRobotsTag ?? ''))
+          && (!ex?.canonicalKey || ex.canonicalKey === finalKey) ? 1 : 0;
+
+        pageBuf.push({
+          crawl_id: crawlId, url: r.finalUrl, url_key: finalKey, status_code: r.status,
+          content_type: r.contentType, bytes: r.bytes, response_time_ms: r.timeMs, depth: item.depth,
+          is_internal: 1, indexable, noindex: ex?.noindex ? 1 : 0,
+          title: ex?.title ?? null, title_length: ex?.titleLength ?? 0,
+          meta_description: ex?.metaDescription ?? null, meta_description_length: ex?.metaDescriptionLength ?? 0,
+          h1: ex?.h1 ?? null, h1_count: ex?.h1Count ?? 0, word_count: ex?.wordCount ?? 0,
+          lang: ex?.lang ?? null, charset: ex?.charset ?? null,
+          canonical_url: ex?.canonicalUrl ?? null, canonical_key: ex?.canonicalKey ?? null,
+          robots: ex?.robots ?? null, x_robots_tag: r.xRobotsTag ?? null, viewport: ex?.viewport ?? null,
+          json_ld: ex?.jsonLd ?? null, og_tags: ex?.ogTags ?? null, hreflang: ex?.hreflang ?? null,
+          redirects: r.redirects.length ? JSON.stringify(r.redirects) : null,
+          internal_links: ex?.internalLinks ?? 0, external_links: ex?.externalLinks ?? 0,
+        });
+
+        if (ex) {
+          for (const l of ex.links) {
+            linkBuf.push({
+              crawl_id: crawlId, source_url: r.finalUrl, source_key: finalKey,
+              target_url: l.targetUrl, target_key: l.targetKey, anchor_text: l.anchor,
+              is_internal: l.isInternal ? 1 : 0, placement: l.placement, rel: l.rel,
+            });
+            if (l.isInternal && item.depth + 1 <= maxDepth && (crawled + frontier.length) < maxPages) {
+              enqueue(l.targetUrl, item.depth + 1);
+            }
+          }
+        }
+        crawled++;
+        flush();
+        if (crawled % 10 === 0) saveProgress();
+      } catch (err: unknown) {
+        failed++;
+        errorInsert.run(crawlId, item.url, 'fetch', err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    // Concurrency pool over the shared frontier. Only resolve once all in-flight
+    // work has drained — never while requests are still running (avoids late
+    // writes after the DB is closed when the page cap is hit mid-flight).
+    await new Promise<void>((resolve) => {
+      let running = 0;
+      let finished = false;
+      const pump = (): void => {
+        if (finished) return;
+        const capHit = crawled >= maxPages || signal.aborted;
+        if (running === 0 && (capHit || frontier.length === 0)) {
+          finished = true;
+          resolve();
+          return;
+        }
+        if (capHit) return; // stop starting new work; let in-flight drain via finally → pump
+        while (running < concurrency && frontier.length > 0 && crawled < maxPages && !signal.aborted) {
+          const item = frontier.shift()!;
+          running++;
+          processOne(item).finally(() => { running--; pump(); });
+        }
+      };
+      pump();
+    });
+
+    flush(true);
+
+    // Post-crawl: in-degree (orphan detection) from the link graph.
+    db.db.exec(`
+      UPDATE pages SET inlink_count = (
+        SELECT COUNT(*) FROM links
+        WHERE links.target_key = pages.url_key AND links.is_internal = 1
+          AND links.source_key != pages.url_key
+      ) WHERE crawl_id = '${crawlId}';
+    `);
+
+    const finishedAt = new Date().toISOString();
+    db.db.prepare(
+      `UPDATE crawl_metadata SET status=?, urls_discovered=?, urls_crawled=?, urls_failed=?, urls_skipped=?,
+         finished_at=?, duration_ms=? WHERE crawl_id=?`,
+    ).run(
+      signal.aborted ? 'cancelled' : 'completed', discovered, crawled, failed, skipped,
+      finishedAt, Date.parse(finishedAt) - Date.parse(startedAt), crawlId,
+    );
+    db.db.prepare(`UPDATE property_meta SET last_crawl_id=? WHERE site_url=?`).run(crawlId, siteUrl);
+    db.close();
+    return { crawlId, siteUrl, crawled, failed, skipped };
+  }
+}
