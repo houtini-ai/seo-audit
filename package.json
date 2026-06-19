@@ -29,6 +29,8 @@
     "dev": "tsc -p tsconfig.server.json --watch",
     "start": "node dist/index.js",
     "test": "npm run build && node --test dist/**/*.test.js",
+    "probe:crawl": "node scripts/probe-crawl.mjs",
+    "probe:gsc": "node scripts/probe-gsc.mjs",
     "clean": "rimraf dist"
   },
   "engines": {
