@@ -132,6 +132,10 @@ export class AuditDatabase {
         redirects TEXT,                  -- captured 3xx chain (crawler bug fix)
         internal_links INTEGER,
         external_links INTEGER,
+        image_count INTEGER DEFAULT 0,         -- <img> count (image-alt check)
+        images_without_alt INTEGER DEFAULT 0,  -- <img> lacking non-empty alt
+        canonical_count INTEGER DEFAULT 0,     -- # rel=canonical tags (multiple-canonical)
+        canonical_relative INTEGER DEFAULT 0,  -- canonical declared as a relative URL
         inlink_count INTEGER DEFAULT 0,  -- in-degree (computed post-crawl: orphans)
         ipr REAL DEFAULT 0,              -- internal PageRank (computed post-crawl)
         rendered INTEGER DEFAULT 0,      -- did this row come from the render tier?
@@ -251,6 +255,21 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_findings_priority ON findings(priority DESC);
       CREATE INDEX IF NOT EXISTS idx_findings_check    ON findings(check_id);
     `);
+
+    this.migrate();
+  }
+
+  /** Idempotent column additions for DBs created before a column existed. */
+  private migrate(): void {
+    const cols = (table: string): Set<string> =>
+      new Set((this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(c => c.name));
+    const ensure = (table: string, col: string, ddl: string): void => {
+      if (!cols(table).has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    };
+    ensure('pages', 'image_count', 'image_count INTEGER DEFAULT 0');
+    ensure('pages', 'images_without_alt', 'images_without_alt INTEGER DEFAULT 0');
+    ensure('pages', 'canonical_count', 'canonical_count INTEGER DEFAULT 0');
+    ensure('pages', 'canonical_relative', 'canonical_relative INTEGER DEFAULT 0');
   }
 
   // ── Minimal property accessors (full CRUD added as modules are wired) ─────

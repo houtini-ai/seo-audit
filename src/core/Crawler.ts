@@ -135,12 +135,14 @@ export class Crawler {
          last_modified, etag, vary, bytes, response_time_ms, depth,
          is_internal, indexable, noindex, title, title_length, meta_description, meta_description_length,
          h1, h1_count, word_count, lang, charset, canonical_url, canonical_key, robots, x_robots_tag, viewport,
-         json_ld, og_tags, hreflang, redirects, internal_links, external_links, security_headers)
+         json_ld, og_tags, hreflang, redirects, internal_links, external_links,
+         image_count, images_without_alt, canonical_count, canonical_relative, security_headers)
        VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@content_encoding,@cache_control,
          @last_modified,@etag,@vary,@bytes,@response_time_ms,@depth,
          @is_internal,@indexable,@noindex,@title,@title_length,@meta_description,@meta_description_length,
          @h1,@h1_count,@word_count,@lang,@charset,@canonical_url,@canonical_key,@robots,@x_robots_tag,@viewport,
-         @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links,@security_headers)
+         @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links,
+         @image_count,@images_without_alt,@canonical_count,@canonical_relative,@security_headers)
        ON CONFLICT(url_key) DO NOTHING`,
     );
     const linkInsert = db.db.prepare(
@@ -199,12 +201,15 @@ export class Crawler {
           title: ex?.title ?? null, title_length: ex?.titleLength ?? 0,
           meta_description: ex?.metaDescription ?? null, meta_description_length: ex?.metaDescriptionLength ?? 0,
           h1: ex?.h1 ?? null, h1_count: ex?.h1Count ?? 0, word_count: ex?.wordCount ?? 0,
-          lang: ex?.lang ?? null, charset: ex?.charset ?? null,
+          lang: ex?.lang ?? null,
+          charset: ex?.charset ?? r.contentType.match(/charset=([\w-]+)/i)?.[1] ?? null, // meta, else Content-Type header
           canonical_url: ex?.canonicalUrl ?? null, canonical_key: ex?.canonicalKey ?? null,
           robots: ex?.robots ?? null, x_robots_tag: r.xRobotsTag ?? null, viewport: ex?.viewport ?? null,
           json_ld: ex?.jsonLd ?? null, og_tags: ex?.ogTags ?? null, hreflang: ex?.hreflang ?? null,
           redirects: r.redirects.length ? JSON.stringify(r.redirects) : null,
           internal_links: ex?.internalLinks ?? 0, external_links: ex?.externalLinks ?? 0,
+          image_count: ex?.imageCount ?? 0, images_without_alt: ex?.imagesWithoutAlt ?? 0,
+          canonical_count: ex?.canonicalCount ?? 0, canonical_relative: ex?.canonicalRelative ? 1 : 0,
           security_headers: r.securityHeaders,
         });
 

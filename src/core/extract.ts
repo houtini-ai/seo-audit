@@ -31,6 +31,9 @@ export interface ExtractedPage {
   internalLinks: number;
   externalLinks: number;
   imageCount: number;
+  imagesWithoutAlt: number;
+  canonicalCount: number;
+  canonicalRelative: boolean;
   links: ExtractedLink[];
 }
 
@@ -62,8 +65,10 @@ export function extractPage(
   const lang = $('html').attr('lang')?.trim() ?? null;
   const charset = $('meta[charset]').attr('charset')?.trim()
     ?? ($('meta[http-equiv="Content-Type"]').attr('content')?.match(/charset=([\w-]+)/i)?.[1] ?? null);
-  const canonicalRaw = $('link[rel="canonical"]').attr('href')?.trim() ?? null;
+  const canonicalEls = $('link[rel="canonical"]');
+  const canonicalRaw = canonicalEls.first().attr('href')?.trim() ?? null;
   const canonicalUrl = canonicalRaw ? new URL(canonicalRaw, pageUrl).toString() : null;
+  const canonicalRelative = canonicalRaw != null && !/^https?:\/\//i.test(canonicalRaw);
   const robots = $('meta[name="robots"]').attr('content')?.trim() ?? null;
   const viewport = $('meta[name="viewport"]').attr('content')?.trim() ?? null;
   const noindex = /noindex/i.test(robots ?? '') || /noindex/i.test(xRobotsTag ?? '');
@@ -93,6 +98,11 @@ export function extractPage(
     const href = $(el).attr('href');
     if (l && href) hreflang.push({ lang: l, href });
   });
+
+  // Images: count those lacking a non-empty alt (decorative alt="" is intentional, not flagged).
+  const imgEls = $('img');
+  let imagesWithoutAlt = 0;
+  imgEls.each((_, el) => { if ($(el).attr('alt') === undefined) imagesWithoutAlt++; });
 
   const links: ExtractedLink[] = [];
   let internalLinks = 0;
@@ -141,7 +151,10 @@ export function extractPage(
     hreflang: hreflang.length ? JSON.stringify(hreflang) : null,
     internalLinks,
     externalLinks,
-    imageCount: $('img').length,
+    imageCount: imgEls.length,
+    imagesWithoutAlt,
+    canonicalCount: canonicalEls.length,
+    canonicalRelative,
     links,
   };
 }

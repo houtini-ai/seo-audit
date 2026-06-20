@@ -34,6 +34,8 @@
     "probe:gsc": "node scripts/probe-gsc.mjs",
     "probe:fixfinding": "node scripts/probe-fixfinding.mjs",
     "probe:schema": "node scripts/probe-schema.mjs",
+    "probe:extract": "node scripts/probe-extract.mjs",
+    "probe:migrate": "node scripts/probe-migrate.mjs",
     "clean": "rimraf dist"
   },
   "engines": {

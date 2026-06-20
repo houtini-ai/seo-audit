@@ -19,7 +19,7 @@ Collect (crawl + GSC + SERP) → analyse (deterministic checks + the merged GSC�
 - `src/core/RankTracker.ts` — DataForSEO `historical_rank_overview` → `rank_history` (the over-time sequence; reconciled with GSC dates in `dashboardData`).
 - `src/core/JobManager.ts` — generic detached job registry (return-jobId-then-poll).
 - `src/core/Refresh.ts` — orchestrates `gsc → crawl → inspect → ranks` (each skippable).
-- `src/audit/checks.ts` + `engine.ts` — **27 checks** (incl. schema-validate: invalid-schema, missing-required-fields, schema-value-errors, forbidden-schema); scored `P = (severityW × certainty × log10(traffic value)) / effort`; persisted to `findings`. `src/audit/schema-validate.ts` holds the maintained Google Rich-Results required-field map.
+- `src/audit/checks.ts` + `engine.ts` — **30 checks** (incl. schema-validate: invalid-schema, missing-required-fields, schema-value-errors, forbidden-schema; extractor: image-alt, canonical-relative, multiple-canonical); scored `P = (severityW × certainty × log10(traffic value)) / effort`; persisted to `findings`. `src/audit/schema-validate.ts` holds the maintained Google Rich-Results required-field map.
 - `src/core/dashboardData.ts` — builds the dashboard payload (summary, rank trend, distribution, striking-distance, page-performance categorised, keyword movement, device/country, rank history + GSC↔DFS date reconciliation, latest findings).
 - `src/ui/` — MCP-App dashboard (ext-apps + houtini `tokens.css` + **ECharts**, Vite single-file). Findings treemap + ranked table + 6 charts + report tables + CSV export.
 - `src/server.ts` / `index.ts` — `McpServer`, stdio, `SERVER_VERSION` derived from `package.json`.
@@ -45,8 +45,8 @@ Collect (crawl + GSC + SERP) → analyse (deterministic checks + the merged GSC�
 `refresh_property` (sync everything) · `sync_gsc` · `start_crawl` · `inspect_urls` · `track_ranks` · `check_sync_status` · `check_crawl_status` · `list_properties` · `run_audit` · `query_audit` · `fix_finding` (finding→fix moat) · `list_checks` · `keyword_volume` · `related_terms` · `normalize_url` · `get_dashboard` (App UI).
 
 ## What's built vs deferred
-**Built:** data layer (GSC + crawl + URL inspection + DataForSEO, located/cached/on-demand), 27-check scored engine (incl. schema-validate module), agency-grade dashboard (findings + report sections + CSV export), date reconciliation, **finding→fix generators (the moat)** — `src/generators/` (JSON-LD / 301 redirect rules / internal-link suggestions), wired via the `fix_finding` tool. Dry-run: returns artifacts, never writes to the user's site.
-**Deferred (roadmap):** extractor checks (image-alt, canonical-relative, multiple-canonical), robots-sitemap reconcile, CWV ingestion, render/JS-SEO tier, log analysis, ecommerce vertical. See `plan/roadmap.md` (feasibility-checked sequence) and `plan/open-questions.md`.
+**Built:** data layer (GSC + crawl + URL inspection + DataForSEO, located/cached/on-demand), 30-check scored engine (incl. schema-validate + extractor checks), agency-grade dashboard (findings + report sections + CSV export), date reconciliation, **finding→fix generators (the moat)** — `src/generators/` (JSON-LD / 301 redirect rules / internal-link suggestions), wired via the `fix_finding` tool. Dry-run: returns artifacts, never writes to the user's site.
+**Deferred (roadmap):** robots-sitemap reconcile, register in Claude Desktop + live verify, CWV ingestion, render/JS-SEO tier, log analysis, ecommerce vertical. See `plan/roadmap.md` (feasibility-checked sequence) and `plan/open-questions.md`.
 
 ## Working principles
 - Sources or it didn't happen (research/) ; cite file:line for code claims.

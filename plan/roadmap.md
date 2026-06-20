@@ -11,9 +11,10 @@ phase: 5
 
 **Done (shipped + live-verified on houtini.com):**
 - Data layer: GSC sync, crawl (stdio-safe), URL Inspection, DataForSEO (located, 20-day cache, on-demand), rank history. All joined on `url_key`.
-- Audit engine: 27 scored checks (`P=(S×C×V)/E`), persisted findings (incl. schema-validate module).
+- Audit engine: 30 scored checks (`P=(S×C×V)/E`), persisted findings (incl. schema-validate + extractor modules).
 - **Finding→fix moat (#1 below): SHIPPED** — `src/generators/` + `fix_finding` tool (JSON-LD / 301 rules / internal-link suggestions, dry-run).
 - **schema-validate (#2 below): SHIPPED** — `src/audit/schema-validate.ts` (maintained Rich-Results required-field map) + 4 checks.
+- **Extractor checks (#4 below): SHIPPED** — extract.ts captures image-alt/canonical-count/canonical-relative + header-charset fallback; 3 checks; idempotent `AuditDatabase.migrate()`.
 - Dashboard (MCP App): findings treemap + ranked table, 6 ECharts, page-performance/keyword-movement/device/country report tables, CSV export, host-theme.
 - Orchestration: `refresh_property` + granular tools + audit tools. 17 tools.
 - Hygiene: secrets gitignored, version-from-package.json, server.json metadata.
@@ -39,7 +40,7 @@ Validate captured `json_ld` against a maintained Google-Rich-Results required-fi
 ### 3. robots-sitemap module — feasibility HIGH, confidence HIGH
 Fetch robots.txt (RFC 9309) + sitemap(s); reconcile vs crawl + GSC. Unlocks a *cluster*: sitemap-present, pages-not-in-sitemap, robots-valid, accidental-disallow, AI-crawler-access (research/04). **Deps:** simple fetch+parse (minimal robots.ts exists). **Acceptance:** 3-way reconcile (sitemap↔crawl↔GSC) + the new checks fire.
 
-### 4. Extractor-dependent checks — feasibility HIGH, confidence HIGH
+### 4. Extractor-dependent checks — ✅ SHIPPED (feasibility HIGH, confidence HIGH)
 Extend `extract.ts`: count images-without-alt, resolve relative canonicals to absolute, capture multiple-canonical, charset-from-header. Adds: image-alt, canonical-relative, multiple-canonical. **Deps:** extractor change only. **Acceptance:** new checks fire; re-crawl populates.
 
 ### 5. Register in Claude Desktop + live App verify — feasibility HIGH, confidence HIGH
