@@ -10,6 +10,8 @@ export interface DashboardData {
     prior: { clicks: number; impressions: number; ctr: number; position: number };
   };
   rankTrend?: { date: string; clicks: number; position: number }[];
+  rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
+  strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   topKeywords?: {
     query: string;
     clicks: number;
@@ -79,9 +81,34 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       };
     });
 
+    // Ranking distribution over time (impressions by position bucket) — flagship #1
+    const rankingDistribution = db.db
+      .prepare(
+        `SELECT date,
+           COALESCE(SUM(CASE WHEN position<=3 THEN impressions ELSE 0 END),0) b1,
+           COALESCE(SUM(CASE WHEN position>3 AND position<=10 THEN impressions ELSE 0 END),0) b2,
+           COALESCE(SUM(CASE WHEN position>10 AND position<=20 THEN impressions ELSE 0 END),0) b3,
+           COALESCE(SUM(CASE WHEN position>20 THEN impressions ELSE 0 END),0) b4
+         FROM search_analytics WHERE date > date(?, '-90 days') GROUP BY date ORDER BY date`,
+      )
+      .all(maxDate) as { date: string; b1: number; b2: number; b3: number; b4: number }[];
+
+    // Striking-distance queries (avg position 11–20, current period) — flagship #2
+    const strikingDistance = (db.db
+      .prepare(
+        `SELECT query, AVG(position) position, SUM(impressions) impressions, SUM(clicks) clicks
+         FROM search_analytics WHERE query IS NOT NULL AND date > date(?, '-28 days')
+         GROUP BY query HAVING AVG(position) > 10 AND AVG(position) <= 20 AND SUM(impressions) > 0
+         ORDER BY SUM(impressions) DESC LIMIT 40`,
+      )
+      .all(maxDate) as { query: string; position: number; impressions: number; clicks: number }[])
+      .map(r => ({ ...r, position: Math.round(r.position * 10) / 10 }));
+
     return {
       siteUrl,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate },
+      rankingDistribution,
+      strikingDistance,
       summary: {
         current: { ...cur, ctr: ctr(cur) },
         prior: { ...prior, ctr: ctr(prior) },

@@ -17,15 +17,31 @@
       <div class="metrics" id="metrics"></div>
 
       <div class="chart-card">
+        <h3>Ranking distribution over time</h3>
+        <div class="hint">Impressions by position bucket — top-3 dominance vs page-2 drift, last 90 days</div>
+        <p class="sr-only" id="distSummary"></p>
+        <div class="chart" id="distChart" role="img" aria-label="Ranking distribution over time"></div>
+      </div>
+
+      <div class="chart-card">
         <h3>Rank &amp; clicks over time</h3>
         <div class="hint">Average position (line, higher = better rank) and daily clicks (bars), last 90 days</div>
-        <div class="chart" id="rankChart"></div>
+        <p class="sr-only" id="rankSummary"></p>
+        <div class="chart" id="rankChart" role="img" aria-label="Average position and clicks over time"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Striking-distance keywords</h3>
+        <div class="hint">Queries ranking 11–20 (page 2) with real impressions — the low-effort wins. Bubble size = clicks.</div>
+        <p class="sr-only" id="strikeSummary"></p>
+        <div class="chart" id="strikeChart" role="img" aria-label="Striking-distance keywords scatter"></div>
       </div>
 
       <div class="chart-card">
         <h3>Top keyword performance — 28d vs prior</h3>
-        <div class="hint">Green = improved · red = declined · click a bar for related terms (People Also Ask)</div>
-        <div class="chart" id="kwChart"></div>
+        <div class="hint">Green = improved · red = declined · the signed number is the click change · click a bar for related terms</div>
+        <p class="sr-only" id="kwSummary"></p>
+        <div class="chart" id="kwChart" role="img" aria-label="Top keyword performance change, 28 days versus prior"></div>
         <div id="related" class="related"></div>
       </div>
     </div>

@@ -9,6 +9,8 @@ interface DashboardData {
   dateRange?: { current: string; maxDate: string };
   summary?: { current: Totals; prior: Totals };
   rankTrend?: { date: string; clicks: number; position: number }[];
+  rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
+  strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   topKeywords?: { query: string; clicks: number; prevClicks: number; clicksChange: number; position: number; prevPosition: number }[];
 }
 
@@ -31,8 +33,11 @@ function palette() {
 }
 
 let currentData: DashboardData | null = null;
+let distChart: echarts.ECharts | null = null;
 let rankChart: echarts.ECharts | null = null;
+let strikeChart: echarts.ECharts | null = null;
 let kwChart: echarts.ECharts | null = null;
+const ARIA = { aria: { enabled: true } }; // ECharts-generated screen-reader description
 
 const app = new App({ name: 'SEO Audit Console', version: '0.1.0' });
 
@@ -56,7 +61,7 @@ app.ontoolresult = (result) => {
 };
 
 app.connect().then(() => applyHostContext(app.getHostContext() as any));
-window.addEventListener('resize', () => { rankChart?.resize(); kwChart?.resize(); });
+window.addEventListener('resize', () => { distChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
 
 function metricCard(label: string, value: string, change: number, lowerIsBetter = false): string {
   const better = lowerIsBetter ? change < 0 : change > 0;
@@ -84,11 +89,38 @@ function render(data: DashboardData): void {
   const col = palette();
   const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.muted }, splitLine: { lineStyle: { color: col.grid } } };
 
-  // Rank + clicks over time
+  // 1) Ranking distribution over time (stacked area) — flagship #1
+  const dist = data.rankingDistribution ?? [];
+  const buckets = [
+    { key: 'b1' as const, name: 'Pos 1–3', color: col.green },
+    { key: 'b2' as const, name: 'Pos 4–10', color: col.accent },
+    { key: 'b3' as const, name: 'Pos 11–20', color: col.violet },
+    { key: 'b4' as const, name: 'Pos 21+', color: col.muted },
+  ];
+  distChart?.dispose();
+  distChart = echarts.init($('distChart'));
+  distChart.setOption({
+    ...ARIA,
+    grid: { left: 52, right: 16, top: 32, bottom: 30 },
+    legend: { top: 0, textStyle: { color: col.muted } },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: dist.map(d => d.date), ...axis },
+    yAxis: { type: 'value', name: 'impressions', ...axis },
+    series: buckets.map(b => ({
+      name: b.name, type: 'line', stack: 'imp', showSymbol: false, lineStyle: { width: 0 },
+      areaStyle: { opacity: 0.55 }, itemStyle: { color: b.color }, data: dist.map(d => d[b.key]),
+    })),
+  });
+  const last = dist[dist.length - 1];
+  const lastTot = last ? last.b1 + last.b2 + last.b3 + last.b4 : 0;
+  $('distSummary').textContent = `Impressions by SERP position bucket across ${dist.length} days; latest day ${lastTot} impressions, ${lastTot ? Math.round((last.b1 / lastTot) * 100) : 0}% in positions 1–3.`;
+
+  // 2) Rank + clicks over time (dual-axis) — flagship #6
   const trend = data.rankTrend ?? [];
   rankChart?.dispose();
   rankChart = echarts.init($('rankChart'));
   rankChart.setOption({
+    ...ARIA,
     grid: { left: 48, right: 48, top: 20, bottom: 30 },
     tooltip: { trigger: 'axis' },
     xAxis: { type: 'category', data: trend.map(t => t.date), ...axis },
@@ -101,23 +133,47 @@ function render(data: DashboardData): void {
       { name: 'avg position', type: 'line', yAxisIndex: 0, smooth: true, showSymbol: false, data: trend.map(t => Math.round(t.position * 10) / 10), lineStyle: { color: col.accent, width: 2 }, itemStyle: { color: col.accent } },
     ],
   });
+  $('rankSummary').textContent = `Average Google position (higher is better) and daily clicks over ${trend.length} days.`;
 
-  // Top keyword performance (clicks change), green/red
+  // 3) Striking-distance keywords (bubble) — flagship #2
+  const strike = data.strikingDistance ?? [];
+  strikeChart?.dispose();
+  strikeChart = echarts.init($('strikeChart'));
+  strikeChart.setOption({
+    ...ARIA,
+    grid: { left: 60, right: 24, top: 20, bottom: 40 },
+    tooltip: { trigger: 'item', formatter: (p: any) => `${strike[p.dataIndex].query}<br/>pos ${p.value[0]}, ${p.value[1]} impressions, ${strike[p.dataIndex].clicks} clicks` },
+    xAxis: { type: 'value', name: 'avg position', min: 10, max: 20, inverse: true, ...axis },
+    yAxis: { type: 'value', name: 'impressions', ...axis },
+    series: [{
+      type: 'scatter',
+      symbolSize: (v: number[]) => Math.max(6, Math.min(42, 6 + Math.sqrt(v[2]) * 3)),
+      itemStyle: { color: col.accent, opacity: 0.6 },
+      data: strike.map(s => [s.position, s.impressions, s.clicks]),
+    }],
+  });
+  $('strikeSummary').textContent = `${strike.length} queries ranking on page two (positions 11–20) with impressions — page-1 opportunities; bubble size is clicks.`;
+
+  // 4) Top keyword performance (green/red + signed label so colour isn't the only cue)
   const kw = (data.topKeywords ?? []).slice().reverse(); // horizontal bar reads top-down
   kwChart?.dispose();
   kwChart = echarts.init($('kwChart'));
   kwChart.setOption({
-    grid: { left: 8, right: 24, top: 10, bottom: 24, containLabel: true },
+    ...ARIA,
+    grid: { left: 8, right: 44, top: 10, bottom: 24, containLabel: true },
     tooltip: { trigger: 'item', formatter: (pa: any) => `${pa.name}<br/>Δ clicks: ${pa.value >= 0 ? '+' : ''}${pa.value} (now ${kw[pa.dataIndex].clicks})` },
     xAxis: { type: 'value', ...axis },
     yAxis: { type: 'category', data: kw.map(k => k.query), axisLabel: { color: col.muted, width: 180, overflow: 'truncate' }, axisLine: { lineStyle: { color: col.border } } },
     series: [{
       type: 'bar',
+      label: { show: true, position: 'right', color: col.muted, fontSize: 11, formatter: (p: any) => (p.value > 0 ? '+' : '') + p.value },
       data: kw.map(k => ({ value: k.clicksChange, itemStyle: { color: k.clicksChange >= 0 ? col.green : col.red } })),
     }],
   });
   kwChart.off('click');
   kwChart.on('click', (pa: any) => { void loadRelated(kw[pa.dataIndex].query); });
+  const up = kw.filter(k => k.clicksChange > 0).length, down = kw.filter(k => k.clicksChange < 0).length;
+  $('kwSummary').textContent = `${kw.length} top keywords; ${up} improved and ${down} declined versus the prior period (signed click change shown on each bar).`;
 }
 
 async function loadRelated(keyword: string): Promise<void> {
