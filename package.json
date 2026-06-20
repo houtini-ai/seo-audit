@@ -47,7 +47,6 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.11.1",
     "cheerio": "^1.0.0",
-    "crawlee": "^3.13.0",
     "echarts": "^6.0.0",
     "googleapis": "^173.0.0",
     "zod": "^3.25.1"
