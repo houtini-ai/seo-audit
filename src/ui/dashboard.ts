@@ -45,10 +45,6 @@ function palette() {
   };
 }
 
-function sevColor(sev: string): string {
-  const c = palette();
-  return sev === 'crit' ? c.red : sev === 'high' ? c.amber : sev === 'med' ? c.accent : c.muted;
-}
 
 const csvCell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const toCsv = (rows: unknown[][]): string => rows.map(r => r.map(csvCell).join(',')).join('\r\n');
@@ -61,7 +57,6 @@ function downloadCsv(filename: string, rows: unknown[][]): void {
 }
 
 let currentData: DashboardData | null = null;
-let findingsTreemap: echarts.ECharts | null = null;
 let distChart: echarts.ECharts | null = null;
 let rankHistChart: echarts.ECharts | null = null;
 let rankChart: echarts.ECharts | null = null;
@@ -90,16 +85,54 @@ app.ontoolresult = (result) => {
   if (data) { currentData = data; render(data); }
 };
 
-// Production-inert preview hook: a screenshot harness can set window.__DASH_FIXTURE__
-// to render real data without an MCP host. Never set in normal host operation.
-const __fixture = (window as any).__DASH_FIXTURE__;
-if (__fixture) {
-  applyHostContext({ theme: (window as any).__DASH_THEME__ ?? 'light' });
-  currentData = __fixture; render(__fixture);
-} else {
-  app.connect().then(() => applyHostContext(app.getHostContext() as any));
+window.addEventListener('resize', () => { distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
+
+const SEV_ORDER = ['crit', 'high', 'med', 'low', 'info'] as const;
+const SEV_LABEL: Record<string, string> = { crit: 'Critical', high: 'High', med: 'Medium', low: 'Low', info: 'Info' };
+
+// Findings: severity count-chips (click to filter) + a prioritised table with a
+// priority mini-bar and single-line fix text. Replaces the old non-actionable treemap.
+function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof palette>): void {
+  const chipsEl = $('sevChips'), tableEl = $('findingsTable');
+  if (!fc || !fc.byCheck.length) {
+    chipsEl.innerHTML = '<span class="muted">No audit yet — run run_audit.</span>';
+    tableEl.innerHTML = '';
+    $('findingsSummary').textContent = 'No audit findings yet.';
+    return;
+  }
+  const sevCounts: Record<string, number> = {};
+  for (const c of fc.byCheck) sevCounts[c.severity] = (sevCounts[c.severity] ?? 0) + c.count;
+  const maxPrio = Math.max(...fc.top.map(f => f.priority), 0.0001);
+  let active = 'all';
+
+  const drawTable = (): void => {
+    const rows = fc.top.filter(f => active === 'all' || f.severity === active).slice(0, 25).map(f => {
+      const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk);
+      const path = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
+      const pct = Math.max(3, Math.round((f.priority / maxPrio) * 100));
+      return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}</td>` +
+        `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
+        `<td class="num">${traf.impressions || 0}</td>` +
+        `<td class="prio"><span class="prio-wrap"><span class="prio-bar s-${f.severity}" style="width:${pct}%"></span><span class="prio-val">${f.priority.toFixed(2)}</span></span></td>` +
+        `<td class="fix" title="${esc(rec.text || '')}">${esc(rec.text || '')}</td></tr>`;
+    });
+    tableEl.innerHTML = rows.length
+      ? `<table><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Priority</th><th>Fix</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      : '<p class="muted">No findings at this severity in the top results.</p>';
+  };
+  const drawChips = (): void => {
+    const chip = (sev: string, label: string, n: number): string =>
+      `<button class="sev-chip ${sev === 'all' ? 'c-all' : 's-' + sev} ${active === sev ? 'active' : ''}" data-sev="${sev}">${label} <b>${n}</b></button>`;
+    const parts = [chip('all', 'All', fc.total)];
+    for (const s of SEV_ORDER) if (sevCounts[s]) parts.push(chip(s, SEV_LABEL[s], sevCounts[s]));
+    chipsEl.innerHTML = parts.join('');
+    chipsEl.querySelectorAll('.sev-chip').forEach(b => b.addEventListener('click', () => {
+      active = (b as HTMLElement).dataset.sev!; drawChips(); drawTable();
+    }));
+  };
+  drawChips(); drawTable();
+  $('findingsSummary').textContent = `${fc.total} findings across ${fc.byCheck.length} checks, ranked by impact ÷ effort.`;
 }
-window.addEventListener('resize', () => { findingsTreemap?.resize(); distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
 
 function metricCard(label: string, value: string, change: number, lowerIsBetter = false): string {
   const better = lowerIsBetter ? change < 0 : change > 0;
@@ -126,45 +159,10 @@ function render(data: DashboardData): void {
 
   const col = palette();
   // axis tick labels + axis names use primary text (high contrast: white on dark, near-black on light)
-  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.text }, nameTextStyle: { color: col.text }, splitLine: { lineStyle: { color: col.grid } } };
+  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.text, fontSize: 12 }, nameTextStyle: { color: col.text, fontSize: 12 }, splitLine: { lineStyle: { color: col.grid } } };
 
-  // Audit findings — issue treemap + ranked, actionable table (the "what to fix" view)
-  const fc = data.findings;
-  findingsTreemap?.dispose();
-  findingsTreemap = echarts.init($('findingsTreemap'));
-  if (fc && fc.byCheck.length) {
-    const cats: Record<string, typeof fc.byCheck> = {};
-    for (const c of fc.byCheck) (cats[c.category] ??= []).push(c);
-    findingsTreemap.setOption({
-      ...ARIA,
-      tooltip: { formatter: (p: any) => `${p.name}: ${p.value} affected` },
-      series: [{
-        type: 'treemap', roam: false, breadcrumb: { show: false }, nodeClick: false,
-        // white label with a dark stroke stays legible on every severity fill in both themes (a11y)
-        label: { show: true, formatter: '{b}', color: '#fff', fontSize: 11, textBorderColor: 'rgba(0,0,0,0.6)', textBorderWidth: 2.5 },
-        upperLabel: { show: true, height: 18, color: col.text, textBorderColor: 'rgba(0,0,0,0.5)', textBorderWidth: 2 },
-        levels: [{ itemStyle: { borderColor: col.surface, borderWidth: 2, gapWidth: 2 } }, { itemStyle: { gapWidth: 1 } }],
-        data: Object.entries(cats).map(([cat, checks]) => ({
-          name: cat,
-          children: checks.map(c => ({ name: c.check_id, value: c.count, itemStyle: { color: sevColor(c.severity) } })),
-        })),
-      }],
-    });
-    const tableRows = fc.top.slice(0, 25).map(f => {
-      const rec = safeJson(f.recommendation);
-      const traf = safeJson(f.traffic_at_risk);
-      const path = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
-      return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}</td>` +
-        `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
-        `<td class="num">${traf.impressions || 0}</td><td class="num">${f.priority.toFixed(2)}</td><td class="fix">${esc(rec.text || '')}</td></tr>`;
-    });
-    $('findingsTable').innerHTML = `<table><thead><tr><th>Severity</th><th>Issue</th><th>URL</th><th>Clicks</th><th>Impr</th><th>Priority</th><th>Fix</th></tr></thead><tbody>${tableRows.join('')}</tbody></table>`;
-    $('findingsSummary').textContent = `${fc.total} findings across ${fc.byCheck.length} checks, ranked by impact ÷ effort.`;
-  } else {
-    findingsTreemap.setOption({ ...ARIA, title: { text: 'No audit yet — run run_audit', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
-    $('findingsTable').innerHTML = '';
-    $('findingsSummary').textContent = 'No audit findings yet.';
-  }
+  // Audit findings — severity filter chips + prioritised, actionable table
+  renderFindings(data.findings, col);
   buildExportBar(data);
 
   // 1) Ranking distribution over time (stacked area) — flagship #1
@@ -172,7 +170,7 @@ function render(data: DashboardData): void {
   const buckets = [
     { key: 'b1' as const, name: 'Pos 1–3', color: col.green },
     { key: 'b2' as const, name: 'Pos 4–10', color: col.accent },
-    { key: 'b3' as const, name: 'Pos 11–20', color: col.violet },
+    { key: 'b3' as const, name: 'Pos 11–20', color: col.amber },
     { key: 'b4' as const, name: 'Pos 21+', color: col.muted },
   ];
   distChart?.dispose();
@@ -180,7 +178,7 @@ function render(data: DashboardData): void {
   distChart.setOption({
     ...ARIA,
     grid: { left: 52, right: 16, top: 32, bottom: 30 },
-    legend: { top: 0, textStyle: { color: col.muted } },
+    legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
     tooltip: { trigger: 'axis' },
     xAxis: { type: 'category', data: dist.map(d => d.date), ...axis },
     yAxis: { type: 'value', name: 'impressions', ...axis },
@@ -201,13 +199,13 @@ function render(data: DashboardData): void {
     const rhBuckets = [
       { key: 'pos_1_3' as const, name: 'Pos 1–3', color: col.green },
       { key: 'pos_4_10' as const, name: 'Pos 4–10', color: col.accent },
-      { key: 'pos_11_20' as const, name: 'Pos 11–20', color: col.violet },
+      { key: 'pos_11_20' as const, name: 'Pos 11–20', color: col.amber },
       { key: 'pos_21_100' as const, name: 'Pos 21–100', color: col.muted },
     ];
     rankHistChart.setOption({
       ...ARIA,
       grid: { left: 48, right: 56, top: 32, bottom: 30 },
-      legend: { top: 0, textStyle: { color: col.muted } },
+      legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
       tooltip: { trigger: 'axis' },
       xAxis: { type: 'category', data: rh.map(p => p.period), ...axis },
       yAxis: [
@@ -324,7 +322,7 @@ function buildExportBar(data: DashboardData): void {
     bar.appendChild(b);
   };
   if (data.findings?.top?.length) {
-    mk('⬇ Findings CSV', () => downloadCsv('seo-findings.csv', [
+    mk('↓ Findings CSV', () => downloadCsv('seo-findings.csv', [
       ['severity', 'check', 'url', 'clicks', 'impressions', 'position', 'priority', 'fix'],
       ...data.findings!.top.map(f => {
         const rec = safeJson(f.recommendation), t = safeJson(f.traffic_at_risk);
@@ -333,25 +331,25 @@ function buildExportBar(data: DashboardData): void {
     ]));
   }
   if (data.topKeywords?.length) {
-    mk('⬇ Keywords CSV', () => downloadCsv('keywords.csv', [
+    mk('↓ Keywords CSV', () => downloadCsv('keywords.csv', [
       ['query', 'clicks', 'prevClicks', 'clicksChange', 'avgPosition', 'prevPosition'],
       ...data.topKeywords!.map(k => [k.query, k.clicks, k.prevClicks, k.clicksChange, k.position, k.prevPosition]),
     ]));
   }
   if (data.strikingDistance?.length) {
-    mk('⬇ Striking-distance CSV', () => downloadCsv('striking-distance.csv', [
+    mk('↓ Striking-distance CSV', () => downloadCsv('striking-distance.csv', [
       ['query', 'position', 'impressions', 'clicks'],
       ...data.strikingDistance!.map(s => [s.query, s.position, s.impressions, s.clicks]),
     ]));
   }
   if (data.pagePerformance?.length) {
-    mk('⬇ Pages CSV', () => downloadCsv('page-performance.csv', [
+    mk('↓ Pages CSV', () => downloadCsv('page-performance.csv', [
       ['category', 'url', 'clicks', 'prevClicks', 'clicksChangePct', 'impressions', 'position'],
       ...data.pagePerformance!.map(p => [p.category, p.urlKey, p.clicks, p.prevClicks, p.clicksChangePct, p.impressions, p.position]),
     ]));
   }
   if (data.keywordMovement?.length) {
-    mk('⬇ Movement CSV', () => downloadCsv('keyword-movement.csv', [
+    mk('↓ Movement CSV', () => downloadCsv('keyword-movement.csv', [
       ['category', 'query', 'firstPos', 'lastPos', 'delta', 'firstDate', 'lastDate'],
       ...data.keywordMovement!.map(m => [m.category, m.query, m.firstPos, m.lastPos, m.delta, m.firstDate, m.lastDate]),
     ]));
@@ -381,4 +379,15 @@ async function loadRelated(keyword: string): Promise<void> {
   } catch {
     el.innerHTML = `<div class="group-label">DataForSEO credentials needed for keyword lookups.</div>`;
   }
+}
+
+// Boot: connect to the host. Production-inert preview hook — a screenshot harness can
+// set window.__DASH_FIXTURE__ to render real data with no host. Placed last so every
+// definition (incl. SEV_ORDER/renderFindings) is initialised before render() runs.
+const __fixture = (window as any).__DASH_FIXTURE__;
+if (__fixture) {
+  applyHostContext({ theme: (window as any).__DASH_THEME__ ?? 'light' });
+  currentData = __fixture; render(__fixture);
+} else {
+  app.connect().then(() => applyHostContext(app.getHostContext() as any));
 }
