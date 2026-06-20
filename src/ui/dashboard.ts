@@ -34,6 +34,7 @@ function palette() {
 
 let currentData: DashboardData | null = null;
 let distChart: echarts.ECharts | null = null;
+let rankHistChart: echarts.ECharts | null = null;
 let rankChart: echarts.ECharts | null = null;
 let strikeChart: echarts.ECharts | null = null;
 let kwChart: echarts.ECharts | null = null;
@@ -61,7 +62,7 @@ app.ontoolresult = (result) => {
 };
 
 app.connect().then(() => applyHostContext(app.getHostContext() as any));
-window.addEventListener('resize', () => { distChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
+window.addEventListener('resize', () => { distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
 
 function metricCard(label: string, value: string, change: number, lowerIsBetter = false): string {
   const better = lowerIsBetter ? change < 0 : change > 0;
@@ -114,6 +115,42 @@ function render(data: DashboardData): void {
   const last = dist[dist.length - 1];
   const lastTot = last ? last.b1 + last.b2 + last.b3 + last.b4 : 0;
   $('distSummary').textContent = `Impressions by SERP position bucket across ${dist.length} days; latest day ${lastTot} impressions, ${lastTot ? Math.round((last.b1 / lastTot) * 100) : 0}% in positions 1–3.`;
+
+  // 1b) DataForSEO search visibility over time (rank_history) — reconciled window
+  const rh = data.rankHistory ?? [];
+  rankHistChart?.dispose();
+  rankHistChart = echarts.init($('rankHistChart'));
+  if (rh.length) {
+    const rhBuckets = [
+      { key: 'pos_1_3' as const, name: 'Pos 1–3', color: col.green },
+      { key: 'pos_4_10' as const, name: 'Pos 4–10', color: col.accent },
+      { key: 'pos_11_20' as const, name: 'Pos 11–20', color: col.violet },
+      { key: 'pos_21_100' as const, name: 'Pos 21–100', color: col.muted },
+    ];
+    rankHistChart.setOption({
+      ...ARIA,
+      grid: { left: 48, right: 56, top: 32, bottom: 30 },
+      legend: { top: 0, textStyle: { color: col.muted } },
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'category', data: rh.map(p => p.period), ...axis },
+      yAxis: [
+        { type: 'value', name: 'keywords', ...axis },
+        { type: 'value', name: 'ETV', ...axis, splitLine: { show: false } },
+      ],
+      series: [
+        ...rhBuckets.map(b => ({
+          name: b.name, type: 'line', stack: 'kw', showSymbol: false, lineStyle: { width: 0 },
+          areaStyle: { opacity: 0.55 }, itemStyle: { color: b.color }, data: rh.map(p => p[b.key]),
+        })),
+        { name: 'ETV', type: 'line', yAxisIndex: 1, smooth: true, showSymbol: false, data: rh.map(p => Math.round(p.etv)), lineStyle: { color: col.red, width: 2 }, itemStyle: { color: col.red } },
+      ],
+    });
+    $('rankHistSummary').textContent = `DataForSEO ranking keywords by position bucket across ${rh.length} months, with estimated traffic value.`;
+  } else {
+    rankHistChart.setOption({ ...ARIA, title: { text: 'No rank history yet — run track_ranks', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    $('rankHistSummary').textContent = 'No DataForSEO rank history yet.';
+  }
+  $('alignNote').textContent = data.dateAlignment?.note ?? '';
 
   // 2) Rank + clicks over time (dual-axis) — flagship #6
   const trend = data.rankTrend ?? [];

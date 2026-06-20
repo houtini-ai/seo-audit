@@ -1,11 +1,13 @@
 import { GscSync } from './GscSync.js';
 import { Crawler } from './Crawler.js';
 import { UrlInspector } from './UrlInspector.js';
+import { RankTracker } from './RankTracker.js';
 
 export interface RefreshOptions {
   gsc?: boolean;       // sync GSC history (default true)
   crawl?: boolean;     // crawl the site (default true)
   inspect?: boolean;   // GSC URL Inspection pass (default true)
+  ranks?: boolean;     // DataForSEO over-time sequence (default true if available)
   startDate?: string;
   endDate?: string;
   maxPages?: number;
@@ -25,6 +27,7 @@ export class Refresh {
     private readonly sync: GscSync | null,
     private readonly crawler: Crawler,
     private readonly inspector: UrlInspector | null,
+    private readonly rankTracker: RankTracker | null,
   ) {}
 
   async run(
@@ -64,6 +67,16 @@ export class Refresh {
         update({ phase: 'inspect' });
         phases.push('inspect');
         out.inspect = await this.inspector.run(siteUrl, { limit: opts.inspectLimit }, p => update({ phase: 'inspect', ...p }), signal);
+      }
+    }
+    if (signal.aborted) return out;
+
+    if (opts.ranks !== false) {
+      if (!this.rankTracker) { out.ranksSkipped = 'no DataForSEO credentials'; }
+      else {
+        update({ phase: 'ranks' });
+        phases.push('ranks');
+        out.ranks = await this.rankTracker.run(siteUrl, {}, p => update({ phase: 'ranks', ...p }), signal);
       }
     }
 

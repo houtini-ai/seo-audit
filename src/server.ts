@@ -51,7 +51,6 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const sync = gsc ? new GscSync(gsc, dataDir()) : null;
   const inspector = gsc ? new UrlInspector(gsc, dataDir()) : null;
   const crawler = new Crawler(dataDir()); // no GSC credentials required
-  const refresh = new Refresh(sync, crawler, inspector);
 
   const dfsUser = process.env.DATAFORSEO_USERNAME;
   const dfsPass = process.env.DATAFORSEO_PASSWORD;
@@ -60,6 +59,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     ? new DataForSeoClient(dfsUser, dfsPass, path.join(dataDir(), 'dataforseo-cache.db'), dfsCacheDays)
     : null;
   const rankTracker = dfs ? new RankTracker(dfs, dataDir()) : null;
+  const refresh = new Refresh(sync, crawler, inspector, rankTracker);
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
     return v;
@@ -120,21 +120,22 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'refresh_property',
     {
       title: 'Refresh a property (sync + crawl + inspect)',
-      description: 'Full refresh for a property in one async job: GSC sync → site crawl → URL inspection. Set gsc/crawl/inspect=false to run just part. Poll with check_sync_status. Use this for "sync everything"; use sync_gsc / start_crawl / inspect_urls to update just one thing.',
+      description: 'Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history. Set gsc/crawl/inspect/ranks=false to run just part. Poll with check_sync_status. Use this for "sync everything"; use the single-purpose tools to update just one thing.',
       inputSchema: {
         siteUrl: z.string(),
         gsc: z.boolean().optional(),
         crawl: z.boolean().optional(),
         inspect: z.boolean().optional(),
+        ranks: z.boolean().optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         maxPages: z.number().int().min(1).max(50000).optional(),
         inspectLimit: z.number().int().min(1).max(500).optional(),
       },
     },
-    async ({ siteUrl, gsc: doGsc, crawl, inspect, startDate, endDate, maxPages, inspectLimit }) => {
+    async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, startDate, endDate, maxPages, inspectLimit }) => {
       const jobId = jobs.start('refresh', (update, signal) =>
-        refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, startDate, endDate, maxPages, inspectLimit }, update, signal),
+        refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, ranks, startDate, endDate, maxPages, inspectLimit }, update, signal),
       );
       return {
         content: [{ type: 'text', text: `Refresh started for ${siteUrl} (job ${jobId}). Poll check_sync_status.` }],
