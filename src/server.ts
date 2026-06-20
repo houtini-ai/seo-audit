@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
+import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 
 import { urlKey, hostFormForProperty } from './core/url-key.js';
 import { GscClient } from './core/GscClient.js';
@@ -78,8 +79,48 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       inputSchema: { category: z.enum(CHECK_CATEGORIES).optional() },
     },
     async ({ category }) => {
-      const categories = category ? [category] : [...CHECK_CATEGORIES];
-      return { content: [{ type: 'text', text: `Audit categories: ${categories.join(', ')}` }], structuredContent: { categories } };
+      const all = listChecks();
+      const checks = category ? all.filter(c => (c.category as string) === category) : all;
+      return { content: [{ type: 'text', text: `${checks.length} checks${category ? ` in ${category}` : ''}` }], structuredContent: { checks } };
+    },
+  );
+
+  // ── Audit engine ────────────────────────────────────────────────────────
+  server.registerTool(
+    'run_audit',
+    {
+      title: 'Run SEO audit',
+      description: 'Run the technical-SEO checks against synced data and return scored findings (priority = impact÷effort, using real GSC traffic-at-risk). Crawl + GSC + URL-inspection checks. Set includeJudgement=true to include heuristic (N) checks.',
+      inputSchema: {
+        siteUrl: z.string(),
+        scope: z.enum(['core', 'full']).optional(),
+        categories: z.array(z.enum(CHECK_CATEGORIES)).optional(),
+        includeJudgement: z.boolean().optional(),
+      },
+    },
+    async ({ siteUrl, scope, categories, includeJudgement }) => {
+      const result = runAudit(dataDir(), siteUrl, { scope, categories, includeJudgement });
+      const sev = result.bySeverity;
+      return {
+        content: [{ type: 'text', text: `Audit ${result.runId}: ${result.total} findings (crit ${sev.crit ?? 0}, high ${sev.high ?? 0}, med ${sev.med ?? 0}).` }],
+        structuredContent: result as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    'query_audit',
+    {
+      title: 'Run one audit check',
+      description: 'Run a single named check (see list_checks) and return its affected URLs + evidence.',
+      inputSchema: { siteUrl: z.string(), check: z.string(), limit: z.number().int().min(1).max(1000).optional() },
+    },
+    async ({ siteUrl, check, limit }) => {
+      const r = runSingleCheck(dataDir(), siteUrl, check, limit);
+      return {
+        content: [{ type: 'text', text: `${check}: ${r.findings.length} findings` }],
+        structuredContent: r as unknown as Record<string, unknown>,
+      };
     },
   );
 
