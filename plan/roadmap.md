@@ -11,7 +11,9 @@ phase: 5
 
 **Done (shipped + live-verified on houtini.com):**
 - Data layer: GSC sync, crawl (stdio-safe), URL Inspection, DataForSEO (located, 20-day cache, on-demand), rank history. All joined on `url_key`.
-- Audit engine: 23 scored checks (`P=(S×C×V)/E`), persisted findings.
+- Audit engine: 27 scored checks (`P=(S×C×V)/E`), persisted findings (incl. schema-validate module).
+- **Finding→fix moat (#1 below): SHIPPED** — `src/generators/` + `fix_finding` tool (JSON-LD / 301 rules / internal-link suggestions, dry-run).
+- **schema-validate (#2 below): SHIPPED** — `src/audit/schema-validate.ts` (maintained Rich-Results required-field map) + 4 checks.
 - Dashboard (MCP App): findings treemap + ranked table, 6 ECharts, page-performance/keyword-movement/device/country report tables, CSV export, host-theme.
 - Orchestration: `refresh_property` + granular tools + audit tools. 17 tools.
 - Hygiene: secrets gitignored, version-from-package.json, server.json metadata.
@@ -24,14 +26,14 @@ phase: 5
 
 Each: **feasibility** (is the data/dep ready?), **confidence** (HIGH = no unknowns; MED = one risk), **deps**, **acceptance**.
 
-### 1. Finding → fix generators (the moat) — feasibility HIGH, confidence HIGH
+### 1. Finding → fix generators (the moat) — ✅ SHIPPED (feasibility HIGH, confidence HIGH)
 Click a finding / call `fix_finding` → Claude explains the cause and generates the concrete fix.
 - **JSON-LD generator** for `missing-structured-data` — `schema-dts`-typed, `safeJsonLd` serialise (validated via context7); dry-run copy block.
 - **Redirect-block generator** for `broken-internal-links`/404 — `.htaccess`/nginx/next.config from the broken→suggested map.
 - **Internal-link suggestions** for `orphan-with-impressions`/`striking-distance` — donor pages (high in-degree, topically relevant) → the receiver (research/14 money-move).
 - **Deps:** findings table, pages/links, schema-dts (installed concept). **Acceptance:** `fix_finding(runId, checkId, urlKey)` returns a validated, paste-ready artifact; never writes silently (dry-run/diff). **This is what makes it replace, not undercut.**
 
-### 2. schema-validate module — feasibility HIGH, confidence HIGH
+### 2. schema-validate module — ✅ SHIPPED (feasibility HIGH, confidence HIGH)
 Validate captured `json_ld` against a maintained Google-Rich-Results required-field map (research/11). Adds checks: invalid-schema, missing-required-fields, markup-vs-visible (N). **Deps:** json_ld already captured. **Acceptance:** per-type validation with cited missing fields; feeds generator #1.
 
 ### 3. robots-sitemap module — feasibility HIGH, confidence HIGH

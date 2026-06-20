@@ -33,6 +33,7 @@
     "probe:crawl": "node scripts/probe-crawl.mjs",
     "probe:gsc": "node scripts/probe-gsc.mjs",
     "probe:fixfinding": "node scripts/probe-fixfinding.mjs",
+    "probe:schema": "node scripts/probe-schema.mjs",
     "clean": "rimraf dist"
   },
   "engines": {

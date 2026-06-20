@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { FindingLabel, Severity } from '../core/AuditDatabase.js';
+import { validateJsonLdColumn, type SchemaIssueKind } from './schema-validate.js';
 
 /**
  * Check registry. Each check is a pure read over the AuditDatabase (crawl + GSC +
@@ -31,6 +32,17 @@ export interface CheckDef {
 
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
 const win = (d: string): string => `date > date('${d}', '-28 days')`;
+
+// Validate captured JSON-LD per page, keeping findings whose issue-kinds match `kinds`.
+function schemaFindings(ctx: CheckContext, kinds: SchemaIssueKind[]): RawFinding[] {
+  const set = new Set(kinds);
+  const out: RawFinding[] = [];
+  for (const r of rows(ctx, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND json_ld IS NOT NULL AND json_ld != ''`)) {
+    const hits = validateJsonLdColumn(r.jsonLd).filter(i => set.has(i.kind));
+    if (hits.length) out.push({ urlKey: r.urlKey, evidence: { issues: hits.map(h => ({ type: h.type, detail: h.detail, fields: h.fields })) } });
+  }
+  return out;
+}
 
 // Rough position→expected-CTR curve (desktop+mobile blended) for the CTR-gap check.
 const CTR_CURVE: Record<number, number> = { 1: 0.28, 2: 0.15, 3: 0.11, 4: 0.08, 5: 0.06, 6: 0.05, 7: 0.04, 8: 0.032, 9: 0.028, 10: 0.025 };
@@ -144,6 +156,27 @@ export const CHECKS: CheckDef[] = [
     id: 'missing-structured-data', category: 'schema', severity: 'low', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'No structured data', fix: 'Add relevant JSON-LD (Article, Product, Organization…).',
     run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND (json_ld IS NULL OR json_ld='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
+  },
+  // ── Schema validation (validate captured json_ld vs maintained Rich-Results map) ──
+  {
+    id: 'invalid-schema', category: 'schema', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Invalid structured data', fix: 'Fix the JSON-LD so each block parses and carries @context (https://schema.org) + a valid @type.',
+    run: (c) => schemaFindings(c, ['parse', 'context', 'type']),
+  },
+  {
+    id: 'missing-required-fields', category: 'schema', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Structured data missing required fields', fix: 'Add the Google-required properties for the detected schema type (cited per finding).',
+    run: (c) => schemaFindings(c, ['required']),
+  },
+  {
+    id: 'schema-value-errors', category: 'schema', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Structured-data value errors', fix: 'Use absolute, indexable image/URL values and ISO-8601 dates in JSON-LD.',
+    run: (c) => schemaFindings(c, ['value']),
+  },
+  {
+    id: 'forbidden-schema', category: 'schema', severity: 'high', labels: ['D', 'N'], certainty: 0.7, effortBase: 1, fixType: 'per-page',
+    title: 'Restricted schema type in use', fix: 'Remove FAQPage/HowTo markup unless the page qualifies for the narrow remaining eligibility — it risks no benefit or a manual action.',
+    run: (c) => schemaFindings(c, ['forbidden']),
   },
   {
     id: 'missing-viewport', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',

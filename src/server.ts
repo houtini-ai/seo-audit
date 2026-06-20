@@ -172,7 +172,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         let kind: string;
         let fix: unknown;
         switch (checkId) {
-          case 'missing-structured-data': {
+          case 'missing-structured-data':
+          case 'invalid-schema':
+          case 'missing-required-fields': {
             const page = db.db
               .prepare('SELECT url, url_key, title, h1, meta_description, og_tags FROM pages WHERE url_key = ?')
               .get(affectedKey) as Record<string, unknown> | undefined;
