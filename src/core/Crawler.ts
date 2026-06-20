@@ -40,7 +40,7 @@ interface FetchOutcome {
   body: string;
   redirects: RedirectHop[];
   xRobotsTag: string | null;
-  bytes: number;
+  bytes: number | null;
   timeMs: number;
 }
 
@@ -95,7 +95,9 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
       body,
       redirects,
       xRobotsTag: h('x-robots-tag'),
-      bytes: Number(h('content-length')) || Buffer.byteLength(body),
+      // content-length when given; else the decoded HTML size; else null (non-HTML w/o
+      // content-length — body isn't read, so 0 would be misleading).
+      bytes: Number(h('content-length')) || (body ? Buffer.byteLength(body) : null),
       timeMs: Date.now() - start,
     };
   }

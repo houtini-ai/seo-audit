@@ -1,21 +1,21 @@
 /**
- * Minimal robots.txt politeness gate. Not the full RFC 9309 audit parser
- * (that's a later analyzer module) — just enough to crawl owned sites
- * respectfully: honour Disallow for our UA token and `*`.
+ * robots.txt politeness gate. Honours both Disallow AND Allow with the RFC 9309
+ * longest-match rule (most specific path wins; Allow wins ties) — so a broad
+ * `Disallow: /` paired with `Allow: /public/` doesn't wrongly empty the crawl.
  */
 export interface RobotsRules {
   isAllowed(pathname: string): boolean;
 }
 
+interface Rule { path: string; allow: boolean }
 const ALLOW_ALL: RobotsRules = { isAllowed: () => true };
 
-function parseDisallows(txt: string, uaToken: string): string[] {
-  const lines = txt.split(/\r?\n/);
-  const groups: { agents: string[]; disallows: string[] }[] = [];
-  let current: { agents: string[]; disallows: string[] } | null = null;
+function parseRules(txt: string, uaToken: string): Rule[] {
+  const groups: { agents: string[]; rules: Rule[] }[] = [];
+  let current: { agents: string[]; rules: Rule[] } | null = null;
   let lastWasAgent = false;
 
-  for (const raw of lines) {
+  for (const raw of txt.split(/\r?\n/)) {
     const line = raw.replace(/#.*$/, '').trim();
     if (!line) continue;
     const idx = line.indexOf(':');
@@ -24,14 +24,12 @@ function parseDisallows(txt: string, uaToken: string): string[] {
     const value = line.slice(idx + 1).trim();
 
     if (field === 'user-agent') {
-      if (!current || !lastWasAgent) {
-        current = { agents: [], disallows: [] };
-        groups.push(current);
-      }
+      if (!current || !lastWasAgent) { current = { agents: [], rules: [] }; groups.push(current); }
       current.agents.push(value.toLowerCase());
       lastWasAgent = true;
-    } else if (field === 'disallow' && current) {
-      if (value) current.disallows.push(value);
+    } else if ((field === 'disallow' || field === 'allow') && current) {
+      // An empty Disallow value means "allow everything" — carries no restriction.
+      if (value) current.rules.push({ path: value, allow: field === 'allow' });
       lastWasAgent = false;
     } else {
       lastWasAgent = false;
@@ -39,8 +37,22 @@ function parseDisallows(txt: string, uaToken: string): string[] {
   }
 
   const ua = uaToken.toLowerCase();
-  const matching = groups.filter(g => g.agents.some(a => a === '*' || ua.includes(a)));
-  return matching.flatMap(g => g.disallows);
+  return groups.filter(g => g.agents.some(a => a === '*' || ua.includes(a))).flatMap(g => g.rules);
+}
+
+function makeRules(rules: Rule[]): RobotsRules {
+  if (!rules.length) return ALLOW_ALL;
+  return {
+    isAllowed(p: string): boolean {
+      let best: Rule | null = null;
+      for (const r of rules) {
+        if (!p.startsWith(r.path)) continue;
+        // longest match wins; Allow beats Disallow at equal length
+        if (!best || r.path.length > best.path.length || (r.path.length === best.path.length && r.allow)) best = r;
+      }
+      return best ? best.allow : true;
+    },
+  };
 }
 
 export async function fetchRobots(origin: string, userAgent: string, uaToken = 'seo-audit-console'): Promise<RobotsRules> {
@@ -50,9 +62,7 @@ export async function fetchRobots(origin: string, userAgent: string, uaToken = '
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return ALLOW_ALL;
-    const disallows = parseDisallows(await res.text(), uaToken);
-    if (disallows.length === 0) return ALLOW_ALL;
-    return { isAllowed: (p: string) => !disallows.some(d => d === '/' ? true : p.startsWith(d)) };
+    return makeRules(parseRules(await res.text(), uaToken));
   } catch {
     return ALLOW_ALL; // robots unavailable → don't block (owned-site crawl)
   }

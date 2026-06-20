@@ -49,16 +49,18 @@ export class RankTracker {
       const rows = items.map(it => {
         const o = it.metrics?.organic ?? {};
         const period = `${it.year}-${String(it.month).padStart(2, '0')}`;
+        const pos_1_3 = n(o.pos_1) + n(o.pos_2_3);
+        const pos_4_10 = n(o.pos_4_10);
+        const pos_11_20 = n(o.pos_11_20);
+        const pos_21_100 =
+          n(o.pos_21_30) + n(o.pos_31_40) + n(o.pos_41_50) + n(o.pos_51_60) +
+          n(o.pos_61_70) + n(o.pos_71_80) + n(o.pos_81_90) + n(o.pos_91_100);
+        // DataForSEO names the total field `count`; fall back to summing the buckets
+        // so keyword_count isn't a silent 0 if the field name differs.
         return {
-          period,
-          pos_1_3: n(o.pos_1) + n(o.pos_2_3),
-          pos_4_10: n(o.pos_4_10),
-          pos_11_20: n(o.pos_11_20),
-          pos_21_100:
-            n(o.pos_21_30) + n(o.pos_31_40) + n(o.pos_41_50) + n(o.pos_51_60) +
-            n(o.pos_61_70) + n(o.pos_71_80) + n(o.pos_81_90) + n(o.pos_91_100),
+          period, pos_1_3, pos_4_10, pos_11_20, pos_21_100,
           etv: n(o.etv),
-          keyword_count: n(o.count),
+          keyword_count: n(o.count) || (pos_1_3 + pos_4_10 + pos_11_20 + pos_21_100),
         };
       });
       const tx = db.db.transaction((rs: Record<string, unknown>[]) => { for (const row of rs) upsert.run(row); });
