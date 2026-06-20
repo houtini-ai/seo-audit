@@ -52,7 +52,13 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
   while (true) {
     const res = await fetch(current, {
       redirect: 'manual',
-      headers: { 'user-agent': ua, accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+      // pages change between crawls — ask upstream caches/CDNs for the current copy
+      headers: {
+        'user-agent': ua,
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'cache-control': 'no-cache',
+        pragma: 'no-cache',
+      },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (res.status >= 300 && res.status < 400 && res.headers.get('location') && hops < maxHops) {

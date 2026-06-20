@@ -46,7 +46,7 @@ function parseDisallows(txt: string, uaToken: string): string[] {
 export async function fetchRobots(origin: string, userAgent: string, uaToken = 'seo-audit-console'): Promise<RobotsRules> {
   try {
     const res = await fetch(new URL('/robots.txt', origin), {
-      headers: { 'user-agent': userAgent },
+      headers: { 'user-agent': userAgent, 'cache-control': 'no-cache' },
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return ALLOW_ALL;
