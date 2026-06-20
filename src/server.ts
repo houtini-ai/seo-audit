@@ -16,7 +16,7 @@ import { generateJsonLd, suggestRedirect, suggestInternalLinks } from './generat
 
 import { urlKey, hostFormForProperty } from './core/url-key.js';
 import { GscClient } from './core/GscClient.js';
-import { GscSync } from './core/GscSync.js';
+import { GscSync, FULL_DIMENSIONS } from './core/GscSync.js';
 import { UrlInspector } from './core/UrlInspector.js';
 import { Crawler } from './core/Crawler.js';
 import { Refresh } from './core/Refresh.js';
@@ -263,13 +263,14 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'refresh_property',
     {
       title: 'Refresh a property (sync + crawl + inspect)',
-      description: 'Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history. Set gsc/crawl/inspect/ranks=false to run just part. Poll with check_sync_status. Use this for "sync everything"; use the single-purpose tools to update just one thing.',
+      description: 'Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history. Set gsc/crawl/inspect/ranks=false to run just part. GSC sync is "lite" (date×query×page) by default — set segments=true to also pull device/country breakdowns (much heavier on large sites). Poll with check_sync_status. Use this for "sync everything"; use the single-purpose tools to update just one thing.',
       inputSchema: {
         siteUrl: z.string(),
         gsc: z.boolean().optional(),
         crawl: z.boolean().optional(),
         inspect: z.boolean().optional(),
         ranks: z.boolean().optional(),
+        segments: z.boolean().optional(),
         location: z.union([z.string(), z.number()]).optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
@@ -277,9 +278,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         inspectLimit: z.number().int().min(1).max(500).optional(),
       },
     },
-    async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, location, startDate, endDate, maxPages, inspectLimit }) => {
+    async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, segments, location, startDate, endDate, maxPages, inspectLimit }) => {
       const jobId = jobs.start('refresh', (update, signal) =>
-        refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, ranks, location, startDate, endDate, maxPages, inspectLimit }, update, signal),
+        refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, ranks, segments, location, startDate, endDate, maxPages, inspectLimit }, update, signal),
       );
       return {
         content: [{ type: 'text', text: `Refresh started for ${siteUrl} (job ${jobId}). Poll check_sync_status.` }],
@@ -292,21 +293,22 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'sync_gsc',
     {
       title: 'Sync Search Console data (just GSC)',
-      description: 'Update just the GSC search-analytics history (async job — poll with check_sync_status). Default range: last 90 days. For a full refresh use refresh_property.',
+      description: 'Update just the GSC search-analytics history (async job — poll with check_sync_status). Default range: last 90 days. Lite by default (date×query×page); set segments=true (or pass dimensions) to also pull device/country. For a full refresh use refresh_property.',
       inputSchema: {
         siteUrl: z.string(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         dimensions: z.array(z.string()).optional(),
+        segments: z.boolean().optional(),
         searchType: z.enum(['web', 'discover', 'googleNews', 'image', 'video']).optional(),
       },
     },
-    async ({ siteUrl, startDate, endDate, dimensions, searchType }) => {
+    async ({ siteUrl, startDate, endDate, dimensions, segments, searchType }) => {
       const syncer = requireGsc(sync);
       const options: FetchOptions = {
         startDate: startDate ?? isoDaysAgo(90),
         endDate: endDate ?? isoDaysAgo(0),
-        dimensions,
+        dimensions: dimensions ?? (segments ? FULL_DIMENSIONS : undefined),
         searchType,
       };
       const jobId = jobs.start('sync', (update, signal) => syncer.run(siteUrl, options, update, signal));

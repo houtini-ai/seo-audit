@@ -4,7 +4,11 @@ import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty } from './url-key.js';
 import type { FetchOptions, GscApiRow } from './types.js';
 
-const SYNC_DIMENSIONS = ['query', 'page', 'date', 'device', 'country'];
+// Lean default: date×query×page is everything the audit + merged checks need, without
+// the device×country multiplication that explodes row counts on large sites. Pass
+// FULL_DIMENSIONS (segments) to also populate the device/country breakdowns.
+const LITE_DIMENSIONS = ['date', 'query', 'page'];
+export const FULL_DIMENSIONS = ['date', 'query', 'page', 'device', 'country'];
 
 export interface SyncResult {
   siteUrl: string;
@@ -44,8 +48,19 @@ export class GscSync {
       });
 
       let total = 0;
-      const options2: FetchOptions = { ...options, dimensions: options.dimensions ?? SYNC_DIMENSIONS };
+      const options2: FetchOptions = { ...options, dimensions: options.dimensions ?? LITE_DIMENSIONS };
       const dims = options2.dimensions!;
+
+      // Summary/totals SUM across one grouping. Mixing lite (device='') with segmented
+      // (device='DESKTOP'…) rows would double-count, so if the grouping shape changed
+      // since last sync, drop the old analytics first (each sync re-fetches its window).
+      const wantsSegments = dims.includes('device');
+      const cnt = (sql: string): number => (db.db.prepare(sql).get() as { n: number }).n;
+      const hasLite = cnt(`SELECT COUNT(*) n FROM search_analytics WHERE device = ''`) > 0;
+      const hasSegmented = cnt(`SELECT COUNT(*) n FROM search_analytics WHERE device <> ''`) > 0;
+      if ((wantsSegments && hasLite) || (!wantsSegments && hasSegmented)) {
+        db.db.exec('DELETE FROM search_analytics');
+      }
 
       await this.gsc.fetchSearchAnalytics(siteUrl, options2, signal, ({ rows }) => {
         const records = rows.map((row: GscApiRow) => {
@@ -58,8 +73,8 @@ export class GscSync {
             query: rec.query ?? null,
             page: page ?? null,
             page_key: page ? urlKey(page, { hostForm }) : null,
-            device: rec.device ?? null,
-            country: rec.country ?? null,
+            device: rec.device ?? '', // '' = not segmented (lite); keeps the unique index dedup working
+            country: rec.country ?? '',
             clicks: row.clicks,
             impressions: row.impressions,
             ctr: row.ctr,

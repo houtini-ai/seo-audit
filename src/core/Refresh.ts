@@ -1,4 +1,4 @@
-import { GscSync } from './GscSync.js';
+import { GscSync, FULL_DIMENSIONS } from './GscSync.js';
 import { Crawler } from './Crawler.js';
 import { UrlInspector } from './UrlInspector.js';
 import { RankTracker } from './RankTracker.js';
@@ -8,6 +8,7 @@ export interface RefreshOptions {
   crawl?: boolean;     // crawl the site (default true)
   inspect?: boolean;   // GSC URL Inspection pass (default true)
   ranks?: boolean;     // DataForSEO over-time sequence (default true if available)
+  segments?: boolean;  // also sync device/country breakdowns (heavier; off by default — lite sync)
   location?: string | number; // DataForSEO target location (name or code)
   startDate?: string;
   endDate?: string;
@@ -47,7 +48,11 @@ export class Refresh {
         phases.push('gsc');
         out.gsc = await this.sync.run(
           siteUrl,
-          { startDate: opts.startDate ?? isoDaysAgo(90), endDate: opts.endDate ?? isoDaysAgo(0) },
+          {
+            startDate: opts.startDate ?? isoDaysAgo(90),
+            endDate: opts.endDate ?? isoDaysAgo(0),
+            ...(opts.segments ? { dimensions: FULL_DIMENSIONS } : {}),
+          },
           p => update({ phase: 'gsc', ...p }),
           signal,
         );
