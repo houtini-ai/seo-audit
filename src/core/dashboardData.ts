@@ -27,6 +27,10 @@ export interface DashboardData {
     position: number;
     prevPosition: number;
   }[];
+  deviceBreakdown?: { device: string; clicks: number; prevClicks: number; impressions: number; ctr: number; position: number }[];
+  countryBreakdown?: { country: string; clicks: number; prevClicks: number; impressions: number }[];
+  pagePerformance?: { urlKey: string; clicks: number; prevClicks: number; clicksChangePct: number; impressions: number; position: number; category: string }[];
+  keywordMovement?: { query: string; firstPos: number; lastPos: number; delta: number; firstDate: string; lastDate: string; category: string }[];
   findings?: {
     runId: string;
     total: number;
@@ -125,6 +129,37 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const gscMin = (db.db.prepare('SELECT MIN(date) d FROM search_analytics').get() as { d: string | null }).d;
     const dateAlignment = reconcileRanges(gscMin, maxDate, rankHistory ?? []);
 
+    // Device breakdown (current vs prior 28d)
+    const devCur = db.db.prepare(`SELECT device, SUM(clicks) clicks, SUM(impressions) impressions, AVG(position) position FROM search_analytics WHERE device IS NOT NULL AND date > date(?, '-28 days') GROUP BY device`).all(maxDate) as any[];
+    const devPrior = new Map((db.db.prepare(`SELECT device, SUM(clicks) clicks FROM search_analytics WHERE device IS NOT NULL AND date > date(?, '-56 days') AND date <= date(?, '-28 days') GROUP BY device`).all(maxDate, maxDate) as any[]).map(d => [d.device, d.clicks]));
+    const deviceBreakdown = devCur.map(d => ({ device: d.device, clicks: d.clicks, prevClicks: (devPrior.get(d.device) as number) ?? 0, impressions: d.impressions, ctr: d.impressions ? d.clicks / d.impressions : 0, position: Math.round(d.position * 10) / 10 }));
+
+    // Country breakdown (top 10 current, with prior clicks)
+    const ctyPrior = new Map((db.db.prepare(`SELECT country, SUM(clicks) clicks FROM search_analytics WHERE country IS NOT NULL AND date > date(?, '-56 days') AND date <= date(?, '-28 days') GROUP BY country`).all(maxDate, maxDate) as any[]).map(c => [c.country, c.clicks]));
+    const countryBreakdown = (db.db.prepare(`SELECT country, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE country IS NOT NULL AND date > date(?, '-28 days') GROUP BY country ORDER BY clicks DESC LIMIT 10`).all(maxDate) as any[]).map(c => ({ country: c.country, clicks: c.clicks, prevClicks: (ctyPrior.get(c.country) as number) ?? 0, impressions: c.impressions }));
+
+    // Page performance + categorisation (current vs prior 28d)
+    const pagePrior = new Map((db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-56 days') AND date <= date(?, '-28 days') GROUP BY page_key`).all(maxDate, maxDate) as any[]).map(p => [p.page_key, p]));
+    const pagePerformance = (db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions, AVG(position) position FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-28 days') GROUP BY page_key ORDER BY clicks DESC LIMIT 40`).all(maxDate) as any[]).map(p => {
+      const prev = (pagePrior.get(p.page_key) as any) ?? { clicks: 0, impressions: 0 };
+      const pct = prev.clicks ? ((p.clicks - prev.clicks) / prev.clicks) * 100 : (p.clicks > 0 ? 100 : 0);
+      return { urlKey: p.page_key, clicks: p.clicks, prevClicks: prev.clicks, clicksChangePct: Math.round(pct), impressions: p.impressions, position: Math.round(p.position * 10) / 10, category: pageCategory(p, prev) };
+    });
+
+    // Keyword ranking movement (first-seen vs last-seen position over 90d)
+    const keywordMovement = (db.db.prepare(
+      `WITH q AS (SELECT query, MIN(date) fd, MAX(date) ld FROM search_analytics WHERE query IS NOT NULL AND date > date(?, '-90 days') GROUP BY query HAVING SUM(impressions) >= 50 AND MIN(date) < MAX(date))
+       SELECT q.query,
+         (SELECT AVG(position) FROM search_analytics s WHERE s.query=q.query AND s.date=q.fd) firstPos,
+         (SELECT AVG(position) FROM search_analytics s WHERE s.query=q.query AND s.date=q.ld) lastPos,
+         q.fd firstDate, q.ld lastDate
+       FROM q`,
+    ).all(maxDate) as any[])
+      .map(r => ({ query: r.query, firstPos: Math.round(r.firstPos * 10) / 10, lastPos: Math.round(r.lastPos * 10) / 10, delta: Math.round((r.firstPos - r.lastPos) * 10) / 10, firstDate: r.firstDate, lastDate: r.lastDate, category: movementCategory(r.firstPos, r.lastPos) }))
+      .filter(r => r.category !== 'stable')
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+      .slice(0, 40);
+
     // Latest audit findings (if run_audit has run for this property)
     const lastRun = db.db.prepare('SELECT run_id, finding_count, finished_at FROM audit_runs ORDER BY started_at DESC LIMIT 1').get() as
       | { run_id: string; finding_count: number; finished_at: string | null }
@@ -152,11 +187,37 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       },
       rankTrend,
       topKeywords,
+      deviceBreakdown,
+      countryBreakdown,
+      pagePerformance,
+      keywordMovement,
       findings,
     };
   } finally {
     db.close();
   }
+}
+
+/** Categorise a page by period-over-period performance (per the agency-report idiom). */
+function pageCategory(cur: { clicks: number; impressions: number }, prev: { clicks: number; impressions: number }): string {
+  const pct = prev.clicks ? ((cur.clicks - prev.clicks) / prev.clicks) * 100 : (cur.clicks > 0 ? 100 : 0);
+  if (pct >= 15) return 'top performer';
+  if (pct <= -30) return 'low performer';
+  if (prev.impressions && ((cur.impressions - prev.impressions) / prev.impressions) * 100 <= -20) return 'declining visibility';
+  const curCtr = cur.impressions ? cur.clicks / cur.impressions : 0;
+  const prevCtr = prev.impressions ? prev.clicks / prev.impressions : 0;
+  if (prevCtr && curCtr < prevCtr * 0.85) return 'improve CTR';
+  return 'stable';
+}
+
+/** Categorise a query's rank movement (first-seen vs last-seen position). */
+function movementCategory(first: number, last: number): string {
+  if (first > 3 && last <= 3) return 'entered top 3';
+  if (first <= 3 && last > 3) return 'dropped from top 3';
+  const delta = first - last; // positive = improved (lower position number)
+  if (delta >= 3) return 'gained';
+  if (delta <= -3) return 'lost';
+  return 'stable';
 }
 
 /** Reconcile GSC (daily) and DataForSEO (monthly) date ranges before charting. */

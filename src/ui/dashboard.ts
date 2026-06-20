@@ -12,6 +12,13 @@ interface DashboardData {
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   topKeywords?: { query: string; clicks: number; prevClicks: number; clicksChange: number; position: number; prevPosition: number }[];
+  rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; count: number }[];
+  dateAlignment?: { note: string };
+  deviceBreakdown?: { device: string; clicks: number; prevClicks: number; impressions: number; ctr: number; position: number }[];
+  countryBreakdown?: { country: string; clicks: number; prevClicks: number; impressions: number }[];
+  pagePerformance?: { urlKey: string; clicks: number; prevClicks: number; clicksChangePct: number; impressions: number; position: number; category: string }[];
+  keywordMovement?: { query: string; firstPos: number; lastPos: number; delta: number; firstDate: string; lastDate: string; category: string }[];
+  findings?: { runId: string; total: number; finishedAt: string | null; byCheck: any[]; top: any[] } | null;
 }
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
@@ -19,6 +26,9 @@ const cssVar = (n: string, fb = ''): string => getComputedStyle(document.documen
 const fmt = (n: number): string => new Intl.NumberFormat('en', { notation: n >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(n);
 const esc = (s: string): string => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
 const safeJson = (s: string): any => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
+const catClass = (c: string): string => /(top performer|gained|entered)/.test(c) ? 'cat-up' : /(low performer|lost|dropped)/.test(c) ? 'cat-down' : /declining/.test(c) ? 'cat-warn' : /improve/.test(c) ? 'cat-info' : 'cat-neutral';
+const tableHtml = (headers: string[], rows: string[]): string => `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
+const shortPath = (u: string): string => (u || '').replace(/^https?:\/\/[^/]+/, '') || '/';
 
 function palette() {
   return {
@@ -264,6 +274,29 @@ function render(data: DashboardData): void {
   kwChart.on('click', (pa: any) => { void loadRelated(kw[pa.dataIndex].query); });
   const up = kw.filter(k => k.clicksChange > 0).length, down = kw.filter(k => k.clicksChange < 0).length;
   $('kwSummary').textContent = `${kw.length} top keywords; ${up} improved and ${down} declined versus the prior period (signed click change shown on each bar).`;
+
+  // Report tables (agency-style)
+  const pp = data.pagePerformance ?? [];
+  $('pagePerfTable').innerHTML = pp.length
+    ? tableHtml(['Trend', 'Page', 'Clicks', 'Δ%', 'Impr', 'Pos'], pp.map(p => `<tr><td><span class="cat ${catClass(p.category)}">${p.category}</span></td><td class="url" title="${esc(p.urlKey)}">${esc(shortPath(p.urlKey))}</td><td class="num">${p.clicks}</td><td class="num">${p.clicksChangePct > 0 ? '+' : ''}${p.clicksChangePct}%</td><td class="num">${p.impressions}</td><td class="num">${p.position}</td></tr>`))
+    : '<div class="hint">No GSC data.</div>';
+  $('pagePerfSummary').textContent = `${pp.length} pages categorised by 28-day trend.`;
+
+  const mv = data.keywordMovement ?? [];
+  $('movementTable').innerHTML = mv.length
+    ? tableHtml(['Movement', 'Query', 'First', 'Last', 'Δ pos'], mv.map(m => `<tr><td><span class="cat ${catClass(m.category)}">${m.category}</span></td><td>${esc(m.query)}</td><td class="num">${m.firstPos}</td><td class="num">${m.lastPos}</td><td class="num">${m.delta > 0 ? '+' : ''}${m.delta}</td></tr>`))
+    : '<div class="hint">No movement data.</div>';
+  $('movementSummary').textContent = `${mv.length} queries with rank movement.`;
+
+  const dv = data.deviceBreakdown ?? [];
+  $('deviceTable').innerHTML = dv.length
+    ? tableHtml(['Device', 'Clicks', 'Prev', 'CTR', 'Pos'], dv.map(d => `<tr><td>${d.device}</td><td class="num">${d.clicks}</td><td class="num">${d.prevClicks}</td><td class="num">${(d.ctr * 100).toFixed(1)}%</td><td class="num">${d.position}</td></tr>`))
+    : '<div class="hint">—</div>';
+
+  const ct = data.countryBreakdown ?? [];
+  $('countryTable').innerHTML = ct.length
+    ? tableHtml(['Country', 'Clicks', 'Prev', 'Impr'], ct.map(c => `<tr><td>${esc(c.country.toUpperCase())}</td><td class="num">${c.clicks}</td><td class="num">${c.prevClicks}</td><td class="num">${c.impressions}</td></tr>`))
+    : '<div class="hint">—</div>';
 }
 
 function buildExportBar(data: DashboardData): void {
@@ -295,6 +328,18 @@ function buildExportBar(data: DashboardData): void {
     mk('⬇ Striking-distance CSV', () => downloadCsv('striking-distance.csv', [
       ['query', 'position', 'impressions', 'clicks'],
       ...data.strikingDistance!.map(s => [s.query, s.position, s.impressions, s.clicks]),
+    ]));
+  }
+  if (data.pagePerformance?.length) {
+    mk('⬇ Pages CSV', () => downloadCsv('page-performance.csv', [
+      ['category', 'url', 'clicks', 'prevClicks', 'clicksChangePct', 'impressions', 'position'],
+      ...data.pagePerformance!.map(p => [p.category, p.urlKey, p.clicks, p.prevClicks, p.clicksChangePct, p.impressions, p.position]),
+    ]));
+  }
+  if (data.keywordMovement?.length) {
+    mk('⬇ Movement CSV', () => downloadCsv('keyword-movement.csv', [
+      ['category', 'query', 'firstPos', 'lastPos', 'delta', 'firstDate', 'lastDate'],
+      ...data.keywordMovement!.map(m => [m.category, m.query, m.firstPos, m.lastPos, m.delta, m.firstDate, m.lastDate]),
     ]));
   }
 }

@@ -81,6 +81,16 @@ body {
 .sev.med  { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .sev.low, .sev.info { background: var(--bg-input); color: var(--text-muted); }
 
+.cat { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.cat-up { background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); }
+.cat-down { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+.cat-warn { background: color-mix(in srgb, var(--color-status-warning) 18%, transparent); color: var(--color-status-warning); }
+.cat-info { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.cat-neutral { background: var(--bg-input); color: var(--text-muted); }
+.twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.chart-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-secondary); }
+@media (max-width: 760px) { .twocol { grid-template-columns: 1fr; } }
+
 .loading, .empty { display: flex; align-items: center; justify-content: center; min-height: 200px; color: var(--text-muted); font-size: 14px; gap: 6px; }
 .empty code { font-family: var(--font-mono); background: var(--bg-input); padding: 2px 6px; border-radius: 4px; }
 

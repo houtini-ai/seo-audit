@@ -61,6 +61,28 @@
         <div class="chart" id="kwChart" role="img" aria-label="Top keyword performance change, 28 days versus prior"></div>
         <div id="related" class="related"></div>
       </div>
+
+      <div class="chart-card">
+        <h3>Page performance — 28d vs prior</h3>
+        <div class="hint">Which pages to update, categorised by trend.</div>
+        <p class="sr-only" id="pagePerfSummary"></p>
+        <div id="pagePerfTable" class="findings-table"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Keyword ranking movement — 90d</h3>
+        <div class="hint">Wins &amp; losses: first-seen vs last-seen average position.</div>
+        <p class="sr-only" id="movementSummary"></p>
+        <div id="movementTable" class="findings-table"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Breakdowns</h3>
+        <div class="twocol">
+          <div><h4>By device</h4><div id="deviceTable" class="findings-table"></div></div>
+          <div><h4>Top countries</h4><div id="countryTable" class="findings-table"></div></div>
+        </div>
+      </div>
     </div>
     <div class="empty" id="empty" style="display:none">No data yet — run <code>refresh_property</code> or <code>sync_gsc</code> for this property first.</div>
   </div>
