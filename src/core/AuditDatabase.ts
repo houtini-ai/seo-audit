@@ -36,6 +36,8 @@ export class AuditDatabase {
         site_url TEXT UNIQUE NOT NULL,
         host_form TEXT,                 -- 'apex' | 'www' | 'asis' (for url-key)
         permission_level TEXT,
+        dfs_location_code INTEGER,      -- DataForSEO location (e.g. 2036 AU, 2826 UK, 2840 US)
+        dfs_location_name TEXT,         -- or a name, e.g. 'Australia'
         last_synced_at TEXT,
         last_crawl_id TEXT,
         created_at TEXT DEFAULT (datetime('now'))
@@ -267,6 +269,21 @@ export class AuditDatabase {
     return this.db.prepare('SELECT site_url, host_form, last_synced_at FROM property_meta WHERE site_url = ?').get(siteUrl) as
       | { site_url: string; host_form: string; last_synced_at: string | null }
       | undefined;
+  }
+
+  /** Persist the DataForSEO target location for a property (string name or numeric code). */
+  setDfsLocation(siteUrl: string, location: string | number): void {
+    this.db
+      .prepare('UPDATE property_meta SET dfs_location_code = ?, dfs_location_name = ? WHERE site_url = ?')
+      .run(typeof location === 'number' ? location : null, typeof location === 'string' ? location : null, siteUrl);
+  }
+
+  /** Resolved DataForSEO location for a property: a code, a name, or undefined. */
+  getDfsLocation(siteUrl: string): string | number | undefined {
+    const r = this.db.prepare('SELECT dfs_location_code c, dfs_location_name n FROM property_meta WHERE site_url = ?').get(siteUrl) as
+      | { c: number | null; n: string | null }
+      | undefined;
+    return r?.c ?? r?.n ?? undefined;
   }
 
   close(): void {

@@ -96,17 +96,24 @@ export class DataForSeoClient {
 
   // ── Typed helpers (within our enabled scopes) ─────────────────────────────
 
+  /** Build the location field — numeric → location_code, string → location_name, else US default. */
+  private loc(location?: string | number): Record<string, unknown> {
+    if (typeof location === 'number') return { location_code: location };
+    if (typeof location === 'string' && location.trim()) return { location_name: location.trim() };
+    return { location_code: 2840 }; // default United States
+  }
+
   /** KEYWORDS_DATA — true monthly search volume + CPC + competition (cheap). */
-  async searchVolume(keywords: string[], locationCode = 2840, languageCode = 'en'): Promise<DfsResponse> {
+  async searchVolume(keywords: string[], location?: string | number, languageCode = 'en'): Promise<DfsResponse> {
     return this.call('/v3/keywords_data/google_ads/search_volume/live', [
-      { keywords, location_code: locationCode, language_code: languageCode },
+      { keywords, ...this.loc(location), language_code: languageCode },
     ]);
   }
 
   /** SERP — live Google organic results (per-request cost; use sparingly). */
-  async serpOrganic(keyword: string, locationCode = 2840, languageCode = 'en', depth = 20): Promise<DfsResponse> {
+  async serpOrganic(keyword: string, location?: string | number, languageCode = 'en', depth = 20): Promise<DfsResponse> {
     return this.call('/v3/serp/google/organic/live/advanced', [
-      { keyword, location_code: locationCode, language_code: languageCode, depth },
+      { keyword, ...this.loc(location), language_code: languageCode, depth },
     ]);
   }
 
@@ -117,10 +124,10 @@ export class DataForSeoClient {
    */
   async relatedTerms(
     keyword: string,
-    locationCode = 2840,
+    location?: string | number,
     languageCode = 'en',
   ): Promise<{ peopleAlsoAsk: string[]; relatedSearches: string[]; cached: boolean; cost: number }> {
-    const r = await this.serpOrganic(keyword, locationCode, languageCode, 30);
+    const r = await this.serpOrganic(keyword, location, languageCode, 30);
     const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
     const peopleAlsoAsk: string[] = [];
     const relatedSearches: string[] = [];
@@ -138,9 +145,9 @@ export class DataForSeoClient {
   }
 
   /** Labs — domain ranking distribution over time (monthly). The over-time sequence. */
-  async historicalRankOverview(target: string, locationCode = 2840, languageCode = 'en'): Promise<DfsResponse> {
+  async historicalRankOverview(target: string, location?: string | number, languageCode = 'en'): Promise<DfsResponse> {
     return this.call('/v3/dataforseo_labs/google/historical_rank_overview/live', [
-      { target, location_code: locationCode, language_code: languageCode },
+      { target, ...this.loc(location), language_code: languageCode },
     ]);
   }
 

@@ -40,6 +40,18 @@ Grouped by area. **Bold** = proposed default.
 18. Log-file analysis (§18): accept raw Combined Log Format files + (later) Cloudflare/analytics APIs. v3.
 19. Recommendation `N`-finding narratives: one Gemini-grounded call per finding *group* (not per finding) — confirm cost posture.
 
+## DataForSEO cost + location policy (decided this session)
+- **No automatic bulk enrichment.** A property can have a million keywords; we never fan
+  DataForSEO calls across all of them. The only per-property DataForSEO call in a refresh
+  is one `historical_rank_overview` (domain-level, the "top view"). Per-keyword data
+  (search volume, related terms, SERP) is **on-demand only** — fetched for the keyword the
+  user clicks in the dashboard, or an explicit bounded list via `keyword_volume`.
+- **Location is per-property.** DataForSEO calls take a `location` (name e.g. "Australia",
+  "United Kingdom", or a numeric code), saved on `property_meta` and reused. No more
+  hardcoded US — set it once via `track_ranks`/`refresh_property` `location:"Australia"`.
+- Open: surface the resolved location on the dashboard; optional bounded "enrich top N
+  visible keywords with volume" button (still capped, never the whole site).
+
 ## To-dos surfaced during the build
 21. **True SERP rank tracking over time** — we have GSC *average position* by date (powers the rank-over-time line), but NOT exact daily SERP rank per keyword. Needs a scheduled DataForSEO SERP snapshot job writing to a `rank_history` table (date, keyword, position). Defer; design after the audit engine. The candlestick keyword chart can run on GSC position in the meantime.
 

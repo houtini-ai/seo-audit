@@ -213,20 +213,27 @@ function render(data: DashboardData): void {
   $('kwSummary').textContent = `${kw.length} top keywords; ${up} improved and ${down} declined versus the prior period (signed click change shown on each bar).`;
 }
 
+// On-demand only: fetch DataForSEO data for the ONE clicked keyword (never bulk —
+// a site can have a million keywords; we enrich what's on screen / clicked).
 async function loadRelated(keyword: string): Promise<void> {
   const el = $('related');
-  el.innerHTML = `<div class="group-label">Related to “${keyword}”…</div>`;
+  el.innerHTML = `<div class="group-label">Looking up “${keyword}”…</div>`;
   try {
-    const res: any = await app.callServerTool({ name: 'related_terms', arguments: { keyword } });
-    const sc = res?.structuredContent ?? {};
+    const [relRes, volRes] = await Promise.all([
+      app.callServerTool({ name: 'related_terms', arguments: { keyword } }) as Promise<any>,
+      (app.callServerTool({ name: 'keyword_volume', arguments: { keywords: [keyword] } }) as Promise<any>).catch(() => null),
+    ]);
+    const sc = relRes?.structuredContent ?? {};
     const paa: string[] = sc.peopleAlsoAsk ?? [];
     const rel: string[] = sc.relatedSearches ?? [];
+    const vol = volRes?.structuredContent?.keywords?.[0];
     const tags = (xs: string[]): string => xs.map(x => `<span class="tag">${x}</span>`).join('');
     el.innerHTML =
+      (vol ? `<div class="group-label">“${keyword}” — search volume</div><span class="tag">${vol.searchVolume ?? 'n/a'}/mo</span><span class="tag">CPC ${vol.cpc ?? 'n/a'}</span>` : '') +
       (paa.length ? `<div class="group-label">People also ask</div>${tags(paa)}` : '') +
       (rel.length ? `<div class="group-label">Related searches</div>${tags(rel)}` : '') +
-      (!paa.length && !rel.length ? `<div class="group-label">No related terms found for “${keyword}”.</div>` : '');
+      (!paa.length && !rel.length && !vol ? `<div class="group-label">No DataForSEO data for “${keyword}”.</div>` : '');
   } catch {
-    el.innerHTML = `<div class="group-label">Related terms need DataForSEO credentials.</div>`;
+    el.innerHTML = `<div class="group-label">DataForSEO credentials needed for keyword lookups.</div>`;
   }
 }

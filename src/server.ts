@@ -127,15 +127,16 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         crawl: z.boolean().optional(),
         inspect: z.boolean().optional(),
         ranks: z.boolean().optional(),
+        location: z.union([z.string(), z.number()]).optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         maxPages: z.number().int().min(1).max(50000).optional(),
         inspectLimit: z.number().int().min(1).max(500).optional(),
       },
     },
-    async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, startDate, endDate, maxPages, inspectLimit }) => {
+    async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, location, startDate, endDate, maxPages, inspectLimit }) => {
       const jobId = jobs.start('refresh', (update, signal) =>
-        refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, ranks, startDate, endDate, maxPages, inspectLimit }, update, signal),
+        refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, ranks, location, startDate, endDate, maxPages, inspectLimit }, update, signal),
       );
       return {
         content: [{ type: 'text', text: `Refresh started for ${siteUrl} (job ${jobId}). Poll check_sync_status.` }],
@@ -260,13 +261,13 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       description: 'True monthly search volume + CPC + competition for keywords (DataForSEO KEYWORDS_DATA). Served from a 20-day cache; live calls are serialised. Default location: United States (2840).',
       inputSchema: {
         keywords: z.array(z.string()).min(1).max(700),
-        locationCode: z.number().int().optional(),
+        location: z.union([z.string(), z.number()]).optional(),
         languageCode: z.string().optional(),
       },
     },
-    async ({ keywords, locationCode, languageCode }) => {
+    async ({ keywords, location, languageCode }) => {
       const client = requireDfs(dfs);
-      const r = await client.searchVolume(keywords, locationCode, languageCode);
+      const r = await client.searchVolume(keywords, location, languageCode);
       const items = (r.tasks[0]?.result ?? []).map((k: any) => ({
         keyword: k.keyword, searchVolume: k.search_volume, cpc: k.cpc, competition: k.competition,
       }));
@@ -282,11 +283,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     {
       title: 'Related terms (People Also Ask + related searches)',
       description: 'People Also Ask questions and related searches for a keyword (DataForSEO SERP). Powers click-through "related terms" on the keyword charts. SERP call — cached 20 days.',
-      inputSchema: { keyword: z.string(), locationCode: z.number().int().optional(), languageCode: z.string().optional() },
+      inputSchema: { keyword: z.string(), location: z.union([z.string(), z.number()]).optional(), languageCode: z.string().optional() },
     },
-    async ({ keyword, locationCode, languageCode }) => {
+    async ({ keyword, location, languageCode }) => {
       const client = requireDfs(dfs);
-      const r = await client.relatedTerms(keyword, locationCode, languageCode);
+      const r = await client.relatedTerms(keyword, location, languageCode);
       return {
         content: [{ type: 'text', text: `PAA: ${r.peopleAlsoAsk.length}, related: ${r.relatedSearches.length}${r.cached ? ' (cached)' : ` ($${r.cost.toFixed(4)})`}` }],
         structuredContent: r as unknown as Record<string, unknown>,
@@ -327,12 +328,12 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'track_ranks',
     {
       title: 'Track ranks over time (DataForSEO)',
-      description: 'Ingest the DataForSEO over-time sequence (monthly rank distribution + ETV) into rank_history, so rank charts have a real time axis reconciled with GSC. DataForSEO Labs call — cached 20 days. Async job.',
-      inputSchema: { siteUrl: z.string() },
+      description: 'Ingest the DataForSEO over-time sequence (monthly rank distribution + ETV) into rank_history, so rank charts have a real time axis reconciled with GSC. DataForSEO Labs call — cached 20 days. Pass location once (e.g. "Australia", "United Kingdom") — it is saved per property. Async job.',
+      inputSchema: { siteUrl: z.string(), location: z.union([z.string(), z.number()]).optional() },
     },
-    async ({ siteUrl }) => {
+    async ({ siteUrl, location }) => {
       const tracker = requireDfs(rankTracker);
-      const jobId = jobs.start('rank_history', (update, signal) => tracker.run(siteUrl, {}, update, signal));
+      const jobId = jobs.start('rank_history', (update, signal) => tracker.run(siteUrl, { location }, update, signal));
       return {
         content: [{ type: 'text', text: `Rank-history ingest started for ${siteUrl} (job ${jobId}). Poll check_sync_status.` }],
         structuredContent: { jobId, status: 'running', siteUrl },

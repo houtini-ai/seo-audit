@@ -8,6 +8,7 @@ export interface RefreshOptions {
   crawl?: boolean;     // crawl the site (default true)
   inspect?: boolean;   // GSC URL Inspection pass (default true)
   ranks?: boolean;     // DataForSEO over-time sequence (default true if available)
+  location?: string | number; // DataForSEO target location (name or code)
   startDate?: string;
   endDate?: string;
   maxPages?: number;
@@ -76,7 +77,7 @@ export class Refresh {
       else {
         update({ phase: 'ranks' });
         phases.push('ranks');
-        out.ranks = await this.rankTracker.run(siteUrl, {}, p => update({ phase: 'ranks', ...p }), signal);
+        out.ranks = await this.rankTracker.run(siteUrl, { location: opts.location }, p => update({ phase: 'ranks', ...p }), signal);
       }
     }
 

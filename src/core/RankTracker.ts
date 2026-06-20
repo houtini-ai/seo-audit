@@ -1,6 +1,7 @@
 import { AuditDatabase } from './AuditDatabase.js';
 import { DataForSeoClient } from './DataForSeoClient.js';
 import { dbPathFor } from './paths.js';
+import { hostFormForProperty } from './url-key.js';
 
 export interface RankTrackResult {
   siteUrl: string;
@@ -26,14 +27,17 @@ export class RankTracker {
 
   async run(
     siteUrl: string,
-    _opts: Record<string, unknown>,
+    opts: { location?: string | number },
     update: (p: Record<string, unknown>) => void,
     _signal: AbortSignal,
   ): Promise<RankTrackResult> {
     const target = domainFromProperty(siteUrl);
     const db = new AuditDatabase(dbPathFor(this.dataDir, siteUrl));
     try {
-      const r = await this.dfs.historicalRankOverview(target);
+      db.upsertProperty(siteUrl, hostFormForProperty(siteUrl) ?? 'asis');
+      if (opts.location !== undefined) db.setDfsLocation(siteUrl, opts.location);
+      const location = opts.location ?? db.getDfsLocation(siteUrl);
+      const r = await this.dfs.historicalRankOverview(target, location);
       const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
       const upsert = db.db.prepare(
         `INSERT INTO rank_history (period, pos_1_3, pos_4_10, pos_11_20, pos_21_100, etv, count, source, fetched_at)
