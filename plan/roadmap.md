@@ -69,6 +69,13 @@ Expand the existing `agentic` category to mirror what **isitagentready.com** (Cl
 - **Implementation:** a small fetch pass for well-known paths + an `Accept: text/markdown` probe on a sample page; each maps to a deterministic `agentic` check. **Acceptance:** robots-AI-rules, markdown-negotiation, llms-txt, and the .well-known discovery checks fire. Note: many of these are emerging standards — gate the speculative ones (commerce) behind a flag and cite the spec per finding.
 - Source: isitagentready.com (Cloudflare), https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/, research/04.
 
+### 11. Chunked / resumable GSC sync (first-sync durability) — feasibility HIGH, confidence HIGH (FUTURE TODO, added 2026-06-20)
+The first sync of a large property is one long, fragile job. **Evidence:** simracingcockpit = 1.8M rows / ~40 min, and an earlier run was wiped by a mid-sync restart, forcing a full re-fetch. The API already paginates within a request (25k rows / `startRow`), but the *job* isn't durable or resumable.
+- **Idea:** chunk the export by date window (e.g. per-week, or per-day for huge sites), commit each chunk, and record completed chunks in a small `sync_chunks` table (property, dimensions-shape, date-range, status). A re-run resumes from the first incomplete chunk instead of starting over.
+- **Benefits:** survives restarts/crashes/timeouts; accurate chunk-level progress for the sync widget (done/total chunks instead of an open-ended row counter); optional bounded concurrency across chunks (watch GSC quota). Pairs with the lite-sync default already shipped.
+- **Acceptance:** kill a sync mid-way → re-run resumes and converges to the same row count; progress widget shows N/total chunks.
+- **Note:** for extreme sites, GSC also offers **Bulk Data Export to BigQuery** — out of scope, but the escape hatch for million-row corpora.
+
 ---
 
 ## Recommended order
