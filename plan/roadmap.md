@@ -76,6 +76,30 @@ The first sync of a large property is one long, fragile job. **Evidence:** simra
 - **Acceptance:** kill a sync mid-way → re-run resumes and converges to the same row count; progress widget shows N/total chunks.
 - **Note:** for extreme sites, GSC also offers **Bulk Data Export to BigQuery** — out of scope, but the escape hatch for million-row corpora.
 
+### 12. Research-gap cluster (from the 2026-06-20 review) — mostly derivable from data we ALREADY capture
+A full research-vs-implementation audit found high-value checks specified in the research but not built — and notably, several read columns the crawler already fills (`links`, `hreflang`, `redirects`, `rel_next/prev`, `x_robots_tag`, `response_time_ms`, `bytes`, `content_encoding`). Highest-leverage first:
+- **Link-graph cluster (research/14) — HIGH, the most under-built differentiator.** All derivable from the existing `links` table, none built:
+  - **Internal PageRank (iPR)** — the `pages.ipr` column + index exist but are never computed; run power-iteration (d=0.85, nav/footer×0.2, log-normalise 0–100) post-crawl. Feeds the donor→receiver "money-move" link engine + the `iPR>80 & clicks<10` waste check.
+  - **Click-depth (BFS, body-only pass excluding nav/footer)** — flag pages ≥4 clicks deep. `pages.depth` is discovery-order, not shortest-path.
+  - **Anchor-text concentration** — over-optimised (`top_anchor>60% & inlinks>10`) + weak ("click here"/empty/image-only), `GROUP BY target_key` over `links`.
+- **hreflang validation (research/01 §10) — HIGH.** `pages.hreflang` is captured but **zero checks consume it**: self-reference, bidirectional reciprocity, x-default present, ISO 639/3166 code validity.
+- **Crawl-integrity gates (research/06) — HIGH (honesty contract).** `audit_runs.integrity_ok` is currently FAKED from `pageCount>0` (engine.ts) — no real parity checks. Add a sampled re-fetch/diff (status/header/body, G1–G3) and surface "⚠ integrity not verified" when gates fail. This underpins the credibility of every finding.
+- **Redirect-target health (research/02 W5/W7/W8) — MED/HIGH.** `redirect-chain` only counts hops; add redirect loops, redirect→4xx/5xx final target, and `<meta http-equiv=refresh>` (one-line extract.ts add).
+- **War-story no-new-request subset (research/02) — MED/HIGH.** W1 (X-Robots-Tag header `noindex` contradicting on-page meta — both already stored), W9 (canonical to #fragment), W10 (bad Content-Type) — all checkable with zero extra requests.
+- **GSC×crawl anti-joins (research/05 D3/D4) — MED/HIGH, derivable now.** Ghost pages (GSC-known, missing from crawl) + crawled-but-never-in-GSC, a cheap subset of the #3 sitemap module pulled forward.
+- **Soft-404 (HTTP slice) (research/01 #47) — HIGH.** 200 + thin body + "not found" text + no canonical (SPA soft-404 needs the render tier #7).
+- **Cheap perf proxies (research/13 Layer A) — MED.** TTFB>800ms, oversized HTML/assets, missing brotli/gzip, render-blocking sync scripts — from `response_time_ms`/`bytes`/`content_encoding` (+ small extract add). Distinct from the CrUX field-data work (#6).
+- **Snippet checks A2/A3 (research/05) — MED.** Title/meta missing the page's top-impression query; traffic-weighted.
+- **Pagination canonical (research/02 W4) — MED.** `rel_next` set AND canonical points to a non-self page-1 URL → deep items deindexed.
+- **Index hygiene D2/near-dup B2 — MED.** Indexed-but-thin/zero-click; confirm cannibalisation via title/H1/word overlap to cut false positives.
+
+### Delivery / display work (the "make it visible + shareable" track — agreed 2026-06-20)
+Settled by investigation: MCP-App widgets don't render in current Claude Desktop (host doesn't advertise `io.modelcontextprotocol/ui`; both this server and better-search-console register identically — no workaround). Gzip can't help (no resource encoding field; the token cap is about model-facing text, not bytes). So:
+- **`export_report siteUrl`** — write the self-contained dashboard HTML (data inlined) to `…/reports/<site>.html`, return the path. The shareable, white-label agency deliverable; renders in any browser today. (Future: optional upload → shareable link.)
+- **Markdown audit report** in `run_audit`'s `content` text — a concise executive summary (top crit/high by category + examples), NOT all rows, so it renders in chat and Claude can discuss it without blowing context. Exhaustive data stays in the HTML.
+- **Trim `get_dashboard`** — `findings.top` is 50% of the 73k payload (double-encoded JSON strings); cut top 50→25 + store evidence/recommendation as real objects ≈ halves it; add `getUiCapability` graceful-degradation.
+- **Template library + chunked reports** — split the monolith into small focused report tools (`get_trend`/`get_top_pages`/`get_summary`…) each targeting a tiny branded template; a `list_templates` discovery tool (id + when-to-use + dataShape) so the assistant picks the right template (or a branded blank) and injects data via `structuredContent`/inlined JSON. Templates share `tokens.css`; reuse the Vite multi-entry build. This also fixes the token-cap problem as a side effect.
+
 ---
 
 ## Recommended order
