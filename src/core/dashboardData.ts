@@ -10,6 +10,13 @@ export interface DashboardData {
     prior: { clicks: number; impressions: number; ctr: number; position: number };
   };
   rankTrend?: { date: string; clicks: number; position: number }[];
+  rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; count: number }[];
+  dateAlignment?: {
+    gsc: { start: string; end: string } | null;
+    dataforseo: { start: string; end: string } | null;
+    overlap: { start: string; end: string } | null;
+    note: string;
+  };
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   topKeywords?: {
@@ -104,9 +111,18 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       .all(maxDate) as { query: string; position: number; impressions: number; clicks: number }[])
       .map(r => ({ ...r, position: Math.round(r.position * 10) / 10 }));
 
+    // DataForSEO over-time sequence + GSC↔DataForSEO date-range reconciliation
+    const rankHistory = db.db
+      .prepare('SELECT period, pos_1_3, pos_4_10, pos_11_20, pos_21_100, etv, count FROM rank_history ORDER BY period')
+      .all() as DashboardData['rankHistory'];
+    const gscMin = (db.db.prepare('SELECT MIN(date) d FROM search_analytics').get() as { d: string | null }).d;
+    const dateAlignment = reconcileRanges(gscMin, maxDate, rankHistory ?? []);
+
     return {
       siteUrl,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate },
+      rankHistory,
+      dateAlignment,
       rankingDistribution,
       strikingDistance,
       summary: {
@@ -119,4 +135,31 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
   } finally {
     db.close();
   }
+}
+
+/** Reconcile GSC (daily) and DataForSEO (monthly) date ranges before charting. */
+function reconcileRanges(
+  gscMin: string | null,
+  gscMax: string,
+  rankHistory: NonNullable<DashboardData['rankHistory']>,
+): NonNullable<DashboardData['dateAlignment']> {
+  const gsc = gscMin && gscMax ? { start: gscMin, end: gscMax } : null;
+  const dfs = rankHistory.length
+    ? { start: rankHistory[0].period, end: rankHistory[rankHistory.length - 1].period }
+    : null;
+  if (!dfs) return { gsc, dataforseo: null, overlap: null, note: 'No DataForSEO rank history yet — run track_ranks to add the over-time sequence.' };
+  if (!gsc) return { gsc: null, dataforseo: dfs, overlap: null, note: 'No GSC data — run sync_gsc.' };
+  const gsM = gsc.start.slice(0, 7);
+  const geM = gsc.end.slice(0, 7);
+  const oStart = gsM > dfs.start ? gsM : dfs.start;
+  const oEnd = geM < dfs.end ? geM : dfs.end;
+  const aligned = oStart <= oEnd;
+  return {
+    gsc,
+    dataforseo: dfs,
+    overlap: aligned ? { start: oStart, end: oEnd } : null,
+    note: aligned
+      ? `GSC ${gsc.start}–${gsc.end} (daily) overlaps DataForSEO ${dfs.start}–${dfs.end} (monthly) at ${oStart}–${oEnd}; time charts share that window.`
+      : `No overlap: GSC ends ${geM}, DataForSEO covers ${dfs.start}–${dfs.end}. Render on separate axes.`,
+  };
 }

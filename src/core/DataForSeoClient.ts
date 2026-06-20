@@ -137,6 +137,13 @@ export class DataForSeoClient {
     return { peopleAlsoAsk, relatedSearches, cached: r.cached, cost: r.cost };
   }
 
+  /** Labs — domain ranking distribution over time (monthly). The over-time sequence. */
+  async historicalRankOverview(target: string, locationCode = 2840, languageCode = 'en'): Promise<DfsResponse> {
+    return this.call('/v3/dataforseo_labs/google/historical_rank_overview/live', [
+      { target, location_code: locationCode, language_code: languageCode },
+    ]);
+  }
+
   cacheStats(): { rows: number; totalCost: number } {
     const r = this.cache.prepare('SELECT COUNT(*) rows, COALESCE(SUM(cost),0) totalCost FROM dataforseo_cache').get() as {
       rows: number;

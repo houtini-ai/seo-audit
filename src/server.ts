@@ -17,6 +17,7 @@ import { UrlInspector } from './core/UrlInspector.js';
 import { Crawler } from './core/Crawler.js';
 import { Refresh } from './core/Refresh.js';
 import { DataForSeoClient } from './core/DataForSeoClient.js';
+import { RankTracker } from './core/RankTracker.js';
 import { JobManager } from './core/JobManager.js';
 import type { FetchOptions } from './core/types.js';
 
@@ -58,6 +59,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const dfs = dfsUser && dfsPass
     ? new DataForSeoClient(dfsUser, dfsPass, path.join(dataDir(), 'dataforseo-cache.db'), dfsCacheDays)
     : null;
+  const rankTracker = dfs ? new RankTracker(dfs, dataDir()) : null;
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
     return v;
@@ -318,6 +320,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     async () => ({
       contents: [{ uri: DASHBOARD_URI, mimeType: RESOURCE_MIME_TYPE, text: await readFile(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf-8') }],
     }),
+  );
+
+  server.registerTool(
+    'track_ranks',
+    {
+      title: 'Track ranks over time (DataForSEO)',
+      description: 'Ingest the DataForSEO over-time sequence (monthly rank distribution + ETV) into rank_history, so rank charts have a real time axis reconciled with GSC. DataForSEO Labs call — cached 20 days. Async job.',
+      inputSchema: { siteUrl: z.string() },
+    },
+    async ({ siteUrl }) => {
+      const tracker = requireDfs(rankTracker);
+      const jobId = jobs.start('rank_history', (update, signal) => tracker.run(siteUrl, {}, update, signal));
+      return {
+        content: [{ type: 'text', text: `Rank-history ingest started for ${siteUrl} (job ${jobId}). Poll check_sync_status.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
+      };
+    },
   );
 
   const run = async (): Promise<void> => {

@@ -43,6 +43,20 @@
           "isRequired": false,
           "format": "string",
           "isSecret": true
+        },
+        {
+          "name": "ENABLED_MODULES",
+          "description": "DataForSEO product groups this server may call (the account must have access; DataForSEO is account-level, billed per call). Recommended wider scope: SERP,KEYWORDS_DATA,DOMAIN_ANALYTICS,DATAFORSEO_LABS — Labs powers rank history / over-time sequence data (historical_rank_overview, historical_serps).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "DATAFORSEO_CACHE_DAYS",
+          "description": "TTL for the DataForSEO response cache. Default 20.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
         }
       ]
     }

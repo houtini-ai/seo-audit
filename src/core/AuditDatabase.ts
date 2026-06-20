@@ -198,6 +198,21 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_inspection_coverage ON url_inspection(coverage_state);
     `);
 
+    // ── DataForSEO rank history (over-time sequence, monthly) ───────────────
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS rank_history (
+        period TEXT PRIMARY KEY,         -- YYYY-MM
+        pos_1_3 INTEGER DEFAULT 0,
+        pos_4_10 INTEGER DEFAULT 0,
+        pos_11_20 INTEGER DEFAULT 0,
+        pos_21_100 INTEGER DEFAULT 0,
+        etv REAL DEFAULT 0,              -- estimated organic traffic value
+        count INTEGER DEFAULT 0,         -- total ranking keywords
+        source TEXT,
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
     // ── Audit results (new) ────────────────────────────────────────────────
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS audit_runs (
