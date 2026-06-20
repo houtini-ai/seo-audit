@@ -20,7 +20,7 @@ const insPage = db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,
   VALUES (@crawl_id,@url,@url_key,@status_code,@indexable,@inlink_count,@title,@h1,@meta_description,@og_tags,@json_ld)`);
 const pages = [
   { url: 'https://www.example.com/', url_key: 'https://www.example.com/', status_code: 200, indexable: 1, inlink_count: 40, title: 'Example Co — Widgets', h1: 'Example Co', meta_description: 'We make widgets.', og_tags: '{"og:image":"https://www.example.com/logo.png"}', json_ld: null },
-  { url: 'https://www.example.com/blog/best-widgets', url_key: 'https://www.example.com/blog/best-widgets', status_code: 200, indexable: 1, inlink_count: 0, title: 'Best Widgets 2026', h1: 'The Best Widgets of 2026', meta_description: 'Our pick of widgets.', og_tags: '{"og:image":"https://www.example.com/widgets.jpg"}', json_ld: null },
+  { url: 'https://www.example.com/blog/best-widgets', url_key: 'https://www.example.com/blog/best-widgets', status_code: 200, indexable: 1, inlink_count: 0, title: 'Best Widgets 2026', h1: 'The Best Widgets of 2026', meta_description: 'Our pick of widgets.', og_tags: '{"og:image":"/widgets.jpg"}', json_ld: null },
   { url: 'https://www.example.com/products/blue-widget', url_key: 'https://www.example.com/products/blue-widget', status_code: 200, indexable: 1, inlink_count: 12, title: 'Blue Widget', h1: 'Blue Widget', meta_description: 'A blue widget.', og_tags: '{"og:image":"https://www.example.com/blue.jpg"}', json_ld: null },
   { url: 'https://www.example.com/products/blue-widgets', url_key: 'https://www.example.com/products/blue-widgets', status_code: 404, indexable: 0, inlink_count: 3, title: null, h1: null, meta_description: null, og_tags: null, json_ld: null },
   { url: 'https://www.example.com/widgets', url_key: 'https://www.example.com/widgets', status_code: 200, indexable: 1, inlink_count: 25, title: 'Widgets', h1: 'All Widgets', meta_description: 'Browse widgets.', og_tags: null, json_ld: null },
@@ -56,7 +56,7 @@ const check = (name, cond, detail) => { if (cond) { pass++; console.log(`  ok  $
   console.log(r.scriptTag);
   check('json-ld type is Article', r.type === 'Article', r.type);
   check('headline filled from h1', r.jsonLd.headline === 'The Best Widgets of 2026', r.jsonLd.headline);
-  check('image from og:image', r.jsonLd.image === 'https://www.example.com/widgets.jpg', r.jsonLd.image);
+  check('relative og:image absolutised', r.jsonLd.image === 'https://www.example.com/widgets.jpg', r.jsonLd.image);
   check('scriptTag escapes <', !r.scriptTag.includes('<script type="application/ld+json">\n{\n  "@context": "https://schema.org",\n  "@type": "Article",') === false, 'tag shape');
   check('todo lists datePublished', r.todo.includes('datePublished'), JSON.stringify(r.todo));
 }

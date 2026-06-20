@@ -200,7 +200,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             const page = db.db.prepare('SELECT h1, title FROM pages WHERE url_key = ?').get(affectedKey) as
               | { h1: string | null; title: string | null }
               | undefined;
-            const anchor = (evidence.query as string) ?? page?.h1 ?? page?.title ?? '';
+            // Prefer the GSC query as anchor, but fall back to H1/title when it's a
+            // boolean/over-long search string (common on job boards) — not usable anchor text.
+            const q = evidence.query as string | undefined;
+            const cleanQuery = q && q.length <= 60 && !/["()]|\bor\b|\bnot\b|\s-\w/i.test(q) ? q : undefined;
+            const anchor = cleanQuery ?? page?.h1 ?? page?.title ?? q ?? '';
             kind = 'internal-links';
             fix = suggestInternalLinks(db.db, affectedKey ?? '', anchor);
             break;

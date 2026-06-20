@@ -32,28 +32,36 @@ function inferType(urlKey: string): string {
   return 'WebPage';
 }
 
+// Resolve a possibly-relative URL to absolute against the page URL (Google requires
+// absolute image/logo URLs — generating a relative one just reproduces the finding).
+function absUrl(v: string | undefined, base: string): string | undefined {
+  if (!v) return undefined;
+  try { return new URL(v, base).toString(); } catch { return v; }
+}
+
 export function generateJsonLd(page: any): JsonLdResult {
   const type = inferType(page.url_key);
   const og: Record<string, string> = page.og_tags ? JSON.parse(page.og_tags) : {};
   const filledFrom: string[] = [];
   const todo: string[] = [];
   const o: Record<string, unknown> = { '@context': 'https://schema.org', '@type': type };
+  const ogImage = absUrl(og['og:image'], page.url); // absolutised
 
   if (type === 'Organization') {
     if (page.title) { o.name = page.title; filledFrom.push('name←title'); } else todo.push('name');
     o.url = page.url; filledFrom.push('url');
-    if (og['og:image']) { o.logo = og['og:image']; filledFrom.push('logo←og:image'); } else todo.push('logo');
+    if (ogImage) { o.logo = ogImage; filledFrom.push('logo←og:image'); } else todo.push('logo');
     todo.push('sameAs (social profiles)');
   } else if (type === 'Article') {
     o.headline = page.h1 || page.title || ''; filledFrom.push('headline←h1/title');
     o.url = page.url; filledFrom.push('url');
     if (page.meta_description) { o.description = page.meta_description; filledFrom.push('description'); }
-    if (og['og:image']) { o.image = og['og:image']; filledFrom.push('image←og:image'); } else todo.push('image');
+    if (ogImage) { o.image = ogImage; filledFrom.push('image←og:image'); } else todo.push('image');
     o.author = { '@type': 'Person', name: 'TODO — author name' };
     todo.push('author.name', 'datePublished', 'dateModified');
   } else if (type === 'Product') {
     if (page.title) { o.name = page.title; filledFrom.push('name←title'); } else todo.push('name');
-    if (og['og:image']) { o.image = og['og:image']; filledFrom.push('image←og:image'); } else todo.push('image');
+    if (ogImage) { o.image = ogImage; filledFrom.push('image←og:image'); } else todo.push('image');
     o.offers = { '@type': 'Offer', price: 'TODO', priceCurrency: 'TODO', availability: 'https://schema.org/InStock' };
     todo.push('offers.price', 'offers.priceCurrency');
   } else {
