@@ -75,7 +75,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
             labels: JSON.stringify(chk.labels), certainty: chk.certainty, url_key: f.urlKey ?? null,
             evidence: JSON.stringify(f.evidence), traffic_at_risk: JSON.stringify(traf),
             effort: JSON.stringify({ base: chk.effortBase, scale: Math.round(scale * 100) / 100, fixType: chk.fixType }),
-            priority, recommendation: JSON.stringify({ text: chk.fix }),
+            priority, recommendation: JSON.stringify({ title: chk.title, text: chk.fix }),
           });
           total++;
           bySeverity[chk.severity] = (bySeverity[chk.severity] ?? 0) + 1;

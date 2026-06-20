@@ -15,6 +15,15 @@
         <div class="range" id="range"></div>
       </div>
       <div class="metrics" id="metrics"></div>
+      <div class="exportbar" id="exportbar"></div>
+
+      <div class="chart-card" id="findingsCard">
+        <h3>Issues found — prioritised</h3>
+        <div class="hint">Ranked by impact ÷ effort using real traffic at risk. Run <code>run_audit</code> to populate.</div>
+        <p class="sr-only" id="findingsSummary"></p>
+        <div class="chart" id="findingsTreemap" role="img" aria-label="Issues by type and severity"></div>
+        <div id="findingsTable" class="findings-table"></div>
+      </div>
 
       <div class="chart-card">
         <h3>Ranking distribution over time</h3>

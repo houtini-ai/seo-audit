@@ -27,6 +27,13 @@ export interface DashboardData {
     position: number;
     prevPosition: number;
   }[];
+  findings?: {
+    runId: string;
+    total: number;
+    finishedAt: string | null;
+    byCheck: { check_id: string; category: string; severity: string; count: number; priority: number }[];
+    top: { check_id: string; category: string; severity: string; url_key: string | null; evidence: string; traffic_at_risk: string; effort: string; priority: number; recommendation: string }[];
+  } | null;
 }
 
 interface Totals { clicks: number; impressions: number; position: number }
@@ -118,6 +125,20 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const gscMin = (db.db.prepare('SELECT MIN(date) d FROM search_analytics').get() as { d: string | null }).d;
     const dateAlignment = reconcileRanges(gscMin, maxDate, rankHistory ?? []);
 
+    // Latest audit findings (if run_audit has run for this property)
+    const lastRun = db.db.prepare('SELECT run_id, finding_count, finished_at FROM audit_runs ORDER BY started_at DESC LIMIT 1').get() as
+      | { run_id: string; finding_count: number; finished_at: string | null }
+      | undefined;
+    const findings: DashboardData['findings'] = lastRun
+      ? {
+          runId: lastRun.run_id,
+          total: lastRun.finding_count,
+          finishedAt: lastRun.finished_at,
+          byCheck: db.db.prepare('SELECT check_id, category, severity, COUNT(*) count, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['byCheck'],
+          top: db.db.prepare('SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 50').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['top'],
+        }
+      : null;
+
     return {
       siteUrl,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate },
@@ -131,6 +152,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       },
       rankTrend,
       topKeywords,
+      findings,
     };
   } finally {
     db.close();

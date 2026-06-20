@@ -58,6 +58,29 @@ body {
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
+.exportbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.btn {
+  font-family: var(--font); font-size: 12px; font-weight: 500;
+  color: var(--text-secondary); background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 6px 12px; cursor: pointer; transition: border-color .15s, color .15s;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.findings-table { margin-top: 12px; overflow-x: auto; }
+.findings-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.findings-table th { text-align: left; padding: 6px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.findings-table td { padding: 7px 10px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+.findings-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.findings-table td.url { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
+.findings-table td.fix { color: var(--text-secondary); max-width: 280px; }
+.findings-table tr:hover td { background: var(--bg-card-hover); }
+.sev { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.sev.crit { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+.sev.high { background: color-mix(in srgb, var(--color-status-warning) 18%, transparent); color: var(--color-status-warning); }
+.sev.med  { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.sev.low, .sev.info { background: var(--bg-input); color: var(--text-muted); }
+
 .loading, .empty { display: flex; align-items: center; justify-content: center; min-height: 200px; color: var(--text-muted); font-size: 14px; gap: 6px; }
 .empty code { font-family: var(--font-mono); background: var(--bg-input); padding: 2px 6px; border-radius: 4px; }
 

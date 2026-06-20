@@ -17,6 +17,8 @@ interface DashboardData {
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 const cssVar = (n: string, fb = ''): string => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb;
 const fmt = (n: number): string => new Intl.NumberFormat('en', { notation: n >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(n);
+const esc = (s: string): string => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
+const safeJson = (s: string): any => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
 
 function palette() {
   return {
@@ -27,12 +29,25 @@ function palette() {
     grid: cssVar('--chart-grid', 'rgba(10,11,13,0.06)'),
     green: cssVar('--color-status-live', '#16a34a'),
     red: cssVar('--color-status-error', '#ef4444'),
+    amber: cssVar('--color-status-warning', '#f59e0b'),
     surface: cssVar('--color-surface-elevated', '#ffffff'),
     border: cssVar('--color-border-standard', 'rgba(10,11,13,0.1)'),
   };
 }
 
+function sevColor(sev: string): string {
+  const c = palette();
+  return sev === 'crit' ? c.red : sev === 'high' ? c.amber : sev === 'med' ? c.accent : c.muted;
+}
+
+const csvCell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`;
+const toCsv = (rows: unknown[][]): string => rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+function downloadCsv(filename: string, rows: unknown[][]): void {
+  void app.downloadFile({ contents: [{ uri: filename, mimeType: 'text/csv', text: toCsv(rows) }] }).catch(() => {});
+}
+
 let currentData: DashboardData | null = null;
+let findingsTreemap: echarts.ECharts | null = null;
 let distChart: echarts.ECharts | null = null;
 let rankHistChart: echarts.ECharts | null = null;
 let rankChart: echarts.ECharts | null = null;
@@ -62,7 +77,7 @@ app.ontoolresult = (result) => {
 };
 
 app.connect().then(() => applyHostContext(app.getHostContext() as any));
-window.addEventListener('resize', () => { distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
+window.addEventListener('resize', () => { findingsTreemap?.resize(); distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
 
 function metricCard(label: string, value: string, change: number, lowerIsBetter = false): string {
   const better = lowerIsBetter ? change < 0 : change > 0;
@@ -89,6 +104,44 @@ function render(data: DashboardData): void {
 
   const col = palette();
   const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.muted }, splitLine: { lineStyle: { color: col.grid } } };
+
+  // Audit findings — issue treemap + ranked, actionable table (the "what to fix" view)
+  const fc = data.findings;
+  findingsTreemap?.dispose();
+  findingsTreemap = echarts.init($('findingsTreemap'));
+  if (fc && fc.byCheck.length) {
+    const cats: Record<string, typeof fc.byCheck> = {};
+    for (const c of fc.byCheck) (cats[c.category] ??= []).push(c);
+    findingsTreemap.setOption({
+      ...ARIA,
+      tooltip: { formatter: (p: any) => `${p.name}: ${p.value} affected` },
+      series: [{
+        type: 'treemap', roam: false, breadcrumb: { show: false }, nodeClick: false,
+        label: { show: true, formatter: '{b}', color: '#fff', fontSize: 11 },
+        upperLabel: { show: true, height: 18, color: col.muted },
+        levels: [{ itemStyle: { borderColor: col.surface, borderWidth: 2, gapWidth: 2 } }, { itemStyle: { gapWidth: 1 } }],
+        data: Object.entries(cats).map(([cat, checks]) => ({
+          name: cat,
+          children: checks.map(c => ({ name: c.check_id, value: c.count, itemStyle: { color: sevColor(c.severity) } })),
+        })),
+      }],
+    });
+    const tableRows = fc.top.slice(0, 25).map(f => {
+      const rec = safeJson(f.recommendation);
+      const traf = safeJson(f.traffic_at_risk);
+      const path = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
+      return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}</td>` +
+        `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
+        `<td class="num">${traf.impressions || 0}</td><td class="num">${f.priority.toFixed(2)}</td><td class="fix">${esc(rec.text || '')}</td></tr>`;
+    });
+    $('findingsTable').innerHTML = `<table><thead><tr><th>Severity</th><th>Issue</th><th>URL</th><th>Clicks</th><th>Impr</th><th>Priority</th><th>Fix</th></tr></thead><tbody>${tableRows.join('')}</tbody></table>`;
+    $('findingsSummary').textContent = `${fc.total} findings across ${fc.byCheck.length} checks, ranked by impact ÷ effort.`;
+  } else {
+    findingsTreemap.setOption({ ...ARIA, title: { text: 'No audit yet — run run_audit', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    $('findingsTable').innerHTML = '';
+    $('findingsSummary').textContent = 'No audit findings yet.';
+  }
+  buildExportBar(data);
 
   // 1) Ranking distribution over time (stacked area) — flagship #1
   const dist = data.rankingDistribution ?? [];
@@ -211,6 +264,39 @@ function render(data: DashboardData): void {
   kwChart.on('click', (pa: any) => { void loadRelated(kw[pa.dataIndex].query); });
   const up = kw.filter(k => k.clicksChange > 0).length, down = kw.filter(k => k.clicksChange < 0).length;
   $('kwSummary').textContent = `${kw.length} top keywords; ${up} improved and ${down} declined versus the prior period (signed click change shown on each bar).`;
+}
+
+function buildExportBar(data: DashboardData): void {
+  const bar = $('exportbar');
+  bar.innerHTML = '';
+  const mk = (label: string, fn: () => void): void => {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = label;
+    b.onclick = fn;
+    bar.appendChild(b);
+  };
+  if (data.findings?.top?.length) {
+    mk('⬇ Findings CSV', () => downloadCsv('seo-findings.csv', [
+      ['severity', 'check', 'url', 'clicks', 'impressions', 'position', 'priority', 'fix'],
+      ...data.findings!.top.map(f => {
+        const rec = safeJson(f.recommendation), t = safeJson(f.traffic_at_risk);
+        return [f.severity, f.check_id, f.url_key ?? '', t.clicks ?? 0, t.impressions ?? 0, t.position ? t.position.toFixed(1) : '', f.priority.toFixed(3), rec.text ?? ''];
+      }),
+    ]));
+  }
+  if (data.topKeywords?.length) {
+    mk('⬇ Keywords CSV', () => downloadCsv('keywords.csv', [
+      ['query', 'clicks', 'prevClicks', 'clicksChange', 'avgPosition', 'prevPosition'],
+      ...data.topKeywords!.map(k => [k.query, k.clicks, k.prevClicks, k.clicksChange, k.position, k.prevPosition]),
+    ]));
+  }
+  if (data.strikingDistance?.length) {
+    mk('⬇ Striking-distance CSV', () => downloadCsv('striking-distance.csv', [
+      ['query', 'position', 'impressions', 'clicks'],
+      ...data.strikingDistance!.map(s => [s.query, s.position, s.impressions, s.clicks]),
+    ]));
+  }
 }
 
 // On-demand only: fetch DataForSEO data for the ONE clicked keyword (never bulk —
