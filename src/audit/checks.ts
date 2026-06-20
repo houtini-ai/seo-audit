@@ -32,6 +32,10 @@ export interface CheckDef {
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
 const win = (d: string): string => `date > date('${d}', '-28 days')`;
 
+// Rough position→expected-CTR curve (desktop+mobile blended) for the CTR-gap check.
+const CTR_CURVE: Record<number, number> = { 1: 0.28, 2: 0.15, 3: 0.11, 4: 0.08, 5: 0.06, 6: 0.05, 7: 0.04, 8: 0.032, 9: 0.028, 10: 0.025 };
+const expectedCtr = (pos: number): number => CTR_CURVE[Math.max(1, Math.min(10, Math.round(pos)))] ?? 0.02;
+
 export const CHECKS: CheckDef[] = [
   // ── On-page (crawl, deterministic) ──────────────────────────────────────
   {
@@ -106,5 +110,57 @@ export const CHECKS: CheckDef[] = [
     id: 'striking-distance', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Striking-distance query (page 2)', fix: 'Small on-page + internal-link push could reach page 1.',
     run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, query, AVG(position) position, SUM(impressions) impressions FROM search_analytics WHERE query IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query, page_key HAVING AVG(position)>10 AND AVG(position)<=20 AND SUM(impressions)>=20 ORDER BY impressions DESC LIMIT 50`).map(r => ({ urlKey: r.urlKey, evidence: { query: r.query, position: Math.round(r.position * 10) / 10, impressions: r.impressions } })) : [],
+  },
+  // ── Additions from Moz / MarketMuse / Whitehat checklists (buildable on current data) ──
+  {
+    id: 'title-too-long', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Title over ~60 chars', fix: 'Trim the title so the primary keyword sits within ~60 chars.',
+    run: (c) => rows(c, `SELECT url_key urlKey, title_length len FROM pages WHERE status_code=200 AND indexable=1 AND title_length > 60`).map(r => ({ urlKey: r.urlKey, evidence: { titleLength: r.len } })),
+  },
+  {
+    id: 'meta-description-length', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Meta description over ~160 chars', fix: 'Tighten to ~150–160 chars so it isn’t truncated.',
+    run: (c) => rows(c, `SELECT url_key urlKey, meta_description_length len FROM pages WHERE status_code=200 AND indexable=1 AND meta_description_length > 160`).map(r => ({ urlKey: r.urlKey, evidence: { length: r.len } })),
+  },
+  {
+    id: 'non-https', category: 'security', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
+    title: 'Page served over HTTP', fix: 'Serve over HTTPS and 301 the HTTP version.',
+    run: (c) => rows(c, `SELECT url_key urlKey, url FROM pages WHERE status_code=200 AND url LIKE 'http://%'`).map(r => ({ urlKey: r.urlKey, evidence: { url: r.url } })),
+  },
+  {
+    id: 'redirect-chain', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
+    title: 'Redirect chain (2+ hops)', fix: 'Collapse to a single hop to the final URL.',
+    run: (c) => rows(c, `SELECT url_key urlKey, redirects FROM pages WHERE redirects IS NOT NULL`)
+      .map(r => ({ urlKey: r.urlKey, hops: (JSON.parse(r.redirects) as unknown[]).length }))
+      .filter(x => x.hops >= 2)
+      .map(x => ({ urlKey: x.urlKey, evidence: { hops: x.hops } })),
+  },
+  {
+    id: 'internal-links-to-redirects', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
+    title: 'Internal links pointing through redirects', fix: 'Repoint internal links to the final URL (saves crawl + equity).',
+    run: (c) => rows(c, `SELECT l.target_key urlKey, COUNT(DISTINCT l.source_key) sources FROM links l JOIN pages p ON p.url_key=l.target_key WHERE l.is_internal=1 AND p.redirects IS NOT NULL GROUP BY l.target_key`).map(r => ({ urlKey: r.urlKey, evidence: { linkingPages: r.sources } })),
+  },
+  {
+    id: 'missing-structured-data', category: 'schema', severity: 'low', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'No structured data', fix: 'Add relevant JSON-LD (Article, Product, Organization…).',
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND (json_ld IS NULL OR json_ld='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
+  },
+  {
+    id: 'missing-viewport', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
+    title: 'Missing viewport meta (mobile)', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1">.',
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND (viewport IS NULL OR viewport='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
+  },
+  {
+    id: 'keyword-cannibalisation', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Keyword cannibalisation', fix: 'Consolidate or differentiate — multiple URLs compete for one query.',
+    run: (c) => c.gscMaxDate ? rows(c, `SELECT query, COUNT(DISTINCT page_key) urls, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query HAVING COUNT(DISTINCT page_key) >= 2 AND SUM(impressions) >= 50 ORDER BY impressions DESC LIMIT 40`).map(r => ({ urlKey: null, evidence: { query: r.query, competingUrls: r.urls, clicks: r.clicks, impressions: r.impressions } })) : [],
+  },
+  {
+    id: 'ctr-below-expected', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'CTR far below position-expected', fix: 'Rewrite title/meta — ranking well but under-clicked (snippet opportunity).',
+    run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, AVG(position) position, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key HAVING AVG(position) <= 10 AND SUM(impressions) >= 100`)
+      .map(r => { const ctr = r.clicks / r.impressions; const exp = expectedCtr(r.position); return { urlKey: r.urlKey, ctr, exp, position: r.position, impressions: r.impressions }; })
+      .filter(x => x.ctr < x.exp * 0.5)
+      .map(x => ({ urlKey: x.urlKey, evidence: { position: Math.round(x.position * 10) / 10, ctr: Math.round(x.ctr * 1000) / 10 + '%', expectedCtr: Math.round(x.exp * 1000) / 10 + '%', impressions: x.impressions } })) : [],
   },
 ];
