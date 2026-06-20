@@ -48,6 +48,7 @@ export function dataDir(): string {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_URI = 'ui://dashboard/main.html';
+const SYNC_PROGRESS_URI = 'ui://sync-progress/main.html';
 
 const CHECK_CATEGORIES = [
   'integrity', 'crawlability', 'indexation', 'onpage',
@@ -294,11 +295,12 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
 
   // refresh_property — the "sync everything" verb (GSC + crawl + inspection in one job).
   // Skip flags let the same tool do "just update X".
-  server.registerTool(
+  registerAppTool(
+    server,
     'refresh_property',
     {
       title: 'Refresh a property (sync + crawl + inspect)',
-      description: 'Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history. Set gsc/crawl/inspect/ranks=false to run just part. GSC sync is "lite" (date×query×page) by default — set segments=true to also pull device/country breakdowns (much heavier on large sites). Poll with check_sync_status. Use this for "sync everything"; use the single-purpose tools to update just one thing.',
+      description: 'Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history. Opens a live progress widget (phases + counts). Set gsc/crawl/inspect/ranks=false to run just part. GSC sync is "lite" (date×query×page) by default — set segments=true to also pull device/country breakdowns (much heavier on large sites). Use this for "sync everything"; use the single-purpose tools to update just one thing.',
       inputSchema: {
         siteUrl: z.string(),
         gsc: z.boolean().optional(),
@@ -312,6 +314,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         maxPages: z.number().int().min(1).max(50000).optional(),
         inspectLimit: z.number().int().min(1).max(500).optional(),
       },
+      _meta: { ui: { resourceUri: SYNC_PROGRESS_URI } },
     },
     async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, segments, location, startDate, endDate, maxPages, inspectLimit }) => {
       const jobId = jobs.start('refresh', (update, signal) =>
@@ -501,6 +504,16 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     {},
     async () => ({
       contents: [{ uri: DASHBOARD_URI, mimeType: RESOURCE_MIME_TYPE, text: await readFile(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf-8') }],
+    }),
+  );
+
+  registerAppResource(
+    server,
+    'Sync Progress',
+    SYNC_PROGRESS_URI,
+    {},
+    async () => ({
+      contents: [{ uri: SYNC_PROGRESS_URI, mimeType: RESOURCE_MIME_TYPE, text: await readFile(path.join(__dirname, 'src', 'ui', 'sync-progress.html'), 'utf-8') }],
     }),
   );
 

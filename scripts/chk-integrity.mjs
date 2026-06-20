@@ -1,0 +1,14 @@
+import D from 'better-sqlite3';
+const dbPath = process.argv[2];
+const db = new D(dbPath, { readonly: true });
+const g = sql => db.prepare(sql).get();
+const a = sql => db.prepare(sql).all();
+console.log('rows in search_analytics:', g('SELECT COUNT(*) n FROM search_analytics').n);
+console.log('distinct (date,query,page):', g('SELECT COUNT(*) n FROM (SELECT 1 FROM search_analytics GROUP BY date,query,page)').n);
+console.log('date range:', JSON.stringify(g('SELECT MIN(date) min, MAX(date) max, COUNT(DISTINCT date) days FROM search_analytics')));
+console.log('distinct pages / queries:', JSON.stringify(g('SELECT COUNT(DISTINCT page) pages, COUNT(DISTINCT query) queries FROM search_analytics')));
+console.log('device distribution:', JSON.stringify(a("SELECT device, COUNT(*) n FROM search_analytics GROUP BY device")));
+console.log('null/empty page_key:', g("SELECT SUM(page_key IS NULL OR page_key='') n FROM search_analytics").n);
+console.log('rows with 0 clicks AND 0 impressions:', g('SELECT COUNT(*) n FROM search_analytics WHERE clicks=0 AND impressions=0').n);
+console.log('sum clicks / impressions:', JSON.stringify(g('SELECT SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics')));
+db.close();

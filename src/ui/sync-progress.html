@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEO Audit — Sync Progress</title>
+  <link rel="stylesheet" href="./sync-progress-styles.css" />
+</head>
+<body>
+  <div class="sync-container">
+    <div class="header">
+      <h1>Sync progress</h1>
+      <div class="job-id" id="job-id"></div>
+    </div>
+    <div class="status-badge-row">
+      <span class="status-badge" id="status-badge">running</span>
+      <span class="site" id="site"></span>
+      <span class="elapsed" id="elapsed"></span>
+    </div>
+
+    <div class="phases" id="phases"></div>
+
+    <div class="current" id="current" style="display:none">
+      <div class="progress-label">
+        <span id="cur-label">Starting…</span>
+        <span id="cur-count"></span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill progress-fill--active indeterminate" id="cur-fill" style="width:100%"></div>
+      </div>
+      <div class="meta-row" id="cur-meta"></div>
+    </div>
+
+    <div class="summary" id="summary" style="display:none"></div>
+  </div>
+  <script type="module" src="./sync-progress.ts"></script>
+</body>
+</html>
