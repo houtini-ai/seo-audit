@@ -37,6 +37,18 @@ export interface DashboardData {
     finishedAt: string | null;
     byCheck: { check_id: string; category: string; severity: string; count: number; priority: number }[];
     top: { check_id: string; category: string; severity: string; url_key: string | null; evidence: string; traffic_at_risk: string; effort: string; priority: number; recommendation: string }[];
+    // Audit-deliverable view: issues grouped by category, each a sub-heading with a real example + fix.
+    recommendations: {
+      category: string;
+      checks: {
+        checkId: string;
+        title: string;
+        fix: string;
+        severity: string;
+        count: number;
+        example: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number } | null;
+      }[];
+    }[];
   } | null;
 }
 
@@ -165,15 +177,41 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const lastRun = db.db.prepare('SELECT run_id, finding_count, finished_at FROM audit_runs ORDER BY started_at DESC LIMIT 1').get() as
       | { run_id: string; finding_count: number; finished_at: string | null }
       | undefined;
-    const findings: DashboardData['findings'] = lastRun
-      ? {
-          runId: lastRun.run_id,
-          total: lastRun.finding_count,
-          finishedAt: lastRun.finished_at,
-          byCheck: db.db.prepare('SELECT check_id, category, severity, COUNT(*) count, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['byCheck'],
-          top: db.db.prepare('SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 50').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['top'],
-        }
-      : null;
+    let findings: DashboardData['findings'] = null;
+    if (lastRun) {
+      const byCheck = db.db.prepare('SELECT check_id, category, severity, COUNT(*) count, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['byCheck'];
+      const top = db.db.prepare('SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 50').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['top'];
+
+      // One representative (highest-priority) example per check → the audit-report view.
+      const exRows = db.db.prepare('SELECT check_id, url_key, evidence, traffic_at_risk, recommendation, priority FROM findings WHERE run_id=? ORDER BY priority DESC').all(lastRun.run_id) as
+        { check_id: string; url_key: string | null; evidence: string; traffic_at_risk: string; recommendation: string; priority: number }[];
+      const parse = (s: string): any => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
+      const exByCheck = new Map<string, typeof exRows[number]>();
+      for (const r of exRows) if (!exByCheck.has(r.check_id)) exByCheck.set(r.check_id, r);
+
+      const SEV_RANK: Record<string, number> = { crit: 0, high: 1, med: 2, low: 3, info: 4 };
+      const catMap = new Map<string, NonNullable<DashboardData['findings']>['recommendations'][number]['checks']>();
+      for (const c of byCheck) {
+        const ex = exByCheck.get(c.check_id);
+        const rec = ex ? parse(ex.recommendation) : {};
+        const traf = ex ? parse(ex.traffic_at_risk) : {};
+        const list = catMap.get(c.category) ?? [];
+        list.push({
+          checkId: c.check_id,
+          title: rec.title || c.check_id,
+          fix: rec.text || '',
+          severity: c.severity,
+          count: c.count,
+          example: ex ? { urlKey: ex.url_key, evidence: parse(ex.evidence), clicks: traf.clicks || 0, impressions: traf.impressions || 0 } : null,
+        });
+        catMap.set(c.category, list);
+      }
+      const recommendations = [...catMap.entries()]
+        .map(([category, checks]) => ({ category, checks: checks.sort((a, b) => (SEV_RANK[a.severity] - SEV_RANK[b.severity]) || (b.count - a.count)) }))
+        .sort((a, b) => Math.min(...a.checks.map(c => SEV_RANK[c.severity])) - Math.min(...b.checks.map(c => SEV_RANK[c.severity])));
+
+      findings = { runId: lastRun.run_id, total: lastRun.finding_count, finishedAt: lastRun.finished_at, byCheck, top, recommendations };
+    }
 
     return {
       siteUrl,

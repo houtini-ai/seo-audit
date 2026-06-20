@@ -89,6 +89,45 @@ window.addEventListener('resize', () => { distChart?.resize(); rankHistChart?.re
 
 const SEV_ORDER = ['crit', 'high', 'med', 'low', 'info'] as const;
 const SEV_LABEL: Record<string, string> = { crit: 'Critical', high: 'High', med: 'Medium', low: 'Low', info: 'Info' };
+const CAT_LABEL: Record<string, string> = {
+  integrity: 'Integrity', crawlability: 'Crawlability', indexation: 'Indexation', onpage: 'On-page',
+  content: 'Content', schema: 'Structured data', security: 'Security', performance: 'Performance',
+  'war-stories': 'Edge cases', merged: 'Search performance', agentic: 'AI / agent readiness',
+};
+
+// Turn a finding's evidence JSON into a one-line, human example of the problem.
+function evidenceSummary(ev: Record<string, unknown>): string {
+  if (!ev || typeof ev !== 'object') return '';
+  const issues = (ev as any).issues;
+  if (Array.isArray(issues)) {
+    const first = issues[0]?.detail ?? '';
+    return issues.length > 1 ? `${first} (+${issues.length - 1} more)` : first;
+  }
+  return Object.entries(ev)
+    .filter(([, v]) => v != null && typeof v !== 'object')
+    .slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ');
+}
+
+// Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
+function renderRecommendations(fc: DashboardData['findings']): void {
+  const el = $('recs');
+  if (!fc || !fc.recommendations?.length) { el.innerHTML = '<p class="muted">No audit yet — run run_audit.</p>'; return; }
+  el.innerHTML = fc.recommendations.map(cat => {
+    const items = cat.checks.map(c => {
+      const ex = c.example;
+      const path = ex?.urlKey ? esc(ex.urlKey.replace(/^https?:\/\/[^/]+/, '') || '/') : '';
+      const detail = ex ? esc(evidenceSummary(ex.evidence)) : '';
+      const traffic = ex && (ex.clicks || ex.impressions) ? ` · ${ex.clicks} clicks / ${ex.impressions} impr` : '';
+      const example = ex && (path || detail)
+        ? `<div class="rec-example"><span class="rec-label">Example</span> ${path ? `<a class="rec-url" href="${esc(ex!.urlKey || '')}" target="_blank" rel="noopener">${path}</a>` : '(site-wide)'}${detail ? ` — ${detail}` : ''}${traffic}</div>`
+        : '';
+      return `<div class="rec-item"><div class="rec-head"><span class="sev ${c.severity}">${c.severity}</span>` +
+        `<span class="rec-title">${esc(c.title)}</span><span class="rec-count">${c.count} affected</span></div>` +
+        `${example}<div class="rec-fix"><span class="rec-label">Fix</span> ${esc(c.fix)}</div></div>`;
+    }).join('');
+    return `<div class="rec-cat"><h4 class="rec-cat-title">${esc(CAT_LABEL[cat.category] || cat.category)} <span class="rec-cat-count">${cat.checks.length}</span></h4>${items}</div>`;
+  }).join('');
+}
 
 // Findings: severity count-chips (click to filter) + a prioritised table with a
 // priority mini-bar and single-line fix text. Replaces the old non-actionable treemap.
@@ -161,8 +200,9 @@ function render(data: DashboardData): void {
   // axis tick labels + axis names use primary text (high contrast: white on dark, near-black on light)
   const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.text, fontSize: 12 }, nameTextStyle: { color: col.text, fontSize: 12 }, splitLine: { lineStyle: { color: col.grid } } };
 
-  // Audit findings — severity filter chips + prioritised, actionable table
+  // Audit findings — severity filter chips + prioritised table, then the categorised report
   renderFindings(data.findings, col);
+  renderRecommendations(data.findings);
   buildExportBar(data);
 
   // 1) Ranking distribution over time (stacked area) — flagship #1

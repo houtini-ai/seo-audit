@@ -86,6 +86,22 @@ body {
 .prio-bar.s-low, .prio-bar.s-info { background: var(--text-muted); }
 .prio-val { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-secondary); }
 
+/* recommendations — the audit deliverable (grouped by category, issue sub-headings) */
+#recs { margin-top: 4px; }
+.rec-cat { margin-top: 18px; }
+.rec-cat:first-child { margin-top: 8px; }
+.rec-cat-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text-primary); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.rec-cat-count { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0; }
+.rec-item { padding: 10px 0 12px; border-bottom: 1px solid var(--border-subtle); }
+.rec-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rec-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.rec-count { font-size: 12px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+.rec-example, .rec-fix { font-size: 13px; margin-top: 6px; line-height: 1.5; color: var(--text-secondary); }
+.rec-label { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-right: 6px; }
+.rec-url { color: var(--accent); font-family: var(--font-mono); font-size: 12px; text-decoration: none; word-break: break-all; }
+.rec-url:hover { text-decoration: underline; }
+.rec-fix { color: var(--text-primary); }
+
 /* severity filter chips (replaced the non-actionable treemap) */
 .sev-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 .sev-chip {
