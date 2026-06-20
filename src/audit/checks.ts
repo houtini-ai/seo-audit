@@ -33,6 +33,17 @@ export interface CheckDef {
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
 const win = (d: string): string => `date > date('${d}', '-28 days')`;
 
+// Significant query terms (drop stopwords; keep ≥2 chars so "vr"/"pc"/"ai" count).
+const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'with', 'your', 'you', 'is', 'are', 'best', 'how', 'what', 'vs', 'why', 'can']);
+const terms = (s: string): string[] =>
+  (s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(t => t.length >= 2 && !STOP.has(t));
+// A query term is "present" if it appears as a substring of the title (handles
+// plural/singular + short tokens) — so we only flag titles that truly omit the query.
+const titleHasTerm = (title: string, term: string): boolean => {
+  const t = title.toLowerCase();
+  return t.includes(term) || t.replace(/\s+/g, '').includes(term); // also match space-variants ("sync mesh" ≈ "syncmesh")
+};
+
 // Validate captured JSON-LD per page, keeping findings whose issue-kinds match `kinds`.
 function schemaFindings(ctx: CheckContext, kinds: SchemaIssueKind[]): RawFinding[] {
   const set = new Set(kinds);
@@ -237,5 +248,36 @@ export const CHECKS: CheckDef[] = [
       .map(r => { const ctr = r.clicks / r.impressions; const exp = expectedCtr(r.position); return { urlKey: r.urlKey, ctr, exp, position: r.position, impressions: r.impressions }; })
       .filter(x => x.ctr < x.exp * 0.5)
       .map(x => ({ urlKey: x.urlKey, evidence: { position: Math.round(x.position * 10) / 10, ctr: Math.round(x.ctr * 1000) / 10 + '%', expectedCtr: Math.round(x.exp * 1000) / 10 + '%', impressions: x.impressions } })) : [],
+  },
+  // ── Merged crawl × Search Console — the "expert questions" that need both datasets ──
+  {
+    id: 'ghost-pages', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Ranking page the crawl can’t reach', fix: 'Google sends impressions/clicks to this URL but the site crawl never reached it — add internal links so it’s discoverable (or confirm it should exist and isn’t blocked).',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      // Only meaningful on a COMPLETE crawl — if the crawl hit its maxPages cap, "absent
+      // from crawl" is unreliable (could just be beyond the limit), so skip.
+      const m = c.db.prepare('SELECT urls_crawled c, max_pages m FROM crawl_metadata ORDER BY started_at DESC LIMIT 1').get() as { c: number; m: number } | undefined;
+      if (!m || m.c === 0 || m.c >= m.m) return [];
+      return rows(c, `SELECT page_key urlKey, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics
+        WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key
+        HAVING SUM(impressions) >= 50 AND page_key NOT IN (SELECT url_key FROM pages)
+        ORDER BY impressions DESC`).map(r => ({ urlKey: r.urlKey, evidence: { clicks: r.clicks, impressions: r.impressions, note: 'earns GSC traffic but absent from the crawl' } }));
+    },
+  },
+  {
+    id: 'title-missing-top-query', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Top query missing from the title', fix: 'Work the page’s top-performing query into the <title> — it already ranks for this term but the title doesn’t mention it.',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const r = rows(c, `SELECT s.page_key urlKey, s.query query, s.impr impressions, p.title title FROM
+        (SELECT page_key, query, SUM(impressions) impr, ROW_NUMBER() OVER (PARTITION BY page_key ORDER BY SUM(impressions) DESC) rn
+         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
+        JOIN pages p ON p.url_key = s.page_key
+        WHERE s.rn = 1 AND p.indexable = 1 AND p.title IS NOT NULL AND p.title != '' AND s.impr >= 100`);
+      return r
+        .filter(x => { const q = terms(x.query); return q.length > 0 && !q.some(w => titleHasTerm(x.title, w)); })
+        .map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, title: x.title } }));
+    },
   },
 ];
