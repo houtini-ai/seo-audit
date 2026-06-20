@@ -39,10 +39,11 @@ Collect (crawl + GSC + SERP) → analyse (deterministic checks + the merged GSC�
 - `npm run build` = `build:server` (tsc → `dist/`) + `build:ui` (Vite single-file → `dist/src/ui/dashboard.html`).
 - Probes (outside the MCP): `npm run probe:crawl <url>`, `npm run probe:gsc <property> <url>` — diff live API responses vs what we store.
 - Env: `GOOGLE_APPLICATION_CREDENTIALS` (required), `SAC_DATA_DIR` (optional), `DATAFORSEO_USERNAME`/`PASSWORD`, `DATAFORSEO_CACHE_DAYS`. Tools degrade gracefully when a credential is absent.
+- Data dir resolution: `SAC_DATA_DIR` env > persisted choice (`~/.seo-audit-console.json`, set via the `data_location` tool) > **`~/Documents/seo-audit-console`** default. Crawls/GSC always fetch fresh (no-cache); the only cache is DataForSEO (20-day, non-page data).
 - Not yet registered in Claude Desktop — see `plan/roadmap.md` for the deploy step.
 
 ## Tools (current)
-`refresh_property` (sync everything) · `sync_gsc` · `start_crawl` · `inspect_urls` · `track_ranks` · `check_sync_status` · `check_crawl_status` · `list_properties` · `run_audit` · `query_audit` · `fix_finding` (finding→fix moat) · `list_checks` · `keyword_volume` · `related_terms` · `normalize_url` · `get_dashboard` (App UI).
+`refresh_property` (sync everything; `segments` opt-in for device/country) · `sync_gsc` · `start_crawl` · `inspect_urls` · `track_ranks` · `check_sync_status` · `check_crawl_status` · `list_properties` · `run_audit` · `query_audit` · `fix_finding` (finding→fix moat) · `list_checks` · `data_location` (get/set data dir) · `keyword_volume` · `related_terms` · `normalize_url` · `get_dashboard` (App UI).
 
 ## What's built vs deferred
 **Built:** data layer (GSC + crawl + URL inspection + DataForSEO, located/cached/on-demand), 30-check scored engine (incl. schema-validate + extractor checks), agency-grade dashboard (findings + report sections + CSV export), date reconciliation, **finding→fix generators (the moat)** — `src/generators/` (JSON-LD / 301 redirect rules / internal-link suggestions), wired via the `fix_finding` tool. Dry-run: returns artifacts, never writes to the user's site.
@@ -57,5 +58,5 @@ Collect (crawl + GSC + SERP) → analyse (deterministic checks + the merged GSC�
 ## Quick references
 - House conventions for Houtini MCPs: `C:\MCP\CLAUDE.md` (badges, Glama, topics, naming).
 - Source repos consolidated: `C:\MCP\seo-crawler-mcp\src`, `C:\MCP\better-search-console\src`.
-- Owned test property: `simracingcockpit.gg`; data dir default `~/seo-audits/seo-audit-console`.
+- Owned test property: `simracingcockpit.gg`; data dir default `~/Documents/seo-audit-console`.
 - Next sequence: `plan/roadmap.md`.
