@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -30,8 +30,20 @@ const SERVER_VERSION = (
   JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
 ).version;
 
+// Where per-property crawl/audit DBs live. Resolution order (computed once per run):
+//   SAC_DATA_DIR env  >  persisted choice (~/.seo-audit-console.json)  >  Documents default.
+// The user can set the persisted choice through the `data_location` tool (no JSON editing).
+const CONFIG_PATH = path.join(homedir(), '.seo-audit-console.json');
+const DEFAULT_DATA_DIR = path.join(homedir(), 'Documents', 'seo-audit-console');
+
+function readConfigDataDir(): string | undefined {
+  try { return (JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) as { dataDir?: string }).dataDir; } catch { return undefined; }
+}
+
+let RESOLVED_DATA_DIR: string | null = null;
 export function dataDir(): string {
-  return process.env.SAC_DATA_DIR ?? path.join(homedir(), 'seo-audits', 'seo-audit-console');
+  if (!RESOLVED_DATA_DIR) RESOLVED_DATA_DIR = process.env.SAC_DATA_DIR ?? readConfigDataDir() ?? DEFAULT_DATA_DIR;
+  return RESOLVED_DATA_DIR;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +97,29 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const all = listChecks();
       const checks = category ? all.filter(c => (c.category as string) === category) : all;
       return { content: [{ type: 'text', text: `${checks.length} checks${category ? ` in ${category}` : ''}` }], structuredContent: { checks } };
+    },
+  );
+
+  server.registerTool(
+    'data_location',
+    {
+      title: 'Get or set where audit data is stored',
+      description: 'No args: report the folder where per-property crawl/audit databases are saved. With `path`: set it (persisted to ~/.seo-audit-console.json) — restart Claude Desktop to apply. Default is your Documents folder; the SAC_DATA_DIR env var overrides everything.',
+      inputSchema: { path: z.string().optional() },
+    },
+    async ({ path: newPath }) => {
+      if (newPath) {
+        mkdirSync(newPath, { recursive: true });
+        writeFileSync(CONFIG_PATH, JSON.stringify({ dataDir: newPath }, null, 2));
+        return {
+          content: [{ type: 'text', text: `Data location set to ${newPath}. Restart Claude Desktop to apply (this session still uses ${dataDir()}). Move existing .db files there to keep your synced data.` }],
+          structuredContent: { requested: newPath, active: dataDir(), restartRequired: true, configFile: CONFIG_PATH },
+        };
+      }
+      return {
+        content: [{ type: 'text', text: `Audit data is stored in: ${dataDir()}` }],
+        structuredContent: { active: dataDir(), default: DEFAULT_DATA_DIR, env: process.env.SAC_DATA_DIR ?? null, configFile: CONFIG_PATH },
+      };
     },
   );
 
