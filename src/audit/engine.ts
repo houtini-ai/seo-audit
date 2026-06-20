@@ -4,6 +4,7 @@ import { dbPathFor } from '../core/paths.js';
 import { CHECKS, type CheckContext, type CheckDef } from './checks.js';
 
 const SEVERITY_WEIGHT: Record<Severity, number> = { crit: 1, high: 0.8, med: 0.5, low: 0.2, info: 0.05 };
+const MAX_PER_CHECK = 500; // bound findings/check so a huge site can't balloon the table
 
 interface Traffic { clicks: number; impressions: number; position: number }
 
@@ -63,9 +64,9 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
 
     const tx = db.db.transaction(() => {
       for (const chk of checks) {
-        const findings = chk.run(ctx);
+        const findings = chk.run(ctx).slice(0, MAX_PER_CHECK);
         const scale = effortScale(chk.fixType, findings.length);
-        const E = chk.effortBase * scale;
+        const E = Math.max(chk.effortBase * scale, 0.0001);
         for (const f of findings) {
           const traf: Traffic = (trafStmt && f.urlKey ? trafStmt.get(f.urlKey, maxDate) : null) as Traffic ?? { clicks: 0, impressions: 0, position: 0 };
           const V = Math.log10(traf.clicks * 10 + traf.impressions + 10);

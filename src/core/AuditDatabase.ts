@@ -209,7 +209,7 @@ export class AuditDatabase {
         pos_11_20 INTEGER DEFAULT 0,
         pos_21_100 INTEGER DEFAULT 0,
         etv REAL DEFAULT 0,              -- estimated organic traffic value
-        count INTEGER DEFAULT 0,         -- total ranking keywords
+        keyword_count INTEGER DEFAULT 0, -- total ranking keywords (not 'count' — clashes with COUNT())
         source TEXT,
         fetched_at TEXT DEFAULT (datetime('now'))
       );

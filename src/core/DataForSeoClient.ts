@@ -56,7 +56,13 @@ export class DataForSeoClient {
   }
 
   private keyFor(endpoint: string, body: unknown): string {
-    return createHash('sha256').update(endpoint + '\n' + JSON.stringify(body)).digest('hex');
+    // Canonical (key-sorted) serialisation so equivalent bodies hash identically.
+    const canonical = JSON.stringify(body, (_k, v) =>
+      v && typeof v === 'object' && !Array.isArray(v)
+        ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)))
+        : v,
+    );
+    return createHash('sha256').update(endpoint + '\n' + canonical).digest('hex');
   }
 
   /** POST to a DataForSEO endpoint, served from the 20-day cache when fresh. */
@@ -82,14 +88,19 @@ export class DataForSeoClient {
       }
       const tasks = json.tasks ?? [];
       const cost = Number(json.cost) || 0;
-      this.cache
-        .prepare(
-          `INSERT INTO dataforseo_cache (cache_key, endpoint, request_json, response_json, cost, fetched_at)
-           VALUES (?, ?, ?, ?, ?, datetime('now'))
-           ON CONFLICT(cache_key) DO UPDATE SET response_json=excluded.response_json,
-             cost=excluded.cost, fetched_at=datetime('now')`,
-        )
-        .run(key, endpoint, JSON.stringify(body), JSON.stringify(tasks), cost);
+      // Only cache genuinely successful responses — a task-level failure (40xxx) or
+      // all-null results must not be cached for 20 days; let a later call retry.
+      const taskOk = tasks.length > 0 && (tasks[0]?.status_code ?? 20000) < 40000 && tasks.some((t: any) => t?.result != null);
+      if (taskOk) {
+        this.cache
+          .prepare(
+            `INSERT INTO dataforseo_cache (cache_key, endpoint, request_json, response_json, cost, fetched_at)
+             VALUES (?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(cache_key) DO UPDATE SET response_json=excluded.response_json,
+               cost=excluded.cost, fetched_at=datetime('now')`,
+          )
+          .run(key, endpoint, JSON.stringify(body), JSON.stringify(tasks), cost);
+      }
       return { tasks, cached: false, cost };
     });
   }

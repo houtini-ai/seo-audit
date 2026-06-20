@@ -65,9 +65,9 @@ export function urlKey(rawUrl: string, options: UrlKeyOptions = {}): string {
   if (hostForm === 'apex' && host.startsWith('www.')) host = host.slice(4);
   else if (hostForm === 'www' && !host.startsWith('www.')) host = `www.${host}`;
   u.hostname = host;
-  if ((u.protocol === 'https:' && u.port === '443') || (u.protocol === 'http:' && u.port === '80')) {
-    u.port = '';
-  }
+  // Strip default web ports unconditionally — after the https rewrite, a leftover
+  // :80 would otherwise survive on an https key and break the join.
+  if (u.port === '80' || u.port === '443') u.port = '';
 
   // Fragment never affects indexing identity.
   u.hash = '';

@@ -40,11 +40,11 @@ export class RankTracker {
       const r = await this.dfs.historicalRankOverview(target, location);
       const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
       const upsert = db.db.prepare(
-        `INSERT INTO rank_history (period, pos_1_3, pos_4_10, pos_11_20, pos_21_100, etv, count, source, fetched_at)
-         VALUES (@period,@pos_1_3,@pos_4_10,@pos_11_20,@pos_21_100,@etv,@count,'dataforseo:historical_rank_overview',datetime('now'))
+        `INSERT INTO rank_history (period, pos_1_3, pos_4_10, pos_11_20, pos_21_100, etv, keyword_count, source, fetched_at)
+         VALUES (@period,@pos_1_3,@pos_4_10,@pos_11_20,@pos_21_100,@etv,@keyword_count,'dataforseo:historical_rank_overview',datetime('now'))
          ON CONFLICT(period) DO UPDATE SET pos_1_3=excluded.pos_1_3, pos_4_10=excluded.pos_4_10,
            pos_11_20=excluded.pos_11_20, pos_21_100=excluded.pos_21_100, etv=excluded.etv,
-           count=excluded.count, fetched_at=datetime('now')`,
+           keyword_count=excluded.keyword_count, fetched_at=datetime('now')`,
       );
       const rows = items.map(it => {
         const o = it.metrics?.organic ?? {};
@@ -58,7 +58,7 @@ export class RankTracker {
             n(o.pos_21_30) + n(o.pos_31_40) + n(o.pos_41_50) + n(o.pos_51_60) +
             n(o.pos_61_70) + n(o.pos_71_80) + n(o.pos_81_90) + n(o.pos_91_100),
           etv: n(o.etv),
-          count: n(o.count),
+          keyword_count: n(o.count),
         };
       });
       const tx = db.db.transaction((rs: Record<string, unknown>[]) => { for (const row of rs) upsert.run(row); });

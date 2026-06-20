@@ -10,7 +10,7 @@ export interface DashboardData {
     prior: { clicks: number; impressions: number; ctr: number; position: number };
   };
   rankTrend?: { date: string; clicks: number; position: number }[];
-  rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; count: number }[];
+  rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
   dateAlignment?: {
     gsc: { start: string; end: string } | null;
     dataforseo: { start: string; end: string } | null;
@@ -124,7 +124,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
 
     // DataForSEO over-time sequence + GSC↔DataForSEO date-range reconciliation
     const rankHistory = db.db
-      .prepare('SELECT period, pos_1_3, pos_4_10, pos_11_20, pos_21_100, etv, count FROM rank_history ORDER BY period')
+      .prepare('SELECT period, pos_1_3, pos_4_10, pos_11_20, pos_21_100, etv, keyword_count FROM rank_history ORDER BY period')
       .all() as DashboardData['rankHistory'];
     const gscMin = (db.db.prepare('SELECT MIN(date) d FROM search_analytics').get() as { d: string | null }).d;
     const dateAlignment = reconcileRanges(gscMin, maxDate, rankHistory ?? []);
@@ -150,11 +150,12 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const keywordMovement = (db.db.prepare(
       `WITH q AS (SELECT query, MIN(date) fd, MAX(date) ld FROM search_analytics WHERE query IS NOT NULL AND date > date(?, '-90 days') GROUP BY query HAVING SUM(impressions) >= 50 AND MIN(date) < MAX(date))
        SELECT q.query,
-         (SELECT AVG(position) FROM search_analytics s WHERE s.query=q.query AND s.date=q.fd) firstPos,
-         (SELECT AVG(position) FROM search_analytics s WHERE s.query=q.query AND s.date=q.ld) lastPos,
+         (SELECT AVG(position) FROM search_analytics s WHERE s.query=q.query AND s.date=q.fd AND s.impressions>0) firstPos,
+         (SELECT AVG(position) FROM search_analytics s WHERE s.query=q.query AND s.date=q.ld AND s.impressions>0) lastPos,
          q.fd firstDate, q.ld lastDate
        FROM q`,
     ).all(maxDate) as any[])
+      .filter(r => r.firstPos != null && r.lastPos != null)
       .map(r => ({ query: r.query, firstPos: Math.round(r.firstPos * 10) / 10, lastPos: Math.round(r.lastPos * 10) / 10, delta: Math.round((r.firstPos - r.lastPos) * 10) / 10, firstDate: r.firstDate, lastDate: r.lastDate, category: movementCategory(r.firstPos, r.lastPos) }))
       .filter(r => r.category !== 'stable')
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))

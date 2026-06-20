@@ -43,7 +43,10 @@ export class JobManager {
     };
 
     // Run detached — do NOT await. The tool returns the id immediately.
-    fn(update, controller.signal)
+    // Promise.resolve().then(...) so a synchronous throw in fn becomes a rejection
+    // (caught below) rather than an uncaught exception that crashes the MCP process.
+    Promise.resolve()
+      .then(() => fn(update, controller.signal))
       .then(result => {
         job.result = result;
         job.state = controller.signal.aborted ? 'cancelled' : 'completed';

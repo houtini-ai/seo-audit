@@ -127,6 +127,7 @@ export class Crawler {
        VALUES (?, ?, ?, 'running', ?, ?, ?, ?)`,
     ).run(crawlId, seed, baseHost, maxDepth, maxPages, ua, startedAt);
 
+    try {
     const robots = await fetchRobots(origin, ua);
 
     const pageInsert = db.db.prepare(
@@ -255,13 +256,13 @@ export class Crawler {
     flush(true);
 
     // Post-crawl: in-degree (orphan detection) from the link graph.
-    db.db.exec(`
-      UPDATE pages SET inlink_count = (
+    db.db.prepare(
+      `UPDATE pages SET inlink_count = (
         SELECT COUNT(*) FROM links
         WHERE links.target_key = pages.url_key AND links.is_internal = 1
           AND links.source_key != pages.url_key
-      ) WHERE crawl_id = '${crawlId}';
-    `);
+      ) WHERE crawl_id = ?`,
+    ).run(crawlId);
 
     const finishedAt = new Date().toISOString();
     db.db.prepare(
@@ -272,7 +273,15 @@ export class Crawler {
       finishedAt, Date.parse(finishedAt) - Date.parse(startedAt), crawlId,
     );
     db.db.prepare(`UPDATE property_meta SET last_crawl_id=? WHERE site_url=?`).run(crawlId, siteUrl);
-    db.close();
     return { crawlId, siteUrl, crawled, failed, skipped };
+    } catch (err) {
+      try {
+        db.db.prepare(`UPDATE crawl_metadata SET status='failed', error=?, finished_at=datetime('now') WHERE crawl_id=? AND status='running'`)
+          .run(err instanceof Error ? err.message : String(err), crawlId);
+      } catch { /* best-effort */ }
+      throw err;
+    } finally {
+      db.close();
+    }
   }
 }
