@@ -110,6 +110,33 @@ export class DataForSeoClient {
     ]);
   }
 
+  /**
+   * Related terms for a keyword — People Also Ask questions + related searches,
+   * parsed from the SERP advanced response. Powers the click-through "related
+   * terms" on the keyword charts. Cached 20 days via the underlying SERP call.
+   */
+  async relatedTerms(
+    keyword: string,
+    locationCode = 2840,
+    languageCode = 'en',
+  ): Promise<{ peopleAlsoAsk: string[]; relatedSearches: string[]; cached: boolean; cost: number }> {
+    const r = await this.serpOrganic(keyword, locationCode, languageCode, 30);
+    const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
+    const peopleAlsoAsk: string[] = [];
+    const relatedSearches: string[] = [];
+    for (const it of items) {
+      if (it.type === 'people_also_ask') {
+        for (const q of it.items ?? []) if (q?.title) peopleAlsoAsk.push(q.title);
+      } else if (it.type === 'related_searches') {
+        for (const t of it.items ?? []) {
+          if (typeof t === 'string') relatedSearches.push(t);
+          else if (t?.title) relatedSearches.push(t.title);
+        }
+      }
+    }
+    return { peopleAlsoAsk, relatedSearches, cached: r.cached, cost: r.cost };
+  }
+
   cacheStats(): { rows: number; totalCost: number } {
     const r = this.cache.prepare('SELECT COUNT(*) rows, COALESCE(SUM(cost),0) totalCost FROM dataforseo_cache').get() as {
       rows: number;

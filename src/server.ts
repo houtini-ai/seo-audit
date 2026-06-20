@@ -266,6 +266,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
   );
 
+  server.registerTool(
+    'related_terms',
+    {
+      title: 'Related terms (People Also Ask + related searches)',
+      description: 'People Also Ask questions and related searches for a keyword (DataForSEO SERP). Powers click-through "related terms" on the keyword charts. SERP call — cached 20 days.',
+      inputSchema: { keyword: z.string(), locationCode: z.number().int().optional(), languageCode: z.string().optional() },
+    },
+    async ({ keyword, locationCode, languageCode }) => {
+      const client = requireDfs(dfs);
+      const r = await client.relatedTerms(keyword, locationCode, languageCode);
+      return {
+        content: [{ type: 'text', text: `PAA: ${r.peopleAlsoAsk.length}, related: ${r.relatedSearches.length}${r.cached ? ' (cached)' : ` ($${r.cost.toFixed(4)})`}` }],
+        structuredContent: r as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
   const run = async (): Promise<void> => {
     const transport = new StdioServerTransport();
     await server.connect(transport);

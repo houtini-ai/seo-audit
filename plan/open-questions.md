@@ -40,6 +40,9 @@ Grouped by area. **Bold** = proposed default.
 18. Log-file analysis (§18): accept raw Combined Log Format files + (later) Cloudflare/analytics APIs. v3.
 19. Recommendation `N`-finding narratives: one Gemini-grounded call per finding *group* (not per finding) — confirm cost posture.
 
+## To-dos surfaced during the build
+21. **True SERP rank tracking over time** — we have GSC *average position* by date (powers the rank-over-time line), but NOT exact daily SERP rank per keyword. Needs a scheduled DataForSEO SERP snapshot job writing to a `rank_history` table (date, keyword, position). Defer; design after the audit engine. The candlestick keyword chart can run on GSC position in the meantime.
+
 ## Phasing (from [tool-surface](tool-surface.md))
 20. v1 = GSC sync + async crawl + run_audit/query_audit + dashboards. v2 = web_search + generators. v3 = logs + semantic + SERP-heavy + agentic wrap. Confirm v1 cut.
 

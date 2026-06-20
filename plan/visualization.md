@@ -38,6 +38,16 @@ Both reuse the **houtini design language** (tokens.css — Schibsted Grotesk, co
 
 Each chart is **drill-downable**: clicking a node/segment calls back to Claude (`sendPrompt`-style in chat, or a tool call from the app) to explain or generate a fix — turning a static agency chart into a conversation ("why did /pricing decay?" → the C1 decline diagnosis + a generated fix).
 
+## User-requested charts (this session) + interactions
+
+Confirmed: the dashboard **reuses the better-search-console framework** (houtini `tokens.css`, ext-apps `App` + `onhostcontextchanged` host-theme wiring, Vite single-file build) with **ECharts** added for the chart types Chart.js can't do.
+
+- **Rank-over-time line** — per query/page average position across time. **Data: we have it** — `SELECT date, AVG(position) FROM search_analytics WHERE page_key=? GROUP BY date`. (GSC average position; invert the y-axis so "up = better rank".) Multi-line for top N queries on a page.
+- **Keyword performance, stock/candlestick style (red=down, green=up)** — top keywords as OHLC candles of rank within each period (open=first day's position, close=last day's, high/low = best/worst), or simpler up/down-coloured bars of period-over-period change. **Colour semantics (documented to avoid the rank inversion trap):** green = *improved* (clicks up OR position number down), red = *declined*. ECharts `candlestick` + `click` event.
+  - **Click-through → related terms:** clicking a keyword fires `sendPrompt`/a tool call to `related_terms` → **People Also Ask + related searches** (DataForSEO SERP, cached 20 days; verified live: 4 PAA + 24 related for "technical seo audit"). Surfaces expansion/cluster opportunities right off the chart.
+
+These join the 9 flagship visualisations above; multi-row/column table outputs (top queries/pages, findings) render as houtini-styled tables alongside.
+
 ## Design rules (carried from the Imagine skill)
 - Flat surfaces, no gradients/shadows/glow; **colour encodes meaning, not sequence** (severity ramps, status categories — ≤2–3 ramps + a legend).
 - **Dark mode mandatory** — every colour works in both; charts re-render on theme change.
