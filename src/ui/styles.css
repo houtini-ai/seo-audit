@@ -61,11 +61,11 @@ body {
 .exportbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .btn {
   font-family: var(--font); font-size: 12px; font-weight: 500;
-  color: var(--text-secondary); background: var(--bg-card);
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 6px 12px; cursor: pointer; transition: border-color .15s, color .15s;
+  color: var(--text-primary); background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); border-radius: var(--radius-sm);
+  padding: 6px 12px; cursor: pointer; transition: background .15s, border-color .15s, color .15s;
 }
-.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .findings-table { margin-top: 12px; overflow-x: auto; }
 .findings-table table { width: 100%; border-collapse: collapse; font-size: 13px; }

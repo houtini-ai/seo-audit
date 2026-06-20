@@ -53,7 +53,11 @@ function sevColor(sev: string): string {
 const csvCell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const toCsv = (rows: unknown[][]): string => rows.map(r => r.map(csvCell).join(',')).join('\r\n');
 function downloadCsv(filename: string, rows: unknown[][]): void {
-  void app.downloadFile({ contents: [{ uri: filename, mimeType: 'text/csv', text: toCsv(rows) }] }).catch(() => {});
+  // Host expects MCP EmbeddedResource shape: { type:'resource', resource:{ uri, mimeType, text } }.
+  app.downloadFile({
+    contents: [{ type: 'resource', resource: { uri: `file:///${filename}`, mimeType: 'text/csv', text: toCsv(rows) } }],
+  }).then(r => { if (r?.isError) console.warn('downloadFile denied/cancelled', r); })
+    .catch(e => console.warn('downloadFile failed', e));
 }
 
 let currentData: DashboardData | null = null;
@@ -86,7 +90,15 @@ app.ontoolresult = (result) => {
   if (data) { currentData = data; render(data); }
 };
 
-app.connect().then(() => applyHostContext(app.getHostContext() as any));
+// Production-inert preview hook: a screenshot harness can set window.__DASH_FIXTURE__
+// to render real data without an MCP host. Never set in normal host operation.
+const __fixture = (window as any).__DASH_FIXTURE__;
+if (__fixture) {
+  applyHostContext({ theme: (window as any).__DASH_THEME__ ?? 'light' });
+  currentData = __fixture; render(__fixture);
+} else {
+  app.connect().then(() => applyHostContext(app.getHostContext() as any));
+}
 window.addEventListener('resize', () => { findingsTreemap?.resize(); distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
 
 function metricCard(label: string, value: string, change: number, lowerIsBetter = false): string {
@@ -128,8 +140,9 @@ function render(data: DashboardData): void {
       tooltip: { formatter: (p: any) => `${p.name}: ${p.value} affected` },
       series: [{
         type: 'treemap', roam: false, breadcrumb: { show: false }, nodeClick: false,
-        label: { show: true, formatter: '{b}', color: '#fff', fontSize: 11 },
-        upperLabel: { show: true, height: 18, color: col.muted },
+        // white label with a dark stroke stays legible on every severity fill in both themes (a11y)
+        label: { show: true, formatter: '{b}', color: '#fff', fontSize: 11, textBorderColor: 'rgba(0,0,0,0.6)', textBorderWidth: 2.5 },
+        upperLabel: { show: true, height: 18, color: col.text, textBorderColor: 'rgba(0,0,0,0.5)', textBorderWidth: 2 },
         levels: [{ itemStyle: { borderColor: col.surface, borderWidth: 2, gapWidth: 2 } }, { itemStyle: { gapWidth: 1 } }],
         data: Object.entries(cats).map(([cat, checks]) => ({
           name: cat,
