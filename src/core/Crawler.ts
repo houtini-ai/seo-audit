@@ -128,6 +128,11 @@ export class Crawler {
     ).run(crawlId, seed, baseHost, maxDepth, maxPages, ua, startedAt);
 
     try {
+    // A crawl is a fresh snapshot of the current site — clear prior crawl data so
+    // re-crawls reflect changes (the "fix → re-crawl → verify" loop) instead of
+    // accumulating stale pages / duplicate links. GSC/inspection/findings are separate.
+    db.db.exec('DELETE FROM links; DELETE FROM errors; DELETE FROM pages;');
+
     const robots = await fetchRobots(origin, ua);
 
     const pageInsert = db.db.prepare(

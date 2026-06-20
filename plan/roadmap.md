@@ -59,6 +59,16 @@ Ingest Combined Log Format; Googlebot crawl waste, soft-404 cross-ref, orphan-fr
 ### 9. Ecommerce vertical — feasibility MED, confidence LOW (scope TBD)
 Inventory pages, Merchant Center schema, out-of-stock soft-404, IndexNow (research/15). Niche; scope before building.
 
+### 10. Agent-readiness checks — feasibility HIGH, confidence MED (FUTURE TODO, added 2026-06-20)
+Expand the existing `agentic` category to mirror what **isitagentready.com** (Cloudflare) scans — most are HTTP-derivable (no JS), so they fit our crawler. Grounded in research/04 + the live check list:
+- **Discoverability:** robots.txt present + valid, sitemap directive, `Link:` response headers, DNS-AID (DNS for AI discovery).
+- **Content accessibility:** **Markdown content negotiation** — request a page with `Accept: text/markdown` and check the server returns markdown (Cloudflare "markdown for agents" — the user's example). Also `llms.txt` / `llms-full.txt` presence.
+- **Bot access control:** explicit AI-bot rules in robots.txt (GPTBot, ClaudeBot, Google-Extended, etc.), Cloudflare **Content Signals**, **Web Bot Auth**.
+- **Protocol discovery (.well-known / files):** MCP Server Card, A2A Agent Card, **Agent Skills**, WebMCP, **API Catalog** (RFC 9727), **OAuth discovery** (RFC 8414), **OAuth Protected Resource** (RFC 9728), `auth.md`.
+- **Agentic commerce:** x402, MPP, UCP, ACP (presence/discovery only).
+- **Implementation:** a small fetch pass for well-known paths + an `Accept: text/markdown` probe on a sample page; each maps to a deterministic `agentic` check. **Acceptance:** robots-AI-rules, markdown-negotiation, llms-txt, and the .well-known discovery checks fire. Note: many of these are emerging standards — gate the speculative ones (commerce) behind a flag and cite the spec per finding.
+- Source: isitagentready.com (Cloudflare), https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/, research/04.
+
 ---
 
 ## Recommended order
