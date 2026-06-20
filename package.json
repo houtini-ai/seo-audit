@@ -35,6 +35,7 @@
     "probe:fixfinding": "node scripts/probe-fixfinding.mjs",
     "probe:schema": "node scripts/probe-schema.mjs",
     "probe:extract": "node scripts/probe-extract.mjs",
+    "probe:extract2": "node scripts/probe-extract2.mjs",
     "probe:migrate": "node scripts/probe-migrate.mjs",
     "probe:boot": "node scripts/probe-boot.mjs",
     "clean": "rimraf dist"

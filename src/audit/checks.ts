@@ -107,6 +107,32 @@ export const CHECKS: CheckDef[] = [
     title: 'Multiple canonical tags', fix: 'Keep exactly one rel=canonical — conflicting canonicals let Google pick (or ignore) one.',
     run: (c) => rows(c, `SELECT url_key urlKey, canonical_count cnt FROM pages WHERE status_code=200 AND canonical_count > 1`).map(r => ({ urlKey: r.urlKey, evidence: { canonicalCount: r.cnt } })),
   },
+  // ── Extractor additions (CLS, headings, mixed content, directives, social) ───
+  {
+    id: 'images-missing-dimensions', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Images without width/height (CLS)', fix: 'Set width & height (or CSS aspect-ratio) on <img> so the browser reserves space — avoids layout shift.',
+    run: (c) => rows(c, `SELECT url_key urlKey, images_missing_dimensions n, image_count total FROM pages WHERE status_code=200 AND indexable=1 AND images_missing_dimensions > 0`).map(r => ({ urlKey: r.urlKey, evidence: { missingDimensions: r.n, total: r.total } })),
+  },
+  {
+    id: 'heading-hierarchy', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Skipped heading levels', fix: 'Use headings in order (don’t jump e.g. h1→h3) — keeps the document outline accessible and parseable.',
+    run: (c) => rows(c, `SELECT url_key urlKey, heading_skips n FROM pages WHERE status_code=200 AND indexable=1 AND heading_skips > 0`).map(r => ({ urlKey: r.urlKey, evidence: { skippedLevels: r.n } })),
+  },
+  {
+    id: 'mixed-content', category: 'security', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Mixed content (http on https)', fix: 'Serve every subresource over https — browsers block or warn on insecure resources.',
+    run: (c) => rows(c, `SELECT url_key urlKey, mixed_content_count n FROM pages WHERE status_code=200 AND url LIKE 'https://%' AND mixed_content_count > 0`).map(r => ({ urlKey: r.urlKey, evidence: { insecureResources: r.n } })),
+  },
+  {
+    id: 'meta-nofollow', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Meta robots nofollow', fix: 'Remove nofollow from meta robots unless you intend to drop all link equity from this page.',
+    run: (c) => rows(c, `SELECT url_key urlKey, robots FROM pages WHERE status_code=200 AND indexable=1 AND robots LIKE '%nofollow%'`).map(r => ({ urlKey: r.urlKey, evidence: { robots: r.robots } })),
+  },
+  {
+    id: 'missing-social-tags', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'No social share tags', fix: 'Add Open Graph (og:title/og:image) and/or Twitter Card tags so shared links render a rich preview.',
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND (og_tags IS NULL OR og_tags='') AND (twitter_tags IS NULL OR twitter_tags='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
+  },
   // ── Security / war-stories (headers now captured) ───────────────────────
   {
     id: 'missing-hsts', category: 'security', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',

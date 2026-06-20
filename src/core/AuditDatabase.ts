@@ -134,8 +134,18 @@ export class AuditDatabase {
         external_links INTEGER,
         image_count INTEGER DEFAULT 0,         -- <img> count (image-alt check)
         images_without_alt INTEGER DEFAULT 0,  -- <img> lacking non-empty alt
+        images_missing_dimensions INTEGER DEFAULT 0, -- <img> lacking width&height (CLS)
         canonical_count INTEGER DEFAULT 0,     -- # rel=canonical tags (multiple-canonical)
         canonical_relative INTEGER DEFAULT 0,  -- canonical declared as a relative URL
+        h2_count INTEGER DEFAULT 0,
+        heading_skips INTEGER DEFAULT 0,       -- skipped heading levels (h1→h3)
+        rel_next INTEGER DEFAULT 0,
+        rel_prev INTEGER DEFAULT 0,
+        rel_amphtml TEXT,                      -- declared AMP version URL
+        mixed_content_count INTEGER DEFAULT 0, -- http subresources on https page
+        twitter_tags TEXT,                     -- JSON of twitter:* meta
+        has_microdata INTEGER DEFAULT 0,
+        has_rdfa INTEGER DEFAULT 0,
         inlink_count INTEGER DEFAULT 0,  -- in-degree (computed post-crawl: orphans)
         ipr REAL DEFAULT 0,              -- internal PageRank (computed post-crawl)
         rendered INTEGER DEFAULT 0,      -- did this row come from the render tier?
@@ -268,8 +278,18 @@ export class AuditDatabase {
     };
     ensure('pages', 'image_count', 'image_count INTEGER DEFAULT 0');
     ensure('pages', 'images_without_alt', 'images_without_alt INTEGER DEFAULT 0');
+    ensure('pages', 'images_missing_dimensions', 'images_missing_dimensions INTEGER DEFAULT 0');
     ensure('pages', 'canonical_count', 'canonical_count INTEGER DEFAULT 0');
     ensure('pages', 'canonical_relative', 'canonical_relative INTEGER DEFAULT 0');
+    ensure('pages', 'h2_count', 'h2_count INTEGER DEFAULT 0');
+    ensure('pages', 'heading_skips', 'heading_skips INTEGER DEFAULT 0');
+    ensure('pages', 'rel_next', 'rel_next INTEGER DEFAULT 0');
+    ensure('pages', 'rel_prev', 'rel_prev INTEGER DEFAULT 0');
+    ensure('pages', 'rel_amphtml', 'rel_amphtml TEXT');
+    ensure('pages', 'mixed_content_count', 'mixed_content_count INTEGER DEFAULT 0');
+    ensure('pages', 'twitter_tags', 'twitter_tags TEXT');
+    ensure('pages', 'has_microdata', 'has_microdata INTEGER DEFAULT 0');
+    ensure('pages', 'has_rdfa', 'has_rdfa INTEGER DEFAULT 0');
   }
 
   // ── Minimal property accessors (full CRUD added as modules are wired) ─────

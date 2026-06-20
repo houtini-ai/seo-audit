@@ -136,13 +136,17 @@ export class Crawler {
          is_internal, indexable, noindex, title, title_length, meta_description, meta_description_length,
          h1, h1_count, word_count, lang, charset, canonical_url, canonical_key, robots, x_robots_tag, viewport,
          json_ld, og_tags, hreflang, redirects, internal_links, external_links,
-         image_count, images_without_alt, canonical_count, canonical_relative, security_headers)
+         image_count, images_without_alt, images_missing_dimensions, canonical_count, canonical_relative,
+         h2_count, heading_skips, rel_next, rel_prev, rel_amphtml, mixed_content_count, twitter_tags,
+         has_microdata, has_rdfa, security_headers)
        VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@content_encoding,@cache_control,
          @last_modified,@etag,@vary,@bytes,@response_time_ms,@depth,
          @is_internal,@indexable,@noindex,@title,@title_length,@meta_description,@meta_description_length,
          @h1,@h1_count,@word_count,@lang,@charset,@canonical_url,@canonical_key,@robots,@x_robots_tag,@viewport,
          @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links,
-         @image_count,@images_without_alt,@canonical_count,@canonical_relative,@security_headers)
+         @image_count,@images_without_alt,@images_missing_dimensions,@canonical_count,@canonical_relative,
+         @h2_count,@heading_skips,@rel_next,@rel_prev,@rel_amphtml,@mixed_content_count,@twitter_tags,
+         @has_microdata,@has_rdfa,@security_headers)
        ON CONFLICT(url_key) DO NOTHING`,
     );
     const linkInsert = db.db.prepare(
@@ -209,7 +213,12 @@ export class Crawler {
           redirects: r.redirects.length ? JSON.stringify(r.redirects) : null,
           internal_links: ex?.internalLinks ?? 0, external_links: ex?.externalLinks ?? 0,
           image_count: ex?.imageCount ?? 0, images_without_alt: ex?.imagesWithoutAlt ?? 0,
+          images_missing_dimensions: ex?.imagesMissingDimensions ?? 0,
           canonical_count: ex?.canonicalCount ?? 0, canonical_relative: ex?.canonicalRelative ? 1 : 0,
+          h2_count: ex?.h2Count ?? 0, heading_skips: ex?.headingSkips ?? 0,
+          rel_next: ex?.relNext ? 1 : 0, rel_prev: ex?.relPrev ? 1 : 0, rel_amphtml: ex?.relAmphtml ?? null,
+          mixed_content_count: ex?.mixedContentCount ?? 0, twitter_tags: ex?.twitterTags ?? null,
+          has_microdata: ex?.hasMicrodata ? 1 : 0, has_rdfa: ex?.hasRdfa ? 1 : 0,
           security_headers: r.securityHeaders,
         });
 

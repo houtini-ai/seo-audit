@@ -32,8 +32,18 @@ export interface ExtractedPage {
   externalLinks: number;
   imageCount: number;
   imagesWithoutAlt: number;
+  imagesMissingDimensions: number; // <img> lacking both width & height (CLS)
   canonicalCount: number;
   canonicalRelative: boolean;
+  h2Count: number;
+  headingSkips: number;            // skipped heading levels (e.g. h1→h3) in document order
+  relNext: boolean;
+  relPrev: boolean;
+  relAmphtml: string | null;
+  mixedContentCount: number;       // http subresources on an https page
+  twitterTags: string | null;      // JSON of twitter:* meta
+  hasMicrodata: boolean;
+  hasRdfa: boolean;
   links: ExtractedLink[];
 }
 
@@ -99,10 +109,53 @@ export function extractPage(
     if (l && href) hreflang.push({ lang: l, href });
   });
 
-  // Images: count those lacking a non-empty alt (decorative alt="" is intentional, not flagged).
+  // Twitter Card tags (alongside Open Graph) — share-appearance completeness.
+  const tw: Record<string, string> = {};
+  $('meta[name^="twitter:"]').each((_, el) => {
+    const n = $(el).attr('name');
+    const c = $(el).attr('content');
+    if (n && c) tw[n] = c;
+  });
+
+  // Heading hierarchy: levels in document order → count skipped jumps (h1→h3 etc.).
+  const headingLevels: number[] = [];
+  $('h1, h2, h3, h4, h5, h6').each((_, el) => {
+    const lvl = Number((el as { name?: string }).name?.[1]);
+    if (lvl >= 1 && lvl <= 6) headingLevels.push(lvl);
+  });
+  let headingSkips = 0;
+  for (let i = 1; i < headingLevels.length; i++) if (headingLevels[i] - headingLevels[i - 1] > 1) headingSkips++;
+  const h2Count = headingLevels.filter(l => l === 2).length;
+
+  // rel link relations Google still reads / we don't otherwise capture.
+  const relNext = $('link[rel="next"]').length > 0;
+  const relPrev = $('link[rel="prev"]').length > 0;
+  const relAmphtml = $('link[rel="amphtml"]').attr('href')?.trim() ?? null;
+
+  // Mixed content: insecure (http) subresources on an https page.
+  const isHttps = /^https:/i.test(pageUrl);
+  let mixedContentCount = 0;
+  if (isHttps) {
+    $('img[src], script[src], link[rel="stylesheet"][href], iframe[src], source[src], video[src], audio[src]').each((_, el) => {
+      const u = $(el).attr('src') || $(el).attr('href') || '';
+      if (/^http:\/\//i.test(u)) mixedContentCount++;
+    });
+  }
+
+  // Structured-data formats beyond JSON-LD (RDFa via typeof/vocab, not property — OG meta uses property).
+  const hasMicrodata = $('[itemscope]').length > 0;
+  const hasRdfa = $('[typeof], [vocab]').length > 0;
+
+  // Images: count those lacking a non-empty alt (decorative alt="" is intentional, not flagged),
+  // and those lacking both width & height attributes (a deterministic CLS signal).
   const imgEls = $('img');
   let imagesWithoutAlt = 0;
-  imgEls.each((_, el) => { if ($(el).attr('alt') === undefined) imagesWithoutAlt++; });
+  let imagesMissingDimensions = 0;
+  imgEls.each((_, el) => {
+    const $e = $(el);
+    if ($e.attr('alt') === undefined) imagesWithoutAlt++;
+    if ($e.attr('width') === undefined && $e.attr('height') === undefined) imagesMissingDimensions++;
+  });
 
   const links: ExtractedLink[] = [];
   let internalLinks = 0;
@@ -153,8 +206,18 @@ export function extractPage(
     externalLinks,
     imageCount: imgEls.length,
     imagesWithoutAlt,
+    imagesMissingDimensions,
     canonicalCount: canonicalEls.length,
     canonicalRelative,
+    h2Count,
+    headingSkips,
+    relNext,
+    relPrev,
+    relAmphtml,
+    mixedContentCount,
+    twitterTags: Object.keys(tw).length ? JSON.stringify(tw) : null,
+    hasMicrodata,
+    hasRdfa,
     links,
   };
 }
