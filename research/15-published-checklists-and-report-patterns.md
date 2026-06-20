@@ -45,6 +45,14 @@ Already covered by us: period-over-period summary, ranking distribution, CSV exp
 
 **Recommended additions (priority):** (1) **page-performance categorisation table** (the video's "crucial part" — directly actionable), (2) **device + country breakdown** (standard agency report sections), (3) **keyword movement** table. All GSC-only, all fit the existing dashboard.
 
+## 3. Saturation check (Yotpo, 2026)
+
+Evaluated **Yotpo's Full Technical SEO Checklist** (firecrawl). Result: **saturation — zero net-new buildable checks.** Every item maps to: *built/checklist* (robots, hreflang, canonicalisation, structured-data presence, mobile-first), *already-deferred modules* (CWV: INP/content-visibility/fetch-priority; schema-validate: schema-drift/rich-snippets; render tier/JS-SEO: SSR/ISR/island-hydration/rendering-shift; log-analysis + robots-sitemap: invisible-errors/bot-logging/crawl-budget/IndexNow), or *agentic readiness* (GEO: content structure, RAG, statistical evidence — [research/04](04-agentic-readiness.md)).
+
+**One genuinely new theme: an ecommerce vertical** — inventory-page optimisation, Merchant Center rich-snippet requirements, out-of-stock soft-404 handling, timely inventory updates. A deliberate niche to add later, not a core gap.
+
+**Conclusion:** the check surface has converged. Across SEOmator (251 rules), the 2026 checklists (DigitalApplied, DebugBear, NoGood, Yotpo, Whitehat, MarketMuse, Moz), and the OSS crawlers, we keep seeing the same checks. Further mining yields *depth* on the deferred modules (Annielytics/Builtvisible/Screaming-Frog for log/JS/render), not new categories. Build effort is better spent shipping the deferred modules + the finding→fix moat than chasing more checklists.
+
 ## Sources
 - Gemini (`gemini-3.1-pro-preview`, grounded) — authoritative-checklist source list, this session.
 - Moz checklist (firecrawl) — coverage confirmation.
