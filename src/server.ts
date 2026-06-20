@@ -10,6 +10,9 @@ import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
+import { AuditDatabase } from './core/AuditDatabase.js';
+import { dbPathFor } from './core/paths.js';
+import { generateJsonLd, suggestRedirect, suggestInternalLinks } from './generators/index.js';
 
 import { urlKey, hostFormForProperty } from './core/url-key.js';
 import { GscClient } from './core/GscClient.js';
@@ -121,6 +124,99 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         content: [{ type: 'text', text: `${check}: ${r.findings.length} findings` }],
         structuredContent: r as unknown as Record<string, unknown>,
       };
+    },
+  );
+
+  // fix_finding — the moat: turn a finding into a concrete, paste-ready remediation.
+  server.registerTool(
+    'fix_finding',
+    {
+      title: 'Generate a fix for a finding',
+      description: 'Turn an audit finding into a concrete, paste-ready remediation: JSON-LD for missing structured data, a 301 rule for broken / redirecting internal links, or internal-link suggestions for orphan / striking-distance pages. Other checks return their deterministic fix guidance. Dry-run — returns artifacts, never writes to your site. Identify the finding by findingId (from run_audit) or by check + url.',
+      inputSchema: {
+        siteUrl: z.string(),
+        findingId: z.number().int().optional(),
+        check: z.string().optional(),
+        url: z.string().optional(),
+        redirectFormat: z.enum(['htaccess', 'nginx', 'nextjs']).optional(),
+      },
+    },
+    async ({ siteUrl, findingId, check, url, redirectFormat }) => {
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try {
+        // Resolve the finding → checkId, affected url_key, evidence.
+        let checkId: string | undefined = check;
+        let affectedKey: string | null = null;
+        let evidence: Record<string, unknown> = {};
+        if (findingId != null) {
+          const row = db.db.prepare('SELECT check_id, url_key, evidence FROM findings WHERE id = ?').get(findingId) as
+            | { check_id: string; url_key: string | null; evidence: string | null }
+            | undefined;
+          if (!row) {
+            return { content: [{ type: 'text', text: `No finding #${findingId} for ${siteUrl}. Run run_audit first.` }], structuredContent: { error: 'not_found', findingId } };
+          }
+          checkId = row.check_id;
+          affectedKey = row.url_key;
+          evidence = row.evidence ? JSON.parse(row.evidence) : {};
+        } else if (check && url) {
+          const hostForm = hostFormForProperty(siteUrl) ?? 'asis';
+          affectedKey = urlKey(url, { hostForm });
+          const row = db.db.prepare('SELECT evidence FROM findings WHERE check_id = ? AND url_key = ? ORDER BY id DESC LIMIT 1').get(check, affectedKey) as
+            | { evidence: string | null }
+            | undefined;
+          evidence = row?.evidence ? JSON.parse(row.evidence) : {};
+        } else {
+          throw new Error('Provide either findingId, or check + url.');
+        }
+
+        let kind: string;
+        let fix: unknown;
+        switch (checkId) {
+          case 'missing-structured-data': {
+            const page = db.db
+              .prepare('SELECT url, url_key, title, h1, meta_description, og_tags FROM pages WHERE url_key = ?')
+              .get(affectedKey) as Record<string, unknown> | undefined;
+            if (!page) {
+              return { content: [{ type: 'text', text: `No crawled page for ${affectedKey} — crawl the property first.` }], structuredContent: { error: 'no_page', urlKey: affectedKey } };
+            }
+            kind = 'json-ld';
+            fix = generateJsonLd(page);
+            break;
+          }
+          case 'broken-internal-links':
+          case 'internal-links-to-redirects':
+          case 'redirect-chain': {
+            const livePages = db.db
+              .prepare('SELECT url FROM pages WHERE status_code = 200 AND indexable = 1')
+              .all() as { url: string }[];
+            kind = 'redirect';
+            fix = suggestRedirect(affectedKey ?? '', livePages, redirectFormat ?? 'htaccess');
+            break;
+          }
+          case 'orphan-with-impressions':
+          case 'striking-distance': {
+            const page = db.db.prepare('SELECT h1, title FROM pages WHERE url_key = ?').get(affectedKey) as
+              | { h1: string | null; title: string | null }
+              | undefined;
+            const anchor = (evidence.query as string) ?? page?.h1 ?? page?.title ?? '';
+            kind = 'internal-links';
+            fix = suggestInternalLinks(db.db, affectedKey ?? '', anchor);
+            break;
+          }
+          default: {
+            const def = listChecks().find(c => c.id === checkId);
+            kind = 'explanation';
+            fix = { explanation: def?.fix ?? 'No automated generator for this check — apply the recommendation manually.', fixType: def?.fixType, title: def?.title };
+          }
+        }
+
+        return {
+          content: [{ type: 'text', text: `Fix for ${checkId} (${kind})${affectedKey ? ` on ${affectedKey}` : ''}` }],
+          structuredContent: { checkId, urlKey: affectedKey, kind, fix } as Record<string, unknown>,
+        };
+      } finally {
+        db.close();
+      }
     },
   );
 

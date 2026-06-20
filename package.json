@@ -32,6 +32,7 @@
     "test": "npm run build && node --test dist/**/*.test.js",
     "probe:crawl": "node scripts/probe-crawl.mjs",
     "probe:gsc": "node scripts/probe-gsc.mjs",
+    "probe:fixfinding": "node scripts/probe-fixfinding.mjs",
     "clean": "rimraf dist"
   },
   "engines": {

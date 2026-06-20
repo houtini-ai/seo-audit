@@ -42,11 +42,11 @@ Collect (crawl + GSC + SERP) → analyse (deterministic checks + the merged GSC�
 - Not yet registered in Claude Desktop — see `plan/roadmap.md` for the deploy step.
 
 ## Tools (current)
-`refresh_property` (sync everything) · `sync_gsc` · `start_crawl` · `inspect_urls` · `track_ranks` · `check_sync_status` · `check_crawl_status` · `list_properties` · `run_audit` · `query_audit` · `list_checks` · `keyword_volume` · `related_terms` · `normalize_url` · `get_dashboard` (App UI).
+`refresh_property` (sync everything) · `sync_gsc` · `start_crawl` · `inspect_urls` · `track_ranks` · `check_sync_status` · `check_crawl_status` · `list_properties` · `run_audit` · `query_audit` · `fix_finding` (finding→fix moat) · `list_checks` · `keyword_volume` · `related_terms` · `normalize_url` · `get_dashboard` (App UI).
 
 ## What's built vs deferred
-**Built:** data layer (GSC + crawl + URL inspection + DataForSEO, located/cached/on-demand), 23-check scored engine, agency-grade dashboard (findings + report sections + CSV export), date reconciliation.
-**Deferred (roadmap):** finding→fix generators (the moat), schema-validate, CWV ingestion, render/JS-SEO tier, log analysis, robots-sitemap reconcile, ecommerce vertical. See `plan/roadmap.md` (feasibility-checked sequence) and `plan/open-questions.md`.
+**Built:** data layer (GSC + crawl + URL inspection + DataForSEO, located/cached/on-demand), 23-check scored engine, agency-grade dashboard (findings + report sections + CSV export), date reconciliation, **finding→fix generators (the moat)** — `src/generators/` (JSON-LD / 301 redirect rules / internal-link suggestions), wired via the `fix_finding` tool. Dry-run: returns artifacts, never writes to the user's site.
+**Deferred (roadmap):** schema-validate, CWV ingestion, render/JS-SEO tier, log analysis, robots-sitemap reconcile, ecommerce vertical. See `plan/roadmap.md` (feasibility-checked sequence) and `plan/open-questions.md`.
 
 ## Working principles
 - Sources or it didn't happen (research/) ; cite file:line for code claims.
