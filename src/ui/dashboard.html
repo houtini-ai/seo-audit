@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEO Audit Console</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="dashboard">
+    <div class="loading" id="loading">Loading dashboard…</div>
+    <div id="content" style="display:none">
+      <div class="header">
+        <div class="site" id="site"></div>
+        <div class="range" id="range"></div>
+      </div>
+      <div class="metrics" id="metrics"></div>
+
+      <div class="chart-card">
+        <h3>Rank &amp; clicks over time</h3>
+        <div class="hint">Average position (line, higher = better rank) and daily clicks (bars), last 90 days</div>
+        <div class="chart" id="rankChart"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Top keyword performance — 28d vs prior</h3>
+        <div class="hint">Green = improved · red = declined · click a bar for related terms (People Also Ask)</div>
+        <div class="chart" id="kwChart"></div>
+        <div id="related" class="related"></div>
+      </div>
+    </div>
+    <div class="empty" id="empty" style="display:none">No data yet — run <code>refresh_property</code> or <code>sync_gsc</code> for this property first.</div>
+  </div>
+  <script type="module" src="./dashboard.ts"></script>
+</body>
+</html>

@@ -1,9 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+
+import { getDashboardData } from './core/dashboardData.js';
 
 import { urlKey, hostFormForProperty } from './core/url-key.js';
 import { GscClient } from './core/GscClient.js';
@@ -23,6 +28,9 @@ const SERVER_VERSION = (
 export function dataDir(): string {
   return process.env.SAC_DATA_DIR ?? path.join(homedir(), 'seo-audits', 'seo-audit-console');
 }
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DASHBOARD_URI = 'ui://dashboard/main.html';
 
 const CHECK_CATEGORIES = [
   'integrity', 'crawlability', 'indexation', 'onpage',
@@ -281,6 +289,35 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         structuredContent: r as unknown as Record<string, unknown>,
       };
     },
+  );
+
+  // ── Dashboard (MCP App UI — houtini design + ECharts) ───────────────────
+  registerAppTool(
+    server,
+    'get_dashboard',
+    {
+      title: 'SEO dashboard',
+      description: 'Interactive dashboard for a property: summary metrics, rank & clicks over time, and top-keyword performance (click a keyword for related terms). Needs synced GSC data — run refresh_property first.',
+      inputSchema: { siteUrl: z.string() },
+      _meta: { ui: { resourceUri: DASHBOARD_URI } },
+    },
+    async ({ siteUrl }) => {
+      const data = getDashboardData(dataDir(), siteUrl);
+      return {
+        content: [{ type: 'text', text: data.empty ? `No synced data for ${siteUrl} yet — run refresh_property.` : `Dashboard for ${siteUrl}` }],
+        structuredContent: data as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  registerAppResource(
+    server,
+    'SEO Dashboard',
+    DASHBOARD_URI,
+    {},
+    async () => ({
+      contents: [{ uri: DASHBOARD_URI, mimeType: RESOURCE_MIME_TYPE, text: await readFile(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf-8') }],
+    }),
   );
 
   const run = async (): Promise<void> => {

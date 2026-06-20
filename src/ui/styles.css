@@ -1,0 +1,62 @@
+/* SEO Audit Console — dashboard. Tokens (houtini design system) in tokens.css. */
+@import './tokens.css';
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 14px;
+  min-height: 100vh;
+}
+
+.dashboard { padding: 20px; max-width: 1100px; margin: 0 auto; }
+
+.header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 18px; gap: 12px; flex-wrap: wrap; }
+.site { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.range { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.metric-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-card);
+}
+.metric-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 4px; }
+.metric-card .value { font-size: 24px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.metric-card .chg { font-size: 12px; font-weight: 500; margin-top: 2px; }
+.chg.up { color: var(--green); }
+.chg.down { color: var(--red); }
+.chg.flat { color: var(--text-muted); }
+
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-card);
+}
+.chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.hint { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.chart { width: 100%; height: 320px; }
+
+.related { margin-top: 12px; font-size: 13px; }
+.related .group-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin: 8px 0 4px; }
+.related .tag {
+  display: inline-block;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 3px 10px;
+  margin: 0 4px 4px 0;
+  font-size: 12px;
+}
+
+.loading, .empty { display: flex; align-items: center; justify-content: center; min-height: 200px; color: var(--text-muted); font-size: 14px; gap: 6px; }
+.empty code { font-family: var(--font-mono); background: var(--bg-input); padding: 2px 6px; border-radius: 4px; }
+
+@media (max-width: 760px) { .metrics { grid-template-columns: repeat(2, 1fr); } }

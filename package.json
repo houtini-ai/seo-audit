@@ -25,7 +25,8 @@
   ],
   "scripts": {
     "build:server": "tsc -p tsconfig.server.json",
-    "build": "npm run build:server",
+    "build:ui": "cross-env INPUT=src/ui/dashboard.html vite build",
+    "build": "npm run build:server && npm run build:ui",
     "dev": "tsc -p tsconfig.server.json --watch",
     "start": "node dist/index.js",
     "test": "npm run build && node --test dist/**/*.test.js",
@@ -42,13 +43,19 @@
     "better-sqlite3": "^12.11.1",
     "cheerio": "^1.0.0",
     "crawlee": "^3.13.0",
+    "echarts": "^6.0.0",
     "googleapis": "^173.0.0",
     "zod": "^3.25.1"
   },
   "devDependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@fontsource-variable/schibsted-grotesk": "^5.2.8",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.0",
+    "cross-env": "^10.1.0",
     "rimraf": "^6.0.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1",
+    "vite-plugin-singlefile": "^2.3.3"
   }
 }
