@@ -113,7 +113,8 @@ function render(data: DashboardData): void {
     metricCard('Avg position', c.position.toFixed(1), pctChg(c.position, p.position), true);
 
   const col = palette();
-  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.muted }, splitLine: { lineStyle: { color: col.grid } } };
+  // axis tick labels + axis names use primary text (high contrast: white on dark, near-black on light)
+  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.text }, nameTextStyle: { color: col.text }, splitLine: { lineStyle: { color: col.grid } } };
 
   // Audit findings — issue treemap + ranked, actionable table (the "what to fix" view)
   const fc = data.findings;
@@ -263,7 +264,7 @@ function render(data: DashboardData): void {
     grid: { left: 8, right: 44, top: 10, bottom: 24, containLabel: true },
     tooltip: { trigger: 'item', formatter: (pa: any) => `${pa.name}<br/>Δ clicks: ${pa.value >= 0 ? '+' : ''}${pa.value} (now ${kw[pa.dataIndex].clicks})` },
     xAxis: { type: 'value', ...axis },
-    yAxis: { type: 'category', data: kw.map(k => k.query), axisLabel: { color: col.muted, width: 180, overflow: 'truncate' }, axisLine: { lineStyle: { color: col.border } } },
+    yAxis: { type: 'category', data: kw.map(k => k.query), axisLabel: { color: col.text, width: 180, overflow: 'truncate' }, axisLine: { lineStyle: { color: col.border } } },
     series: [{
       type: 'bar',
       label: { show: true, position: 'right', color: col.muted, fontSize: 11, formatter: (p: any) => (p.value > 0 ? '+' : '') + p.value },
