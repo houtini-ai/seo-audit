@@ -115,11 +115,12 @@ function renderRecommendations(fc: DashboardData['findings']): void {
   el.innerHTML = fc.recommendations.map(cat => {
     const items = cat.checks.map(c => {
       const ex = c.example;
-      const path = ex?.urlKey ? esc(ex.urlKey.replace(/^https?:\/\/[^/]+/, '') || '/') : '';
+      const fullPath = ex?.urlKey ? (ex.urlKey.replace(/^https?:\/\/[^/]+/, '') || '/') : '';
+      const path = esc(fullPath.length > 72 ? fullPath.slice(0, 72) + '…' : fullPath); // keep long/query URLs to one line
       const detail = ex ? esc(evidenceSummary(ex.evidence)) : '';
       const traffic = ex && (ex.clicks || ex.impressions) ? ` · ${ex.clicks} clicks / ${ex.impressions} impr` : '';
-      const example = ex && (path || detail)
-        ? `<div class="rec-example"><span class="rec-label">Example</span> ${path ? `<a class="rec-url" href="${esc(ex!.urlKey || '')}" target="_blank" rel="noopener">${path}</a>` : '(site-wide)'}${detail ? ` — ${detail}` : ''}${traffic}</div>`
+      const example = ex && (fullPath || detail)
+        ? `<div class="rec-example"><span class="rec-label">Example</span> ${fullPath ? `<a class="rec-url" href="${esc(ex!.urlKey || '')}" title="${esc(fullPath)}" target="_blank" rel="noopener">${path}</a>` : '(site-wide)'}${detail ? ` — ${detail}` : ''}${traffic}</div>`
         : '';
       return `<div class="rec-item"><div class="rec-head"><span class="sev ${c.severity}">${c.severity}</span>` +
         `<span class="rec-title">${esc(c.title)}</span><span class="rec-count">${c.count} affected</span></div>` +

@@ -98,7 +98,7 @@ body {
 .rec-count { font-size: 12px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
 .rec-example, .rec-fix { font-size: 13px; margin-top: 6px; line-height: 1.5; color: var(--text-secondary); }
 .rec-label { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-right: 6px; }
-.rec-url { color: var(--accent); font-family: var(--font-mono); font-size: 12px; text-decoration: none; word-break: break-all; }
+.rec-url { color: var(--accent); font-family: var(--font-mono); font-size: 12px; text-decoration: none; }
 .rec-url:hover { text-decoration: underline; }
 .rec-fix { color: var(--text-primary); }
 
