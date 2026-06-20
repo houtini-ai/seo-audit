@@ -49,9 +49,19 @@ function palette() {
 const csvCell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const toCsv = (rows: unknown[][]): string => rows.map(r => r.map(csvCell).join(',')).join('\r\n');
 function downloadCsv(filename: string, rows: unknown[][]): void {
-  // Host expects MCP EmbeddedResource shape: { type:'resource', resource:{ uri, mimeType, text } }.
+  const csv = toCsv(rows);
+  // Standalone export (opened in a browser, not an MCP host): use a normal blob download.
+  if ((window as any).__DASH_FIXTURE__) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return;
+  }
+  // In an MCP host: EmbeddedResource shape { type:'resource', resource:{ uri, mimeType, text } }.
   app.downloadFile({
-    contents: [{ type: 'resource', resource: { uri: `file:///${filename}`, mimeType: 'text/csv', text: toCsv(rows) } }],
+    contents: [{ type: 'resource', resource: { uri: `file:///${filename}`, mimeType: 'text/csv', text: csv } }],
   }).then(r => { if (r?.isError) console.warn('downloadFile denied/cancelled', r); })
     .catch(e => console.warn('downloadFile failed', e));
 }

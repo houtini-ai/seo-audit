@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { getDashboardData } from './core/dashboardData.js';
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
-import { dbPathFor } from './core/paths.js';
+import { dbPathFor, sanitizeProperty } from './core/paths.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks } from './generators/index.js';
 
 import { urlKey, hostFormForProperty } from './core/url-key.js';
@@ -57,6 +57,39 @@ const CHECK_CATEGORIES = [
 
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+}
+
+const SEV_ICON: Record<string, string> = { crit: '🔴', high: '🟠', med: '🟡', low: '⚪', info: '·' };
+const CAT_NAME: Record<string, string> = {
+  integrity: 'Integrity', crawlability: 'Crawlability', indexation: 'Indexation', onpage: 'On-page',
+  content: 'Content', schema: 'Structured data', security: 'Security', 'war-stories': 'Edge cases',
+  merged: 'Search performance', agentic: 'AI readiness',
+};
+
+// Concise executive markdown summary of an audit — rendered as the tool's text content so it
+// shows in chat (and Claude can discuss it) without dumping the full structuredContent payload.
+function auditMarkdown(r: any, siteUrl: string): string {
+  const p = (s: string): any => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
+  const sev = r.bySeverity ?? {};
+  const out: string[] = [
+    `# SEO audit — ${siteUrl.replace(/^sc-domain:/, '')}`,
+    `**${r.total} findings** · 🔴 ${sev.crit ?? 0} critical · 🟠 ${sev.high ?? 0} high · 🟡 ${sev.med ?? 0} medium · ⚪ ${sev.low ?? 0} low`,
+  ];
+  if (!r.integrityOk) out.push('> ⚠ Crawl integrity not verified — treat findings as provisional.');
+  out.push('', '## Top priorities (impact ÷ effort)');
+  (r.top ?? []).slice(0, 12).forEach((f: any, i: number) => {
+    const rec = p(f.recommendation), traf = p(f.traffic_at_risk);
+    const pth = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
+    const tr = (traf.clicks || traf.impressions) ? ` · ${traf.clicks || 0} clicks / ${traf.impressions || 0} impr` : '';
+    out.push(`${i + 1}. ${SEV_ICON[f.severity] ?? '·'} **${rec.title || f.check_id}** — \`${pth}\`${tr}`);
+    if (rec.text) out.push(`   ${rec.text}`);
+  });
+  const byCat: Record<string, string[]> = {};
+  for (const c of r.byCheck ?? []) (byCat[c.category] ??= []).push(`${c.checkId ?? c.check_id} (${c.count})`);
+  out.push('', '## All issues by category');
+  for (const [cat, checks] of Object.entries(byCat)) out.push(`- **${CAT_NAME[cat] ?? cat}** — ${checks.join(', ')}`);
+  out.push('', `_\`export_report siteUrl:"${siteUrl}"\` → a shareable interactive HTML dashboard._`);
+  return out.join('\n');
 }
 
 export function createServer(): { server: McpServer; run: () => Promise<void> } {
@@ -139,9 +172,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async ({ siteUrl, scope, categories, includeJudgement }) => {
       const result = runAudit(dataDir(), siteUrl, { scope, categories, includeJudgement });
-      const sev = result.bySeverity;
       return {
-        content: [{ type: 'text', text: `Audit ${result.runId}: ${result.total} findings (crit ${sev.crit ?? 0}, high ${sev.high ?? 0}, med ${sev.med ?? 0}).` }],
+        content: [{ type: 'text', text: auditMarkdown(result, siteUrl) }],
         structuredContent: result as unknown as Record<string, unknown>,
       };
     },
@@ -493,6 +525,36 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: data.empty ? `No synced data for ${siteUrl} yet — run refresh_property.` : `Dashboard for ${siteUrl}` }],
         structuredContent: data as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  // export_report — the dependable deliverable: a self-contained interactive dashboard
+  // HTML (data inlined) the user opens in any browser / emails to a client. Works
+  // regardless of whether the host renders MCP-App widgets inline.
+  server.registerTool(
+    'export_report',
+    {
+      title: 'Export a shareable dashboard report (HTML)',
+      description: 'Write a self-contained, interactive dashboard HTML for a property (all data + charts inlined) to the reports folder, and return the file path. Open it in any browser or send it to a client — no server, no MCP-App host support needed. Run refresh_property (+ run_audit for findings) first.',
+      inputSchema: { siteUrl: z.string(), theme: z.enum(['light', 'dark']).optional() },
+    },
+    async ({ siteUrl, theme }) => {
+      const data = getDashboardData(dataDir(), siteUrl);
+      if (data.empty) {
+        return { content: [{ type: 'text', text: `No synced data for ${siteUrl} — run refresh_property first.` }], structuredContent: { error: 'empty', siteUrl } };
+      }
+      const tpl = readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8');
+      const json = JSON.stringify(data).replace(/</g, '\\u003c'); // prevent </script> breakout
+      const inject = `<script>window.__DASH_FIXTURE__=${json};window.__DASH_THEME__=${JSON.stringify(theme ?? 'light')};</script>`;
+      const html = tpl.replace(/<head([^>]*)>/i, `<head$1>${inject}`);
+      const dir = path.join(dataDir(), 'reports');
+      mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, `${sanitizeProperty(siteUrl)}-dashboard.html`);
+      writeFileSync(file, html);
+      return {
+        content: [{ type: 'text', text: `Report saved: ${file}\nOpen it in any browser for the full interactive dashboard (${data.findings?.total ?? 0} findings). Shareable — send it to a client as-is.` }],
+        structuredContent: { path: file, siteUrl, findings: data.findings?.total ?? 0, bytes: html.length },
       };
     },
   );
