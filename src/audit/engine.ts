@@ -35,6 +35,7 @@ export interface AuditResult {
   byCategory: Record<string, number>;
   byCheck: { checkId: string; category: string; severity: string; count: number; priority: number }[];
   top: any[];
+  elapsedMs?: number; // wall-clock for the audit run (performance instrumentation)
 }
 
 export interface AuditOptions {
@@ -54,6 +55,7 @@ function effortScale(fixType: CheckDef['fixType'], n: number): number {
 }
 
 export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = {}): AuditResult {
+  const t0 = Date.now();
   const db = new AuditDatabase(dbPathFor(dataDir, siteUrl));
   try {
     const maxDate = (db.db.prepare('SELECT MAX(date) d FROM search_analytics').get() as { d: string | null }).d;
@@ -137,7 +139,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       .prepare(`SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 25`)
       .all(runId);
 
-    return { runId, siteUrl, integrityOk: pageCount > 0, total, bySeverity, byCategory, byCheck, top };
+    return { runId, siteUrl, integrityOk: pageCount > 0, total, bySeverity, byCategory, byCheck, top, elapsedMs: Date.now() - t0 };
   } finally {
     db.close();
   }

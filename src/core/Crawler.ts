@@ -50,6 +50,7 @@ export interface CrawlResult {
 
 const DEFAULT_UA = 'Mozilla/5.0 (compatible; seo-audit-console/0.1; +https://github.com/houtini-ai/seo-audit-console)';
 const FETCH_TIMEOUT_MS = 20000;
+const MAX_TRANSIENT_RETRIES = 4; // 429/503 backoff attempts before recording the status
 const FLUSH_EVERY = 50;
 
 interface RedirectHop { from: string; to: string; status: number; }
@@ -75,6 +76,7 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
   const redirects: RedirectHop[] = [];
   let current = url;
   let hops = 0;
+  let transientRetries = 0;
   const start = Date.now();
   // Known asset file-types: HEAD only (no body download). Falls back to GET if HEAD is refused.
   let method: 'GET' | 'HEAD' = isAssetUrl(url) ? 'HEAD' : 'GET';
@@ -91,6 +93,17 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
       },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
+    // Transient throttling (429 Too Many Requests / 503 Service Unavailable) is NOT a broken
+    // page — back off (respecting Retry-After) and retry, so a fast crawl doesn't poison the
+    // data with rate-limit statuses. Only the final status after retries is recorded.
+    if ((res.status === 429 || res.status === 503) && transientRetries < MAX_TRANSIENT_RETRIES) {
+      const ra = Number(res.headers.get('retry-after'));
+      const waitMs = Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 20000) : Math.min(1000 * 2 ** transientRetries, 8000);
+      try { await res.body?.cancel(); } catch { /* no body */ }
+      transientRetries++;
+      await sleep(waitMs);
+      continue;
+    }
     if (res.status >= 300 && res.status < 400 && res.headers.get('location') && hops < maxHops) {
       const loc = new URL(res.headers.get('location')!, current).toString();
       redirects.push({ from: current, to: loc, status: res.status });

@@ -109,7 +109,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'broken-internal-links', category: 'crawlability', severity: 'crit', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
     title: 'Internal links to 4xx/5xx', fix: 'Repoint internal links to a live, canonical URL.',
-    run: (c) => rows(c, `SELECT l.target_key urlKey, p.status_code status, COUNT(DISTINCT l.source_key) sources FROM links l JOIN pages p ON p.url_key=l.target_key WHERE l.is_internal=1 AND p.status_code >= 400 GROUP BY l.target_key`).map(r => ({ urlKey: r.urlKey, evidence: { status: r.status, linkingPages: r.sources } })),
+    run: (c) => rows(c, `SELECT l.target_key urlKey, p.status_code status, COUNT(DISTINCT l.source_key) sources FROM links l JOIN pages p ON p.url_key=l.target_key WHERE l.is_internal=1 AND p.status_code >= 400 AND p.status_code NOT IN (429,503) GROUP BY l.target_key`).map(r => ({ urlKey: r.urlKey, evidence: { status: r.status, linkingPages: r.sources } })),
   },
   // ── Extractor-dependent (images + canonical shape) ──────────────────────
   {
@@ -351,7 +351,7 @@ export const CHECKS: CheckDef[] = [
       FROM links l
       JOIN pages src ON src.url_key = l.source_key
       JOIN pages t   ON t.url_key   = l.target_key
-      WHERE l.is_internal = 1 AND t.status_code IS NOT NULL AND t.status_code != 200
+      WHERE l.is_internal = 1 AND t.status_code >= 400 AND t.status_code NOT IN (429,503)
       GROUP BY l.target_key HAVING SUM(src.ipr) > 0
       ORDER BY wastedIpr DESC`).map(r => ({ urlKey: r.urlKey, evidence: { status: r.st, linkingPages: r.linkingPages, wastedIpr: r.wastedIpr } })),
   },

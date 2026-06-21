@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
+import { buildAuditMarkdown } from './audit/report.js';
 import { detectTemplates } from './audit/templates.js';
 import { suggestPages } from './audit/opportunities.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
@@ -66,39 +67,6 @@ function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
 }
 
-const SEV_ICON: Record<string, string> = { crit: '🔴', high: '🟠', med: '🟡', low: '⚪', info: '·' };
-const CAT_NAME: Record<string, string> = {
-  integrity: 'Integrity', crawlability: 'Crawlability', indexation: 'Indexation', onpage: 'On-page',
-  content: 'Content', schema: 'Structured data', security: 'Security', 'war-stories': 'Edge cases',
-  performance: 'Performance (CWV)', merged: 'Search performance', agentic: 'AI readiness',
-};
-
-// Concise executive markdown summary of an audit — rendered as the tool's text content so it
-// shows in chat (and Claude can discuss it) without dumping the full structuredContent payload.
-function auditMarkdown(r: any, siteUrl: string): string {
-  const p = (s: string): any => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
-  const sev = r.bySeverity ?? {};
-  const out: string[] = [
-    `# SEO audit — ${siteUrl.replace(/^sc-domain:/, '')}`,
-    `**${r.total} findings** · 🔴 ${sev.crit ?? 0} critical · 🟠 ${sev.high ?? 0} high · 🟡 ${sev.med ?? 0} medium · ⚪ ${sev.low ?? 0} low`,
-  ];
-  if (!r.integrityOk) out.push('> ⚠ Crawl integrity not verified — treat findings as provisional.');
-  out.push('', '## Top priorities (expected clicks ÷ dev-hour)');
-  (r.top ?? []).slice(0, 12).forEach((f: any, i: number) => {
-    const rec = p(f.recommendation), traf = p(f.traffic_at_risk), eff = p(f.effort);
-    const pth = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
-    const tr = (traf.clicks || traf.impressions) ? ` · ${traf.clicks || 0} clicks / ${traf.impressions || 0} impr` : '';
-    const yld = eff.expectedClicks != null ? ` · ~${eff.expectedClicks} clicks at stake, ~${eff.hours}h` : '';
-    out.push(`${i + 1}. ${SEV_ICON[f.severity] ?? '·'} **${rec.title || f.check_id}** — \`${pth}\`${tr}${yld}`);
-    if (rec.text) out.push(`   ${rec.text}`);
-  });
-  const byCat: Record<string, string[]> = {};
-  for (const c of r.byCheck ?? []) (byCat[c.category] ??= []).push(`${c.checkId ?? c.check_id} (${c.count})`);
-  out.push('', '## All issues by category');
-  for (const [cat, checks] of Object.entries(byCat)) out.push(`- **${CAT_NAME[cat] ?? cat}** — ${checks.join(', ')}`);
-  out.push('', `_\`export_report siteUrl:"${siteUrl}"\` → a shareable interactive HTML dashboard._`);
-  return out.join('\n');
-}
 
 const HELP_TEXT = `# SEO Audit Console — what it can do
 A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**, joined on a normalised URL, with evidence on every finding. Typical flow: **refresh → audit → fix → report**.
@@ -252,7 +220,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     async ({ siteUrl, scope, categories, includeJudgement }) => {
       const result = runAudit(dataDir(), siteUrl, { scope, categories, includeJudgement });
       return {
-        content: [{ type: 'text', text: auditMarkdown(result, siteUrl) }],
+        content: [{ type: 'text', text: buildAuditMarkdown(result, siteUrl) }],
         structuredContent: result as unknown as Record<string, unknown>,
       };
     },
