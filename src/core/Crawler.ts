@@ -22,7 +22,8 @@ const isAssetUrl = (u: string): boolean => { try { return ASSET_EXT.test(new URL
 // states and CMS infrastructure. Skipped at enqueue (never fetched) so large sites stay light
 // and the crawl doesn't drown in low-value URLs. Extend per-crawl via opts.excludePatterns.
 const SKIP_PATTERNS: RegExp[] = [
-  /[?&](sps_query|s|q|search|keyword|orderby|filter_|add-to-cart|fl_builder|elementor-preview)=/i,
+  /[?&](sps_query|s|q|search|keyword|orderby|sort_by|add-to-cart|fl_builder|elementor-preview)=/i,
+  /[?&](pf_|filter[._]|dppref|variant=)/i, // Shopify/WooCommerce faceted filters + variant duplicates
   /\/search(-results)?\//i,
   /[?&]replytocom=/i,
   /\/(wp-json|wp-admin|wp-login\.php|xmlrpc\.php)(\/|$|\?)/i,
