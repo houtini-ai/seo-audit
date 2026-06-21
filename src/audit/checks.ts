@@ -438,6 +438,37 @@ export const CHECKS: CheckDef[] = [
         .map(r => ({ urlKey: r.urlKey, evidence: { clicks: r.clicks, lcpMs: r.lcp != null ? Math.round(r.lcp) : null, cls: r.cls != null ? Math.round(r.cls * 1000) / 1000 : null, performance: r.perf != null ? Math.round(r.perf * 100) : null } }));
     },
   },
+
+  // ── 6b — per-template systemic issues (template-typed, deterministic) ──
+  {
+    id: 'pagination-canonical-to-page-1', category: 'crawlability', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
+    title: 'Paginated pages canonicalising away from themselves', fix: 'Make each paginated page (page 2, 3, …) self-canonical. Canonicalising page 2+ back to page 1 tells Google the deeper pages are duplicates, so products/articles linked only from page 2+ drop out of the crawl.',
+    run: (c) => rows(c, `SELECT url_key urlKey, url, canonical_url canon FROM pages
+        WHERE status_code=200 AND canonical_count>0 AND canonical_key IS NOT NULL AND canonical_key != url_key
+          AND (rel_prev=1 OR url LIKE '%/page/%' OR url LIKE '%page=%' OR url LIKE '%?p=%' OR url LIKE '%&p=%')`)
+      .filter(r => !/[?&](page|p)=1(\b|&|$)/.test(r.url) && !/\/page\/1(\/?$|\?)/.test(r.url)) // page 1 self-canonicalising to base is fine
+      .map(r => ({ urlKey: r.urlKey, evidence: { url: r.url, canonical: r.canon } })),
+  },
+  {
+    id: 'article-date-illogical', category: 'schema', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Article dateModified earlier than datePublished', fix: 'Fix the Article schema dates — dateModified must be on or after datePublished. An impossible date undermines trust in the markup and can suppress the freshness signal.',
+    run: (c) => {
+      const out: RawFinding[] = [];
+      for (const r of rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND json_ld LIKE '%Article%' AND json_ld LIKE '%date%'`)) {
+        let parsed: any;
+        try { parsed = JSON.parse(r.jsonLd); } catch { continue; }
+        const nodes: any[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.['@graph']) ? parsed['@graph'] : [parsed];
+        for (const n of nodes) {
+          const t = n?.['@type'];
+          const isArticle = t && (Array.isArray(t) ? t : [t]).some((x: unknown) => /article|blogposting|newsarticle/i.test(String(x)));
+          if (!isArticle) continue;
+          const pub = Date.parse(n.datePublished), mod = Date.parse(n.dateModified);
+          if (!Number.isNaN(pub) && !Number.isNaN(mod) && mod < pub) { out.push({ urlKey: r.urlKey, evidence: { datePublished: n.datePublished, dateModified: n.dateModified } }); break; }
+        }
+      }
+      return out;
+    },
+  },
 ];
 
 // hreflang checks share parsing/normalisation: hrefs are stored RAW, so resolve each against the

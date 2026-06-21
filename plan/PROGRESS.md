@@ -34,9 +34,10 @@ Sequence: **6a → 6e → 6b → 6c → 6d**
 - [x] E = effort hours (effortBase × fixType scale)
 - [x] surfaced expected-clicks + hours in the markdown report; `top` now returns `effort`; probe-priority green (recovery 4400 ≫ cosmetic 0.8)
 
-### 6b — per-template source analysis (the N-pages-per-fix lever)  ← IN PROGRESS
+### 6b — per-template source analysis (the N-pages-per-fix lever)  ✅ CORE DONE
 - [x] template detection — `src/audit/templates.ts`: URL morphology + JSON-LD @type clustering, N≥4 filter, median-healthy exemplar, `list_templates` tool (probe-templates 9/9). _DOM-skeleton LSH refinement deferred (needs crawl-time structural signature; current signals separate most templates)._
-- [ ] per-template playbook checks: faceted, category+pagination, PDP, article, home (each → generator dry-run fix)
+- [x] per-template checks: `pagination-canonical-to-page-1` (HIGH), `article-date-illogical` (MED) — probe-6b 2/2 green
+- [~] remaining playbook items deferred (need data we don't capture / judgement): PDP variant-thin + faceted parameter-order duplication (need variant/permutation crawling), home mega-menu dilution (judgement). Faceted indexable trap already covered by `faceted-spider-trap`; PDP Product schema gaps by `missing-required-fields`.
 
 ### 6c — new-page opportunity engine (grounded demand, ruthless dedup)
 - [ ] demand universe → 3-rule subtraction → SERP-overlap clustering → yield score → evidence
