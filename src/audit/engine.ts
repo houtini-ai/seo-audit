@@ -68,9 +68,17 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
     if (opts.categories?.length) checks = checks.filter(c => opts.categories!.includes(c.category));
     if (!opts.includeJudgement) checks = checks.filter(c => c.certainty >= 1);
 
-    const trafStmt = maxDate
-      ? db.db.prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position FROM search_analytics WHERE page_key = ? AND date > date(?, '-28 days')`)
-      : null;
+    // Precompute per-page traffic for the window in ONE covering scan, instead of a query per
+    // finding (which was hundreds of windowed aggregations on a 1.8M-row GSC table — seconds).
+    const trafficMap = new Map<string, Traffic>();
+    if (maxDate) {
+      for (const row of db.db.prepare(
+        `SELECT page_key, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position
+         FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-28 days') GROUP BY page_key`,
+      ).all(maxDate) as (Traffic & { page_key: string })[]) {
+        trafficMap.set(row.page_key, { clicks: row.clicks, impressions: row.impressions, position: row.position });
+      }
+    }
     // Total site clicks in the window — the baseline for site-wide (null-url) findings (6e).
     const siteClicks = maxDate
       ? (db.db.prepare(`SELECT COALESCE(SUM(clicks),0) c FROM search_analytics WHERE date > date(?, '-28 days')`).get(maxDate) as { c: number }).c
@@ -94,7 +102,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
         const E = Math.max(chk.effortBase * scale, 0.0001); // effort in ~hours
         const Y = yieldOf(chk);
         for (const f of findings) {
-          const traf: Traffic = (trafStmt && f.urlKey ? trafStmt.get(f.urlKey, maxDate) : null) as Traffic ?? { clicks: 0, impressions: 0, position: 0 };
+          const traf: Traffic = (f.urlKey ? trafficMap.get(f.urlKey) : null) ?? { clicks: 0, impressions: 0, position: 0 };
           // T = expected monthly clicks at stake: max(current clicks recovered, potential from
           // impressions × CTR@position).
           let T: number;

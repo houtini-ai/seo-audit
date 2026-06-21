@@ -70,6 +70,10 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_sa_date_pagekey ON search_analytics(date, page_key, clicks, impressions, position);
       CREATE INDEX IF NOT EXISTS idx_sa_query_date  ON search_analytics(query, date);
       CREATE INDEX IF NOT EXISTS idx_sa_date_metrics ON search_analytics(date, clicks, impressions, ctr, position);
+      -- Covering indexes for the windowed GROUP BYs in the merged checks (page_key / query+page_key),
+      -- in group-key order so SQLite can aggregate without a full re-sort on big GSC tables.
+      CREATE INDEX IF NOT EXISTS idx_sa_pk_date ON search_analytics(page_key, date, clicks, impressions, position);
+      CREATE INDEX IF NOT EXISTS idx_sa_q_pk_date ON search_analytics(query, page_key, date, impressions, clicks, position);
     `);
 
     // ── Crawl snapshot (from seo-crawler-mcp), url_key added, redirects captured ─
