@@ -17,7 +17,7 @@ phase: 5
 - **#4 Extractor checks: SHIPPED** — + idempotent `AuditDatabase.migrate()`.
 - **Internal link-graph (part of #12): SHIPPED** — `src/core/linkGraph.ts` computes iPR (0–100) + body-only click-depth post-crawl.
 - **#5 Registered in Claude Desktop: SHIPPED** — live-verified on houtini/ehi/simracing.
-- **Delivery / display: SHIPPED** — `get_dashboard` (App UI; tiny result + widget fetches full data via app-only `get_dashboard_data` → renders in-chat, bypasses the model token cap), `export_report` (self-contained shareable HTML), `run_audit` markdown report in chat, live `sync-progress` widget, CSV (host + standalone).
+- **Delivery / display: SHIPPED** — `get_dashboard` (App UI; tiny result + widget fetches full data via app-only `get_dashboard_data` → renders in-chat, bypasses the model token cap), `export_report` (self-contained shareable HTML), `run_audit` markdown report in chat, live `sync-progress` widget, CSV export (standalone blob; in-host gated on the `downloadFile` host capability with a clipboard fallback + visible toast — current Claude Desktop doesn't advertise `downloadFile`, so `export_report` HTML remains the reliable in-host deliverable).
 - Hygiene: secrets gitignored, version-from-package.json, data dir → `~/Documents/seo-audit-console` (`SAC_DATA_DIR` in config / `data_location` tool).
 
 **Remaining (this roadmap):** the rest of the #12 research-gap cluster (backlinks layer ← building now; hreflang; integrity gates; redirect-health; soft-404; perf proxies), then #3 robots-sitemap, #6 CWV, #7 render tier, #8 logs, #10 agent-readiness, #11 chunked sync, #9 ecommerce.
@@ -107,6 +107,17 @@ Gating step first: **once the base is solid (backlinks shipped + research adhere
 - **Per-template source analysis** — detect template type per URL (product / collection / article / home) by URL pattern + DOM signature, sample one of each, and review its HTML for template-wide SEO opportunities (a fix on the template fixes N pages). Pairs with the moat (generate the template-level fix).
 - **Schema generation + Wikidata enrichment** — extend `generateJsonLd` to add `sameAs`/`about`/`mentions` linking the page's entity to Wikidata/Wikipedia for schematic relevance (entity SEO). Source: `C:\MCP\wikidata` (local Wikidata MCP) — resolve the page's primary entity → QID → authoritative `sameAs`.
 - **Fan-out / new-page suggestions from real demand** — NOT Claude-guessed (cf. `C:\MCP\fanout-mcp`): use **DataForSEO PAA + related searches** (already in `relatedTerms`) + **DataForSEO Labs keyword ideas / related keywords / search-intent**. Cross-reference the demand fan-out against existing pages (`url_key`/title coverage) → **suggest new pages for search-volume gaps** the site doesn't yet cover. On-demand + cached. (Confirm whether DataForSEO Labs has a dedicated fan-out/keyword-ideas endpoint — it does: `dataforseo_labs/google/keyword_ideas`, `related_keywords`, `keyword_suggestions`.)
+
+### DataForSEO v3 endpoint expansion — Gemini API sweep (2026-06-21)
+Ranked from a skeptical sweep of the full v3 surface vs what we already have (crawl + GSC + SERP + volume + backlinks). **Keep on-demand + cached; never bulk.** Adopt in this order:
+1. **`on_page/instant_pages` fired twice (`enable_javascript:false` vs `true`)** — DOM diff = the CSR-hazard finding (canonical/schema/internal-links present only after JS). **Deterministic.** Cheap headless-render validation (~100 / ~500 credits) — a lighter path to the render tier (#7) than bundling a browser.
+2. **`on_page/lighthouse/live`** — per-URL **lab** CWV (LCP/CLS/render-blocking) on demand; complements CrUX field data in #6 (which is aggregate + delayed). ~2000 credits. Powers concrete CWV fixes per page.
+3. **`dataforseo_labs/google/search_intent/live`** — query intent (info/nav/commercial/transactional) → explains the GSC symptom "high impressions, low CTR, stuck at 11–20" as **intent mismatch** (e.g. product page ranking for an informational query). N (judgement). ~50 credits. Feeds Phase 6 new-page suggestions.
+4. **`dataforseo_labs/google/page_intersection/live`** — per-URL topic/entity gap vs top-3 competitors (seed competitors from our existing SERP call). "Add a section on X to URL Y." N. ~50 credits. Pairs with per-template analysis + the moat.
+5. **`dataforseo_labs/google/competitors_domain/live`** — domain-level competitor discovery (seed list for gap analysis). ~50 credits.
+6. **`merchant/google/products/live`** *(ecommerce vertical #9 only)* — validates how Google parsed product schema/feed (price/availability mismatch). ~100 credits.
+
+**Skip (confirmed vanity/redundant — do NOT add):** `bulk_keyword_difficulty` (KD is a black-box estimate — derive our own from live SERP + backlink counts we already have); `ranked_keywords` for the *first-party* domain (GSC is ground truth — only use for competitors); `relevant_pages` for cannibalisation (GSC `page`-grouped by query is superior); `content_parsing` readability (Flesch/keyword-density are non-signals — intent + topical coverage already cover content quality).
 
 ---
 
