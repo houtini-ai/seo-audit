@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { getDashboardData } from './core/dashboardData.js';
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 import { detectTemplates } from './audit/templates.js';
+import { suggestPages } from './audit/opportunities.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
 import { dbPathFor, sanitizeProperty } from './core/paths.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks } from './generators/index.js';
@@ -122,11 +123,15 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **competitors_domain** — domains competing for your organic keywords. _"Find competitors for example.com in the UK"_
 - **page_intersection** — keywords competitor pages rank for but yours doesn’t (content gap). _"Content gap: competitorUrls [\\"https://rival.com/guide\\"], excludePages [\\"https://example.com/guide\\"]"_
 
-## 5. Reports & dashboard
+## 5. Templates & opportunities
+- **list_templates** — cluster pages into templates (one fix → N pages) with a representative exemplar. _"List page templates for example.com"_
+- **suggest_pages** — new-page ideas grounded in real GSC demand, minus what you already cover. _"Suggest new pages for example.com"_
+
+## 6. Reports & dashboard
 - **get_dashboard** — interactive dashboard (renders in chat). _"Show the dashboard for example.com"_
 - **export_report** — self-contained shareable HTML to send a client. _"Export the report for example.com"_
 
-## 6. Utilities
+## 7. Utilities
 - **data_location** — where DBs are stored (set with a path). · **normalize_url** — the join key for a URL.
 
 _Tip: first time on a property → \`refresh_property\` then \`run_audit\`._`;
@@ -577,6 +582,26 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         content: [{ type: 'text', text: `PAA: ${r.peopleAlsoAsk.length}, related: ${r.relatedSearches.length}${r.cached ? ' (cached)' : ` ($${r.cost.toFixed(4)})`}` }],
         structuredContent: r as unknown as Record<string, unknown>,
       };
+    },
+  );
+
+  server.registerTool(
+    'suggest_pages',
+    {
+      title: 'Suggest new pages from real demand (gaps)',
+      description: 'Propose NEW pages grounded in real Search Console demand: queries you already get impressions for but rank 11+ (no winning page), after subtracting demand you already satisfy (you rank ≤10, or a page already covers the query, or one URL owns it). Survivors are clustered into one proposed page per intent and scored by impressions × intent. Returns evidence + the nearest existing page to link the new page from. Computable from synced GSC + crawl — no paid calls (run search_intent siteUrl:<property> first to weight by intent).',
+      inputSchema: { siteUrl: z.string(), minImpressions: z.number().int().min(1).optional(), maxProposals: z.number().int().min(1).max(200).optional() },
+    },
+    async ({ siteUrl, minImpressions, maxProposals }) => {
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try {
+        const r = suggestPages(db.db, { ...(minImpressions != null ? { minImpressions } : {}), ...(maxProposals != null ? { maxProposals } : {}) });
+        const top = r.proposals.slice(0, 15).map(p => `• "${p.headTerm}" — ${p.totalImpressions} impr, currently pos ${p.bestPosition}${p.intent ? `, ${p.intent}` : ''} (${p.queries.length} queries)`).join('\n');
+        return {
+          content: [{ type: 'text', text: r.proposals.length ? `${r.proposals.length} new-page opportunities (from ${r.consideredQueries} queries, ${r.afterDedup} after dedup):\n${top}` : `No new-page gaps found (${r.consideredQueries} queries considered). Needs synced GSC data.` }],
+          structuredContent: r as unknown as Record<string, unknown>,
+        };
+      } finally { db.close(); }
     },
   );
 

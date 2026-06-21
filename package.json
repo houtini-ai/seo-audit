@@ -44,6 +44,7 @@
     "probe:priority": "node scripts/probe-priority.mjs",
     "probe:templates": "node scripts/probe-templates.mjs",
     "probe:6b": "node scripts/probe-6b.mjs",
+    "probe:6c": "node scripts/probe-6c.mjs",
     "probe:migrate": "node scripts/probe-migrate.mjs",
     "probe:boot": "node scripts/probe-boot.mjs",
     "clean": "rimraf dist"

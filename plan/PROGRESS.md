@@ -39,8 +39,9 @@ Sequence: **6a → 6e → 6b → 6c → 6d**
 - [x] per-template checks: `pagination-canonical-to-page-1` (HIGH), `article-date-illogical` (MED) — probe-6b 2/2 green
 - [~] remaining playbook items deferred (need data we don't capture / judgement): PDP variant-thin + faceted parameter-order duplication (need variant/permutation crawling), home mega-menu dilution (judgement). Faceted indexable trap already covered by `faceted-spider-trap`; PDP Product schema gaps by `missing-required-fields`.
 
-### 6c — new-page opportunity engine (grounded demand, ruthless dedup)
-- [ ] demand universe → 3-rule subtraction → SERP-overlap clustering → yield score → evidence
+### 6c — new-page opportunity engine (grounded demand, ruthless dedup)  ✅ DONE
+- [x] `src/audit/opportunities.ts` + `suggest_pages` tool: demand (GSC impr, rank 11+) → subtract [A rank≤10 · B page covers ≥70% query tokens · C contender page ≤15 owns >80% impr] → lexical cluster → score (impr × intent) → evidence + nearest existing page to link from. probe-6c 7/7 green.
+- [~] SERP-overlap clustering + search-volume/intent enrichment = refinement (lexical clustering + persisted intent used for now; intent via `search_intent siteUrl:`)
 
 ### 6d — Wikidata entity layer (skip vanity; keep the 3 that compute)
 - [ ] entity-graph internal linking · entity content-gap · disambiguation footprints
