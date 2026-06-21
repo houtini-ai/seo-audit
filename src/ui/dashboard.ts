@@ -90,9 +90,31 @@ app.onhostcontextchanged = (ctx) => {
   if (currentData) render(currentData); // re-tint charts for the new theme
 };
 
+// get_dashboard returns only { siteUrl } (keeps the big payload out of the model context).
+// The widget fetches the full dataset itself via the app-only get_dashboard_data tool —
+// results route to the iframe, bypassing the model token cap.
+let dataLoaded = false;
+async function loadDashboard(siteUrl: string): Promise<void> {
+  if (dataLoaded || !siteUrl) return;
+  dataLoaded = true;
+  try {
+    const res = await app.callServerTool({ name: 'get_dashboard_data', arguments: { siteUrl } });
+    const data = res?.structuredContent as DashboardData | undefined;
+    if (!data) throw new Error('no data');
+    currentData = data;
+    render(data);
+  } catch (e) {
+    dataLoaded = false; // allow a retry on a later tool result
+    $('loading').style.display = 'none';
+    const empty = $('empty');
+    empty.style.display = 'flex';
+    empty.textContent = `Couldn’t load dashboard data${e instanceof Error ? ` (${e.message})` : ''}. Run refresh_property, then reopen.`;
+  }
+}
+
 app.ontoolresult = (result) => {
-  const data = result.structuredContent as DashboardData | undefined;
-  if (data) { currentData = data; render(data); }
+  const sc = result.structuredContent as { siteUrl?: string; empty?: boolean } | undefined;
+  if (sc?.siteUrl) loadDashboard(sc.siteUrl);
 };
 
 window.addEventListener('resize', () => { distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });

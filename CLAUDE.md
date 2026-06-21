@@ -43,7 +43,9 @@ Collect (crawl + GSC + SERP) → analyse (deterministic checks + the merged GSC�
 - Not yet registered in Claude Desktop — see `plan/roadmap.md` for the deploy step.
 
 ## Tools (current)
-`refresh_property` (sync everything; `segments` opt-in for device/country) · `sync_gsc` · `start_crawl` · `inspect_urls` · `track_ranks` · `check_sync_status` · `check_crawl_status` · `list_properties` · `run_audit` · `query_audit` · `fix_finding` (finding→fix moat) · `list_checks` · `data_location` (get/set data dir) · `keyword_volume` · `related_terms` · `normalize_url` · `get_dashboard` (App UI).
+`refresh_property` (sync everything; `segments` opt-in for device/country) · `sync_gsc` · `start_crawl` · `inspect_urls` · `track_ranks` · `check_sync_status` · `check_crawl_status` · `list_properties` · `run_audit` · `query_audit` · `fix_finding` (finding→fix moat) · `list_checks` · `data_location` (get/set data dir) · `keyword_volume` · `related_terms` · `normalize_url` · `get_dashboard` (App UI) · `get_dashboard_data` (app-only) · `export_report` (shareable HTML).
+
+**MCP App large-data pattern (important):** a host caps the *model-facing* tool result ("exceeds maximum allowed tokens" at ~60k chars). So `get_dashboard` returns only `{siteUrl}` + a short summary, and the widget fetches its full (~73k) dataset itself via `app.callServerTool('get_dashboard_data')` — an app-only tool (`_meta.ui.visibility:['app']`) whose result routes to the iframe, bypassing the model token cap (confirmed via ext-apps docs + Gemini). This is why an oversized `get_dashboard` previously failed to render while BSC's small one did. `sync-progress` uses the same callServerTool pattern.
 
 ## What's built vs deferred
 **Built:** data layer (GSC + crawl + URL inspection + DataForSEO, located/cached/on-demand), 30-check scored engine (incl. schema-validate + extractor checks), agency-grade dashboard (findings + report sections + CSV export), date reconciliation, **finding→fix generators (the moat)** — `src/generators/` (JSON-LD / 301 redirect rules / internal-link suggestions), wired via the `fix_finding` tool. Dry-run: returns artifacts, never writes to the user's site.

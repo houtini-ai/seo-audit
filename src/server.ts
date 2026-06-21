@@ -521,11 +521,35 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       _meta: { ui: { resourceUri: DASHBOARD_URI } },
     },
     async ({ siteUrl }) => {
+      // Return only a TINY model-facing result + the siteUrl; the widget fetches the full
+      // (large) dataset itself via the app-only get_dashboard_data tool, which keeps the
+      // big payload OUT of the model's context/token limit (per the MCP Apps large-data pattern).
       const data = getDashboardData(dataDir(), siteUrl);
-      return {
-        content: [{ type: 'text', text: data.empty ? `No synced data for ${siteUrl} yet — run refresh_property.` : `Dashboard for ${siteUrl}` }],
-        structuredContent: data as unknown as Record<string, unknown>,
-      };
+      if (data.empty) {
+        return { content: [{ type: 'text', text: `No synced data for ${siteUrl} yet — run refresh_property.` }], structuredContent: { siteUrl, empty: true } };
+      }
+      const c = data.summary?.current;
+      const summary = `Dashboard opened for ${siteUrl} — ${c?.clicks ?? 0} clicks / ${c?.impressions ?? 0} impressions (last 28d)` +
+        `${data.findings ? `, ${data.findings.total} audit findings` : ''}. Interactive charts + findings render in the widget.`;
+      return { content: [{ type: 'text', text: summary }], structuredContent: { siteUrl } };
+    },
+  );
+
+  // App-only data tool: the dashboard widget calls this via app.callServerTool to fetch its
+  // full dataset. visibility:['app'] hides it from the model; results route to the iframe,
+  // bypassing the model token cap that a large model-facing result would hit.
+  registerAppTool(
+    server,
+    'get_dashboard_data',
+    {
+      title: 'Dashboard data (internal)',
+      description: 'Full dashboard dataset for the UI widget. App-only — not for direct use.',
+      inputSchema: { siteUrl: z.string() },
+      _meta: { ui: { visibility: ['app'] } },
+    },
+    async ({ siteUrl }) => {
+      const data = getDashboardData(dataDir(), siteUrl);
+      return { content: [{ type: 'text', text: 'ok' }], structuredContent: data as unknown as Record<string, unknown> };
     },
   );
 
