@@ -84,10 +84,11 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
       hops++;
       continue;
     }
-    // Server refuses HEAD → retry the same URL with GET (body cancelled below if non-HTML).
-    if (method === 'HEAD' && (res.status === 405 || res.status === 501)) { method = 'GET'; continue; }
     const contentType = res.headers.get('content-type') ?? '';
     const isHtml = isHtmlContentType(contentType);
+    // Re-fetch with GET when HEAD is refused (405/501) OR when an asset-typed URL actually
+    // serves HTML — so we never miss a real page, while still HEAD-ing genuine assets.
+    if (method === 'HEAD' && (res.status === 405 || res.status === 501 || isHtml)) { method = 'GET'; continue; }
     // Only download the body for HTML pages we GET. For everything else (HEAD, or a GET that
     // turned out non-HTML), abort the transfer so we never pull image/PDF/asset bytes.
     let body = '';
