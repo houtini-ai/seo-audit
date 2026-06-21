@@ -20,7 +20,7 @@ export interface RawFinding {
 }
 export interface CheckDef {
   id: string;
-  category: 'crawlability' | 'indexation' | 'onpage' | 'content' | 'schema' | 'security' | 'war-stories' | 'merged';
+  category: 'crawlability' | 'indexation' | 'onpage' | 'content' | 'schema' | 'security' | 'performance' | 'war-stories' | 'merged';
   severity: Severity;
   labels: FindingLabel[];
   certainty: number; // 1.0 deterministic, 0.5 judgement
@@ -393,6 +393,50 @@ export const CHECKS: CheckDef[] = [
     id: 'hreflang-no-return-tag', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'hreflang missing return tag (not reciprocated)', fix: 'Add the reciprocal hreflang on the target page — Google ignores one-way hreflang annotations that don’t link back.',
     run: (c) => hreflangFindings(c).noReturn,
+  },
+
+  // ── 6a finishers — consume persisted DataForSEO enrichments (gated; need the data pulled) ──
+  {
+    id: 'intent-vs-pagetype-mismatch', category: 'merged', severity: 'med', labels: ['G', 'N'], certainty: 0.7, effortBase: 8, fixType: 'per-page',
+    title: 'Page type mismatches its query intent', fix: 'Reformat or retarget the page — its template doesn’t match the SERP intent for its top query (e.g. a product page ranking for an informational query, or an article for a transactional one). Run search_intent siteUrl:<property> to populate intents.',
+    // Join each page's top GSC query → persisted keyword_intent → page schema flavour (from json_ld).
+    // Judgement (N, 0.7): intent + schema-type inference is heuristic, so it only runs with includeJudgement.
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      if (((c.db.prepare('SELECT COUNT(*) n FROM keyword_intent').get() as { n: number }).n) === 0) return []; // intents not pulled
+      const r = rows(c, `SELECT s.page_key urlKey, s.query query, ki.intent intent, p.json_ld jsonLd FROM
+        (SELECT page_key, query, ROW_NUMBER() OVER (PARTITION BY page_key ORDER BY SUM(impressions) DESC) rn
+         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
+        JOIN pages p ON p.url_key = s.page_key
+        JOIN keyword_intent ki ON ki.keyword = LOWER(s.query)
+        WHERE s.rn = 1 AND p.status_code = 200 AND p.json_ld IS NOT NULL AND p.json_ld != ''`);
+      const out: RawFinding[] = [];
+      for (const x of r) {
+        const j = (x.jsonLd || '').toLowerCase();
+        const productish = j.includes('"product"') || j.includes('"offer"');
+        const articleish = j.includes('"article"') || j.includes('"blogposting"') || j.includes('"newsarticle"');
+        const intent = (x.intent || '').toLowerCase();
+        let mismatch: string | null = null;
+        if (productish && intent === 'informational') mismatch = 'product/offer page ranking for an informational query';
+        else if (articleish && intent === 'transactional') mismatch = 'article page ranking for a transactional query';
+        if (mismatch) out.push({ urlKey: x.urlKey, evidence: { topQuery: x.query, queryIntent: intent, mismatch } });
+      }
+      return out;
+    },
+  },
+  {
+    id: 'high-yield-cwv-fail', category: 'performance', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 8, fixType: 'per-page',
+    title: 'High-traffic page failing Core Web Vitals', fix: 'Prioritise CWV work here — this page earns real clicks but fails lab Core Web Vitals (LCP > 2.5s, CLS > 0.1, or performance < 50), so engineering effort has clear ROI. Run page_lighthouse siteUrl:<property> on key URLs to populate CWV.',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      if (((c.db.prepare('SELECT COUNT(*) n FROM page_cwv').get() as { n: number }).n) === 0) return []; // CWV not pulled
+      return rows(c, `SELECT cw.url_key urlKey, cw.lcp_ms lcp, cw.cls cls, cw.performance perf,
+          (SELECT COALESCE(SUM(clicks),0) FROM search_analytics sa WHERE sa.page_key = cw.url_key AND ${win(c.gscMaxDate)}) clicks
+        FROM page_cwv cw
+        WHERE (cw.lcp_ms > 2500 OR cw.cls > 0.1 OR cw.performance < 0.5)`)
+        .filter(r => r.clicks > 0)
+        .map(r => ({ urlKey: r.urlKey, evidence: { clicks: r.clicks, lcpMs: r.lcp != null ? Math.round(r.lcp) : null, cls: r.cls != null ? Math.round(r.cls * 1000) / 1000 : null, performance: r.perf != null ? Math.round(r.perf * 100) : null } }));
+    },
   },
 ];
 

@@ -11,7 +11,7 @@ const MAX_PER_CHECK = 500; // bound findings/check so a huge site can't balloon 
 // on-page tweaks are incremental; low-severity = cosmetic.
 const YIELD_BY_CATEGORY: Record<string, number> = {
   indexation: 0.8, crawlability: 0.7, merged: 0.4, security: 0.5,
-  schema: 0.3, content: 0.25, onpage: 0.2, 'war-stories': 0.5,
+  schema: 0.3, content: 0.25, onpage: 0.2, performance: 0.5, 'war-stories': 0.5,
 };
 // Low/info are cosmetic — near-zero real traffic uplift, so they don't ride a high-traffic page up.
 const SEVERITY_YIELD_ADJ: Record<Severity, number> = { crit: 1.1, high: 1, med: 0.7, low: 0.15, info: 0.05 };

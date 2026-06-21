@@ -281,6 +281,30 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_pbl_backlinks ON page_backlinks(backlinks DESC);
     `);
 
+    // ── DataForSEO on-demand enrichments persisted for the audit (6a) ────────
+    // Keyword intent (Labs search_intent) → powers intent-vs-pagetype-mismatch.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS keyword_intent (
+        keyword TEXT PRIMARY KEY,
+        intent TEXT,                    -- informational | navigational | commercial | transactional
+        probability REAL,
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+    // Per-URL lab Core Web Vitals (On-Page Lighthouse) → powers high-yield-cwv-fail.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS page_cwv (
+        url_key TEXT PRIMARY KEY,        -- urlKey of the audited URL (join spine)
+        url TEXT NOT NULL,
+        for_mobile INTEGER DEFAULT 1,
+        performance REAL,                -- Lighthouse performance score 0–1
+        lcp_ms REAL,                     -- largest-contentful-paint numericValue (ms)
+        cls REAL,                        -- cumulative-layout-shift numericValue
+        tbt_ms REAL,                     -- total-blocking-time numericValue (ms)
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
     this.migrate();
   }
 

@@ -15,9 +15,9 @@ const db = adb.db;
 adb.upsertProperty('sc-domain:example.com', 'apex');
 
 const page = (o) => db.prepare(`INSERT INTO pages
-  (crawl_id,url,url_key,status_code,indexable,noindex,ipr,inlink_count,canonical_url,canonical_key,word_count,bytes,hreflang)
-  VALUES (@crawl_id,@url,@url_key,@status_code,@indexable,@noindex,@ipr,@inlink_count,@canonical_url,@canonical_key,@word_count,@bytes,@hreflang)`)
-  .run({ crawl_id: 'c1', indexable: 1, noindex: 0, ipr: 0, inlink_count: 0, canonical_url: null, canonical_key: null, word_count: 500, bytes: 20000, hreflang: null, ...o });
+  (crawl_id,url,url_key,status_code,indexable,noindex,ipr,inlink_count,canonical_url,canonical_key,word_count,bytes,hreflang,json_ld)
+  VALUES (@crawl_id,@url,@url_key,@status_code,@indexable,@noindex,@ipr,@inlink_count,@canonical_url,@canonical_key,@word_count,@bytes,@hreflang,@json_ld)`)
+  .run({ crawl_id: 'c1', indexable: 1, noindex: 0, ipr: 0, inlink_count: 0, canonical_url: null, canonical_key: null, word_count: 500, bytes: 20000, hreflang: null, json_ld: null, ...o });
 db.prepare(`INSERT INTO crawl_metadata (crawl_id,base_url,base_domain,status,urls_crawled,max_pages) VALUES ('c1','https://example.com','example.com','completed',20,1000)`).run();
 
 // pages (url_key computed via urlKey, exactly as the crawler would write it)
@@ -42,10 +42,23 @@ db.prepare(`INSERT INTO links (crawl_id,source_url,source_key,target_url,target_
 // url_inspection: soft 404 for /soft
 db.prepare(`INSERT INTO url_inspection (url_key,url,page_fetch_state) VALUES (?,?,'SOFT_404')`).run(k(U.soft), U.soft);
 
+// intent-vs-pagetype: a Product page whose top query is informational
+const PROD = 'https://example.com/product-x';
+page({ url: PROD, url_key: k(PROD), status_code: 200, json_ld: '[{"@context":"https://schema.org","@type":"Product","name":"X"}]' });
+// high-yield-cwv-fail: a page with clicks that fails CWV
+const SLOW = 'https://example.com/slowpage';
+page({ url: SLOW, url_key: k(SLOW), status_code: 200 });
+
 // GSC: facet URL gets nothing (zero-impression); /a gets impressions so the join exists
 const today = '2026-06-20';
-db.prepare(`INSERT INTO search_analytics (date,query,page,page_key,clicks,impressions,position) VALUES (?,?,?,?,?,?,?)`)
-  .run(today, 'thing', U.a, k(U.a), 1, 100, 5);
+const gsc = (q, u, clicks, impr, pos) => db.prepare(`INSERT INTO search_analytics (date,query,page,page_key,clicks,impressions,position) VALUES (?,?,?,?,?,?,?)`).run(today, q, u, k(u), clicks, impr, pos);
+gsc('thing', U.a, 1, 100, 5);
+gsc('how to choose a wheel', PROD, 2, 500, 12); // informational query on a Product page
+gsc('slow thing', SLOW, 300, 4000, 6);          // real clicks on the slow page
+
+// persisted DataForSEO enrichments
+db.prepare(`INSERT INTO keyword_intent (keyword,intent,probability) VALUES ('how to choose a wheel','informational',0.99)`).run();
+db.prepare(`INSERT INTO page_cwv (url_key,url,performance,lcp_ms,cls,tbt_ms) VALUES (?,?,?,?,?,?)`).run(k(SLOW), SLOW, 0.3, 5000, 0.05, 600);
 
 const ctx = { db, gscMaxDate: today };
 const expect = {
@@ -55,6 +68,8 @@ const expect = {
   'soft-404-shell': [k(U.soft)],
   'broken-hreflang-target': [k(U.en)],
   'hreflang-no-return-tag': [k(U.en)],
+  'intent-vs-pagetype-mismatch': [k(PROD)],
+  'high-yield-cwv-fail': [k(SLOW)],
 };
 
 let pass = 0, fail = 0;

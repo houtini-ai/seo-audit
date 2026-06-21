@@ -22,9 +22,10 @@ Sequence: **6a → 6e → 6b → 6c → 6d**
 - [x] `soft-404-shell` (MED)
 - [x] tighten `keyword-cannibalisation` (pos<20 only, exclude pos 1–2 dominance)
 - [x] reconcile vs existing (canonical-usurp=`canonical-conflict`, phantom=`ghost-pages`)
-- [ ] **persistence layer** — store `search_intent` per query + `page_lighthouse` CWV per URL (prereq for the next two)
-- [ ] `intent-vs-pagetype-mismatch` (MED) — needs persistence
-- [ ] `high-yield-cwv-fail` (MED) — needs persistence
+- [x] **persistence layer** — `keyword_intent` + `page_cwv` tables; `search_intent`/`page_lighthouse` persist when `siteUrl` passed
+- [x] `intent-vs-pagetype-mismatch` (MED, N) — Product/Offer page on informational query (or Article on transactional); gated on `keyword_intent`
+- [x] `high-yield-cwv-fail` (MED) — CWV-failing page (LCP>2.5s / CLS>0.1 / perf<50) that earns clicks; gated on `page_cwv`
+- _6a COMPLETE — `npm run probe:6a` 8/8 green_
 
 ### 6e — unified priority model (Expected Clicks / Dev-Hour)  ✅ DONE
 - [x] replaced `(severityW × certainty × log10(traffic))/effort` with `Priority = (T × Y × C) / E`

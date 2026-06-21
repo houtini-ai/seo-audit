@@ -55,7 +55,7 @@ const SYNC_PROGRESS_URI = 'ui://sync-progress/main.html';
 // filters never silently return empty. (Was listing performance/agentic/integrity/war-stories
 // which no check uses, and omitting content/security which checks do use.)
 const CHECK_CATEGORIES = [
-  'crawlability', 'indexation', 'onpage', 'content', 'schema', 'security', 'merged',
+  'crawlability', 'indexation', 'onpage', 'content', 'schema', 'security', 'performance', 'merged',
 ] as const;
 
 function isoDaysAgo(days: number): string {
@@ -66,7 +66,7 @@ const SEV_ICON: Record<string, string> = { crit: '🔴', high: '🟠', med: '�
 const CAT_NAME: Record<string, string> = {
   integrity: 'Integrity', crawlability: 'Crawlability', indexation: 'Indexation', onpage: 'On-page',
   content: 'Content', schema: 'Structured data', security: 'Security', 'war-stories': 'Edge cases',
-  merged: 'Search performance', agentic: 'AI readiness',
+  performance: 'Performance (CWV)', merged: 'Search performance', agentic: 'AI readiness',
 };
 
 // Concise executive markdown summary of an audit — rendered as the tool's text content so it
@@ -563,10 +563,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'search_intent',
     {
       title: 'Search intent classification (DataForSEO Labs)',
-      description: 'Classify the search intent (informational / navigational / commercial / transactional) of keywords — primary label + probability + secondary intents. Use it to spot intent mismatch: e.g. a transactional product page ranking for an informational query (a common cause of high impressions / low CTR). Labs call, cached 20 days, up to 1000 keywords. Language-only (no location).',
-      inputSchema: { keywords: z.array(z.string()).min(1).max(1000), languageCode: z.string().optional() },
+      description: 'Classify the search intent (informational / navigational / commercial / transactional) of keywords — primary label + probability + secondary intents. Use it to spot intent mismatch: e.g. a transactional product page ranking for an informational query (a common cause of high impressions / low CTR). Pass siteUrl to persist the intents so run_audit can surface intent-vs-pagetype-mismatch. Labs call, cached 20 days, up to 1000 keywords. Language-only (no location).',
+      inputSchema: { keywords: z.array(z.string()).min(1).max(1000), languageCode: z.string().optional(), siteUrl: z.string().optional() },
     },
-    async ({ keywords, languageCode }) => {
+    async ({ keywords, languageCode, siteUrl }) => {
       const client = requireDfs(dfs);
       const r = await client.searchIntent(keywords, languageCode);
       const items = (r.tasks[0]?.result?.[0]?.items ?? []).map((it: any) => ({
@@ -575,9 +575,18 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         probability: it.keyword_intent?.probability ?? null,
         secondary: (it.secondary_keyword_intents ?? []).map((s: any) => ({ intent: s.label, probability: s.probability })),
       }));
+      let persisted = 0;
+      if (siteUrl) {
+        const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+        try {
+          const up = db.db.prepare(`INSERT INTO keyword_intent (keyword,intent,probability,fetched_at) VALUES (?,?,?,datetime('now'))
+            ON CONFLICT(keyword) DO UPDATE SET intent=excluded.intent, probability=excluded.probability, fetched_at=datetime('now')`);
+          db.db.transaction(() => { for (const it of items) if (it.keyword && it.intent) { up.run(it.keyword.toLowerCase(), it.intent, it.probability); persisted++; } })();
+        } finally { db.close(); }
+      }
       return {
-        content: [{ type: 'text', text: `${items.length} keywords classified${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
-        structuredContent: { intents: items, cached: r.cached, cost: r.cost },
+        content: [{ type: 'text', text: `${items.length} keywords classified${persisted ? `, ${persisted} saved for ${siteUrl}` : ''}${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
+        structuredContent: { intents: items, persisted, cached: r.cached, cost: r.cost },
       };
     },
   );
@@ -586,16 +595,17 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'page_lighthouse',
     {
       title: 'Page Lighthouse — lab Core Web Vitals (DataForSEO On-Page)',
-      description: 'Run a live Lighthouse audit for ONE url: lab Core Web Vitals (LCP, CLS, TBT, FCP, Speed Index), category scores (performance/SEO/best-practices/accessibility), and the top time-saving opportunities. Complements GSC/CrUX field data (aggregate + delayed) with on-demand lab data. Paid On-Page call (~2000 credits), slow (~20–120s), cached 20 days.',
-      inputSchema: { url: z.string().url(), forMobile: z.boolean().optional() },
+      description: 'Run a live Lighthouse audit for ONE url: lab Core Web Vitals (LCP, CLS, TBT, FCP, Speed Index), category scores (performance/SEO/best-practices/accessibility), and the top time-saving opportunities. Complements GSC/CrUX field data (aggregate + delayed) with on-demand lab data. Pass siteUrl to persist the CWV so run_audit can surface high-yield-cwv-fail. Paid On-Page call (~2000 credits), slow (~20–120s), cached 20 days.',
+      inputSchema: { url: z.string().url(), forMobile: z.boolean().optional(), siteUrl: z.string().optional() },
     },
-    async ({ url, forMobile }) => {
+    async ({ url, forMobile, siteUrl }) => {
       const client = requireDfs(dfs);
       const mobile = forMobile ?? true;
       const r = await client.lighthouse(url, mobile);
       const res = r.tasks[0]?.result?.[0] ?? {};
       const audits: Record<string, any> = res.audits ?? {};
       const cwv = (id: string) => ({ score: audits[id]?.score ?? null, value: audits[id]?.displayValue ?? null });
+      const numeric = (id: string): number | null => audits[id]?.numericValue ?? null;
       const cats: Record<string, any> = res.categories ?? {};
       const opportunities = Object.values(audits)
         .filter((a: any) => a?.details?.type === 'opportunity' && (a.details.overallSavingsMs ?? 0) > 0)
@@ -617,10 +627,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         opportunities,
         cached: r.cached, cost: r.cost,
       };
+      let persisted = false;
+      if (siteUrl && cats.performance) {
+        const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+        try {
+          db.db.prepare(`INSERT INTO page_cwv (url_key,url,for_mobile,performance,lcp_ms,cls,tbt_ms,fetched_at)
+            VALUES (?,?,?,?,?,?,?,datetime('now'))
+            ON CONFLICT(url_key) DO UPDATE SET url=excluded.url, for_mobile=excluded.for_mobile, performance=excluded.performance,
+              lcp_ms=excluded.lcp_ms, cls=excluded.cls, tbt_ms=excluded.tbt_ms, fetched_at=datetime('now')`)
+            .run(urlKey(url, { hostForm: hostFormForProperty(siteUrl) }), url, mobile ? 1 : 0,
+              out.scores.performance, numeric('largest-contentful-paint'), numeric('cumulative-layout-shift'), numeric('total-blocking-time'));
+          persisted = true;
+        } finally { db.close(); }
+      }
       const perf = out.scores.performance != null ? Math.round(out.scores.performance * 100) : '?';
       return {
-        content: [{ type: 'text', text: `Lighthouse ${url}: perf ${perf}/100, LCP ${out.coreWebVitals.lcp.value ?? '?'}, CLS ${out.coreWebVitals.cls.value ?? '?'}${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
-        structuredContent: out,
+        content: [{ type: 'text', text: `Lighthouse ${url}: perf ${perf}/100, LCP ${out.coreWebVitals.lcp.value ?? '?'}, CLS ${out.coreWebVitals.cls.value ?? '?'}${persisted ? ` (saved for ${siteUrl})` : ''}${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
+        structuredContent: { ...out, persisted },
       };
     },
   );
