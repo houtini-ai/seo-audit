@@ -9,17 +9,18 @@ phase: 5
 
 ## Build status (scoping snapshot)
 
-**Done (shipped + live-verified on houtini.com):**
-- Data layer: GSC sync, crawl (stdio-safe), URL Inspection, DataForSEO (located, 20-day cache, on-demand), rank history. All joined on `url_key`.
-- Audit engine: 30 scored checks (`P=(S×C×V)/E`), persisted findings (incl. schema-validate + extractor modules).
-- **Finding→fix moat (#1 below): SHIPPED** — `src/generators/` + `fix_finding` tool (JSON-LD / 301 rules / internal-link suggestions, dry-run).
-- **schema-validate (#2 below): SHIPPED** — `src/audit/schema-validate.ts` (maintained Rich-Results required-field map) + 4 checks.
-- **Extractor checks (#4 below): SHIPPED** — extract.ts captures image-alt/canonical-count/canonical-relative + header-charset fallback; 3 checks; idempotent `AuditDatabase.migrate()`.
-- Dashboard (MCP App): findings treemap + ranked table, 6 ECharts, page-performance/keyword-movement/device/country report tables, CSV export, host-theme.
-- Orchestration: `refresh_property` + granular tools + audit tools. 17 tools.
-- Hygiene: secrets gitignored, version-from-package.json, server.json metadata.
+**Done (shipped + live-verified — last updated 2026-06-20):**
+- Data layer: GSC sync (**lite default** date×query×page + `segments` opt-in; mode guard), crawl (stdio-safe, **fresh-snapshot per crawl**, no-cache fetch, robots Allow+Disallow), URL Inspection, DataForSEO (located, 20-day cache, on-demand), rank history. All joined on `url_key`.
+- Audit engine: **39 scored checks** (`P=(S×C×V)/E`), persisted findings — incl. schema-validate, extractor (CLS/headings/mixed-content/social/canonical), and **merged crawl×GSC** (striking-distance, cannibalisation, ctr-below-expected [impression-weighted], orphan, canonical-conflict, ghost-pages, title-missing-top-query) + **link-graph** (deep-pages, underlinked-high-demand).
+- **#1 Finding→fix moat: SHIPPED** — `src/generators/` + `fix_finding` (JSON-LD / 301 rules / iPR-ranked internal-link suggestions, dry-run).
+- **#2 schema-validate: SHIPPED** — `src/audit/schema-validate.ts` + 4 checks.
+- **#4 Extractor checks: SHIPPED** — + idempotent `AuditDatabase.migrate()`.
+- **Internal link-graph (part of #12): SHIPPED** — `src/core/linkGraph.ts` computes iPR (0–100) + body-only click-depth post-crawl.
+- **#5 Registered in Claude Desktop: SHIPPED** — live-verified on houtini/ehi/simracing.
+- **Delivery / display: SHIPPED** — `get_dashboard` (App UI; tiny result + widget fetches full data via app-only `get_dashboard_data` → renders in-chat, bypasses the model token cap), `export_report` (self-contained shareable HTML), `run_audit` markdown report in chat, live `sync-progress` widget, CSV (host + standalone).
+- Hygiene: secrets gitignored, version-from-package.json, data dir → `~/Documents/seo-audit-console` (`SAC_DATA_DIR` in config / `data_location` tool).
 
-**Remaining (this roadmap).** Research is saturated (research/15) — remaining work is *modules + the moat*, not more checks.
+**Remaining (this roadmap):** the rest of the #12 research-gap cluster (backlinks layer ← building now; hreflang; integrity gates; redirect-health; soft-404; perf proxies), then #3 robots-sitemap, #6 CWV, #7 render tier, #8 logs, #10 agent-readiness, #11 chunked sync, #9 ecommerce.
 
 ---
 
