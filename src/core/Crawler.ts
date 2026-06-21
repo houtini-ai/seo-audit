@@ -15,7 +15,7 @@ export const isHtmlContentType = (ct: string | null | undefined): boolean =>
 // File types we never need the body of — images, media, fonts, archives, office docs, css/js,
 // pdf. We HEAD these (status + content-type only, no download) — a big bandwidth/time win on
 // asset-heavy sites. We still record them (status/type) so broken-link checks work.
-const ASSET_EXT = /\.(jpe?g|png|gif|webp|avif|svg|ico|bmp|tiff?|heic|pdf|zip|rar|7z|gz|tgz|tar|bz2|mp4|webm|mov|avi|mkv|m4v|mp3|wav|ogg|flac|css|js|mjs|cjs|map|woff2?|ttf|otf|eot|dmg|exe|msi|apk|doc|docx|xls|xlsx|ppt|pptx)$/i;
+const ASSET_EXT = /\.(jpe?g|png|gif|webp|avif|svg|svgz|ico|bmp|tiff?|heic|psd|pdf|zip|rar|7z|gz|tgz|tar|bz2|mp4|mpeg|mpg|m4v|webm|mov|avi|mkv|flv|wmv|mp3|m4a|aac|opus|weba|wav|ogg|oga|flac|wma|css|js|mjs|cjs|map|woff2?|ttf|otf|eot|dmg|exe|msi|apk|bin|doc|docx|xls|xlsx|ppt|pptx)$/i;
 const isAssetUrl = (u: string): boolean => { try { return ASSET_EXT.test(new URL(u).pathname); } catch { return false; } };
 
 export interface CrawlOptions {
