@@ -513,6 +513,26 @@ export const CHECKS: CheckDef[] = [
         .map(r => ({ urlKey: r.urlKey, evidence: { inlinks: 0, note: 'in sitemap, no internal links' } }));
     },
   },
+
+  // ── Cheap performance proxies (from data captured at crawl time — no extra fetch) ──
+  {
+    id: 'slow-response', category: 'performance', severity: 'med', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'global',
+    title: 'Slow server response (TTFB proxy)', fix: 'Investigate slow server/TTFB — caching, CDN, or backend. Response time over ~1.5s hurts Core Web Vitals and crawl rate.',
+    run: (c) => rows(c, `SELECT url_key urlKey, response_time_ms ms FROM pages WHERE status_code=200 AND ${HTML_CT} AND response_time_ms > 1500 ORDER BY response_time_ms DESC`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { responseMs: r.ms } })),
+  },
+  {
+    id: 'large-html', category: 'performance', severity: 'low', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Large HTML document', fix: 'Trim the HTML payload (over ~150KB) — bloated markup slows render and First Contentful Paint. Often huge inline SVG/CSS/JSON or unminified output.',
+    run: (c) => rows(c, `SELECT url_key urlKey, bytes FROM pages WHERE status_code=200 AND ${HTML_CT} AND bytes > 150000 ORDER BY bytes DESC`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { bytes: r.bytes } })),
+  },
+  {
+    id: 'uncompressed-html', category: 'performance', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
+    title: 'HTML served without compression', fix: 'Enable gzip or brotli for HTML responses — uncompressed HTML wastes bandwidth and slows load. Usually a one-line server/CDN setting.',
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND ${HTML_CT} AND (content_encoding IS NULL OR content_encoding='')`)
+      .map(r => ({ urlKey: r.urlKey, evidence: {} })),
+  },
 ];
 
 const sitemapHasRows = (c: CheckContext): boolean =>

@@ -142,6 +142,11 @@ gsc('ghost term', 'https://smoke.test/ghost-page', 10, 600, 7);                 
 gsc('underlinked demand', 'https://smoke.test/orphan-impr', 1, 500, 9);          // underlinked-high-demand (ipr<30, low inlinks)
 gsc('coffee machine reviews', 'https://smoke.test/blog/getting-started', 1, 1200, 22); // suggest_pages gap (incidental, rank 22)
 
+// Performance proxies (from captured columns)
+page('https://smoke.test/slow-server', { response_time_ms: 3200 });   // slow-response
+page('https://smoke.test/heavy-page', { bytes: 320000 });             // large-html
+page('https://smoke.test/no-compression', { content_encoding: null }); // uncompressed-html
+
 // Sitemap reconciliation: list /dead (404 → sitemap-non-indexable) + /true-orphan (in sitemap,
 // no inlinks → sitemap-orphan). Indexable pages NOT listed → indexable-not-in-sitemap.
 const sm = (u) => db.prepare(`INSERT INTO sitemap_urls (url_key,url) VALUES (?,?)`).run(k(u), u);
@@ -178,6 +183,7 @@ const must = [
   'ghost-pages', 'underlinked-high-demand', 'missing-required-fields', 'invalid-schema', 'article-date-illogical',
   'intent-vs-pagetype-mismatch', 'high-yield-cwv-fail', 'entity-internal-link-gap',
   'sitemap-non-indexable', 'indexable-not-in-sitemap', 'sitemap-orphan',
+  'slow-response', 'large-html', 'uncompressed-html',
 ];
 const missing = must.filter(m => !fired.has(m));
 ok(missing.length === 0, `all ${must.length} must-fire checks present${missing.length ? ` — MISSING: ${JSON.stringify(missing)}` : ''}`);
