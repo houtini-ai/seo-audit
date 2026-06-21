@@ -170,6 +170,10 @@ export function extractPage(
       return;
     }
     if (target.protocol !== 'http:' && target.protocol !== 'https:') return;
+    // Cloudflare-reserved infrastructure (/cdn-cgi/l/email-protection, rocket-loader, …) —
+    // never real content and 404s to bots by design; skip so it's neither crawled nor counted
+    // as an internal link (otherwise it shows up as a high-equity "broken link" false positive).
+    if (/^\/cdn-cgi\//i.test(target.pathname)) return;
     const apex = (h: string): string => (h.startsWith('www.') ? h.slice(4) : h);
     const isInternal = apex(target.hostname.toLowerCase()) === apex(baseHost.toLowerCase());
     if (isInternal) internalLinks++;

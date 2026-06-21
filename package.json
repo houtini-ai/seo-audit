@@ -34,6 +34,7 @@
     "test": "npm run build:server && npm run smoke",
     "smoke": "node scripts/smoke.mjs",
     "probe:crawl": "node scripts/probe-crawl.mjs",
+    "qa:crawl": "node scripts/qa-crawl.mjs",
     "probe:gsc": "node scripts/probe-gsc.mjs",
     "probe:fixfinding": "node scripts/probe-fixfinding.mjs",
     "probe:schema": "node scripts/probe-schema.mjs",
