@@ -484,7 +484,39 @@ export const CHECKS: CheckDef[] = [
         .map(r => ({ urlKey: r.urlKey, evidence: { suggestLinkTo: r.target, parentEntity: r.pl, childEntity: r.cl, relation: r.rel } }));
     },
   },
+
+  // ── Sitemap ↔ crawl reconciliation (gated on a sitemap having been fetched) ──
+  {
+    id: 'sitemap-non-indexable', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
+    title: 'Sitemap lists non-indexable URLs', fix: 'Remove URLs from the XML sitemap that are 4xx/5xx, redirected, noindex, canonicalised or robots-blocked — the sitemap should list only canonical, indexable pages, or Google loses trust in it.',
+    run: (c) => {
+      if (!sitemapHasRows(c)) return [];
+      return rows(c, `SELECT s.url_key urlKey, p.indexable_reason reason, p.status_code st FROM sitemap_urls s JOIN pages p ON p.url_key = s.url_key WHERE p.indexable = 0`)
+        .map(r => ({ urlKey: r.urlKey, evidence: { reason: r.reason ?? 'not-indexable', status: r.st } }));
+    },
+  },
+  {
+    id: 'indexable-not-in-sitemap', category: 'indexation', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
+    title: 'Indexable pages missing from the sitemap', fix: 'Add these indexable pages to the XML sitemap so Google discovers and prioritises them.',
+    run: (c) => {
+      if (!sitemapHasRows(c)) return [];
+      return rows(c, `SELECT p.url_key urlKey FROM pages p LEFT JOIN sitemap_urls s ON s.url_key = p.url_key WHERE p.status_code = 200 AND p.indexable = 1 AND s.url_key IS NULL`)
+        .map(r => ({ urlKey: r.urlKey, evidence: {} }));
+    },
+  },
+  {
+    id: 'sitemap-orphan', category: 'crawlability', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Sitemap page with no internal links', fix: 'Add internal links — this page is in the sitemap but nothing links to it, so it relies on the sitemap alone for discovery and earns little internal authority.',
+    run: (c) => {
+      if (!sitemapHasRows(c)) return [];
+      return rows(c, `SELECT p.url_key urlKey FROM pages p JOIN sitemap_urls s ON s.url_key = p.url_key WHERE p.status_code = 200 AND p.indexable = 1 AND p.inlink_count = 0`)
+        .map(r => ({ urlKey: r.urlKey, evidence: { inlinks: 0, note: 'in sitemap, no internal links' } }));
+    },
+  },
 ];
+
+const sitemapHasRows = (c: CheckContext): boolean =>
+  ((c.db.prepare('SELECT COUNT(*) n FROM sitemap_urls').get() as { n: number }).n) > 0;
 
 // hreflang checks share parsing/normalisation: hrefs are stored RAW, so resolve each against the
 // page URL then urlKey() with the property's host_form so they match pages.url_key. Computed once.

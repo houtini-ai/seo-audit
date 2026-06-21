@@ -5,6 +5,7 @@ import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
 import { extractPage } from './extract.js';
 import { fetchRobots } from './robots.js';
 import { computeLinkGraph } from './linkGraph.js';
+import { fetchSitemapUrls } from './sitemap.js';
 
 // Robust HTML detection from a Content-Type header: take the MIME type before any
 // parameters (charset, boundary), normalised — text/html and XHTML count as HTML.
@@ -381,6 +382,17 @@ export class Crawler {
 
     // Post-crawl: internal PageRank (iPR) + body-only click depth from the homepage.
     computeLinkGraph(db.db, crawlId, urlKey(seed, keyOpts));
+
+    // Post-crawl: fetch the XML sitemap(s) and store the listed URLs for crawl↔sitemap
+    // reconciliation (indexable-but-not-in-sitemap, sitemap-points-to-dead, sitemap orphans).
+    if (!signal.aborted) {
+      try {
+        const sm = await fetchSitemapUrls(origin, ua, keyOpts);
+        db.db.exec('DELETE FROM sitemap_urls');
+        const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, fetched_at) VALUES (?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
+        db.db.transaction(() => { for (const u of sm.urls) smInsert.run(u.urlKey, u.url); })();
+      } catch { /* sitemap optional — never fail the crawl on it */ }
+    }
 
     const finishedAt = new Date().toISOString();
     db.db.prepare(

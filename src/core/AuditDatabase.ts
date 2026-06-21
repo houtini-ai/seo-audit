@@ -287,6 +287,15 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_pbl_backlinks ON page_backlinks(backlinks DESC);
     `);
 
+    // ── Sitemap URLs (for crawl↔sitemap reconciliation) ────────────────────
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS sitemap_urls (
+        url_key TEXT PRIMARY KEY,        -- normalised join key of a URL listed in the XML sitemap(s)
+        url TEXT NOT NULL,
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
     // ── DataForSEO on-demand enrichments persisted for the audit (6a) ────────
     // Keyword intent (Labs search_intent) → powers intent-vs-pagetype-mismatch.
     this.db.exec(`
