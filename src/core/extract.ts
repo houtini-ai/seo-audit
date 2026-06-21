@@ -174,8 +174,13 @@ export function extractPage(
     // never real content and 404s to bots by design; skip so it's neither crawled nor counted
     // as an internal link (otherwise it shows up as a high-equity "broken link" false positive).
     if (/^\/cdn-cgi\//i.test(target.pathname)) return;
+    // Internal = the seed host or its www/apex twin ONLY — not arbitrary sibling subdomains.
+    // (accounts./shop./blog. etc. are separate properties; crawling them pulls in junk like
+    // Shopify's accounts.<domain> OAuth login pages — infinite param URLs, no SEO value.)
     const apex = (h: string): string => (h.startsWith('www.') ? h.slice(4) : h);
-    const isInternal = apex(target.hostname.toLowerCase()) === apex(baseHost.toLowerCase());
+    const apexBase = apex(baseHost.toLowerCase());
+    const targetHost = target.hostname.toLowerCase();
+    const isInternal = targetHost === apexBase || targetHost === `www.${apexBase}`;
     if (isInternal) internalLinks++;
     else externalLinks++;
     links.push({

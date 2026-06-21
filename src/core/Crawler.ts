@@ -24,6 +24,7 @@ const isAssetUrl = (u: string): boolean => { try { return ASSET_EXT.test(new URL
 const SKIP_PATTERNS: RegExp[] = [
   /[?&](sps_query|s|q|search|keyword|orderby|sort_by|add-to-cart|fl_builder|elementor-preview)=/i,
   /[?&](pf_|filter[._]|dppref|variant=)/i, // Shopify/WooCommerce faceted filters + variant duplicates
+  /[?&](client_id|redirect_uri|response_type)=|\/authentication\/|\/oauth\//i, // auth/login flows (no SEO value)
   /\/search(-results)?\//i,
   /[?&]replytocom=/i,
   /\/(wp-json|wp-admin|wp-login\.php|xmlrpc\.php)(\/|$|\?)/i,
