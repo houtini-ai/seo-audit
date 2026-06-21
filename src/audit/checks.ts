@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import type { FindingLabel, Severity } from '../core/AuditDatabase.js';
 import { validateJsonLdColumn, type SchemaIssueKind } from './schema-validate.js';
 import { urlKey } from '../core/url-key.js';
+import { parseJsonLdNodes, nodeType } from './templates.js';
 
 /**
  * Check registry. Each check is a pure read over the AuditDatabase (crawl + GSC +
@@ -412,9 +413,9 @@ export const CHECKS: CheckDef[] = [
         WHERE s.rn = 1 AND p.status_code = 200 AND p.json_ld IS NOT NULL AND p.json_ld != ''`);
       const out: RawFinding[] = [];
       for (const x of r) {
-        const j = (x.jsonLd || '').toLowerCase();
-        const productish = j.includes('"product"') || j.includes('"offer"');
-        const articleish = j.includes('"article"') || j.includes('"blogposting"') || j.includes('"newsarticle"');
+        const types = parseJsonLdNodes(x.jsonLd).map(n => (nodeType(n) ?? '').toLowerCase());
+        const productish = types.some(t => t === 'product' || t === 'offer');
+        const articleish = types.some(t => /article|blogposting|newsarticle/.test(t));
         const intent = (x.intent || '').toLowerCase();
         let mismatch: string | null = null;
         if (productish && intent === 'informational') mismatch = 'product/offer page ranking for an informational query';
@@ -455,13 +456,9 @@ export const CHECKS: CheckDef[] = [
     run: (c) => {
       const out: RawFinding[] = [];
       for (const r of rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND json_ld LIKE '%Article%' AND json_ld LIKE '%date%'`)) {
-        let parsed: any;
-        try { parsed = JSON.parse(r.jsonLd); } catch { continue; }
-        const nodes: any[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.['@graph']) ? parsed['@graph'] : [parsed];
-        for (const n of nodes) {
-          const t = n?.['@type'];
-          const isArticle = t && (Array.isArray(t) ? t : [t]).some((x: unknown) => /article|blogposting|newsarticle/i.test(String(x)));
-          if (!isArticle) continue;
+        for (const n of parseJsonLdNodes(r.jsonLd)) {
+          const t = nodeType(n);
+          if (!t || !/article|blogposting|newsarticle/i.test(t)) continue;
           const pub = Date.parse(n.datePublished), mod = Date.parse(n.dateModified);
           if (!Number.isNaN(pub) && !Number.isNaN(mod) && mod < pub) { out.push({ urlKey: r.urlKey, evidence: { datePublished: n.datePublished, dateModified: n.dateModified } }); break; }
         }

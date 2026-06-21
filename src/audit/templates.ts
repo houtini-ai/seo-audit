@@ -46,24 +46,40 @@ export function urlMorphology(rawUrl: string): string {
   return path + (params.length ? '?' + params.join('&') : '');
 }
 
-/** Raw JSON-LD column → root @type (handles array, @graph, @type-as-array), else 'None'. */
-export function jsonLdType(jsonLd: string | null): string {
-  if (!jsonLd) return 'None';
-  const first = (t: unknown): string | null => (Array.isArray(t) ? (t[0] != null ? String(t[0]) : null) : t != null ? String(t) : null);
-  try {
-    const parsed = JSON.parse(jsonLd);
-    for (const o of Array.isArray(parsed) ? parsed : [parsed]) {
-      if (o && typeof o === 'object') {
-        const t = first((o as any)['@type']);
-        if (t) return t;
-        const graph = (o as any)['@graph'];
-        if (Array.isArray(graph)) for (const g of graph) { const gt = first(g?.['@type']); if (gt) return gt; }
-      }
+/**
+ * Parse the stored `json_ld` column into JSON-LD node objects. The column is a JSON array of
+ * RAW BLOCK STRINGS (one per <script type=application/ld+json>, see extract.ts) — so we parse
+ * the array, then parse each string, flattening @graph. Tolerates an array of already-parsed
+ * objects too (defensive). Returns [] on anything unparseable.
+ */
+export function parseJsonLdNodes(col: string | null): any[] {
+  if (!col) return [];
+  let blocks: unknown;
+  try { blocks = JSON.parse(col); } catch { return []; }
+  const raws = Array.isArray(blocks) ? blocks : [blocks];
+  const nodes: any[] = [];
+  for (const raw of raws) {
+    let obj: any;
+    if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { continue; } }
+    else obj = raw; // already an object (defensive)
+    for (const o of Array.isArray(obj) ? obj : [obj]) {
+      if (!o || typeof o !== 'object') continue;
+      if (Array.isArray(o['@graph'])) nodes.push(...o['@graph']);
+      else nodes.push(o);
     }
-  } catch {
-    const m = /"@type"\s*:\s*"([^"]+)"/.exec(jsonLd);
-    if (m) return m[1];
   }
+  return nodes;
+}
+
+/** First concrete @type of a node (handles @type-as-array). */
+export function nodeType(node: any): string | null {
+  const t = node?.['@type'];
+  return Array.isArray(t) ? (t[0] != null ? String(t[0]) : null) : t != null ? String(t) : null;
+}
+
+/** Raw JSON-LD column → root @type, else 'None'. */
+export function jsonLdType(jsonLd: string | null): string {
+  for (const n of parseJsonLdNodes(jsonLd)) { const t = nodeType(n); if (t) return t; }
   return 'None';
 }
 

@@ -49,6 +49,10 @@ Decision: **heuristic H1/title → Wikidata search** resolution (user choice), f
 - [x] `entity-internal-link-gap` (LOW, N) — Wikidata says two resolved pages' entities are subclass/part-of related but no internal link connects them → suggest one. probe-6d 5/5 (incl. live Wikidata).
 - [~] plays #2/#3 deferred (need data we don't store): entity content-gap (competitor page extraction), disambiguation footprints (page body text — we keep word_count, not full text).
 
+## Testing
+- [x] **Extended smoke test** (`npm run smoke` / `npm test`) — seeds one realistic property covering every data source, asserts: all ~52 checks run without throwing, ≥30 findings across ≥25 checks with 31 must-fire present, priority finite+sorted, templates ≥2, ≥1 new-page proposal, dashboard builds. _Caught a real bug: 3 JSON-LD checks (article-date-illogical, intent-vs-pagetype, templates.jsonLdType) parsed `json_ld` as objects when the real column is an array of raw strings — fixed via shared `parseJsonLdNodes`._
+- [x] Per-feature probes: `probe:6a/6b/6c/6d/templates/priority/dfs-labs/backlinks` (+ schema/extract/crawl/gsc)
+
 ## Standing TODOs (parked, with design in roadmap.md)
 - [ ] **URL Inspection prioritised budget** (404/noindex-first → crawl-validate → pattern redirect advice)
 - [ ] **`instant_pages` CSR-hazard check** (deferred DataForSEO endpoint)
