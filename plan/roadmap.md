@@ -129,6 +129,15 @@ Ranked from a skeptical sweep of the full v3 surface vs what we already have (cr
 
 ---
 
+## Pre-production review — performance & efficiency (TODO, user direction 2026-06-21)
+**When the feature set is compiled and close to production, run `/code-review` with a performance/efficiency focus** (not just correctness). Specific lenses the user called out:
+- **DataForSEO call consolidation** — can we batch calls to cut cost? (e.g. `searchVolume`/`searchIntent` accept up to 700–1000 keywords/call — are we ever looping single keywords where one array call would do? Can SERP/Labs requests for the same property share a task array?)
+- **Are we discarding data we already paid for?** Each DataForSEO response carries far more than we parse (e.g. SERP `advanced` returns PAA + related + features; `keyword_info` carries `monthly_searches`, trend, CPC bands; Lighthouse returns every audit). Capture the useful extras at first fetch so we don't pay for a second call to get them. Audit each `*.tasks[0].result` mapping for dropped fields.
+- **Crawl performance + progress indicator** — is the crawler concurrency/back-pressure sound? Is the `sync-progress` widget reporting crawl phases accurately? Are we capturing everything insightful from each fetch (timing, headers, redirect chain, bytes, encoding, hreflang, structured data) or silently dropping signal we'd otherwise re-crawl for?
+- **Database indexing discipline** — does every hot query path (joins on `url_key`/`page_key`, `crawl_id` scoping, findings/ranking lookups, `page_backlinks`) have a covering index? Check for full-table scans on the big tables (`search_analytics`, `pages`, `links`). Confirm WAL + prepared-statement + transaction-batch usage is consistent.
+
+Output: a prioritised list of cost/perf wins (cheap → expensive), then implement the high-value ones before publish.
+
 ## Recommended order
 **1 → 2 → 4 → 3 → 5**, then 6/7/8 as needed, 9 if a client needs it.
 Rationale: the moat (1) first (biggest differentiation, all deps ready); 2 + 4 are cheap, high-confidence check expansions that also feed the moat; 3 banks the most checklist coverage per build; 5 gets it in front of real use. 6–8 are the MED-confidence modules — do after the HIGH-confidence core is solid and live.
