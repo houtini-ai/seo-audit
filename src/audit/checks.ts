@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { FindingLabel, Severity } from '../core/AuditDatabase.js';
 import { validateJsonLdColumn, type SchemaIssueKind } from './schema-validate.js';
+import { urlKey } from '../core/url-key.js';
 
 /**
  * Check registry. Each check is a pure read over the AuditDatabase (crawl + GSC +
@@ -243,7 +244,22 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'keyword-cannibalisation', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Keyword cannibalisation', fix: 'Consolidate or differentiate — multiple URLs compete for one query.',
-    run: (c) => c.gscMaxDate ? rows(c, `SELECT query, COUNT(DISTINCT page_key) urls, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query HAVING COUNT(DISTINCT page_key) >= 2 AND SUM(impressions) >= 50 ORDER BY impressions DESC LIMIT 40`).map(r => ({ urlKey: null, evidence: { query: r.query, competingUrls: r.urls, clicks: r.clicks, impressions: r.impressions } })) : [],
+    // Only count URLs that actually rank for the query (impression-weighted position < 20) so a
+    // page ranking #3 + a page at #85 isn't flagged; and exclude "dominance" where the two best
+    // pages both sit in positions 1–2 (indented/double results are good, not cannibalisation).
+    run: (c) => c.gscMaxDate ? rows(c, `
+      WITH per_page AS (
+        SELECT query, page_key, SUM(clicks) clicks, SUM(impressions) impressions,
+               SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+        FROM search_analytics
+        WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)}
+        GROUP BY query, page_key
+        HAVING pos < 20
+      )
+      SELECT query, COUNT(*) urls, SUM(clicks) clicks, SUM(impressions) impressions, MIN(pos) bestPos, MAX(pos) worstPos
+      FROM per_page GROUP BY query
+      HAVING COUNT(*) >= 2 AND SUM(impressions) >= 50 AND NOT (MAX(pos) <= 2)
+      ORDER BY impressions DESC LIMIT 40`).map(r => ({ urlKey: null, evidence: { query: r.query, competingUrls: r.urls, clicks: r.clicks, impressions: r.impressions, positions: `${Math.round(r.bestPos * 10) / 10}–${Math.round(r.worstPos * 10) / 10}` } })) : [],
   },
   {
     id: 'ctr-below-expected', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
@@ -319,4 +335,114 @@ export const CHECKS: CheckDef[] = [
         .map(r => ({ urlKey: r.urlKey, evidence: { inlinks: 0, backlinks: 0 } }));
     },
   },
+
+  // ── Phase 6a — expert questions where crawl (intent) and reality diverge ──
+  {
+    id: 'ipr-bleed-by-status', category: 'crawlability', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
+    title: 'Internal link equity flowing into dead URLs', fix: 'Repoint or 301 these internal links — they target non-200 URLs and waste the internal PageRank of the (often high-authority) pages linking to them.',
+    // Sum the iPR of the SOURCE pages linking to each non-200 internal target. "Found a 404" is
+    // junior; "this 404 drains the equity of N high-iPR pages" is the director-level find.
+    run: (c) => rows(c, `SELECT l.target_key urlKey, COUNT(DISTINCT l.source_key) linkingPages,
+        ROUND(SUM(src.ipr), 1) wastedIpr, t.status_code st
+      FROM links l
+      JOIN pages src ON src.url_key = l.source_key
+      JOIN pages t   ON t.url_key   = l.target_key
+      WHERE l.is_internal = 1 AND t.status_code IS NOT NULL AND t.status_code != 200
+      GROUP BY l.target_key HAVING SUM(src.ipr) > 0
+      ORDER BY wastedIpr DESC`).map(r => ({ urlKey: r.urlKey, evidence: { status: r.st, linkingPages: r.linkingPages, wastedIpr: r.wastedIpr } })),
+  },
+  {
+    id: 'broken-canonical-target', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Canonical points to a broken/non-indexable URL', fix: 'Point the canonical at a live, indexable (200, non-noindex) URL — a canonical to a 4xx/5xx/redirect/noindex target is ignored by Google.',
+    // Join the declared canonical_key back to the crawl. Only flag when we crawled the target and
+    // it's non-200 or noindex (don't FP on targets we never crawled). Skip self-canonicals.
+    run: (c) => rows(c, `SELECT p.url_key urlKey, p.canonical_url canon, t.status_code st, t.noindex ni
+      FROM pages p JOIN pages t ON t.url_key = p.canonical_key
+      WHERE p.canonical_key IS NOT NULL AND p.canonical_key != p.url_key AND p.status_code = 200
+        AND (t.status_code != 200 OR t.noindex = 1)`).map(r => ({ urlKey: r.urlKey, evidence: { canonical: r.canon, targetStatus: r.st, targetNoindex: !!r.ni } })),
+  },
+  {
+    id: 'faceted-spider-trap', category: 'crawlability', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'global',
+    title: 'Indexable faceted URLs burning crawl budget', fix: 'noindex (or robots-disallow / canonicalise) multi-parameter filter URLs — they are indexable but earn zero search traffic, so they only waste crawl budget and risk index bloat.',
+    // Multi-parameter (>=2 params), indexable, zero GSC impressions in-window = classic facet trap.
+    // Gate on GSC so "zero search value" is a real claim, not just "no data".
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      return rows(c, `SELECT url_key urlKey, url FROM pages
+        WHERE status_code = 200 AND indexable = 1 AND url LIKE '%?%' AND url LIKE '%&%'
+          AND url_key NOT IN (SELECT page_key FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} AND impressions > 0)
+        ORDER BY url`).map(r => ({ urlKey: r.urlKey, evidence: { url: r.url, params: (r.url.split('?')[1] ?? '').split('&').map((kv: string) => kv.split('=')[0]).join(', '), note: 'indexable, multi-parameter, zero GSC impressions' } }));
+    },
+  },
+  {
+    id: 'soft-404-shell', category: 'indexation', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Soft 404 — 200 OK but Google treats it as not-found', fix: 'Either populate the page with real content, or return a true 404/410 (or noindex) — it serves 200 but Google has flagged it as a soft 404.',
+    // URL Inspection page-fetch-state = soft 404 while the crawler sees a 200. The crawler alone
+    // would call this page fine; Google disagrees. Needs URL Inspection populated.
+    run: (c) => rows(c, `SELECT i.url_key urlKey, p.word_count wc, p.bytes bytes
+      FROM url_inspection i JOIN pages p ON p.url_key = i.url_key
+      WHERE LOWER(i.page_fetch_state) LIKE '%soft%' AND p.status_code = 200`).map(r => ({ urlKey: r.urlKey, evidence: { pageFetchState: 'soft 404', wordCount: r.wc, bytes: r.bytes } })),
+  },
+  {
+    id: 'broken-hreflang-target', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'hreflang points to a broken/non-indexable URL', fix: 'Point each hreflang alternate at a live, indexable URL — Google drops the whole cluster if an alternate is 4xx/5xx/redirect/noindex.',
+    run: (c) => hreflangFindings(c).broken,
+  },
+  {
+    id: 'hreflang-no-return-tag', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'hreflang missing return tag (not reciprocated)', fix: 'Add the reciprocal hreflang on the target page — Google ignores one-way hreflang annotations that don’t link back.',
+    run: (c) => hreflangFindings(c).noReturn,
+  },
 ];
+
+// hreflang checks share parsing/normalisation: hrefs are stored RAW, so resolve each against the
+// page URL then urlKey() with the property's host_form so they match pages.url_key. Computed once.
+type HreflangOut = { broken: RawFinding[]; noReturn: RawFinding[] };
+let _hreflangCache: { db: Database.Database; out: HreflangOut } | null = null;
+function hreflangFindings(ctx: CheckContext): HreflangOut {
+  if (_hreflangCache && _hreflangCache.db === ctx.db) return _hreflangCache.out;
+  const hostForm = (ctx.db.prepare(`SELECT host_form h FROM property_meta LIMIT 1`).get() as { h: string } | undefined)?.h as
+    | 'apex' | 'www' | 'asis' | undefined;
+  const opts = { hostForm: hostForm ?? 'asis' };
+  const pageRows = ctx.db.prepare(`SELECT url_key, url, status_code, noindex, hreflang FROM pages WHERE hreflang IS NOT NULL AND hreflang != ''`).all() as
+    { url_key: string; url: string; status_code: number | null; noindex: number | null; hreflang: string }[];
+  const status = new Map<string, { status: number | null; noindex: number | null }>();
+  for (const p of ctx.db.prepare(`SELECT url_key, status_code, noindex FROM pages`).all() as { url_key: string; status_code: number | null; noindex: number | null }[])
+    status.set(p.url_key, { status: p.status_code, noindex: p.noindex });
+
+  // declared[sourceKey] = set of internal alternate targetKeys (excluding x-default + self)
+  const declared = new Map<string, Set<string>>();
+  const parsed: { srcKey: string; targets: { key: string; lang: string }[] }[] = [];
+  for (const p of pageRows) {
+    let arr: { lang: string; href: string }[];
+    try { arr = JSON.parse(p.hreflang); } catch { continue; }
+    const targets: { key: string; lang: string }[] = [];
+    for (const { lang, href } of arr) {
+      if (!href) continue;
+      let key: string;
+      try { key = urlKey(new URL(href, p.url).toString(), opts); } catch { continue; }
+      if (key === p.url_key) continue; // self-reference
+      targets.push({ key, lang: (lang || '').toLowerCase() });
+    }
+    parsed.push({ srcKey: p.url_key, targets });
+    declared.set(p.url_key, new Set(targets.filter(t => t.lang !== 'x-default').map(t => t.key)));
+  }
+
+  const broken: RawFinding[] = [];
+  const noReturn: RawFinding[] = [];
+  for (const { srcKey, targets } of parsed) {
+    const brokenTargets: string[] = [];
+    const missingReturn: string[] = [];
+    for (const t of targets) {
+      const st = status.get(t.key);
+      if (st && (st.status !== 200 || st.noindex === 1)) brokenTargets.push(t.key);
+      // reciprocation only for internal, live (200) targets we crawled, excluding x-default
+      // (a broken target is already reported by broken-hreflang-target — don't double-flag)
+      if (t.lang !== 'x-default' && st && st.status === 200 && st.noindex !== 1 && !(declared.get(t.key)?.has(srcKey))) missingReturn.push(t.key);
+    }
+    if (brokenTargets.length) broken.push({ urlKey: srcKey, evidence: { brokenAlternates: brokenTargets.slice(0, 10), count: brokenTargets.length } });
+    if (missingReturn.length) noReturn.push({ urlKey: srcKey, evidence: { missingReturnFrom: missingReturn.slice(0, 10), count: missingReturn.length } });
+  }
+  _hreflangCache = { db: ctx.db, out: { broken, noReturn } };
+  return { broken, noReturn };
+}
