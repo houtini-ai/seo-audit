@@ -147,7 +147,8 @@ export class AuditDatabase {
         has_microdata INTEGER DEFAULT 0,
         has_rdfa INTEGER DEFAULT 0,
         inlink_count INTEGER DEFAULT 0,  -- in-degree (computed post-crawl: orphans)
-        ipr REAL DEFAULT 0,              -- internal PageRank (computed post-crawl)
+        ipr REAL DEFAULT 0,              -- internal PageRank 0–100 (computed post-crawl)
+        click_depth INTEGER,             -- body-only shortest path from home (post-crawl; null=unreachable via body)
         rendered INTEGER DEFAULT 0,      -- did this row come from the render tier?
         render_diff TEXT,                -- raw-vs-rendered diff summary (JSON), if rendered
         security_headers TEXT,           -- {csp,hsts,xFrame,referrer,...} JSON
@@ -290,6 +291,7 @@ export class AuditDatabase {
     ensure('pages', 'twitter_tags', 'twitter_tags TEXT');
     ensure('pages', 'has_microdata', 'has_microdata INTEGER DEFAULT 0');
     ensure('pages', 'has_rdfa', 'has_rdfa INTEGER DEFAULT 0');
+    ensure('pages', 'click_depth', 'click_depth INTEGER');
   }
 
   // ── Minimal property accessors (full CRUD added as modules are wired) ─────

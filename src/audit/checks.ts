@@ -280,4 +280,19 @@ export const CHECKS: CheckDef[] = [
         .map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, title: x.title } }));
     },
   },
+  // ── Internal link graph (iPR + click-depth + anchor text, from the crawl `links` table) ──
+  {
+    id: 'deep-pages', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Page buried deep in the structure', fix: 'Add in-content (body) links from higher-level pages — this page is 4+ clicks from the homepage via body links.',
+    run: (c) => rows(c, `SELECT url_key urlKey, click_depth d FROM pages WHERE status_code=200 AND indexable=1 AND click_depth >= 4 ORDER BY click_depth DESC`).map(r => ({ urlKey: r.urlKey, evidence: { clickDepth: r.d } })),
+  },
+  {
+    id: 'underlinked-high-demand', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'High search demand, low internal authority', fix: 'Add internal links from high-authority (high-iPR) pages — this earns impressions but the site gives it little internal link equity.',
+    run: (c) => c.gscMaxDate ? rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key WHERE p.indexable=1 AND p.ipr < 30 AND p.inlink_count BETWEEN 1 AND 3 AND sa.${win(c.gscMaxDate)} GROUP BY p.url_key HAVING SUM(sa.impressions) >= 300 ORDER BY impressions DESC`).map(r => ({ urlKey: r.urlKey, evidence: { impressions: r.impressions, ipr: Math.round(r.ipr), inlinks: r.inl } })) : [],
+  },
+  // NOTE: internal anchor-text over-optimisation was prototyped but pulled — on real content
+  // sites article-card/nav/brand anchors dominate naturally and produce false positives.
+  // Needs a better heuristic (short exact-match keyword anchors across many distinct sources,
+  // excluding card/title text) before it can carry evidence credibly. See roadmap #12.
 ];

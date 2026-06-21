@@ -89,19 +89,21 @@ export function suggestRedirect(brokenUrl: string, livePages: { url: string }[],
 }
 
 // ── Internal-link suggestions (for orphan / striking-distance) ────────────
-export interface LinkSuggestion { donorUrl: string; inlinkCount: number; relevance: number }
+export interface LinkSuggestion { donorUrl: string; ipr: number; inlinkCount: number; relevance: number }
 
 export function suggestInternalLinks(db: Database.Database, receiverUrlKey: string, anchor: string): { anchor: string; donors: LinkSuggestion[] } {
   const alreadyLinking = new Set(
     (db.prepare('SELECT DISTINCT source_key FROM links WHERE target_key = ?').all(receiverUrlKey) as { source_key: string }[]).map(r => r.source_key),
   );
+  // Prefer high-authority donors (iPR) — the "money move" is link equity flowing from
+  // strong pages to the under-linked receiver; topical relevance breaks ties.
   const candidates = db.prepare(
-    'SELECT url, url_key, inlink_count FROM pages WHERE status_code=200 AND indexable=1 AND url_key != ? ORDER BY inlink_count DESC LIMIT 80',
-  ).all(receiverUrlKey) as { url: string; url_key: string; inlink_count: number }[];
+    'SELECT url, url_key, ipr, inlink_count FROM pages WHERE status_code=200 AND indexable=1 AND url_key != ? ORDER BY ipr DESC LIMIT 80',
+  ).all(receiverUrlKey) as { url: string; url_key: string; ipr: number; inlink_count: number }[];
   const donors = candidates
     .filter(c => !alreadyLinking.has(c.url_key))
-    .map(c => ({ donorUrl: c.url, inlinkCount: c.inlink_count, relevance: Math.round(tokenOverlap(c.url, receiverUrlKey) * 100) / 100 }))
-    .sort((a, b) => b.relevance - a.relevance || b.inlinkCount - a.inlinkCount)
+    .map(c => ({ donorUrl: c.url, ipr: Math.round(c.ipr ?? 0), inlinkCount: c.inlink_count, relevance: Math.round(tokenOverlap(c.url, receiverUrlKey) * 100) / 100 }))
+    .sort((a, b) => b.relevance - a.relevance || b.ipr - a.ipr)
     .slice(0, 5);
   return { anchor, donors };
 }

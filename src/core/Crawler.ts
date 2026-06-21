@@ -4,6 +4,7 @@ import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
 import { extractPage } from './extract.js';
 import { fetchRobots } from './robots.js';
+import { computeLinkGraph } from './linkGraph.js';
 
 export interface CrawlOptions {
   maxPages?: number;
@@ -290,6 +291,9 @@ export class Crawler {
           AND links.source_key != pages.url_key
       ) WHERE crawl_id = ?`,
     ).run(crawlId);
+
+    // Post-crawl: internal PageRank (iPR) + body-only click depth from the homepage.
+    computeLinkGraph(db.db, crawlId, urlKey(seed, keyOpts));
 
     const finishedAt = new Date().toISOString();
     db.db.prepare(
