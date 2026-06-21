@@ -305,6 +305,26 @@ export class AuditDatabase {
       );
     `);
 
+    // ── Wikidata entity layer (6d) — heuristic H1→QID resolution + relationship edges ──
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS page_entity (
+        url_key TEXT PRIMARY KEY,        -- page resolved to a Wikidata entity
+        qid TEXT NOT NULL,               -- Wikidata QID (e.g. Q42)
+        label TEXT,
+        description TEXT,
+        source TEXT,                     -- 'h1' | 'title' | 'declared' (how we resolved)
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_page_entity_qid ON page_entity(qid);
+      CREATE TABLE IF NOT EXISTS entity_edge (
+        qid TEXT NOT NULL,               -- child / part entity
+        related_qid TEXT NOT NULL,       -- parent / whole entity (P279 subclass-of / P361 part-of target)
+        relation TEXT NOT NULL,          -- 'subclass_of' | 'part_of'
+        PRIMARY KEY (qid, related_qid, relation)
+      );
+      CREATE INDEX IF NOT EXISTS idx_entity_edge_related ON entity_edge(related_qid);
+    `);
+
     this.migrate();
   }
 

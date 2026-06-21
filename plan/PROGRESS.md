@@ -43,12 +43,11 @@ Sequence: **6a → 6e → 6b → 6c → 6d**
 - [x] `src/audit/opportunities.ts` + `suggest_pages` tool: demand (GSC impr, rank 11+) → subtract [A rank≤10 · B page covers ≥70% query tokens · C contender page ≤15 owns >80% impr] → lexical cluster → score (impr × intent) → evidence + nearest existing page to link from. probe-6c 7/7 green.
 - [~] SERP-overlap clustering + search-volume/intent enrichment = refinement (lexical clustering + persisted intent used for now; intent via `search_intent siteUrl:`)
 
-### 6d — Wikidata entity layer (skip vanity; keep the 3 that compute)  ← NEXT (approach decision pending)
-Wikidata MCP (`C:\MCP\wikidata`) wraps the public API (search_entities, get_entity, get_claims, sparql_query, get_linked_entities) — no auth. Plan: a small cached WikidataClient in seo-audit-console, then the 3 plays:
-- entity-graph internal linking (P279 subclass / P361 part-of between resolved pages → suggest missing link)
-- entity content-gap (entities competitors' pages mention that ours lacks)
-- disambiguation footprints (deterministic Wikidata facts for a page's entity absent from its text)
-**OPEN DECISION (FP risk):** how to resolve a page → QID. (A) deterministic-only — use entities the page already declares in schema `about`/`sameAs` (zero FP, low coverage); (B) resolve via H1/title through Wikidata search (broad coverage, heuristic → label N/judgement, gated behind includeJudgement). Awaiting steer given "a wrong finding is worse than none."
+### 6d — Wikidata entity layer  ✅ CORE DONE (play #1)
+Decision: **heuristic H1/title → Wikidata search** resolution (user choice), findings labelled N + gated behind includeJudgement.
+- [x] `WikidataClient` (public API, 45-day cache) + `Entities` resolver + `resolve_entities` async tool (`page_entity` + `entity_edge` tables)
+- [x] `entity-internal-link-gap` (LOW, N) — Wikidata says two resolved pages' entities are subclass/part-of related but no internal link connects them → suggest one. probe-6d 5/5 (incl. live Wikidata).
+- [~] plays #2/#3 deferred (need data we don't store): entity content-gap (competitor page extraction), disambiguation footprints (page body text — we keep word_count, not full text).
 
 ## Standing TODOs (parked, with design in roadmap.md)
 - [ ] **URL Inspection prioritised budget** (404/noindex-first → crawl-validate → pattern redirect advice)

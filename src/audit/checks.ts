@@ -469,6 +469,22 @@ export const CHECKS: CheckDef[] = [
       return out;
     },
   },
+
+  // ── 6d — Wikidata entity layer (heuristic H1→QID; N/judgement, gated on resolve_entities) ──
+  {
+    id: 'entity-internal-link-gap', category: 'crawlability', severity: 'low', labels: ['N'], certainty: 0.5, effortBase: 3, fixType: 'per-page',
+    title: 'Topically related pages not internally linked', fix: 'Add an internal link from the broader page to the more specific one — Wikidata says their entities are related (subclass-of / part-of) but no internal link connects them, leaving a gap in the topical mesh. Run resolve_entities first; verify the entity match before acting (heuristic).',
+    run: (c) => {
+      if (((c.db.prepare('SELECT COUNT(*) n FROM page_entity').get() as { n: number }).n) === 0) return []; // not resolved
+      return rows(c, `SELECT parent.url_key urlKey, child.url_key target, parent.label pl, child.label cl, ee.relation rel
+        FROM entity_edge ee
+        JOIN page_entity child  ON child.qid = ee.qid
+        JOIN page_entity parent ON parent.qid = ee.related_qid
+        WHERE parent.url_key != child.url_key
+          AND NOT EXISTS (SELECT 1 FROM links l WHERE l.source_key = parent.url_key AND l.target_key = child.url_key AND l.is_internal = 1)`)
+        .map(r => ({ urlKey: r.urlKey, evidence: { suggestLinkTo: r.target, parentEntity: r.pl, childEntity: r.cl, relation: r.rel } }));
+    },
+  },
 ];
 
 // hreflang checks share parsing/normalisation: hrefs are stored RAW, so resolve each against the

@@ -45,6 +45,7 @@
     "probe:templates": "node scripts/probe-templates.mjs",
     "probe:6b": "node scripts/probe-6b.mjs",
     "probe:6c": "node scripts/probe-6c.mjs",
+    "probe:6d": "node scripts/probe-6d.mjs",
     "probe:migrate": "node scripts/probe-migrate.mjs",
     "probe:boot": "node scripts/probe-boot.mjs",
     "clean": "rimraf dist"

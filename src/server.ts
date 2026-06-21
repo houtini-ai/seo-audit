@@ -25,6 +25,8 @@ import { Refresh } from './core/Refresh.js';
 import { DataForSeoClient } from './core/DataForSeoClient.js';
 import { RankTracker } from './core/RankTracker.js';
 import { Backlinks } from './core/Backlinks.js';
+import { WikidataClient } from './core/WikidataClient.js';
+import { Entities } from './core/Entities.js';
 import { JobManager } from './core/JobManager.js';
 import type { FetchOptions } from './core/types.js';
 
@@ -126,6 +128,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 ## 5. Templates & opportunities
 - **list_templates** — cluster pages into templates (one fix → N pages) with a representative exemplar. _"List page templates for example.com"_
 - **suggest_pages** — new-page ideas grounded in real GSC demand, minus what you already cover. _"Suggest new pages for example.com"_
+- **resolve_entities** — map pages to Wikidata entities → unlocks entity-internal-link-gap (judgement). _"Resolve entities for example.com"_
 
 ## 6. Reports & dashboard
 - **get_dashboard** — interactive dashboard (renders in chat). _"Show the dashboard for example.com"_
@@ -154,6 +157,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     : null;
   const rankTracker = dfs ? new RankTracker(dfs, dataDir()) : null;
   const backlinks = dfs ? new Backlinks(dfs, dataDir()) : null;
+  const entities = new Entities(new WikidataClient(path.join(dataDir(), 'wikidata-cache.db')), dataDir());
   const refresh = new Refresh(sync, crawler, inspector, rankTracker);
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
@@ -845,6 +849,22 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const jobId = jobs.start('backlinks', (update, signal) => bl.run(siteUrl, { limit, statusLimit }, update, signal));
       return {
         content: [{ type: 'text', text: `Backlink pull started for ${siteUrl} (job ${jobId}). Poll check_sync_status, then run_audit for backlinks-to-404.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
+      };
+    },
+  );
+
+  server.registerTool(
+    'resolve_entities',
+    {
+      title: 'Resolve page entities (Wikidata)',
+      description: 'Heuristically resolve each top page’s primary entity (by H1, fallback title) to a Wikidata QID, and store subclass-of / part-of relationships between them. Unlocks the entity-internal-link-gap finding (suggests internal links a topical mesh implies). Heuristic — those findings are judgement (N), shown only with includeJudgement. Free (public Wikidata API), cached ~45 days, on-demand. Async job — poll check_sync_status.',
+      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(500).optional(), language: z.string().optional() },
+    },
+    async ({ siteUrl, limit, language }) => {
+      const jobId = jobs.start('entities', (update, signal) => entities.run(siteUrl, { ...(limit != null ? { limit } : {}), ...(language ? { language } : {}) }, update, signal));
+      return {
+        content: [{ type: 'text', text: `Entity resolution started for ${siteUrl} (job ${jobId}). Poll check_sync_status, then run_audit includeJudgement:true for entity-internal-link-gap.` }],
         structuredContent: { jobId, status: 'running', siteUrl },
       };
     },
