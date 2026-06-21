@@ -12,6 +12,12 @@ const HTML_MIME_TYPES = new Set(['text/html', 'application/xhtml+xml']);
 export const isHtmlContentType = (ct: string | null | undefined): boolean =>
   HTML_MIME_TYPES.has((ct ?? '').split(';')[0].trim().toLowerCase());
 
+// File types we never need the body of — images, media, fonts, archives, office docs, css/js,
+// pdf. We HEAD these (status + content-type only, no download) — a big bandwidth/time win on
+// asset-heavy sites. We still record them (status/type) so broken-link checks work.
+const ASSET_EXT = /\.(jpe?g|png|gif|webp|avif|svg|ico|bmp|tiff?|heic|pdf|zip|rar|7z|gz|tgz|tar|bz2|mp4|webm|mov|avi|mkv|m4v|mp3|wav|ogg|flac|css|js|mjs|cjs|map|woff2?|ttf|otf|eot|dmg|exe|msi|apk|doc|docx|xls|xlsx|ppt|pptx)$/i;
+const isAssetUrl = (u: string): boolean => { try { return ASSET_EXT.test(new URL(u).pathname); } catch { return false; } };
+
 export interface CrawlOptions {
   maxPages?: number;
   maxDepth?: number;
@@ -56,8 +62,11 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
   let current = url;
   let hops = 0;
   const start = Date.now();
+  // Known asset file-types: HEAD only (no body download). Falls back to GET if HEAD is refused.
+  let method: 'GET' | 'HEAD' = isAssetUrl(url) ? 'HEAD' : 'GET';
   while (true) {
     const res = await fetch(current, {
+      method,
       redirect: 'manual',
       // pages change between crawls — ask upstream caches/CDNs for the current copy
       headers: {
@@ -75,9 +84,17 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
       hops++;
       continue;
     }
+    // Server refuses HEAD → retry the same URL with GET (body cancelled below if non-HTML).
+    if (method === 'HEAD' && (res.status === 405 || res.status === 501)) { method = 'GET'; continue; }
     const contentType = res.headers.get('content-type') ?? '';
     const isHtml = isHtmlContentType(contentType);
-    const body = isHtml ? await res.text() : '';
+    // Only download the body for HTML pages we GET. For everything else (HEAD, or a GET that
+    // turned out non-HTML), abort the transfer so we never pull image/PDF/asset bytes.
+    let body = '';
+    if (method === 'GET') {
+      if (isHtml) body = await res.text();
+      else { try { await res.body?.cancel(); } catch { /* already closed */ } }
+    }
     const h = (name: string): string | null => res.headers.get(name);
     const sec: Record<string, string> = {};
     for (const [k, name] of [
