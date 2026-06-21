@@ -207,7 +207,10 @@ export class Crawler {
         const finalKey = urlKey(r.finalUrl, keyOpts);
         const isHtml = r.contentType.includes('text/html') || r.contentType.includes('xhtml');
         const ex = isHtml && r.status === 200 ? extractPage(r.body, r.finalUrl, baseHost, keyOpts, r.xRobotsTag) : null;
-        const indexable = r.status === 200 && !(ex?.noindex ?? /noindex/i.test(r.xRobotsTag ?? ''))
+        // Only HTML documents are "indexable pages". Non-HTML resources (images, PDFs, RSS
+        // feeds, plain text) are stored for link/status analysis but must not be treated as
+        // indexable content — otherwise they pollute on-page checks and internal-link donors.
+        const indexable = isHtml && r.status === 200 && !(ex?.noindex ?? /noindex/i.test(r.xRobotsTag ?? ''))
           && (!ex?.canonicalKey || ex.canonicalKey === finalKey) ? 1 : 0;
 
         pageBuf.push({

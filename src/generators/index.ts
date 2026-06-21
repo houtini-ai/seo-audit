@@ -97,8 +97,9 @@ export function suggestInternalLinks(db: Database.Database, receiverUrlKey: stri
   );
   // Prefer high-authority donors (iPR) — the "money move" is link equity flowing from
   // strong pages to the under-linked receiver; topical relevance breaks ties.
+  // HTML pages only — never suggest linking from a non-HTML resource (RSS feed, image, PDF).
   const candidates = db.prepare(
-    'SELECT url, url_key, ipr, inlink_count FROM pages WHERE status_code=200 AND indexable=1 AND url_key != ? ORDER BY ipr DESC LIMIT 80',
+    "SELECT url, url_key, ipr, inlink_count FROM pages WHERE status_code=200 AND indexable=1 AND content_type LIKE '%html%' AND url_key != ? ORDER BY ipr DESC LIMIT 80",
   ).all(receiverUrlKey) as { url: string; url_key: string; ipr: number; inlink_count: number }[];
   const donors = candidates
     .filter(c => !alreadyLinking.has(c.url_key))
