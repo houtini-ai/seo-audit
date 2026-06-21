@@ -53,6 +53,13 @@ Decision: **heuristic H1/title → Wikidata search** resolution (user choice), f
 - [x] **Extended smoke test** (`npm run smoke` / `npm test`) — seeds one realistic property covering every data source, asserts: all ~52 checks run without throwing, ≥30 findings across ≥25 checks with 31 must-fire present, priority finite+sorted, templates ≥2, ≥1 new-page proposal, dashboard builds. _Caught a real bug: 3 JSON-LD checks (article-date-illogical, intent-vs-pagetype, templates.jsonLdType) parsed `json_ld` as objects when the real column is an array of raw strings — fixed via shared `parseJsonLdNodes`._
 - [x] Per-feature probes: `probe:6a/6b/6c/6d/templates/priority/dfs-labs/backlinks` (+ schema/extract/crawl/gsc)
 
+## Live QA — simracingcockpit.gg (2026-06-21, post-restart)
+- [x] **Recrawl** (522 pages, 0 failed) — unlocked iPR (424 pages) + click_depth → ipr-bleed/deep-pages now fire.
+- [x] **Crawl-data QA: 36/36 random samples clean** (`qa:crawl`) — status/title/h1/canonical/noindex/json_ld/word-count all matched live re-fetch; 404/410/image URLs handled correctly.
+- [x] **FP #1 fixed — Cloudflare `/cdn-cgi/`** (`15782f9`): email-protection 404 was linked from 445 pages, dominating ipr-bleed at 17,755 iPR. Now skipped at extraction.
+- [x] **FP #2 fixed — schema `missing-required-fields` type-level dedup**: WP/RankMath pages carry a complete `@graph` Article + a 2nd partial Article (about/mentions); validator flagged the partial as "missing author/datePublished/image" despite a valid Article existing (would have mis-fired across many of the 229 findings). Now suppresses 'required' for a type when any node of that type is fully complete. Verified: real page → no required issue; probe:schema 15/15 + smoke 9/9 still green.
+- _Both fixes apply to the live MCP after the next Desktop restart + recrawl._
+
 ## Standing TODOs (parked, with design in roadmap.md)
 - [ ] **URL Inspection prioritised budget** (404/noindex-first → crawl-validate → pattern redirect advice)
 - [ ] **`instant_pages` CSR-hazard check** (deferred DataForSEO endpoint)

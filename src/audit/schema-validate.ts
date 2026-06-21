@@ -103,6 +103,24 @@ function validateNode(node: Record<string, unknown>, issues: SchemaIssue[]): voi
   }
 }
 
+/** Does this node fully satisfy its type's required (incl. nested) fields? */
+function fullyComplete(node: Record<string, unknown>, type: string): boolean {
+  const required = REQUIRED[type];
+  if (!required) return false;
+  if (!required.every(f => node[f] !== undefined && node[f] !== null && node[f] !== '')) return false;
+  const nested = NESTED_REQUIRED[type];
+  if (nested) {
+    const fv = node[nested.field];
+    if (fv === undefined || fv === null) return false;
+    const offers = Array.isArray(fv) ? fv : [fv];
+    if (!offers.length) return false;
+    for (const off of offers) {
+      if (!isObj(off) || !nested.sub.every(s => off[s] !== undefined && off[s] !== null && off[s] !== '')) return false;
+    }
+  }
+  return true;
+}
+
 /** Validate the raw `pages.json_ld` column. Returns all issues found across blocks. */
 export function validateJsonLdColumn(col: string | null): SchemaIssue[] {
   if (!col) return [];
@@ -111,11 +129,13 @@ export function validateJsonLdColumn(col: string | null): SchemaIssue[] {
   try { blocks = JSON.parse(col); } catch { return [{ kind: 'parse', detail: 'json_ld column is not valid JSON.' }]; }
   const rawBlocks: string[] = Array.isArray(blocks) ? blocks.filter((b): b is string => typeof b === 'string') : [];
 
+  const allNodes: Record<string, unknown>[] = [];
   for (const raw of rawBlocks) {
     let parsed: unknown;
     try { parsed = JSON.parse(raw); } catch { issues.push({ kind: 'parse', detail: 'A JSON-LD block does not parse (check trailing commas / escaped quotes).' }); continue; }
     const nodes: Record<string, unknown>[] = [];
     nodesOf(parsed, nodes);
+    allNodes.push(...nodes);
     for (const node of nodes) {
       const ctx = node['@context'];
       const ctxOk = typeof ctx === 'string' ? /schema\.org/i.test(ctx) : Array.isArray(ctx) ? ctx.some(c => typeof c === 'string' && /schema\.org/i.test(c)) : isObj(ctx);
@@ -128,5 +148,12 @@ export function validateJsonLdColumn(col: string | null): SchemaIssue[] {
       issues.push({ kind: 'context', detail: 'JSON-LD block has no @context.' });
     }
   }
-  return issues;
+
+  // Type-level dedup: if the page has at least one FULLY-complete node of a type, don't flag a
+  // sibling incomplete node of that type for "missing required fields" — Google uses the valid
+  // one. (A common WP/RankMath pattern: a complete @graph Article + a second partial Article for
+  // entity SEO.) Only suppresses 'required'; parse/context/value/forbidden issues always stand.
+  const satisfied = new Set<string>();
+  for (const n of allNodes) { const t = typeOf(n); if (t && fullyComplete(n, t)) satisfied.add(t); }
+  return satisfied.size ? issues.filter(i => !(i.kind === 'required' && i.type && satisfied.has(i.type))) : issues;
 }
