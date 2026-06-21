@@ -66,7 +66,7 @@ export class DataForSeoClient {
   }
 
   /** POST to a DataForSEO endpoint, served from the 20-day cache when fresh. */
-  async call(endpoint: string, body: unknown[]): Promise<DfsResponse> {
+  async call(endpoint: string, body: unknown[], timeoutMs = 60000): Promise<DfsResponse> {
     const key = this.keyFor(endpoint, body);
     const row = this.cache
       .prepare('SELECT response_json, cost, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
@@ -80,7 +80,7 @@ export class DataForSeoClient {
         method: 'POST',
         headers: { Authorization: this.auth, 'content-type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       const json: any = await res.json();
       if (!res.ok || json?.status_code >= 40000) {
@@ -171,6 +171,63 @@ export class DataForSeoClient {
   async domainPagesSummary(target: string, limit = 1000): Promise<DfsResponse> {
     return this.call('/v3/backlinks/domain_pages_summary/live', [
       { target, limit: Math.min(limit, 1000), order_by: ['backlinks,desc'], backlinks_status_type: 'live' },
+    ]);
+  }
+
+  /**
+   * Labs — classify the search intent of keywords (informational / navigational /
+   * commercial / transactional) with a probability + secondary intents. Language-only
+   * (no location), up to 1000 keywords per call. Cheap (~50 credits).
+   */
+  async searchIntent(keywords: string[], languageCode = 'en'): Promise<DfsResponse> {
+    return this.call('/v3/dataforseo_labs/google/search_intent/live', [
+      { keywords: keywords.slice(0, 1000), language_code: languageCode },
+    ]);
+  }
+
+  /**
+   * On-Page — live Lighthouse audit for ONE url (lab Core Web Vitals + opportunities).
+   * Pricier (~2000 credits) and slow: Lighthouse renders the page, so allow up to 120s
+   * (DataForSEO aborts at 120s). `for_mobile` defaults true (mobile-first).
+   */
+  async lighthouse(url: string, forMobile = true, languageCode = 'en'): Promise<DfsResponse> {
+    return this.call(
+      '/v3/on_page/lighthouse/live/json',
+      [{ url, for_mobile: forMobile, language_code: languageCode, categories: ['performance', 'seo', 'best_practices', 'accessibility'] }],
+      120000,
+    );
+  }
+
+  /** Labs — competitor domains by organic keyword overlap (discovery seed for gap analysis). */
+  async competitorsDomain(target: string, location?: string | number, languageCode = 'en', limit = 20): Promise<DfsResponse> {
+    return this.call('/v3/dataforseo_labs/google/competitors_domain/live', [
+      { target, ...this.loc(location), language_code: languageCode, limit: Math.min(limit, 1000), exclude_top_domains: true },
+    ]);
+  }
+
+  /**
+   * Labs — keywords that a set of competitor pages rank for but our page(s) do NOT
+   * (content gap). `competitorUrls` → the `pages` map (max 20); `excludeUrls` → our own
+   * page(s) to subtract (max 10). Sorted by search volume. Wildcards like `…/*` allowed.
+   */
+  async pageIntersection(
+    competitorUrls: string[],
+    excludeUrls: string[],
+    location?: string | number,
+    languageCode = 'en',
+    limit = 100,
+  ): Promise<DfsResponse> {
+    const pages: Record<string, string> = {};
+    competitorUrls.slice(0, 20).forEach((u, i) => { pages[String(i + 1)] = u; });
+    return this.call('/v3/dataforseo_labs/google/page_intersection/live', [
+      {
+        pages,
+        exclude_pages: excludeUrls.slice(0, 10),
+        intersection_mode: 'union',
+        ...this.loc(location),
+        language_code: languageCode,
+        limit: Math.min(limit, 1000),
+      },
     ]);
   }
 

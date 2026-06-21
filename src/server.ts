@@ -112,9 +112,13 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 ## 3. Fix (the moat)
 - **fix_finding** — paste-ready remediation from your own data: JSON-LD for missing/invalid schema, a 301 rule for broken links, iPR-ranked internal-link suggestions. _"Generate the fix for finding 12"_ or _"fix_finding check:missing-required-fields url:https://example.com/x"_
 
-## 4. Backlinks & keywords (DataForSEO, on-demand)
+## 4. Backlinks, keywords & competitive (DataForSEO, on-demand, cached 20 days)
 - **pull_backlinks** — backlink profile + per-page counts + live status → unlocks **backlinks-to-404** (recover lost equity), top-linked pages, true orphans. _"Pull backlinks for example.com"_
 - **keyword_volume / related_terms** — volume/CPC, and People-Also-Ask + related searches. _"Search volume for [\\"best widgets\\"]"_
+- **search_intent** — informational/navigational/commercial/transactional per keyword → spot intent mismatch behind low CTR. _"Classify intent for [\\"buy running shoes\\", \\"how to clean shoes\\"]"_
+- **page_lighthouse** — lab Core Web Vitals + opportunities for one URL (~20–120s). _"Run Lighthouse on https://example.com/slow-page"_
+- **competitors_domain** — domains competing for your organic keywords. _"Find competitors for example.com in the UK"_
+- **page_intersection** — keywords competitor pages rank for but yours doesn’t (content gap). _"Content gap: competitorUrls [\\"https://rival.com/guide\\"], excludePages [\\"https://example.com/guide\\"]"_
 
 ## 5. Reports & dashboard
 - **get_dashboard** — interactive dashboard (renders in chat). _"Show the dashboard for example.com"_
@@ -550,6 +554,136 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: `PAA: ${r.peopleAlsoAsk.length}, related: ${r.relatedSearches.length}${r.cached ? ' (cached)' : ` ($${r.cost.toFixed(4)})`}` }],
         structuredContent: r as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    'search_intent',
+    {
+      title: 'Search intent classification (DataForSEO Labs)',
+      description: 'Classify the search intent (informational / navigational / commercial / transactional) of keywords — primary label + probability + secondary intents. Use it to spot intent mismatch: e.g. a transactional product page ranking for an informational query (a common cause of high impressions / low CTR). Labs call, cached 20 days, up to 1000 keywords. Language-only (no location).',
+      inputSchema: { keywords: z.array(z.string()).min(1).max(1000), languageCode: z.string().optional() },
+    },
+    async ({ keywords, languageCode }) => {
+      const client = requireDfs(dfs);
+      const r = await client.searchIntent(keywords, languageCode);
+      const items = (r.tasks[0]?.result?.[0]?.items ?? []).map((it: any) => ({
+        keyword: it.keyword,
+        intent: it.keyword_intent?.label ?? null,
+        probability: it.keyword_intent?.probability ?? null,
+        secondary: (it.secondary_keyword_intents ?? []).map((s: any) => ({ intent: s.label, probability: s.probability })),
+      }));
+      return {
+        content: [{ type: 'text', text: `${items.length} keywords classified${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
+        structuredContent: { intents: items, cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  server.registerTool(
+    'page_lighthouse',
+    {
+      title: 'Page Lighthouse — lab Core Web Vitals (DataForSEO On-Page)',
+      description: 'Run a live Lighthouse audit for ONE url: lab Core Web Vitals (LCP, CLS, TBT, FCP, Speed Index), category scores (performance/SEO/best-practices/accessibility), and the top time-saving opportunities. Complements GSC/CrUX field data (aggregate + delayed) with on-demand lab data. Paid On-Page call (~2000 credits), slow (~20–120s), cached 20 days.',
+      inputSchema: { url: z.string().url(), forMobile: z.boolean().optional() },
+    },
+    async ({ url, forMobile }) => {
+      const client = requireDfs(dfs);
+      const mobile = forMobile ?? true;
+      const r = await client.lighthouse(url, mobile);
+      const res = r.tasks[0]?.result?.[0] ?? {};
+      const audits: Record<string, any> = res.audits ?? {};
+      const cwv = (id: string) => ({ score: audits[id]?.score ?? null, value: audits[id]?.displayValue ?? null });
+      const cats: Record<string, any> = res.categories ?? {};
+      const opportunities = Object.values(audits)
+        .filter((a: any) => a?.details?.type === 'opportunity' && (a.details.overallSavingsMs ?? 0) > 0)
+        .sort((a: any, b: any) => (b.details.overallSavingsMs ?? 0) - (a.details.overallSavingsMs ?? 0))
+        .slice(0, 8)
+        .map((a: any) => ({ id: a.id, title: a.title, savingsMs: Math.round(a.details.overallSavingsMs) }));
+      const out = {
+        url, forMobile: mobile,
+        scores: {
+          performance: cats.performance?.score ?? null,
+          seo: cats.seo?.score ?? null,
+          bestPractices: cats['best-practices']?.score ?? null,
+          accessibility: cats.accessibility?.score ?? null,
+        },
+        coreWebVitals: {
+          lcp: cwv('largest-contentful-paint'), cls: cwv('cumulative-layout-shift'),
+          tbt: cwv('total-blocking-time'), fcp: cwv('first-contentful-paint'), speedIndex: cwv('speed-index'),
+        },
+        opportunities,
+        cached: r.cached, cost: r.cost,
+      };
+      const perf = out.scores.performance != null ? Math.round(out.scores.performance * 100) : '?';
+      return {
+        content: [{ type: 'text', text: `Lighthouse ${url}: perf ${perf}/100, LCP ${out.coreWebVitals.lcp.value ?? '?'}, CLS ${out.coreWebVitals.cls.value ?? '?'}${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
+        structuredContent: out,
+      };
+    },
+  );
+
+  server.registerTool(
+    'competitors_domain',
+    {
+      title: 'Competitor domains (DataForSEO Labs)',
+      description: 'Discover the domains competing with a target for the same organic keywords (ranked by keyword overlap), with intersection counts and organic traffic estimates. The seed list for content-gap analysis (feed these into page_intersection). Labs call, cached 20 days. Pass location + language for the right market.',
+      inputSchema: { target: z.string(), location: z.union([z.string(), z.number()]).optional(), languageCode: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
+    },
+    async ({ target, location, languageCode, limit }) => {
+      const client = requireDfs(dfs);
+      const cleaned = target.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
+      const r = await client.competitorsDomain(cleaned, location, languageCode, limit ?? 20);
+      const items = (r.tasks[0]?.result?.[0]?.items ?? [])
+        .filter((it: any) => it.domain && it.domain.replace(/^www\./, '') !== cleaned) // drop the target itself
+        .map((it: any) => ({
+        domain: it.domain,
+        intersections: it.intersections ?? null,
+        avgPosition: it.avg_position ?? null,
+        organicKeywords: it.full_domain_metrics?.organic?.count ?? null,
+        organicEtv: it.full_domain_metrics?.organic?.etv ?? null,
+      }));
+      return {
+        content: [{ type: 'text', text: `${items.length} competitor domains for ${cleaned}${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
+        structuredContent: { target: cleaned, competitors: items, cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  server.registerTool(
+    'page_intersection',
+    {
+      title: 'Content gap — page intersection (DataForSEO Labs)',
+      description: 'Find keywords that competitor pages rank for but your page does NOT (the content gap). Pass competitor URLs as `competitorUrls` (max 20; wildcards like https://site.com/blog/* allowed) and your own URL(s) in `excludePages` (max 10) to subtract. Returns gap keywords sorted by search volume, with each competitor’s rank. Labs call, cached 20 days. Pass location + language.',
+      inputSchema: {
+        competitorUrls: z.array(z.string()).min(1).max(20),
+        excludePages: z.array(z.string()).max(10).optional(),
+        location: z.union([z.string(), z.number()]).optional(),
+        languageCode: z.string().optional(),
+        limit: z.number().int().min(1).max(1000).optional(),
+      },
+    },
+    async ({ competitorUrls, excludePages, location, languageCode, limit }) => {
+      const client = requireDfs(dfs);
+      const r = await client.pageIntersection(competitorUrls, excludePages ?? [], location, languageCode, limit ?? 100);
+      const items = (r.tasks[0]?.result?.[0]?.items ?? [])
+        .map((it: any) => {
+          const kd = it.keyword_data ?? {}; // actual shape: item.keyword_data.{keyword,keyword_info}
+          return {
+            keyword: kd.keyword ?? null,
+            searchVolume: kd.keyword_info?.search_volume ?? null,
+            cpc: kd.keyword_info?.cpc ?? null,
+            competition: kd.keyword_info?.competition ?? null,
+            ranks: Object.entries(it.intersection_result ?? {}).map(([idx, v]: [string, any]) => ({
+              page: Number(idx), rank: v?.rank_absolute ?? null, url: v?.url ?? null,
+            })),
+          };
+        })
+        .sort((a: any, b: any) => (b.searchVolume ?? 0) - (a.searchVolume ?? 0)); // order_by unsupported on this endpoint
+      return {
+        content: [{ type: 'text', text: `${items.length} gap keywords${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
+        structuredContent: { gaps: items, cached: r.cached, cost: r.cost },
       };
     },
   );
