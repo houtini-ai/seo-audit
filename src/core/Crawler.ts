@@ -18,12 +18,26 @@ export const isHtmlContentType = (ct: string | null | undefined): boolean =>
 const ASSET_EXT = /\.(jpe?g|png|gif|webp|avif|svg|svgz|ico|bmp|tiff?|heic|psd|pdf|zip|rar|7z|gz|tgz|tar|bz2|mp4|mpeg|mpg|m4v|webm|mov|avi|mkv|flv|wmv|mp3|m4a|aac|opus|weba|wav|ogg|oga|flac|wma|css|js|mjs|cjs|map|woff2?|ttf|otf|eot|dmg|exe|msi|apk|bin|doc|docx|xls|xlsx|ppt|pptx)$/i;
 const isAssetUrl = (u: string): boolean => { try { return ASSET_EXT.test(new URL(u).pathname); } catch { return false; } };
 
+// URL patterns never worth crawling — internal site-search, infinite param spaces, cart/builder
+// states and CMS infrastructure. Skipped at enqueue (never fetched) so large sites stay light
+// and the crawl doesn't drown in low-value URLs. Extend per-crawl via opts.excludePatterns.
+const SKIP_PATTERNS: RegExp[] = [
+  /[?&](sps_query|s|q|search|keyword|orderby|filter_|add-to-cart|fl_builder|elementor-preview)=/i,
+  /\/search(-results)?\//i,
+  /[?&]replytocom=/i,
+  /\/(wp-json|wp-admin|wp-login\.php|xmlrpc\.php)(\/|$|\?)/i,
+  /\/(cart|checkout|my-account|basket)(\/|$)/i,
+];
+const skipUrl = (u: string, extra: RegExp[]): boolean =>
+  SKIP_PATTERNS.some(re => re.test(u)) || extra.some(re => re.test(u));
+
 export interface CrawlOptions {
   maxPages?: number;
   maxDepth?: number;
   maxConcurrency?: number;
   delayMs?: number;
   userAgent?: string;
+  excludePatterns?: string[]; // extra URL regexes to never crawl (on top of the junk defaults)
 }
 
 export interface CrawlResult {
@@ -145,6 +159,7 @@ export class Crawler {
     const concurrency = Math.max(1, Math.min(opts.maxConcurrency ?? 4, 16));
     const delayMs = opts.delayMs ?? 250;
     const ua = opts.userAgent ?? DEFAULT_UA;
+    const excludeRes = (opts.excludePatterns ?? []).flatMap(p => { try { return [new RegExp(p, 'i')]; } catch { return []; } });
 
     const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : siteUrl;
     const baseHost = new URL(seed).hostname;
@@ -270,7 +285,7 @@ export class Crawler {
               target_url: l.targetUrl, target_key: l.targetKey, anchor_text: l.anchor,
               is_internal: l.isInternal ? 1 : 0, placement: l.placement, rel: l.rel,
             });
-            if (l.isInternal && item.depth + 1 <= maxDepth && (crawled + frontier.length) < maxPages) {
+            if (l.isInternal && !skipUrl(l.targetUrl, excludeRes) && item.depth + 1 <= maxDepth && (crawled + frontier.length) < maxPages) {
               enqueue(l.targetUrl, item.depth + 1);
             }
           }

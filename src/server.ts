@@ -508,7 +508,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'start_crawl',
     {
       title: 'Crawl a site (just the crawl)',
-      description: 'Update just the crawl: fetch the site into the local database (async job — poll with check_crawl_status). HTTP crawl; respects robots.txt. For a full refresh use refresh_property.',
+      description: 'Update just the crawl: fetch the site into the local database (async job — poll with check_crawl_status). HTTP crawl; respects robots.txt; asset file-types are HEAD-only (no body download); internal-search / cart / wp-json / builder junk URLs are skipped by default. For a full refresh use refresh_property. excludePatterns adds extra URL regexes to skip (e.g. ["/author/","/tag/","/page/"]) to keep big crawls light.',
       inputSchema: {
         siteUrl: z.string(),
         maxPages: z.number().int().min(1).max(50000).optional(),
@@ -516,11 +516,12 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         maxConcurrency: z.number().int().min(1).max(16).optional(),
         delayMs: z.number().int().min(0).max(10000).optional(),
         userAgent: z.string().optional(),
+        excludePatterns: z.array(z.string()).optional(),
       },
     },
-    async ({ siteUrl, maxPages, maxDepth, maxConcurrency, delayMs, userAgent }) => {
+    async ({ siteUrl, maxPages, maxDepth, maxConcurrency, delayMs, userAgent, excludePatterns }) => {
       const jobId = jobs.start('crawl', (update, signal) =>
-        crawler.run(siteUrl, { maxPages, maxDepth, maxConcurrency, delayMs, userAgent }, update, signal),
+        crawler.run(siteUrl, { maxPages, maxDepth, maxConcurrency, delayMs, userAgent, excludePatterns }, update, signal),
       );
       return {
         content: [{ type: 'text', text: `Crawl started for ${siteUrl} (job ${jobId}). Poll check_crawl_status.` }],
