@@ -37,11 +37,15 @@ const win = (d: string): string => `date > date('${d}', '-28 days')`;
 const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'with', 'your', 'you', 'is', 'are', 'best', 'how', 'what', 'vs', 'why', 'can']);
 const terms = (s: string): string[] =>
   (s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(t => t.length >= 2 && !STOP.has(t));
-// A query term is "present" if it appears as a substring of the title (handles
-// plural/singular + short tokens) — so we only flag titles that truly omit the query.
+// A query term is "present" in the title if a TITLE WORD matches it (exact, or a
+// plural/stem prefix either way for ≥4-char tokens), or the space-collapsed title
+// contains it (for multi-word brands like "sync mesh" ≈ "syncmesh", ≥5 chars).
+// Word-level avoids substring false-matches (e.g. "art" inside "smart").
 const titleHasTerm = (title: string, term: string): boolean => {
   const t = title.toLowerCase();
-  return t.includes(term) || t.replace(/\s+/g, '').includes(term); // also match space-variants ("sync mesh" ≈ "syncmesh")
+  const words = t.split(/[^a-z0-9]+/).filter(Boolean);
+  if (words.some(w => w === term || (term.length >= 4 && w.startsWith(term)) || (w.length >= 4 && term.startsWith(w)))) return true;
+  return term.length >= 5 && t.replace(/[^a-z0-9]+/g, '').includes(term);
 };
 
 // Validate captured JSON-LD per page, keeping findings whose issue-kinds match `kinds`.
@@ -256,8 +260,9 @@ export const CHECKS: CheckDef[] = [
     run: (c) => {
       if (!c.gscMaxDate) return [];
       // Only meaningful on a COMPLETE crawl — if the crawl hit its maxPages cap, "absent
-      // from crawl" is unreliable (could just be beyond the limit), so skip.
-      const m = c.db.prepare('SELECT urls_crawled c, max_pages m FROM crawl_metadata ORDER BY started_at DESC LIMIT 1').get() as { c: number; m: number } | undefined;
+      // from crawl" is unreliable. Tie the guard to the crawl that produced the CURRENT
+      // pages (not the latest crawl_metadata row, which may be a later failed crawl).
+      const m = c.db.prepare('SELECT urls_crawled c, max_pages m FROM crawl_metadata WHERE crawl_id = (SELECT crawl_id FROM pages LIMIT 1)').get() as { c: number; m: number } | undefined;
       if (!m || m.c === 0 || m.c >= m.m) return [];
       return rows(c, `SELECT page_key urlKey, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics
         WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key

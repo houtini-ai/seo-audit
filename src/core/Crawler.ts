@@ -288,7 +288,7 @@ export class Crawler {
       `UPDATE pages SET inlink_count = (
         SELECT COUNT(*) FROM links
         WHERE links.target_key = pages.url_key AND links.is_internal = 1
-          AND links.source_key != pages.url_key
+          AND links.source_key != pages.url_key AND links.crawl_id = pages.crawl_id
       ) WHERE crawl_id = ?`,
     ).run(crawlId);
 

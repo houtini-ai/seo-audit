@@ -1,7 +1,8 @@
 /**
- * robots.txt politeness gate. Honours both Disallow AND Allow with the RFC 9309
- * longest-match rule (most specific path wins; Allow wins ties) — so a broad
- * `Disallow: /` paired with `Allow: /public/` doesn't wrongly empty the crawl.
+ * robots.txt politeness gate. Honours both Disallow AND Allow with longest-prefix-match
+ * (most specific path wins; Allow wins ties) — so a broad `Disallow: /` paired with
+ * `Allow: /public/` doesn't wrongly empty the crawl. NB: prefix match only — `*`/`$`
+ * wildcard patterns (e.g. `Disallow: /*?`) are not yet interpreted (owned-site crawl).
  */
 export interface RobotsRules {
   isAllowed(pathname: string): boolean;

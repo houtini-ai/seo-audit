@@ -59,7 +59,13 @@ export function computeLinkGraph(db: Database.Database, crawlId: string, seedKey
     if (si !== undefined && ti !== undefined) bodyAdj[si].push(ti);
   }
   const depth = new Int32Array(N).fill(-1);
-  const start = seedKey != null ? idx.get(seedKey) : undefined;
+  // BFS root: the seed's key, but if the bare homepage redirected (final URL keyed
+  // differently), fall back to the shallowest crawl-discovered page (depth 0 = seed).
+  let start = seedKey != null ? idx.get(seedKey) : undefined;
+  if (start === undefined) {
+    const root = db.prepare('SELECT url_key FROM pages WHERE crawl_id=? ORDER BY depth ASC, inlink_count DESC LIMIT 1').get(crawlId) as { url_key: string } | undefined;
+    if (root) start = idx.get(root.url_key);
+  }
   if (start !== undefined) {
     depth[start] = 0;
     const q = [start];

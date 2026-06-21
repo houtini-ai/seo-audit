@@ -6,7 +6,7 @@ interface Totals { clicks: number; impressions: number; ctr: number; position: n
 interface DashboardData {
   siteUrl: string;
   empty?: boolean;
-  dateRange?: { current: string; maxDate: string };
+  dateRange?: { current: string; prior?: string; maxDate: string };
   summary?: { current: Totals; prior: Totals };
   rankTrend?: { date: string; clicks: number; position: number }[];
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
@@ -18,7 +18,7 @@ interface DashboardData {
   countryBreakdown?: { country: string; clicks: number; prevClicks: number; impressions: number }[];
   pagePerformance?: { urlKey: string; clicks: number; prevClicks: number; clicksChangePct: number; impressions: number; position: number; category: string }[];
   keywordMovement?: { query: string; firstPos: number; lastPos: number; delta: number; firstDate: string; lastDate: string; category: string }[];
-  findings?: { runId: string; total: number; finishedAt: string | null; byCheck: any[]; top: any[] } | null;
+  findings?: { runId: string; total: number; finishedAt: string | null; byCheck: any[]; top: any[]; recommendations?: any[] } | null;
 }
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;

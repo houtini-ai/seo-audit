@@ -50,9 +50,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_URI = 'ui://dashboard/main.html';
 const SYNC_PROGRESS_URI = 'ui://sync-progress/main.html';
 
+// Must match the categories actually used by CHECKS (src/audit/checks.ts) so category
+// filters never silently return empty. (Was listing performance/agentic/integrity/war-stories
+// which no check uses, and omitting content/security which checks do use.)
 const CHECK_CATEGORIES = [
-  'integrity', 'crawlability', 'indexation', 'onpage',
-  'schema', 'performance', 'war-stories', 'agentic', 'merged',
+  'crawlability', 'indexation', 'onpage', 'content', 'schema', 'security', 'merged',
 ] as const;
 
 function isoDaysAgo(days: number): string {
