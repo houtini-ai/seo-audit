@@ -48,9 +48,44 @@ function palette() {
 
 const csvCell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const toCsv = (rows: unknown[][]): string => rows.map(r => r.map(csvCell).join(',')).join('\r\n');
-function downloadCsv(filename: string, rows: unknown[][]): void {
+
+/** Brief visible notice (top-centre) — so download success/failure is never silent. */
+function toast(msg: string, kind: 'ok' | 'warn' = 'ok'): void {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText =
+    'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;' +
+    'padding:10px 16px;border-radius:8px;font-size:13px;max-width:90%;' +
+    'box-shadow:0 4px 16px rgba(0,0,0,.25);color:#fff;' +
+    `background:${kind === 'ok' ? 'var(--color-accent,#2563eb)' : 'var(--color-warning,#b45309)'};`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4200);
+}
+
+/** Copy text in a sandboxed iframe: clipboard API where allowed, else a hidden-textarea execCommand. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; }
+  } catch { /* fall through to execCommand */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch { return false; }
+}
+
+// Direct <a download> blob clicks are blocked inside MCP-App sandboxed iframes — that's why the
+// host exposes ui/download-file. We use it only when the host advertises the capability; otherwise
+// we fall back to copying the CSV to the clipboard, and we always surface the outcome via a toast.
+async function downloadCsv(filename: string, rows: unknown[][]): Promise<void> {
   const csv = toCsv(rows);
-  // Standalone export (opened in a browser, not an MCP host): use a normal blob download.
+
+  // Standalone export (opened directly in a browser, not an MCP host): a normal blob download works.
   if ((window as any).__DASH_FIXTURE__) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -59,11 +94,25 @@ function downloadCsv(filename: string, rows: unknown[][]): void {
     URL.revokeObjectURL(a.href);
     return;
   }
-  // In an MCP host: EmbeddedResource shape { type:'resource', resource:{ uri, mimeType, text } }.
-  app.downloadFile({
-    contents: [{ type: 'resource', resource: { uri: `file:///${filename}`, mimeType: 'text/csv', text: csv } }],
-  }).then(r => { if (r?.isError) console.warn('downloadFile denied/cancelled', r); })
-    .catch(e => console.warn('downloadFile failed', e));
+
+  // In an MCP host: only call downloadFile if the host says it supports it.
+  if (app.getHostCapabilities()?.downloadFile) {
+    try {
+      const r = await app.downloadFile({
+        contents: [{ type: 'resource', resource: { uri: `file:///${filename}`, mimeType: 'text/csv', text: csv } }],
+      });
+      if (!r?.isError) { toast(`Saved ${filename}`); return; }
+    } catch (e) { console.warn('downloadFile failed', e); }
+    // denied / cancelled / threw → fall through to clipboard so the data isn't lost
+  }
+
+  const copied = await copyText(csv);
+  toast(
+    copied
+      ? `This host can't save files — ${filename} copied to clipboard (paste into a .csv)`
+      : `This host can't save files and clipboard is blocked — use “Export report” for a downloadable file`,
+    'warn',
+  );
 }
 
 let currentData: DashboardData | null = null;
