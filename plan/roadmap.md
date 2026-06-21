@@ -101,6 +101,13 @@ Settled by investigation: MCP-App widgets don't render in current Claude Desktop
 - **Trim `get_dashboard`** — `findings.top` is 50% of the 73k payload (double-encoded JSON strings); cut top 50→25 + store evidence/recommendation as real objects ≈ halves it; add `getUiCapability` graceful-degradation.
 - **Template library + chunked reports** — split the monolith into small focused report tools (`get_trend`/`get_top_pages`/`get_summary`…) each targeting a tiny branded template; a `list_templates` discovery tool (id + when-to-use + dataShape) so the assistant picks the right template (or a branded blank) and injects data via `structuredContent`/inlined JSON. Templates share `tokens.css`; reuse the Vite multi-entry build. This also fixes the token-cap problem as a side effect.
 
+### Phase 6 — Vision / "domain-expert + opportunity engine" (user direction, 2026-06-20)
+Gating step first: **once the base is solid (backlinks shipped + research adherence checked), run a back-to-back Gemini conversation on "how an SEO actually audits a site"** (crawl → Search Console → duplication → per-template source review → opportunity spotting) and fold the findings into checks/reports. Then build:
+- **`help` command (near-term, cheap)** — `seo_audit_help` tool listing every tool/feature with one-line purpose + an **example prompt** each, grouped (sync / audit / fix / report / backlinks). Discoverability + "no confusion." *(Build alongside backlinks.)*
+- **Per-template source analysis** — detect template type per URL (product / collection / article / home) by URL pattern + DOM signature, sample one of each, and review its HTML for template-wide SEO opportunities (a fix on the template fixes N pages). Pairs with the moat (generate the template-level fix).
+- **Schema generation + Wikidata enrichment** — extend `generateJsonLd` to add `sameAs`/`about`/`mentions` linking the page's entity to Wikidata/Wikipedia for schematic relevance (entity SEO). Source: `C:\MCP\wikidata` (local Wikidata MCP) — resolve the page's primary entity → QID → authoritative `sameAs`.
+- **Fan-out / new-page suggestions from real demand** — NOT Claude-guessed (cf. `C:\MCP\fanout-mcp`): use **DataForSEO PAA + related searches** (already in `relatedTerms`) + **DataForSEO Labs keyword ideas / related keywords / search-intent**. Cross-reference the demand fan-out against existing pages (`url_key`/title coverage) → **suggest new pages for search-volume gaps** the site doesn't yet cover. On-demand + cached. (Confirm whether DataForSEO Labs has a dedicated fan-out/keyword-ideas endpoint — it does: `dataforseo_labs/google/keyword_ideas`, `related_keywords`, `keyword_suggestions`.)
+
 ---
 
 ## Recommended order
