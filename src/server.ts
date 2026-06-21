@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
+import { detectTemplates } from './audit/templates.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
 import { dbPathFor, sanitizeProperty } from './core/paths.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks } from './generators/index.js';
@@ -180,6 +181,26 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const all = listChecks();
       const checks = category ? all.filter(c => (c.category as string) === category) : all;
       return { content: [{ type: 'text', text: `${checks.length} checks${category ? ` in ${category}` : ''}` }], structuredContent: { checks } };
+    },
+  );
+
+  server.registerTool(
+    'list_templates',
+    {
+      title: 'Detect page templates',
+      description: 'Cluster the crawled pages into templates (by URL morphology + JSON-LD @type) and return each template with its page count and a representative exemplar URL. A single template-level fix corrects every page in the cluster — this is the map for per-template analysis. Needs a crawl (run refresh_property / start_crawl first).',
+      inputSchema: { siteUrl: z.string(), minMembers: z.number().int().min(2).max(100).optional() },
+    },
+    async ({ siteUrl, minMembers }) => {
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try {
+        const clusters = detectTemplates(db.db, minMembers != null ? { minMembers } : {});
+        const summary = clusters.slice(0, 20).map(c => `• ${c.morphology} [${c.schemaType}] — ${c.count} pages (e.g. ${c.exemplarUrl})`).join('\n');
+        return {
+          content: [{ type: 'text', text: clusters.length ? `${clusters.length} templates detected:\n${summary}` : 'No templates with ≥ the minimum members — crawl first, or lower minMembers.' }],
+          structuredContent: { templates: clusters.map(({ memberKeys: _m, ...c }) => c), count: clusters.length },
+        };
+      } finally { db.close(); }
     },
   );
 
