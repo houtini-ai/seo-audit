@@ -6,6 +6,12 @@ import { extractPage } from './extract.js';
 import { fetchRobots } from './robots.js';
 import { computeLinkGraph } from './linkGraph.js';
 
+// Robust HTML detection from a Content-Type header: take the MIME type before any
+// parameters (charset, boundary), normalised — text/html and XHTML count as HTML.
+const HTML_MIME_TYPES = new Set(['text/html', 'application/xhtml+xml']);
+export const isHtmlContentType = (ct: string | null | undefined): boolean =>
+  HTML_MIME_TYPES.has((ct ?? '').split(';')[0].trim().toLowerCase());
+
 export interface CrawlOptions {
   maxPages?: number;
   maxDepth?: number;
@@ -70,7 +76,7 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
       continue;
     }
     const contentType = res.headers.get('content-type') ?? '';
-    const isHtml = contentType.includes('text/html') || contentType.includes('xhtml');
+    const isHtml = isHtmlContentType(contentType);
     const body = isHtml ? await res.text() : '';
     const h = (name: string): string | null => res.headers.get(name);
     const sec: Record<string, string> = {};
@@ -205,7 +211,7 @@ export class Crawler {
       try {
         const r = await fetchWithRedirects(item.url, ua);
         const finalKey = urlKey(r.finalUrl, keyOpts);
-        const isHtml = r.contentType.includes('text/html') || r.contentType.includes('xhtml');
+        const isHtml = isHtmlContentType(r.contentType);
         const ex = isHtml && r.status === 200 ? extractPage(r.body, r.finalUrl, baseHost, keyOpts, r.xRobotsTag) : null;
         // Only HTML documents are "indexable pages". Non-HTML resources (images, PDFs, RSS
         // feeds, plain text) are stored for link/status analysis but must not be treated as

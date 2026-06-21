@@ -35,6 +35,8 @@ export interface CheckDef {
 
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
 const win = (d: string): string => `date > date('${d}', '-28 days')`;
+// HTML pages only — match the MIME type before any charset parameter (mirrors isHtmlContentType).
+const HTML_CT = `(LOWER(content_type) LIKE 'text/html%' OR LOWER(content_type) LIKE 'application/xhtml+xml%')`;
 
 // Significant query terms (drop stopwords; keep ≥2 chars so "vr"/"pc"/"ai" count).
 const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'with', 'your', 'you', 'is', 'are', 'best', 'how', 'what', 'vs', 'why', 'can']);
@@ -71,7 +73,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'missing-title', category: 'onpage', severity: 'crit', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
     title: 'Missing title tag', fix: 'Add a unique, descriptive <title> (~50–60 chars).',
-    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND content_type LIKE '%html%' AND (title IS NULL OR TRIM(title)='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND ${HTML_CT} AND (title IS NULL OR TRIM(title)='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
   },
   {
     id: 'duplicate-title', category: 'onpage', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
@@ -155,7 +157,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'missing-hsts', category: 'security', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
     title: 'Missing HSTS header', fix: 'Add Strict-Transport-Security with a sensible max-age.',
-    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND content_type LIKE '%html%' AND (security_headers IS NULL OR security_headers NOT LIKE '%hsts%') LIMIT 1`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'representative page; HSTS is site-wide' } })),
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND ${HTML_CT} AND (security_headers IS NULL OR security_headers NOT LIKE '%hsts%') LIMIT 1`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'representative page; HSTS is site-wide' } })),
   },
   // ── Merged GSC × crawl (the differentiator) ─────────────────────────────
   {
@@ -241,7 +243,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'missing-viewport', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
     title: 'Missing viewport meta (mobile)', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1">.',
-    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND content_type LIKE '%html%' AND (viewport IS NULL OR viewport='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND ${HTML_CT} AND (viewport IS NULL OR viewport='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
   },
   {
     id: 'keyword-cannibalisation', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
