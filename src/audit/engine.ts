@@ -93,9 +93,24 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
         for (const f of findings) {
           const traf: Traffic = (trafStmt && f.urlKey ? trafStmt.get(f.urlKey, maxDate) : null) as Traffic ?? { clicks: 0, impressions: 0, position: 0 };
           // T = expected monthly clicks at stake: max(current clicks recovered, potential from
-          // impressions × CTR@position). Site-wide findings use a severity fraction of site clicks.
-          const potential = traf.impressions > 0 ? traf.impressions * expectedCtr(traf.position || 10) : 0;
-          let T = f.urlKey ? Math.max(traf.clicks, potential) : siteClicks * SITEWIDE_FRACTION[chk.severity];
+          // impressions × CTR@position).
+          let T: number;
+          if (f.urlKey) {
+            const potential = traf.impressions > 0 ? traf.impressions * expectedCtr(traf.position || 10) : 0;
+            T = Math.max(traf.clicks, potential);
+          } else {
+            // Query/site-level findings (no url): rank by the query's OWN opportunity if the check
+            // put impressions/clicks in evidence (e.g. keyword-cannibalisation) — so a 57k-impression
+            // query outranks a 12k one — else fall back to a severity fraction of total site clicks.
+            const evImpr = Number((f.evidence as any)?.impressions) || 0;
+            const evClicks = Number((f.evidence as any)?.clicks) || 0;
+            if (evImpr > 0 || evClicks > 0) {
+              const bestPos = parseFloat(String((f.evidence as any)?.positions ?? (f.evidence as any)?.position ?? '')) || 10;
+              T = Math.max(evClicks, evImpr * expectedCtr(bestPos));
+            } else {
+              T = siteClicks * SITEWIDE_FRACTION[chk.severity];
+            }
+          }
           T = Math.max(T, SEVERITY_FLOOR[chk.severity]); // floor so zero-GSC findings aren't lost
           const priority = (T * Y * chk.certainty) / E; // expected clicks per dev-hour
           insert.run({

@@ -59,6 +59,8 @@ Decision: **heuristic H1/title → Wikidata search** resolution (user choice), f
 - [x] **FP #1 fixed — Cloudflare `/cdn-cgi/`** (`15782f9`): email-protection 404 was linked from 445 pages, dominating ipr-bleed at 17,755 iPR. Now skipped at extraction.
 - [x] **FP #2 fixed — schema `missing-required-fields` type-level dedup**: WP/RankMath pages carry a complete `@graph` Article + a 2nd partial Article (about/mentions); validator flagged the partial as "missing author/datePublished/image" despite a valid Article existing (would have mis-fired across many of the 229 findings). Now suppresses 'required' for a type when any node of that type is fully complete. Verified: real page → no required issue; probe:schema 15/15 + smoke 9/9 still green.
 - _Both fixes apply to the live MCP after the next Desktop restart + recrawl._
+- [x] **Verified live after restart+recrawl (521 pages):** `missing-required-fields` 229 → **1** (schema dedup), `ipr-bleed-by-status` now lists only real internal 404s (cdn-cgi gone). Schema-category findings 250 → 49.
+- [x] **Scoring fix — query-level findings rank by their own opportunity**: the 40 `keyword-cannibalisation` findings all had identical priority (150.16) because the scorer used a flat site-wide fraction for null-url findings and ignored the per-query impressions in evidence. Engine now uses `evidence.impressions × CTR@bestPos` (or clicks) for null-url findings → they rank by real prize size (e.g. "best vr headset" 54k impr → 718, vs "simhub" 16k → 118). smoke 9/9. _Applies live after next restart._
 
 ## Standing TODOs (parked, with design in roadmap.md)
 - [ ] **URL Inspection prioritised budget** (404/noindex-first → crawl-validate → pattern redirect advice)
