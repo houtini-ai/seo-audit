@@ -36,6 +36,7 @@ export interface AuditResult {
   byCheck: { checkId: string; category: string; severity: string; count: number; priority: number }[];
   top: any[];
   elapsedMs?: number; // wall-clock for the audit run (performance instrumentation)
+  indexability?: Record<string, number>; // reason → count (indexable, http-404, noindex-meta, robots-disallowed, …)
 }
 
 export interface AuditOptions {
@@ -139,7 +140,11 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       .prepare(`SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 25`)
       .all(runId);
 
-    return { runId, siteUrl, integrityOk: pageCount > 0, total, bySeverity, byCategory, byCheck, top, elapsedMs: Date.now() - t0 };
+    const indexability = Object.fromEntries(
+      (db.db.prepare(`SELECT COALESCE(indexable_reason,'indexable') reason, COUNT(*) n FROM pages WHERE is_internal IS NOT 0 GROUP BY reason ORDER BY n DESC`).all() as { reason: string; n: number }[])
+        .map(r => [r.reason, r.n]),
+    );
+    return { runId, siteUrl, integrityOk: pageCount > 0, total, bySeverity, byCategory, byCheck, top, elapsedMs: Date.now() - t0, indexability };
   } finally {
     db.close();
   }

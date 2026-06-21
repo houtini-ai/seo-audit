@@ -111,7 +111,8 @@ export class AuditDatabase {
         response_time_ms INTEGER,        -- TTFB proxy
         depth INTEGER,
         is_internal INTEGER,
-        indexable INTEGER,               -- derived: 200 + not noindex + self-canonical
+        indexable INTEGER,               -- derived: 200 + HTML + not noindex + self-canonical
+        indexable_reason TEXT,           -- why NOT indexable: http-404/http-500/noindex-meta/noindex-header/canonicalised/non-html/robots-disallowed/redirect
         noindex INTEGER,
         title TEXT,
         title_length INTEGER,
@@ -351,6 +352,7 @@ export class AuditDatabase {
     ensure('pages', 'has_microdata', 'has_microdata INTEGER DEFAULT 0');
     ensure('pages', 'has_rdfa', 'has_rdfa INTEGER DEFAULT 0');
     ensure('pages', 'click_depth', 'click_depth INTEGER');
+    ensure('pages', 'indexable_reason', 'indexable_reason TEXT');
     // property-level backlink profile summary (from DataForSEO backlinks/summary)
     ensure('property_meta', 'total_backlinks', 'total_backlinks INTEGER');
     ensure('property_meta', 'referring_domains', 'referring_domains INTEGER');

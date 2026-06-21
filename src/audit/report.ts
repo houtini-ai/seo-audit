@@ -32,6 +32,12 @@ export function buildAuditMarkdown(r: AuditResult & { elapsedMs?: number }, site
   for (const c of r.byCheck ?? []) (byCat[c.category] ??= []).push(`${c.checkId ?? (c as any).check_id} (${c.count})`);
   out.push('', '## All issues by category');
   for (const [cat, checks] of Object.entries(byCat)) out.push(`- **${CAT_NAME[cat] ?? cat}** — ${checks.join(', ')}`);
+  const idx = r.indexability ?? {};
+  const notIndexable = Object.entries(idx).filter(([k]) => k !== 'indexable');
+  if (notIndexable.length) {
+    out.push('', '## Indexability (crawled URLs)', `- ✅ indexable: ${idx.indexable ?? 0}`);
+    for (const [reason, n] of notIndexable) out.push(`- ✗ ${reason}: ${n}`);
+  }
   if (r.elapsedMs != null) out.push('', `_Audit computed in ${(r.elapsedMs / 1000).toFixed(1)}s._`);
   out.push('', `_\`export_report siteUrl:"${siteUrl}"\` → a shareable interactive HTML dashboard._`);
   return out.join('\n');

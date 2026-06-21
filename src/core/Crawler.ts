@@ -32,6 +32,20 @@ const SKIP_PATTERNS: RegExp[] = [
 const skipUrl = (u: string, extra: RegExp[]): boolean =>
   SKIP_PATTERNS.some(re => re.test(u)) || extra.some(re => re.test(u));
 
+// Classify a fetched URL's indexability + the REASON it's not indexable, so an audit can
+// report *why* Google would skip a page (status, directives, canonical, type) — not just yes/no.
+function classifyIndexability(
+  isHtml: boolean, status: number, noindexMeta: boolean, xRobotsTag: string | null, canonicalKey: string | null, finalKey: string,
+): { indexable: 0 | 1; reason: string | null } {
+  if (status >= 400) return { indexable: 0, reason: `http-${status}` };       // 404, 410, 500, 503, …
+  if (status >= 300) return { indexable: 0, reason: 'redirect' };             // redirect chain exceeded maxHops
+  if (!isHtml) return { indexable: 0, reason: 'non-html' };
+  if (/noindex/i.test(xRobotsTag ?? '')) return { indexable: 0, reason: 'noindex-header' }; // X-Robots-Tag
+  if (noindexMeta) return { indexable: 0, reason: 'noindex-meta' };
+  if (canonicalKey && canonicalKey !== finalKey) return { indexable: 0, reason: 'canonicalised' };
+  return { indexable: 1, reason: null };
+}
+
 export interface CrawlOptions {
   maxPages?: number;
   maxDepth?: number;
@@ -200,7 +214,7 @@ export class Crawler {
     const pageInsert = db.db.prepare(
       `INSERT INTO pages (crawl_id, url, url_key, status_code, content_type, content_encoding, cache_control,
          last_modified, etag, vary, bytes, response_time_ms, depth,
-         is_internal, indexable, noindex, title, title_length, meta_description, meta_description_length,
+         is_internal, indexable, indexable_reason, noindex, title, title_length, meta_description, meta_description_length,
          h1, h1_count, word_count, lang, charset, canonical_url, canonical_key, robots, x_robots_tag, viewport,
          json_ld, og_tags, hreflang, redirects, internal_links, external_links,
          image_count, images_without_alt, images_missing_dimensions, canonical_count, canonical_relative,
@@ -208,12 +222,19 @@ export class Crawler {
          has_microdata, has_rdfa, security_headers)
        VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@content_encoding,@cache_control,
          @last_modified,@etag,@vary,@bytes,@response_time_ms,@depth,
-         @is_internal,@indexable,@noindex,@title,@title_length,@meta_description,@meta_description_length,
+         @is_internal,@indexable,@indexable_reason,@noindex,@title,@title_length,@meta_description,@meta_description_length,
          @h1,@h1_count,@word_count,@lang,@charset,@canonical_url,@canonical_key,@robots,@x_robots_tag,@viewport,
          @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links,
          @image_count,@images_without_alt,@images_missing_dimensions,@canonical_count,@canonical_relative,
          @h2_count,@heading_skips,@rel_next,@rel_prev,@rel_amphtml,@mixed_content_count,@twitter_tags,
          @has_microdata,@has_rdfa,@security_headers)
+       ON CONFLICT(url_key) DO NOTHING`,
+    );
+    // Robots-disallowed URLs are NOT fetched (we respect robots), but we record them as
+    // known + not-indexable with the reason, so the audit can report what robots is blocking.
+    const robotsInsert = db.db.prepare(
+      `INSERT INTO pages (crawl_id, url, url_key, status_code, is_internal, indexable, indexable_reason, depth)
+       VALUES (@crawl_id,@url,@url_key,NULL,1,0,'robots-disallowed',@depth)
        ON CONFLICT(url_key) DO NOTHING`,
     );
     const linkInsert = db.db.prepare(
@@ -254,24 +275,24 @@ export class Crawler {
     const processOne = async (item: { url: string; depth: number }): Promise<void> => {
       if (delayMs) await sleep(delayMs);
       const path = (() => { try { return new URL(item.url).pathname; } catch { return '/'; } })();
-      if (!robots.isAllowed(path)) { skipped++; return; }
+      if (!robots.isAllowed(path)) {
+        try { robotsInsert.run({ crawl_id: crawlId, url: item.url, url_key: urlKey(item.url, keyOpts), depth: item.depth }); } catch { /* dup */ }
+        skipped++; return;
+      }
       try {
         const r = await fetchWithRedirects(item.url, ua);
         const finalKey = urlKey(r.finalUrl, keyOpts);
         const isHtml = isHtmlContentType(r.contentType);
         const ex = isHtml && r.status === 200 ? extractPage(r.body, r.finalUrl, baseHost, keyOpts, r.xRobotsTag) : null;
-        // Only HTML documents are "indexable pages". Non-HTML resources (images, PDFs, RSS
-        // feeds, plain text) are stored for link/status analysis but must not be treated as
-        // indexable content — otherwise they pollute on-page checks and internal-link donors.
-        const indexable = isHtml && r.status === 200 && !(ex?.noindex ?? /noindex/i.test(r.xRobotsTag ?? ''))
-          && (!ex?.canonicalKey || ex.canonicalKey === finalKey) ? 1 : 0;
+        // Only HTML 200s are indexable; otherwise capture WHY not (status/type/directive/canonical).
+        const { indexable, reason } = classifyIndexability(isHtml, r.status, !!ex?.noindex, r.xRobotsTag, ex?.canonicalKey ?? null, finalKey);
 
         pageBuf.push({
           crawl_id: crawlId, url: r.finalUrl, url_key: finalKey, status_code: r.status,
           content_type: r.contentType, content_encoding: r.contentEncoding, cache_control: r.cacheControl,
           last_modified: r.lastModified, etag: r.etag, vary: r.vary,
           bytes: r.bytes, response_time_ms: r.timeMs, depth: item.depth,
-          is_internal: 1, indexable, noindex: ex?.noindex ? 1 : 0,
+          is_internal: 1, indexable, indexable_reason: reason, noindex: ex?.noindex ? 1 : 0,
           title: ex?.title ?? null, title_length: ex?.titleLength ?? 0,
           meta_description: ex?.metaDescription ?? null, meta_description_length: ex?.metaDescriptionLength ?? 0,
           h1: ex?.h1 ?? null, h1_count: ex?.h1Count ?? 0, word_count: ex?.wordCount ?? 0,
