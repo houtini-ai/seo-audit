@@ -43,7 +43,7 @@ console.log('   ', JSON.stringify(syncRes));
 // 2) Crawl
 const crawler = new Crawler(dataDir);
 const crawlRes = await time('Crawl', () =>
-  crawler.run(site, { maxPages, maxConcurrency: 4, delayMs: 350 },
+  crawler.run(site, { maxPages, maxConcurrency: 3, delayMs: 450 },
     p => process.stdout.write(`\r    crawled ${p.crawled ?? 0}/${p.discovered ?? 0} (skipped ${p.skipped ?? 0})   `), ac.signal));
 console.log('   ', JSON.stringify(crawlRes));
 

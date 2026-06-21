@@ -24,6 +24,7 @@ export class AuditDatabase {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = NORMAL'); // WAL + NORMAL: durable enough, far fewer fsyncs
+    this.db.pragma('busy_timeout = 10000');  // wait for locks instead of throwing SQLITE_BUSY (concurrent access)
     this.db.pragma('foreign_keys = ON');
     this.initializeTables();
   }
