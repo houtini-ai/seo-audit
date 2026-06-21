@@ -162,6 +162,18 @@ export class DataForSeoClient {
     ]);
   }
 
+  /** Backlinks — overall profile for a domain (total backlinks, referring domains, spam). Cheap. */
+  async backlinksSummary(target: string): Promise<DfsResponse> {
+    return this.call('/v3/backlinks/summary/live', [{ target, internal_list_limit: 1, backlinks_status_type: 'live' }]);
+  }
+
+  /** Backlinks — per-page backlink/referring-domain counts for a domain (top pages by backlinks). */
+  async domainPagesSummary(target: string, limit = 1000): Promise<DfsResponse> {
+    return this.call('/v3/backlinks/domain_pages_summary/live', [
+      { target, limit: Math.min(limit, 1000), order_by: ['backlinks,desc'], backlinks_status_type: 'live' },
+    ]);
+  }
+
   cacheStats(): { rows: number; totalCost: number } {
     const r = this.cache.prepare('SELECT COUNT(*) rows, COALESCE(SUM(cost),0) totalCost FROM dataforseo_cache').get() as {
       rows: number;

@@ -22,6 +22,7 @@ import { Crawler } from './core/Crawler.js';
 import { Refresh } from './core/Refresh.js';
 import { DataForSeoClient } from './core/DataForSeoClient.js';
 import { RankTracker } from './core/RankTracker.js';
+import { Backlinks } from './core/Backlinks.js';
 import { JobManager } from './core/JobManager.js';
 import type { FetchOptions } from './core/types.js';
 
@@ -94,6 +95,36 @@ function auditMarkdown(r: any, siteUrl: string): string {
   return out.join('\n');
 }
 
+const HELP_TEXT = `# SEO Audit Console — what it can do
+A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**, joined on a normalised URL, with evidence on every finding. Typical flow: **refresh → audit → fix → report**.
+
+## 1. Sync the data
+- **refresh_property** — sync everything (GSC → crawl → URL inspection → rank history). _"Refresh sc-domain:example.com"_ · add \`segments:true\` for device/country, \`maxPages\`, \`startDate\`.
+- **sync_gsc / start_crawl / inspect_urls / track_ranks** — run just one part. _"Crawl example.com, 500 pages"_
+- **check_sync_status / check_crawl_status** — poll a job. _"Check sync status"_
+- **list_properties** — _"List my Search Console properties"_
+
+## 2. Audit
+- **run_audit** — score all checks; returns a prioritised markdown report. _"Run an SEO audit on sc-domain:example.com"_ · \`scope:full\`, \`categories\`, \`includeJudgement:true\`.
+- **query_audit** — one named check with evidence. _"Show striking-distance for example.com"_
+- **list_checks** — _"What does the audit check for?"_
+
+## 3. Fix (the moat)
+- **fix_finding** — paste-ready remediation from your own data: JSON-LD for missing/invalid schema, a 301 rule for broken links, iPR-ranked internal-link suggestions. _"Generate the fix for finding 12"_ or _"fix_finding check:missing-required-fields url:https://example.com/x"_
+
+## 4. Backlinks & keywords (DataForSEO, on-demand)
+- **pull_backlinks** — backlink profile + per-page counts + live status → unlocks **backlinks-to-404** (recover lost equity), top-linked pages, true orphans. _"Pull backlinks for example.com"_
+- **keyword_volume / related_terms** — volume/CPC, and People-Also-Ask + related searches. _"Search volume for [\\"best widgets\\"]"_
+
+## 5. Reports & dashboard
+- **get_dashboard** — interactive dashboard (renders in chat). _"Show the dashboard for example.com"_
+- **export_report** — self-contained shareable HTML to send a client. _"Export the report for example.com"_
+
+## 6. Utilities
+- **data_location** — where DBs are stored (set with a path). · **normalize_url** — the join key for a URL.
+
+_Tip: first time on a property → \`refresh_property\` then \`run_audit\`._`;
+
 export function createServer(): { server: McpServer; run: () => Promise<void> } {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
   const jobs = new JobManager();
@@ -111,6 +142,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     ? new DataForSeoClient(dfsUser, dfsPass, path.join(dataDir(), 'dataforseo-cache.db'), dfsCacheDays)
     : null;
   const rankTracker = dfs ? new RankTracker(dfs, dataDir()) : null;
+  const backlinks = dfs ? new Backlinks(dfs, dataDir()) : null;
   const refresh = new Refresh(sync, crawler, inspector, rankTracker);
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
@@ -122,6 +154,16 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   };
 
   // ── Introspection (no data / creds required) ────────────────────────────
+  server.registerTool(
+    'seo_audit_help',
+    {
+      title: 'Help — what this audit can do',
+      description: 'Overview of every tool/feature with an example prompt for each. Start here.',
+      inputSchema: {},
+    },
+    async () => ({ content: [{ type: 'text', text: HELP_TEXT }], structuredContent: { version: SERVER_VERSION } }),
+  );
+
   server.registerTool(
     'list_checks',
     {
@@ -581,6 +623,25 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: `Report saved: ${file}\nOpen it in any browser for the full interactive dashboard (${data.findings?.total ?? 0} findings). Shareable — send it to a client as-is.` }],
         structuredContent: { path: file, siteUrl, findings: data.findings?.total ?? 0, bytes: html.length },
+      };
+    },
+  );
+
+  // pull_backlinks — on-demand backlink profile (DataForSEO, paid + 20-day cached). Powers
+  // backlinks-to-404 (the big quick win), top-linked pages, and true-orphan detection.
+  server.registerTool(
+    'pull_backlinks',
+    {
+      title: 'Pull backlink profile (DataForSEO)',
+      description: 'Fetch the property’s backlink profile (overall summary + per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Paid DataForSEO call, 20-day cached, on-demand only. Async job — poll check_sync_status.',
+      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(1000).optional(), statusLimit: z.number().int().min(0).max(1000).optional() },
+    },
+    async ({ siteUrl, limit, statusLimit }) => {
+      const bl = requireDfs(backlinks);
+      const jobId = jobs.start('backlinks', (update, signal) => bl.run(siteUrl, { limit, statusLimit }, update, signal));
+      return {
+        content: [{ type: 'text', text: `Backlink pull started for ${siteUrl} (job ${jobId}). Poll check_sync_status, then run_audit for backlinks-to-404.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
       };
     },
   );

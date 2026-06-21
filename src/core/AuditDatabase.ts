@@ -267,6 +267,20 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_findings_check    ON findings(check_id);
     `);
 
+    // ── Backlinks (DataForSEO, on-demand) — page-level counts + live HTTP status ──
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS page_backlinks (
+        url_key TEXT PRIMARY KEY,          -- normalised join key (urlKey of the page)
+        url TEXT NOT NULL,                 -- the page address DataForSEO reported
+        backlinks INTEGER DEFAULT 0,
+        referring_domains INTEGER DEFAULT 0,
+        dofollow INTEGER DEFAULT 0,        -- dofollow backlink count
+        status_code INTEGER,              -- live HTTP status of the backlinked page (null = unchecked)
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_pbl_backlinks ON page_backlinks(backlinks DESC);
+    `);
+
     this.migrate();
   }
 
@@ -292,6 +306,11 @@ export class AuditDatabase {
     ensure('pages', 'has_microdata', 'has_microdata INTEGER DEFAULT 0');
     ensure('pages', 'has_rdfa', 'has_rdfa INTEGER DEFAULT 0');
     ensure('pages', 'click_depth', 'click_depth INTEGER');
+    // property-level backlink profile summary (from DataForSEO backlinks/summary)
+    ensure('property_meta', 'total_backlinks', 'total_backlinks INTEGER');
+    ensure('property_meta', 'referring_domains', 'referring_domains INTEGER');
+    ensure('property_meta', 'backlinks_spam_score', 'backlinks_spam_score REAL');
+    ensure('property_meta', 'backlinks_fetched_at', 'backlinks_fetched_at TEXT');
   }
 
   // ── Minimal property accessors (full CRUD added as modules are wired) ─────

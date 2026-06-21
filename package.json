@@ -38,6 +38,7 @@
     "probe:schema": "node scripts/probe-schema.mjs",
     "probe:extract": "node scripts/probe-extract.mjs",
     "probe:extract2": "node scripts/probe-extract2.mjs",
+    "probe:backlinks": "node scripts/probe-backlinks.mjs",
     "probe:migrate": "node scripts/probe-migrate.mjs",
     "probe:boot": "node scripts/probe-boot.mjs",
     "clean": "rimraf dist"

@@ -300,4 +300,23 @@ export const CHECKS: CheckDef[] = [
   // sites article-card/nav/brand anchors dominate naturally and produce false positives.
   // Needs a better heuristic (short exact-match keyword anchors across many distinct sources,
   // excluding card/title text) before it can carry evidence credibly. See roadmap #12.
+
+  // ── Backlinks (need page_backlinks populated via pull_backlinks; gate so we never assert
+  //    "no external links" without data) ──
+  {
+    id: 'backlinks-to-404', category: 'crawlability', severity: 'crit', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'External backlinks pointing to a dead page', fix: '301-redirect this URL to the best live equivalent — external link equity is hitting a 4xx/5xx page and being wasted.',
+    run: (c) => rows(c, `SELECT url_key urlKey, backlinks, referring_domains rd, status_code st FROM page_backlinks WHERE status_code >= 400 AND backlinks > 0 ORDER BY backlinks DESC`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { status: r.st, backlinks: r.backlinks, referringDomains: r.rd } })),
+  },
+  {
+    id: 'orphan-no-links', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Orphan page — no internal or external links', fix: 'Add internal links (and earn external ones) — this indexable page has zero inlinks and no backlinks, so it depends on the sitemap alone.',
+    run: (c) => {
+      const has = (c.db.prepare('SELECT COUNT(*) n FROM page_backlinks').get() as { n: number }).n;
+      if (!has) return []; // backlinks not pulled — can't credibly assert "no external links"
+      return rows(c, `SELECT p.url_key urlKey FROM pages p LEFT JOIN page_backlinks b ON b.url_key=p.url_key WHERE p.status_code=200 AND p.indexable=1 AND p.inlink_count=0 AND COALESCE(b.backlinks,0)=0`)
+        .map(r => ({ urlKey: r.urlKey, evidence: { inlinks: 0, backlinks: 0 } }));
+    },
+  },
 ];
