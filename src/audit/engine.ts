@@ -1,10 +1,28 @@
 import { randomUUID } from 'node:crypto';
 import { AuditDatabase, type Severity } from '../core/AuditDatabase.js';
 import { dbPathFor } from '../core/paths.js';
-import { CHECKS, type CheckContext, type CheckDef } from './checks.js';
+import { CHECKS, expectedCtr, type CheckContext, type CheckDef } from './checks.js';
 
-const SEVERITY_WEIGHT: Record<Severity, number> = { crit: 1, high: 0.8, med: 0.5, low: 0.2, info: 0.05 };
 const MAX_PER_CHECK = 500; // bound findings/check so a huge site can't balloon the table
+
+// ── 6e priority model: Priority = (T × Y × C) / E — "expected clicks per dev-hour" ──
+// Y (yield): expected % traffic uplift from the fix. Default derived from category×severity;
+// a check can override via yieldCoef. Indexation/crawlability fixes recover most traffic;
+// on-page tweaks are incremental; low-severity = cosmetic.
+const YIELD_BY_CATEGORY: Record<string, number> = {
+  indexation: 0.8, crawlability: 0.7, merged: 0.4, security: 0.5,
+  schema: 0.3, content: 0.25, onpage: 0.2, 'war-stories': 0.5,
+};
+// Low/info are cosmetic — near-zero real traffic uplift, so they don't ride a high-traffic page up.
+const SEVERITY_YIELD_ADJ: Record<Severity, number> = { crit: 1.1, high: 1, med: 0.7, low: 0.15, info: 0.05 };
+function yieldOf(chk: CheckDef): number {
+  if (chk.yieldCoef != null) return Math.max(0, Math.min(1, chk.yieldCoef));
+  return Math.min(1, (YIELD_BY_CATEGORY[chk.category] ?? 0.25) * SEVERITY_YIELD_ADJ[chk.severity]);
+}
+// Site-wide (null-url) findings: stake = a severity-scaled fraction of total site clicks.
+const SITEWIDE_FRACTION: Record<Severity, number> = { crit: 0.25, high: 0.12, med: 0.04, low: 0.01, info: 0.005 };
+// Floor so a high-severity finding on a zero-GSC page (e.g. backlinks-to-404) never scores 0.
+const SEVERITY_FLOOR: Record<Severity, number> = { crit: 5, high: 2, med: 0.5, low: 0.1, info: 0.05 };
 
 interface Traffic { clicks: number; impressions: number; position: number }
 
@@ -50,6 +68,10 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
     const trafStmt = maxDate
       ? db.db.prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position FROM search_analytics WHERE page_key = ? AND date > date(?, '-28 days')`)
       : null;
+    // Total site clicks in the window — the baseline for site-wide (null-url) findings (6e).
+    const siteClicks = maxDate
+      ? (db.db.prepare(`SELECT COALESCE(SUM(clicks),0) c FROM search_analytics WHERE date > date(?, '-28 days')`).get(maxDate) as { c: number }).c
+      : 0;
     const insert = db.db.prepare(
       `INSERT INTO findings (run_id, check_id, category, severity, labels, certainty, url_key, evidence, traffic_at_risk, effort, priority, recommendation)
        VALUES (@run_id,@check_id,@category,@severity,@labels,@certainty,@url_key,@evidence,@traffic_at_risk,@effort,@priority,@recommendation)`,
@@ -66,16 +88,21 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       for (const chk of checks) {
         const findings = chk.run(ctx).slice(0, MAX_PER_CHECK);
         const scale = effortScale(chk.fixType, findings.length);
-        const E = Math.max(chk.effortBase * scale, 0.0001);
+        const E = Math.max(chk.effortBase * scale, 0.0001); // effort in ~hours
+        const Y = yieldOf(chk);
         for (const f of findings) {
           const traf: Traffic = (trafStmt && f.urlKey ? trafStmt.get(f.urlKey, maxDate) : null) as Traffic ?? { clicks: 0, impressions: 0, position: 0 };
-          const V = Math.log10(traf.clicks * 10 + traf.impressions + 10);
-          const priority = (SEVERITY_WEIGHT[chk.severity] * chk.certainty * V) / E;
+          // T = expected monthly clicks at stake: max(current clicks recovered, potential from
+          // impressions × CTR@position). Site-wide findings use a severity fraction of site clicks.
+          const potential = traf.impressions > 0 ? traf.impressions * expectedCtr(traf.position || 10) : 0;
+          let T = f.urlKey ? Math.max(traf.clicks, potential) : siteClicks * SITEWIDE_FRACTION[chk.severity];
+          T = Math.max(T, SEVERITY_FLOOR[chk.severity]); // floor so zero-GSC findings aren't lost
+          const priority = (T * Y * chk.certainty) / E; // expected clicks per dev-hour
           insert.run({
             run_id: runId, check_id: chk.id, category: chk.category, severity: chk.severity,
             labels: JSON.stringify(chk.labels), certainty: chk.certainty, url_key: f.urlKey ?? null,
             evidence: JSON.stringify(f.evidence), traffic_at_risk: JSON.stringify(traf),
-            effort: JSON.stringify({ base: chk.effortBase, scale: Math.round(scale * 100) / 100, fixType: chk.fixType }),
+            effort: JSON.stringify({ base: chk.effortBase, scale: Math.round(scale * 100) / 100, fixType: chk.fixType, hours: Math.round(E * 10) / 10, expectedClicks: Math.round(T * 10) / 10, yield: Math.round(Y * 100) / 100 }),
             priority, recommendation: JSON.stringify({ title: chk.title, text: chk.fix }),
           });
           total++;
@@ -92,7 +119,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       .prepare(`SELECT check_id checkId, category, severity, COUNT(*) count, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC`)
       .all(runId) as AuditResult['byCheck'];
     const top = db.db
-      .prepare(`SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 25`)
+      .prepare(`SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 25`)
       .all(runId);
 
     return { runId, siteUrl, integrityOk: pageCount > 0, total, bySeverity, byCategory, byCheck, top };

@@ -79,12 +79,13 @@ function auditMarkdown(r: any, siteUrl: string): string {
     `**${r.total} findings** · 🔴 ${sev.crit ?? 0} critical · 🟠 ${sev.high ?? 0} high · 🟡 ${sev.med ?? 0} medium · ⚪ ${sev.low ?? 0} low`,
   ];
   if (!r.integrityOk) out.push('> ⚠ Crawl integrity not verified — treat findings as provisional.');
-  out.push('', '## Top priorities (impact ÷ effort)');
+  out.push('', '## Top priorities (expected clicks ÷ dev-hour)');
   (r.top ?? []).slice(0, 12).forEach((f: any, i: number) => {
-    const rec = p(f.recommendation), traf = p(f.traffic_at_risk);
+    const rec = p(f.recommendation), traf = p(f.traffic_at_risk), eff = p(f.effort);
     const pth = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
     const tr = (traf.clicks || traf.impressions) ? ` · ${traf.clicks || 0} clicks / ${traf.impressions || 0} impr` : '';
-    out.push(`${i + 1}. ${SEV_ICON[f.severity] ?? '·'} **${rec.title || f.check_id}** — \`${pth}\`${tr}`);
+    const yld = eff.expectedClicks != null ? ` · ~${eff.expectedClicks} clicks at stake, ~${eff.hours}h` : '';
+    out.push(`${i + 1}. ${SEV_ICON[f.severity] ?? '·'} **${rec.title || f.check_id}** — \`${pth}\`${tr}${yld}`);
     if (rec.text) out.push(`   ${rec.text}`);
   });
   const byCat: Record<string, string[]> = {};
@@ -210,7 +211,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'run_audit',
     {
       title: 'Run SEO audit',
-      description: 'Run the technical-SEO checks against synced data and return scored findings (priority = impact÷effort, using real GSC traffic-at-risk). Crawl + GSC + URL-inspection checks. Set includeJudgement=true to include heuristic (N) checks.',
+      description: 'Run the technical-SEO checks against synced data and return scored findings, ranked by expected clicks per dev-hour — Priority = (T × Y × C) / E (T = clicks at stake from real GSC data, Y = expected yield, C = certainty, E = effort hours). Crawl + GSC + URL-inspection checks. Set includeJudgement=true to include heuristic (N) checks.',
       inputSchema: {
         siteUrl: z.string(),
         scope: z.enum(['core', 'full']).optional(),

@@ -24,8 +24,9 @@ export interface CheckDef {
   severity: Severity;
   labels: FindingLabel[];
   certainty: number; // 1.0 deterministic, 0.5 judgement
-  effortBase: number; // Fibonacci: 1 trivial, 3 small, 5 medium, 8 hard, 13 epic
+  effortBase: number; // Fibonacci ≈ effort HOURS: 1 trivial, 3 small, 5 medium, 8 hard, 13 epic
   fixType: 'global' | 'per-page' | 'automated';
+  yieldCoef?: number; // 6e: expected % traffic uplift from the fix (0–1). Omitted → derived from category×severity.
   title: string;
   fix: string;
   run(ctx: CheckContext): RawFinding[];
@@ -62,7 +63,7 @@ function schemaFindings(ctx: CheckContext, kinds: SchemaIssueKind[]): RawFinding
 
 // Rough position→expected-CTR curve (desktop+mobile blended) for the CTR-gap check.
 const CTR_CURVE: Record<number, number> = { 1: 0.28, 2: 0.15, 3: 0.11, 4: 0.08, 5: 0.06, 6: 0.05, 7: 0.04, 8: 0.032, 9: 0.028, 10: 0.025 };
-const expectedCtr = (pos: number): number => CTR_CURVE[Math.max(1, Math.min(10, Math.round(pos)))] ?? 0.02;
+export const expectedCtr = (pos: number): number => CTR_CURVE[Math.max(1, Math.min(10, Math.round(pos)))] ?? 0.02;
 
 export const CHECKS: CheckDef[] = [
   // ── On-page (crawl, deterministic) ──────────────────────────────────────

@@ -41,6 +41,7 @@
     "probe:backlinks": "node scripts/probe-backlinks.mjs",
     "probe:dfs-labs": "node scripts/probe-dfs-labs.mjs",
     "probe:6a": "node scripts/probe-6a.mjs",
+    "probe:priority": "node scripts/probe-priority.mjs",
     "probe:migrate": "node scripts/probe-migrate.mjs",
     "probe:boot": "node scripts/probe-boot.mjs",
     "clean": "rimraf dist"
