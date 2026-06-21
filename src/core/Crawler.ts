@@ -86,6 +86,7 @@ interface FetchOutcome {
   xRobotsTag: string | null;
   bytes: number | null;
   timeMs: number;
+  throttled: boolean; // saw a 429/503 (after retries) — signal for adaptive pacing
 }
 
 async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise<FetchOutcome> {
@@ -167,6 +168,7 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
       // content-length — body isn't read, so 0 would be misleading).
       bytes: Number(h('content-length')) || (body ? Buffer.byteLength(body) : null),
       timeMs: Date.now() - start,
+      throttled: transientRetries > 0,
     };
   }
 }
@@ -273,8 +275,12 @@ export class Crawler {
       update({ crawlId, crawled, discovered, failed, skipped });
     };
 
+    // Adaptive pacing: start at the configured delay; ramp UP when the host throttles (429/503)
+    // and decay back toward base when it's clear. Same pages crawled (no data lost) — just paced
+    // so hard-throttled sites stop triggering retries (net faster + cleaner) and fast sites stay fast.
+    let dynamicDelay = delayMs;
     const processOne = async (item: { url: string; depth: number }): Promise<void> => {
-      if (delayMs) await sleep(delayMs);
+      if (dynamicDelay) await sleep(dynamicDelay);
       const path = (() => { try { return new URL(item.url).pathname; } catch { return '/'; } })();
       if (!robots.isAllowed(path)) {
         try { robotsInsert.run({ crawl_id: crawlId, url: item.url, url_key: urlKey(item.url, keyOpts), depth: item.depth }); } catch { /* dup */ }
@@ -282,6 +288,9 @@ export class Crawler {
       }
       try {
         const r = await fetchWithRedirects(item.url, ua);
+        // Self-tune the delay from the throttle signal.
+        if (r.throttled) dynamicDelay = Math.min(Math.round(dynamicDelay * 1.5) + 200, 5000);
+        else if (dynamicDelay > delayMs) dynamicDelay = Math.max(delayMs, Math.round(dynamicDelay * 0.9));
         const finalKey = urlKey(r.finalUrl, keyOpts);
         const isHtml = isHtmlContentType(r.contentType);
         const ex = isHtml && r.status === 200 ? extractPage(r.body, r.finalUrl, baseHost, keyOpts, r.xRobotsTag) : null;
