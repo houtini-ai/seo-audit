@@ -48,16 +48,23 @@ export class GscSync {
       });
 
       let total = 0;
-      const options2: FetchOptions = { ...options, dimensions: options.dimensions ?? LITE_DIMENSIONS };
-      const dims = options2.dimensions!;
+      let options2: FetchOptions = { ...options, dimensions: options.dimensions ?? LITE_DIMENSIONS };
+      let dims = options2.dimensions!;
 
       // Summary/totals SUM across one grouping. Mixing lite (device='') with segmented
-      // (device='DESKTOP'…) rows would double-count, so if the grouping shape changed
-      // since last sync, drop the old analytics first (each sync re-fetches its window).
-      const wantsSegments = dims.includes('device');
+      // (device='DESKTOP'…) rows would double-count, so the table holds ONE grouping shape.
       const cnt = (sql: string): number => (db.db.prepare(sql).get() as { n: number }).n;
       const hasLite = cnt(`SELECT COUNT(*) n FROM search_analytics WHERE device = ''`) > 0;
       const hasSegmented = cnt(`SELECT COUNT(*) n FROM search_analytics WHERE device <> ''`) > 0;
+      // PRESERVE existing history: a routine (default/lite) sync over segmented history must NOT
+      // wipe it — keep segmenting instead, so a short window sync never destroys months of data.
+      if (!dims.includes('device') && hasSegmented && !hasLite) {
+        options2 = { ...options2, dimensions: FULL_DIMENSIONS };
+        dims = options2.dimensions!;
+      }
+      const wantsSegments = dims.includes('device');
+      // Only wipe on a genuine, unavoidable shape conflict (e.g. an explicit lite→segmented
+      // upgrade, or a pre-existing mixed table) — never on the routine preserve path above.
       if ((wantsSegments && hasLite) || (!wantsSegments && hasSegmented)) {
         db.db.exec('DELETE FROM search_analytics');
       }
