@@ -335,6 +335,67 @@ export const CHECKS: CheckDef[] = [
       .filter(r => { const tt = terms(r.title), th = terms(r.h1); if (tt.length < 2 || th.length < 2) return false; const set = new Set(th); return !tt.some(w => set.has(w)); })
       .map(r => ({ urlKey: r.urlKey, evidence: { title: r.title, h1: r.h1 } })),
   },
+  {
+    id: 'rising-pages', category: 'merged', severity: 'low', labels: ['G'], certainty: 1, effortBase: 2, fixType: 'per-page',
+    title: 'Page gaining clicks fast (double down)', fix: 'Clicks jumped vs the previous 28 days — reinforce it with internal links and related content while the momentum is there.',
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 56) ? [] : rows(c, `
+      WITH cur AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key),
+           prev AS (SELECT page_key, SUM(clicks) c FROM search_analytics WHERE page_key IS NOT NULL AND ${winPrev(c.gscMaxDate)} GROUP BY page_key)
+      SELECT cur.page_key url, COALESCE(prev.c,0) prevC, cur.c curC, cur.i curI, COALESCE(cur.pos,10) pos
+      FROM cur LEFT JOIN prev ON prev.page_key=cur.page_key
+      WHERE cur.c >= 30 AND cur.c >= COALESCE(prev.c,0) * 1.5
+      ORDER BY (cur.c - COALESCE(prev.c,0)) DESC LIMIT 25`)
+      .map(r => ({ urlKey: null, evidence: { url: r.url, previousClicks: r.prevC, currentClicks: r.curC, clicksGained: r.curC - r.prevC, clicks: r.curC, impressions: r.curI, position: Math.round(r.pos * 10) / 10 } })),
+  },
+  {
+    id: 'h1-missing-top-query', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Top query missing from the H1', fix: 'Work the page’s top-performing query into the <h1> — it ranks for this term but the main heading doesn’t mention it.',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const r = rows(c, `SELECT s.page_key urlKey, s.query query, s.impr impressions, p.h1 h1 FROM
+        (SELECT page_key, query, SUM(impressions) impr, ROW_NUMBER() OVER (PARTITION BY page_key ORDER BY SUM(impressions) DESC) rn
+         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
+        JOIN pages p ON p.url_key = s.page_key
+        WHERE s.rn = 1 AND p.indexable = 1 AND p.h1 IS NOT NULL AND p.h1 != '' AND s.impr >= 100`);
+      return r.filter(x => { const q = terms(x.query); return q.length > 0 && !q.some(w => titleHasTerm(x.h1, w)); })
+        .map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, h1: x.h1 } }));
+    },
+  },
+  {
+    id: 'high-ipr-no-traffic', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Internal authority wasted on a no-traffic page', fix: 'High internal link equity (iPR) and Google does rank it (it earns impressions), yet it gets zero clicks — rewrite the title/snippet or improve the page, or repoint that authority to pages that convert it. (Requires impressions, so functional pages with no search demand are excluded.)',
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions
+      FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key
+      WHERE p.indexable=1 AND p.ipr >= 50 AND p.click_depth >= 1 AND sa.date > date('${c.gscMaxDate}','-90 days')
+      GROUP BY p.url_key HAVING SUM(sa.clicks)=0 AND SUM(sa.impressions) >= 100
+      ORDER BY p.ipr DESC LIMIT 50`).map(r => ({ urlKey: r.urlKey, evidence: { ipr: Math.round(r.ipr), inlinks: r.inl, impressions: r.impressions, clicks: 0, note: 'high internal authority + impressions, zero clicks in 90 days' } })),
+  },
+  {
+    id: 'homepage-missing-org-schema', category: 'schema', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
+    title: 'Homepage missing Organization / WebSite schema', fix: 'Add Organization (or LocalBusiness) and WebSite JSON-LD to the homepage — it underpins the knowledge panel, logo and sitelinks search box.',
+    run: (c) => {
+      const hp = (rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND click_depth=0 LIMIT 1`)[0]
+        ?? rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 ORDER BY inlink_count DESC LIMIT 1`)[0]);
+      if (!hp) return [];
+      const types = new Set(parseJsonLdNodes(hp.jsonLd).map(nodeType).filter(Boolean));
+      const ok = ['Organization', 'LocalBusiness', 'Corporation', 'OnlineStore', 'WebSite'].some(t => types.has(t));
+      return ok ? [] : [{ urlKey: hp.urlKey, evidence: { found: [...types].join(', ') || 'none', note: 'no Organization/WebSite node on the homepage' } }];
+    },
+  },
+  {
+    id: 'breadcrumb-schema-inconsistent', category: 'schema', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Breadcrumb schema missing on some pages', fix: 'Add BreadcrumbList JSON-LD — most of the site has it, so these pages are inconsistent and miss breadcrumb rich results.',
+    run: (c) => {
+      const pages = rows(c, `SELECT url_key urlKey, json_ld jsonLd, click_depth cd FROM pages WHERE status_code=200 AND indexable=1`);
+      let withBc = 0; const without: string[] = [];
+      for (const p of pages) {
+        if (parseJsonLdNodes(p.jsonLd).some(n => nodeType(n) === 'BreadcrumbList')) withBc++;
+        else if ((p.cd ?? 0) >= 2) without.push(p.urlKey);
+      }
+      if (pages.length === 0 || withBc / pages.length < 0.4) return []; // site doesn't use breadcrumbs → design choice, not a bug
+      return without.map(u => ({ urlKey: u, evidence: { note: 'site uses BreadcrumbList elsewhere; missing here' } }));
+    },
+  },
   // ── Merged crawl × Search Console — the "expert questions" that need both datasets ──
   {
     id: 'ghost-pages', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
