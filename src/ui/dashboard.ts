@@ -126,6 +126,8 @@ let rankHistChart: echarts.ECharts | null = null;
 let rankChart: echarts.ECharts | null = null;
 let strikeChart: echarts.ECharts | null = null;
 let kwChart: echarts.ECharts | null = null;
+let mismatchChart: echarts.ECharts | null = null;
+let scatterChart: echarts.ECharts | null = null;
 const ARIA = { aria: { enabled: true } }; // ECharts-generated screen-reader description
 
 const app = new App({ name: 'SEO Audit Console', version: '0.1.0' });
@@ -239,11 +241,11 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
       return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}</td>` +
         `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
         `<td class="num">${traf.impressions || 0}</td>` +
-        `<td class="prio"><span class="prio-wrap"><span class="prio-bar s-${f.severity}" style="width:${pct}%"></span><span class="prio-val">${f.priority.toFixed(2)}</span></span></td>` +
+        `<td class="prio"><span class="prio-wrap"><span class="prio-bar s-${f.severity}" style="width:${pct}%"></span><span class="prio-val">${esc((f.size ?? '') + ' ' + (f.impact ?? pct))}</span></span></td>` +
         `<td class="fix" title="${esc(rec.text || '')}">${esc(rec.text || '')}</td></tr>`;
     });
     tableEl.innerHTML = rows.length
-      ? `<table><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Priority</th><th>Fix</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      ? `<table><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th><th>Fix</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
       : '<p class="muted">No findings at this severity in the top results.</p>';
   };
   const drawChips = (): void => {
@@ -291,6 +293,55 @@ function render(data: DashboardData): void {
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);
   buildExportBar(data);
+
+  // 0) Equity vs reality — template mismatch (bars) + per-URL scatter (the architecture flagship)
+  const mm = data.templateMismatch ?? [];
+  mismatchChart?.dispose();
+  mismatchChart = echarts.init($('mismatchChart'));
+  if (mm.length) {
+    const labels = mm.map(m => m.template).reverse();
+    mismatchChart.setOption({
+      ...ARIA,
+      grid: { left: 96, right: 24, top: 28, bottom: 30 },
+      legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => v + '%' },
+      xAxis: { type: 'value', name: '% share', max: 100, ...axis },
+      yAxis: { type: 'category', data: labels, ...axis },
+      series: [
+        { name: 'Internal equity', type: 'bar', data: mm.map(m => m.iprPct).reverse(), itemStyle: { color: col.accent } },
+        { name: 'Organic traffic', type: 'bar', data: mm.map(m => m.trafficPct).reverse(), itemStyle: { color: col.green } },
+      ],
+    });
+    const sink = mm.find(m => m.iprPct >= 10 && m.trafficPct < m.iprPct * 0.3);
+    $('mismatchSummary').textContent = sink
+      ? `/${sink.template}/ absorbs ${sink.iprPct}% of internal equity but drives ${sink.trafficPct}% of traffic — equity flowing into a dead end.`
+      : 'Internal equity share vs organic traffic share, by template.';
+  } else {
+    mismatchChart.setOption({ ...ARIA, title: { text: 'Run a crawl to map equity flow', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    $('mismatchSummary').textContent = 'Run a crawl (refresh_property) to see equity flow by template.';
+  }
+
+  const sc = data.equityScatter ?? [];
+  const bucketColor: Record<string, string> = { content: col.accent, category: col.red, homepage: col.amber, other: col.muted };
+  const scGroups: Record<string, number[][]> = {};
+  for (const pt of sc) (scGroups[pt.t] ??= []).push([pt.x, Math.max(1, pt.y)]); // max(1) keeps the log axis valid
+  scatterChart?.dispose();
+  scatterChart = echarts.init($('scatterChart'));
+  if (sc.length) {
+    scatterChart.setOption({
+      ...ARIA,
+      grid: { left: 60, right: 24, top: 24, bottom: 40 },
+      legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
+      tooltip: { trigger: 'item', formatter: (p: any) => `iPR ${p.value[0]} · ${fmt(p.value[1])} impressions` },
+      xAxis: { type: 'value', name: 'internal PageRank', min: 0, max: 100, ...axis },
+      yAxis: { type: 'log', name: 'impressions', ...axis },
+      series: Object.entries(scGroups).map(([t, pts]) => ({ name: t, type: 'scatter', symbolSize: t === 'category' ? 9 : 7, itemStyle: { color: bucketColor[t] ?? col.muted, opacity: 0.6 }, data: pts })),
+    });
+    $('scatterSummary').textContent = `${sc.length} URLs by internal PageRank and impressions; bottom-right = high-authority pages earning no traffic.`;
+  } else {
+    scatterChart.setOption({ ...ARIA, title: { text: 'Run a crawl to map equity vs traffic', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    $('scatterSummary').textContent = 'Run a crawl (refresh_property) to see the equity map.';
+  }
 
   // 1) Ranking distribution over time (stacked area) — flagship #1
   const dist = data.rankingDistribution ?? [];

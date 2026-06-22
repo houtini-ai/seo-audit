@@ -31,12 +31,16 @@ export interface DashboardData {
   countryBreakdown?: { country: string; clicks: number; prevClicks: number; impressions: number }[];
   pagePerformance?: { urlKey: string; clicks: number; prevClicks: number; clicksChangePct: number; impressions: number; position: number; category: string }[];
   keywordMovement?: { query: string; firstPos: number; lastPos: number; delta: number; firstDate: string; lastDate: string; category: string }[];
+  // Equity vs reality: per-page internal PageRank (x) vs GSC impressions (y), bucketed by template.
+  equityScatter?: { x: number; y: number; t: string }[];
+  // Template-level mismatch: where internal equity flows vs where traffic actually comes from.
+  templateMismatch?: { template: string; pages: number; iprPct: number; trafficPct: number }[];
   findings?: {
     runId: string;
     total: number;
     finishedAt: string | null;
     byCheck: { check_id: string; category: string; severity: string; count: number; priority: number }[];
-    top: { check_id: string; category: string; severity: string; url_key: string | null; evidence: string; traffic_at_risk: string; effort: string; priority: number; recommendation: string }[];
+    top: { check_id: string; category: string; severity: string; url_key: string | null; evidence: string; traffic_at_risk: string; effort: string; priority: number; recommendation: string; impact?: number; size?: string }[];
     // Audit-deliverable view: issues grouped by category, each a sub-heading with a real example + fix.
     recommendations: {
       category: string;
@@ -180,7 +184,11 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     let findings: DashboardData['findings'] = null;
     if (lastRun) {
       const byCheck = db.db.prepare('SELECT check_id, category, severity, COUNT(*) count, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['byCheck'];
-      const top = db.db.prepare('SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 50').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['top'];
+      const topRaw = db.db.prepare('SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 50').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['top'];
+      // Impact = priority normalised to the run's top finding (preserves magnitude), shown as a
+      // 0–100 index + S/M/L/XL size instead of a clicks "forecast".
+      const maxPrio = Math.max(1, ...topRaw.map(f => f.priority || 0));
+      const top = topRaw.map(f => { const impact = Math.round((f.priority || 0) / maxPrio * 100); return { ...f, impact, size: impact >= 50 ? 'XL' : impact >= 20 ? 'L' : impact >= 5 ? 'M' : 'S' }; });
 
       // One representative (highest-priority) example per check → the audit-report view.
       const exRows = db.db.prepare('SELECT check_id, url_key, evidence, traffic_at_risk, recommendation, priority FROM findings WHERE run_id=? ORDER BY priority DESC').all(lastRun.run_id) as
@@ -213,9 +221,35 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       findings = { runId: lastRun.run_id, total: lastRun.finding_count, finishedAt: lastRun.finished_at, byCheck, top, recommendations };
     }
 
+    // Equity vs reality: join per-page internal PageRank with 28d GSC traffic, bucketed by template.
+    // (Needs a crawl — pages.ipr is populated post-crawl. Empty if crawl-free.)
+    let equityScatter: DashboardData['equityScatter'];
+    let templateMismatch: DashboardData['templateMismatch'];
+    const pageRows = db.db.prepare(`SELECT url_key, COALESCE(ipr,0) ipr FROM pages WHERE status_code=200 AND indexable=1`).all() as { url_key: string; ipr: number }[];
+    if (pageRows.length) {
+      const g28 = new Map<string, { clicks: number; impr: number }>();
+      for (const r of db.db.prepare(`SELECT page_key, SUM(clicks) c, SUM(impressions) i FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-28 days') GROUP BY page_key`).all(maxDate) as any[]) g28.set(r.page_key, { clicks: r.c, impr: r.i });
+      const scatter: NonNullable<DashboardData['equityScatter']> = [];
+      const agg = new Map<string, { ipr: number; clicks: number; n: number }>();
+      for (const p of pageRows) {
+        const t = templateBucket(p.url_key);
+        const gg = g28.get(p.url_key) ?? { clicks: 0, impr: 0 };
+        const a = agg.get(t) ?? { ipr: 0, clicks: 0, n: 0 };
+        a.ipr += p.ipr; a.clicks += gg.clicks; a.n += 1; agg.set(t, a);
+        if (p.ipr >= 15 || gg.impr >= 5) scatter.push({ x: Math.round(p.ipr), y: gg.impr, t: ['content', 'category', 'homepage'].includes(t) ? t : 'other' });
+      }
+      equityScatter = scatter.sort((a, b) => b.y - a.y).slice(0, 500);
+      const tIpr = [...agg.values()].reduce((s, a) => s + a.ipr, 0) || 1;
+      const tClk = [...agg.values()].reduce((s, a) => s + a.clicks, 0) || 1;
+      templateMismatch = [...agg.entries()].map(([template, a]) => ({ template, pages: a.n, iprPct: Math.round(a.ipr / tIpr * 1000) / 10, trafficPct: Math.round(a.clicks / tClk * 1000) / 10 }))
+        .sort((x, y) => y.iprPct - x.iprPct).slice(0, 8);
+    }
+
     return {
       siteUrl,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate },
+      equityScatter,
+      templateMismatch,
       rankHistory,
       dateAlignment,
       rankingDistribution,
@@ -235,6 +269,15 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
   } finally {
     db.close();
   }
+}
+
+/** Template proxy: first URL path segment (homepage / content-root collapse to named buckets). */
+function templateBucket(urlKey: string): string {
+  try {
+    const p = new URL(urlKey).pathname.replace(/^\/+|\/+$/g, '');
+    if (!p) return 'homepage';
+    return p.includes('/') ? p.split('/')[0] : 'content';
+  } catch { return 'other'; }
 }
 
 /** Categorise a page by period-over-period performance (per the agency-report idiom). */
