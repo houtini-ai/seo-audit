@@ -1,13 +1,27 @@
 /**
- * Structured-data validation. Google has NO public Rich-Results validation API, so
- * we maintain a versioned required-field map and validate captured JSON-LD ourselves.
- * Grounded in research/11 and research/01 §5 (#109–123). Deterministic by design:
- * we ONLY flag documented-required fields and unambiguous value errors — recommended-
- * only fields and unknown @types are deliberately NOT flagged (false positives erode
- * trust). The `pages.json_ld` column is JSON.stringify(arrayOfRawBlockStrings).
+ * Structured-data validation. Google has NO public Rich-Results validation API and
+ * validator.schema.org has none either (it's a Google-run service; the /validate endpoint
+ * is undocumented + anti-scraped), so we validate captured JSON-LD locally against a
+ * maintained map. Grounded in research/11 and research/01 §5 (#109–123). Deterministic by
+ * design: we ONLY flag documented-required fields and unambiguous value errors —
+ * recommended-only fields, unknown properties, and unknown @types are deliberately NOT
+ * flagged (Google ignores them; flagging them is false-positive noise that erodes trust).
+ *
+ * Coverage:
+ *  - Required-field map for 20 rich-result @types (Article/Product/Organization/Event/
+ *    Recipe/VideoObject/JobPosting/LocalBusiness/Course/FAQPage/QAPage/Review/
+ *    AggregateRating/Movie/Book/SoftwareApplication/BreadcrumbList/WebSite + Blog/News).
+ *  - Nested required (Product/SoftwareApplication.offers → price+priceCurrency;
+ *    Review.reviewRating → ratingValue), only checked when the parent field is present.
+ *  - Value sanity: absolute URLs, ISO-8601 dates, ISO-4217 priceCurrency, bare-number price.
+ *  - Type-level dedup so a complete + partial node of the same type doesn't false-flag.
+ * The `pages.json_ld` column is JSON.stringify(arrayOfRawBlockStrings).
  */
 
-// Google "Required properties" per type (the fields Google actually rewards).
+// Google "Required properties" per type (the fields Google actually rewards). Kept conservative
+// on purpose — only fields Google documents as REQUIRED, and only for the standalone @type
+// (nested objects like Product.review/aggregateRating aren't extracted as nodes, so requiring
+// `author`/`ratingValue` here can't false-flag a nested review that inherits context).
 const REQUIRED: Record<string, string[]> = {
   Article: ['headline', 'author', 'datePublished', 'image'],
   BlogPosting: ['headline', 'author', 'datePublished', 'image'],
@@ -23,10 +37,20 @@ const REQUIRED: Record<string, string[]> = {
   LocalBusiness: ['name', 'address'],
   Course: ['name', 'description', 'provider'],
   FAQPage: ['mainEntity'],
+  QAPage: ['mainEntity'],
+  Review: ['author', 'reviewRating'],
+  AggregateRating: ['ratingValue'],
+  Movie: ['name'],
+  Book: ['name', 'author'],
+  SoftwareApplication: ['name'],
 };
-// Nested required: e.g. Product.offers must carry price + priceCurrency.
+// Nested required: e.g. Product.offers must carry price + priceCurrency. Only checked when the
+// parent field is present (so a SoftwareApplication relying on aggregateRating instead of offers
+// isn't flagged for a missing offers.price).
 const NESTED_REQUIRED: Record<string, { field: string; sub: string[] }> = {
   Product: { field: 'offers', sub: ['price', 'priceCurrency'] },
+  SoftwareApplication: { field: 'offers', sub: ['price', 'priceCurrency'] },
+  Review: { field: 'reviewRating', sub: ['ratingValue'] },
 };
 // Schemas Google has restricted — eligible only in narrow contexts (research/01 #119).
 const FORBIDDEN = new Set(['FAQPage', 'HowTo']);
@@ -34,6 +58,10 @@ const FORBIDDEN = new Set(['FAQPage', 'HowTo']);
 const URL_FIELDS = /^(image|logo|thumbnailurl|contenturl|url)$/i;
 const DATE_FIELDS = /^(datepublished|datemodified|startdate|enddate|uploaddate|dateposted|validfrom)$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/;
+const CURRENCY_FIELD = /^pricecurrency$/i;
+const ISO_4217 = /^[A-Z]{3}$/;            // e.g. USD, GBP, AUD
+const PRICE_FIELD = /^price$/i;
+const PLAIN_NUMBER = /^\d+(\.\d+)?$/;     // Google requires a bare number — no "$", commas, or "Free"
 
 export type SchemaIssueKind = 'parse' | 'context' | 'type' | 'required' | 'value' | 'forbidden';
 export interface SchemaIssue {
@@ -68,6 +96,26 @@ function urlIsAbsolute(v: unknown): boolean {
   return true; // not a URL-bearing shape we can judge → don't flag
 }
 
+// Value sanity on a node's present fields: absolute URLs (#120), ISO-8601 dates (#121),
+// ISO-4217 currency, and bare-number prices. Run on the node AND on nested offer objects
+// (price/priceCurrency live inside offers, not at the top level).
+function checkValues(obj: Record<string, unknown>, type: string | undefined, issues: SchemaIssue[]): void {
+  for (const [k, v] of Object.entries(obj)) {
+    if (URL_FIELDS.test(k) && v != null && !urlIsAbsolute(v)) {
+      issues.push({ kind: 'value', type, detail: `${k} is not an absolute URL.`, fields: [k] });
+    }
+    if (DATE_FIELDS.test(k) && typeof v === 'string' && !ISO_DATE.test(v)) {
+      issues.push({ kind: 'value', type, detail: `${k} is not ISO-8601 ("${v}").`, fields: [k] });
+    }
+    if (CURRENCY_FIELD.test(k) && typeof v === 'string' && !ISO_4217.test(v)) {
+      issues.push({ kind: 'value', type, detail: `priceCurrency "${v}" is not a 3-letter ISO-4217 code (e.g. USD).`, fields: ['priceCurrency'] });
+    }
+    if (PRICE_FIELD.test(k) && v != null && typeof v !== 'number' && !(typeof v === 'string' && PLAIN_NUMBER.test(v))) {
+      issues.push({ kind: 'value', type, detail: `price "${String(v)}" is not a plain number (no currency symbols or thousands separators).`, fields: ['price'] });
+    }
+  }
+}
+
 function validateNode(node: Record<string, unknown>, issues: SchemaIssue[]): void {
   const type = typeOf(node);
   if (!type) { issues.push({ kind: 'type', detail: 'Node has no @type.' }); return; }
@@ -88,19 +136,12 @@ function validateNode(node: Record<string, unknown>, issues: SchemaIssue[]): voi
         if (!isObj(off)) continue;
         const missSub = nested.sub.filter(f => off[f] === undefined || off[f] === null || off[f] === '');
         if (missSub.length) issues.push({ kind: 'required', type, detail: `${type}.${nested.field} missing: ${missSub.join(', ')}.`, fields: missSub.map(f => `${nested.field}.${f}`) });
+        checkValues(off, type, issues); // price/priceCurrency value sanity inside offers
       }
     }
   }
 
-  // Value sanity (#120 absolute URLs, #121 ISO-8601 dates) — only on present fields.
-  for (const [k, v] of Object.entries(node)) {
-    if (URL_FIELDS.test(k) && v != null && !urlIsAbsolute(v)) {
-      issues.push({ kind: 'value', type, detail: `${k} is not an absolute URL.`, fields: [k] });
-    }
-    if (DATE_FIELDS.test(k) && typeof v === 'string' && !ISO_DATE.test(v)) {
-      issues.push({ kind: 'value', type, detail: `${k} is not ISO-8601 ("${v}").`, fields: [k] });
-    }
-  }
+  checkValues(node, type, issues);
 }
 
 /** Does this node fully satisfy its type's required (incl. nested) fields? */
