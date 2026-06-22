@@ -8,6 +8,29 @@ import type Database from 'better-sqlite3';
  *    "honest" depth; nav/footer would make everything depth-1). null = unreachable via body.
  * Writes both back to pages.ipr / pages.click_depth for the crawl.
  */
+/**
+ * Full post-crawl link-graph finalization for a crawl: in-degree (inlink_count) from the
+ * `links` table, then iPR + click_depth. Idempotent — safe to re-run. Used by the crawler at
+ * the end of a crawl AND by the audit as a self-heal when a crawl's link-graph was left
+ * unpopulated (e.g. the crawl process was killed before it could finalize). When seedKey is
+ * null the homepage is inferred as the highest-in-degree page (computed first, above).
+ */
+export function finalizeLinkGraph(db: Database.Database, crawlId: string, seedKey: string | null): void {
+  db.prepare(
+    `UPDATE pages SET inlink_count = (
+      SELECT COUNT(*) FROM links
+      WHERE links.target_key = pages.url_key AND links.is_internal = 1
+        AND links.source_key != pages.url_key AND links.crawl_id = pages.crawl_id
+    ) WHERE crawl_id = ?`,
+  ).run(crawlId);
+  let seed = seedKey;
+  if (!seed) {
+    const r = db.prepare(`SELECT url_key FROM pages WHERE crawl_id=? ORDER BY inlink_count DESC LIMIT 1`).get(crawlId) as { url_key: string } | undefined;
+    seed = r?.url_key ?? null;
+  }
+  computeLinkGraph(db, crawlId, seed);
+}
+
 export function computeLinkGraph(db: Database.Database, crawlId: string, seedKey: string | null): void {
   const nodes = (db.prepare('SELECT url_key FROM pages WHERE crawl_id=?').all(crawlId) as { url_key: string }[]).map(r => r.url_key);
   const N = nodes.length;

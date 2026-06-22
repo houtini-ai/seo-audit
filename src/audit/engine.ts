@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AuditDatabase, type Severity } from '../core/AuditDatabase.js';
 import { dbPathFor } from '../core/paths.js';
+import { finalizeLinkGraph } from '../core/linkGraph.js';
 import { CHECKS, expectedCtr, type CheckContext, type CheckDef } from './checks.js';
 
 const MAX_PER_CHECK = 500; // bound findings/check so a huge site can't balloon the table
@@ -61,6 +62,17 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
   try {
     const maxDate = (db.db.prepare('SELECT MAX(date) d FROM search_analytics').get() as { d: string | null }).d;
     const pageCount = (db.db.prepare('SELECT COUNT(*) c FROM pages').get() as { c: number }).c;
+
+    // Self-heal: if the latest crawl's link-graph was left unpopulated (e.g. the crawl process
+    // was killed before finalizing), recompute inlink_count/iPR/click_depth so graph-dependent
+    // checks (deep-pages, orphans, iPR-bleed, underlinked-high-demand…) aren't silently no-op.
+    if (pageCount > 0) {
+      const cr = db.db.prepare('SELECT crawl_id FROM pages LIMIT 1').get() as { crawl_id: string } | undefined;
+      if (cr) {
+        const g = db.db.prepare('SELECT MAX(ipr) mi, MAX(inlink_count) mc FROM pages WHERE crawl_id=?').get(cr.crawl_id) as { mi: number | null; mc: number | null };
+        if ((g.mi ?? 0) === 0 && (g.mc ?? 0) === 0) finalizeLinkGraph(db.db, cr.crawl_id, null);
+      }
+    }
     const ctx: CheckContext = { db: db.db, gscMaxDate: maxDate };
     const runId = randomUUID().slice(0, 8);
 

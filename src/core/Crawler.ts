@@ -4,7 +4,7 @@ import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
 import { extractPage } from './extract.js';
 import { fetchRobots } from './robots.js';
-import { computeLinkGraph } from './linkGraph.js';
+import { finalizeLinkGraph } from './linkGraph.js';
 import { fetchSitemapUrls } from './sitemap.js';
 
 // Robust HTML detection from a Content-Type header: take the MIME type before any
@@ -371,17 +371,8 @@ export class Crawler {
 
     flush(true);
 
-    // Post-crawl: in-degree (orphan detection) from the link graph.
-    db.db.prepare(
-      `UPDATE pages SET inlink_count = (
-        SELECT COUNT(*) FROM links
-        WHERE links.target_key = pages.url_key AND links.is_internal = 1
-          AND links.source_key != pages.url_key AND links.crawl_id = pages.crawl_id
-      ) WHERE crawl_id = ?`,
-    ).run(crawlId);
-
-    // Post-crawl: internal PageRank (iPR) + body-only click depth from the homepage.
-    computeLinkGraph(db.db, crawlId, urlKey(seed, keyOpts));
+    // Post-crawl: in-degree (orphans), internal PageRank (iPR) + body-only click depth.
+    finalizeLinkGraph(db.db, crawlId, urlKey(seed, keyOpts));
 
     // Post-crawl: fetch the XML sitemap(s) and store the listed URLs for crawl↔sitemap
     // reconciliation (indexable-but-not-in-sitemap, sitemap-points-to-dead, sitemap orphans).
