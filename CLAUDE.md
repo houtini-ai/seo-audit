@@ -68,6 +68,11 @@ Collect (crawl + GSC + SERP) → analyse (deterministic checks + the merged GSC�
 - One Gemini/Houtini-LM call at a time (parallel calls queue + stack timeouts).
 - Compile → smoke-test (live where it matters) → commit → push, one slice at a time.
 
+## Docs
+- `README.md` — the story + "how to do a technical SEO audit" (Richard's voice).
+- `docs/how-to-guide.md` — friendly, simple-language, screenshot-ready walkthrough for end users (first audit, start to finish). Validate edits with the prompt at `C:\dev\content-machine\prompts\houtini\validate-howto-guide.md` (built from the houtini explainer/procedure/slop best-bits). Screenshots get added manually as a real walk-through test.
+- `CLAUDE.md` (this file) — the architecture index + hard-won lessons (the single source of truth for how the code fits together).
+
 ## Quick references
 - House conventions for Houtini MCPs: `C:\MCP\CLAUDE.md` (badges, Glama, topics, naming).
 - Source repos consolidated: `C:\MCP\seo-crawler-mcp\src`, `C:\MCP\better-search-console\src`.
