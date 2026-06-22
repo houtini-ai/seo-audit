@@ -39,7 +39,7 @@ That last bit matters more than it sounds. Severity is what crawlers sell you. Y
 
 ## How to actually do a technical SEO audit on your site
 
-Once it's installed (that's further down), the whole audit is a short conversation. Here's the flow I use.
+Once it's installed (that's further down), the whole audit is a short conversation. Here's the flow I use. If you'd rather have it spelled out step by step - the kind of thing you can follow along with, screenshots and all - there's a [friendly walkthrough guide](docs/how-to-guide.md) too.
 
 ### 1. Pull your data
 > *"Refresh sc-domain:example.com"*
