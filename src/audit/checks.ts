@@ -35,6 +35,13 @@ export interface CheckDef {
 
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
 const win = (d: string): string => `date > date('${d}', '-28 days')`;
+// Prior 28-day window (the 28 days BEFORE the current window) — for period-over-period checks.
+const winPrev = (d: string): string => `date <= date('${d}', '-28 days') AND date > date('${d}', '-56 days')`;
+// Days of GSC history actually held — period-over-period checks need enough span to be meaningful.
+const spanDays = (c: CheckContext): number => {
+  const r = c.db.prepare(`SELECT julianday(MAX(date)) - julianday(MIN(date)) d FROM search_analytics`).get() as { d: number | null };
+  return r?.d ?? 0;
+};
 // HTML pages only — match the MIME type before any charset parameter (mirrors isHtmlContentType).
 const HTML_CT = `(LOWER(content_type) LIKE 'text/html%' OR LOWER(content_type) LIKE 'application/xhtml+xml%')`;
 
@@ -272,6 +279,61 @@ export const CHECKS: CheckDef[] = [
       .map(r => { const ctr = r.clicks / r.impressions; const exp = expectedCtr(r.position); return { urlKey: r.urlKey, ctr, exp, position: r.position, impressions: r.impressions }; })
       .filter(x => x.ctr < x.exp * 0.5)
       .map(x => ({ urlKey: x.urlKey, evidence: { position: Math.round(x.position * 10) / 10, ctr: Math.round(x.ctr * 1000) / 10 + '%', expectedCtr: Math.round(x.exp * 1000) / 10 + '%', impressions: x.impressions } })) : [],
+  },
+  // ── Period-over-period (GSC history by date) — the trend questions SEOs live in ──
+  {
+    id: 'traffic-decay', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Page losing clicks (period-over-period)', fix: 'Refresh and expand the content, and check for lost rankings — this page’s Search Console clicks fell sharply against the previous 28 days.',
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 56) ? [] : rows(c, `
+      WITH cur AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+                   FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key),
+           prev AS (SELECT page_key, SUM(clicks) c FROM search_analytics WHERE page_key IS NOT NULL AND ${winPrev(c.gscMaxDate)} GROUP BY page_key)
+      SELECT prev.page_key url, prev.c prevC, COALESCE(cur.c,0) curC, COALESCE(cur.i,0) curI, COALESCE(cur.pos,10) pos
+      FROM prev LEFT JOIN cur ON cur.page_key=prev.page_key
+      WHERE prev.c >= 30 AND COALESCE(cur.c,0) < prev.c * 0.6
+      ORDER BY (prev.c - COALESCE(cur.c,0)) DESC LIMIT 40`)
+      .map(r => ({ urlKey: null, evidence: { url: r.url, previousClicks: r.prevC, currentClicks: r.curC, clicksLost: r.prevC - r.curC, dropPercent: Math.round((1 - r.curC / r.prevC) * 100) + '%', clicks: r.prevC - r.curC, impressions: r.curI, position: Math.round(r.pos * 10) / 10 } })),
+  },
+  {
+    id: 'lost-queries', category: 'merged', severity: 'med', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Query dropped out of rankings', fix: 'This query drove clicks last period and drives none now — find the page that ranked, check for de-indexing or lost rankings, and win it back.',
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 56) ? [] : rows(c, `
+      WITH cur AS (SELECT query, SUM(clicks) c FROM search_analytics WHERE query IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query),
+           prev AS (SELECT query, SUM(clicks) c, SUM(impressions) i FROM search_analytics WHERE query IS NOT NULL AND ${winPrev(c.gscMaxDate)} GROUP BY query)
+      SELECT prev.query query, prev.c prevC, prev.i prevI FROM prev LEFT JOIN cur ON cur.query=prev.query
+      WHERE prev.c >= 10 AND COALESCE(cur.c,0)=0
+      ORDER BY prev.c DESC LIMIT 40`)
+      .map(r => ({ urlKey: null, evidence: { query: r.query, previousClicks: r.prevC, currentClicks: 0, clicks: r.prevC, impressions: r.prevI } })),
+  },
+  {
+    id: 'position-slipping', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Page-1 ranking slipping', fix: 'Average position for this query worsened by 3+ spots vs the previous 28 days while it was still on page one — investigate the ranking loss before the clicks follow it down.',
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 56) ? [] : rows(c, `
+      WITH cur AS (SELECT query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos, SUM(impressions) i, SUM(clicks) c
+                   FROM search_analytics WHERE query IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query HAVING SUM(impressions) >= 100),
+           prev AS (SELECT query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos FROM search_analytics WHERE query IS NOT NULL AND ${winPrev(c.gscMaxDate)} GROUP BY query)
+      SELECT cur.query query, prev.pos prevPos, cur.pos curPos, cur.i i, cur.c c FROM cur JOIN prev ON prev.query=cur.query
+      WHERE prev.pos <= 10 AND cur.pos - prev.pos >= 3
+      ORDER BY (cur.pos - prev.pos) * cur.i DESC LIMIT 40`)
+      .map(r => ({ urlKey: null, evidence: { query: r.query, previousPosition: Math.round(r.prevPos * 10) / 10, currentPosition: Math.round(r.curPos * 10) / 10, slippedBy: Math.round((r.curPos - r.prevPos) * 10) / 10, impressions: r.i, clicks: r.c, position: Math.round(r.curPos * 10) / 10 } })),
+  },
+  {
+    id: 'index-bloat', category: 'indexation', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Indexable page with no search traffic', fix: 'No impressions in 90 days despite being indexable — consolidate, improve, or noindex/prune to concentrate crawl budget and internal authority (confirm it isn’t seasonal or brand-new first).',
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT url_key urlKey, ipr FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND click_depth >= 1 AND url_key NOT IN (SELECT DISTINCT page_key FROM search_analytics WHERE page_key IS NOT NULL AND date > date('${c.gscMaxDate}','-90 days') AND impressions > 0) ORDER BY ipr DESC LIMIT 100`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'indexable but zero impressions in 90 days', ipr: Math.round(r.ipr) } })),
+  },
+  // ── On-page parity (crawl-only, deterministic) ──
+  {
+    id: 'duplicate-meta-description', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Duplicate meta description', fix: 'Give each indexable page a unique meta description.',
+    run: (c) => rows(c, `SELECT url_key urlKey, meta_description md FROM pages WHERE status_code=200 AND indexable=1 AND meta_description IS NOT NULL AND TRIM(meta_description)!='' AND LOWER(TRIM(meta_description)) IN (SELECT LOWER(TRIM(meta_description)) FROM pages WHERE status_code=200 AND indexable=1 AND meta_description IS NOT NULL AND TRIM(meta_description)!='' GROUP BY LOWER(TRIM(meta_description)) HAVING COUNT(*)>1)`).map(r => ({ urlKey: r.urlKey, evidence: { metaDescription: r.md } })),
+  },
+  {
+    id: 'title-h1-mismatch', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Title and H1 share no significant words', fix: 'Align the <title> and <h1> — they currently have no significant words in common, which blurs the page’s topic signal.',
+    run: (c) => rows(c, `SELECT url_key urlKey, title, h1 FROM pages WHERE status_code=200 AND indexable=1 AND title IS NOT NULL AND TRIM(title)!='' AND h1 IS NOT NULL AND TRIM(h1)!=''`)
+      .filter(r => { const tt = terms(r.title), th = terms(r.h1); if (tt.length < 2 || th.length < 2) return false; const set = new Set(th); return !tt.some(w => set.has(w)); })
+      .map(r => ({ urlKey: r.urlKey, evidence: { title: r.title, h1: r.h1 } })),
   },
   // ── Merged crawl × Search Console — the "expert questions" that need both datasets ──
   {
