@@ -378,10 +378,16 @@ export const CHECKS: CheckDef[] = [
     title: 'High search demand, low internal authority', fix: 'Add internal links from high-authority (high-iPR) pages — this earns impressions but the site gives it little internal link equity.',
     run: (c) => c.gscMaxDate ? rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key WHERE p.indexable=1 AND p.ipr < 30 AND p.inlink_count BETWEEN 1 AND 3 AND sa.${win(c.gscMaxDate)} GROUP BY p.url_key HAVING SUM(sa.impressions) >= 300 ORDER BY impressions DESC`).map(r => ({ urlKey: r.urlKey, evidence: { impressions: r.impressions, ipr: Math.round(r.ipr), inlinks: r.inl } })) : [],
   },
-  // NOTE: internal anchor-text over-optimisation was prototyped but pulled — on real content
-  // sites article-card/nav/brand anchors dominate naturally and produce false positives.
-  // Needs a better heuristic (short exact-match keyword anchors across many distinct sources,
-  // excluding card/title text) before it can carry evidence credibly. See roadmap #12.
+  // NOTE: internal anchor-text checks (over-optimisation + generic/empty anchors) prototyped
+  // and PULLED twice. Re-evaluated 2026-06-22 against the AgricIDaniel/claude-seo and
+  // Bhanunamikaze/Agentic-SEO-Skill repos, this time using the links.placement='body' filter
+  // plus excluding anchors that match the target's own title/H1. On real data (ehi.com.au) the
+  // dominant survivors are still false positives: sitewide template CTAs ("home" 864/865,
+  // "contact us", "apply today") and category links whose anchor IS the page title. The
+  // page-level "mostly generic-anchored" variant returned 0 signal; raw empty anchors are
+  // image/thumbnail-link noise (3,764/23,435 body links). Reliable detection needs an
+  // editorial-vs-template link classifier we don't store (placement='body' still includes
+  // in-template CTAs and product grids). Keep pulled — a wrong finding is worse than none.
 
   // ── Backlinks (need page_backlinks populated via pull_backlinks; gate so we never assert
   //    "no external links" without data) ──
