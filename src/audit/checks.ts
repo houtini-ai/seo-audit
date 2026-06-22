@@ -174,8 +174,29 @@ export const CHECKS: CheckDef[] = [
   },
   {
     id: 'orphan-with-impressions', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
-    title: 'Orphan page earning impressions', fix: 'Add internal links — Google ranks it but the site barely links to it.',
-    run: (c) => c.gscMaxDate ? rows(c, `SELECT p.url_key urlKey, SUM(sa.impressions) impressions FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key WHERE p.inlink_count=0 AND p.indexable=1 AND sa.${win(c.gscMaxDate)} GROUP BY p.url_key HAVING SUM(sa.impressions)>0 ORDER BY impressions DESC`).map(r => ({ urlKey: r.urlKey, evidence: { impressions: r.impressions, inlinks: 0 } })) : [],
+    title: 'Orphan page earning impressions', fix: 'Add internal links — Google ranks it but the site barely links to it. If it drives a large traffic share, protect it BEFORE any cleanup or migration (it is load-bearing).',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const total = (rows(c, `SELECT SUM(clicks) c FROM search_analytics WHERE ${win(c.gscMaxDate)}`)[0]?.c) || 1;
+      return rows(c, `SELECT p.url_key urlKey, SUM(sa.impressions) impressions, SUM(sa.clicks) clicks FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key WHERE p.inlink_count=0 AND p.indexable=1 AND sa.${win(c.gscMaxDate)} GROUP BY p.url_key HAVING SUM(sa.impressions)>0 ORDER BY clicks DESC, impressions DESC`)
+        .map(r => { const share = Math.round(r.clicks / total * 1000) / 10; return { urlKey: r.urlKey, evidence: { impressions: r.impressions, clicks: r.clicks, inlinks: 0, trafficShare: share + '%', ...(share >= 5 ? { note: `LOAD-BEARING orphan: drives ${share}% of site clicks with zero internal links — protect before any cleanup/migration` } : {}) } }; });
+    },
+  },
+  {
+    id: 'canonical-ignored', category: 'indexation', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Google may be ignoring the declared canonical', fix: 'This page declares a canonical pointing elsewhere, yet Google still ranks IT (real impressions) — Google is overriding the canonical, usually because the target is weaker or internal links favour this URL. Decide which URL you actually want indexed, then align both the canonical and the internal links to it.',
+    run: (c) => c.gscMaxDate ? rows(c, `SELECT p.url_key urlKey, p.canonical_url canonical, SUM(sa.impressions) impressions, SUM(sa.clicks) clicks FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key WHERE p.canonical_key IS NOT NULL AND p.canonical_key != p.url_key AND sa.${win(c.gscMaxDate)} GROUP BY p.url_key HAVING SUM(sa.impressions) >= 50 ORDER BY impressions DESC LIMIT 40`).map(r => ({ urlKey: r.urlKey, evidence: { declaredCanonical: r.canonical, impressions: r.impressions, clicks: r.clicks, note: 'ranks despite pointing its canonical elsewhere' } })) : [],
+  },
+  {
+    id: 'indexed-junk-url', category: 'indexation', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'global',
+    title: 'Internal-search / faceted URL is indexed and ranking', fix: 'A URL whose signature is internal site-search, a faceted filter, or a tracking-param variant is earning Google impressions — it has been accidentally indexed. noindex or robots-block these and canonicalise filter URLs, so thin/duplicate pages stop bleeding index quality. (The query footprint proves it even when the DOM looks fine.)',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const junk = /[?&](q|s|search|keyword|orderby|sort_by|filter|variant|pf_|dppref|replytocom)=|\/search(-results)?\//i;
+      return rows(c, `SELECT page_key urlKey, SUM(impressions) impressions, SUM(clicks) clicks FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key HAVING SUM(impressions) >= 30 ORDER BY SUM(impressions) DESC`)
+        .filter(r => junk.test(r.urlKey)).slice(0, 40)
+        .map(r => ({ urlKey: r.urlKey, evidence: { impressions: r.impressions, clicks: r.clicks, note: 'URL signature = internal search / facet / param — likely accidental indexation' } }));
+    },
   },
   {
     id: 'coverage-not-indexed', category: 'indexation', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
