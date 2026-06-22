@@ -224,7 +224,9 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'missing-structured-data', category: 'schema', severity: 'low', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'No structured data', fix: 'Add relevant JSON-LD (Article, Product, Organization…).',
-    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND (json_ld IS NULL OR json_ld='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
+    // Only "no structured data" if there's no JSON-LD AND no Microdata/RDFa either — else a
+    // page using valid Microdata (common on older themes) is falsely flagged.
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND (json_ld IS NULL OR json_ld='') AND COALESCE(has_microdata,0)=0 AND COALESCE(has_rdfa,0)=0`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
   },
   // ── Schema validation (validate captured json_ld vs maintained Rich-Results map) ──
   {
