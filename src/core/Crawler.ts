@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
-import { extractPage } from './extract.js';
+import { extractPage, isInternalHost } from './extract.js';
 import { fetchRobots } from './robots.js';
 import { finalizeLinkGraph } from './linkGraph.js';
 import { fetchSitemapUrls } from './sitemap.js';
@@ -25,7 +25,7 @@ const isAssetUrl = (u: string): boolean => { try { return ASSET_EXT.test(new URL
 const SKIP_PATTERNS: RegExp[] = [
   /[?&](sps_query|s|q|search|keyword|orderby|sort_by|add-to-cart|fl_builder|elementor-preview)=/i,
   /[?&](pf_|filter[._]|dppref|variant=)/i, // Shopify/WooCommerce faceted filters + variant duplicates
-  /[?&](client_id|redirect_uri|response_type)=|\/authentication\/|\/oauth\//i, // auth/login flows (no SEO value)
+  /[?&](client_id|redirect_uri|response_type)=|\/authentication\/|\/oauth\/|\/login_with_shop\//i, // auth/login flows (no SEO value)
   /\/search(-results)?\//i,
   /[?&]replytocom=/i,
   /\/(wp-json|wp-admin|wp-login\.php|xmlrpc\.php)(\/|$|\?)/i,
@@ -266,6 +266,24 @@ export class Crawler {
     };
     enqueue(seed, 0);
 
+    // Seed the frontier from the XML sitemap so unlinked/orphan pages get crawled — link-following
+    // alone misses them (e.g. directdrivewheels: 367 sitemap URLs, only ~100 reachable via links).
+    // Also stores the sitemap for crawl↔sitemap reconciliation. Off-host/junk/asset URLs filtered;
+    // bounded by maxPages.
+    if (!signal.aborted) {
+      try {
+        const sm = await fetchSitemapUrls(origin, ua, keyOpts);
+        const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, fetched_at) VALUES (?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
+        db.db.transaction(() => { db.db.exec('DELETE FROM sitemap_urls'); for (const u of sm.urls) smInsert.run(u.urlKey, u.url); })();
+        for (const u of sm.urls) {
+          if (discovered >= maxPages) break;
+          let host: string; try { host = new URL(u.url).hostname; } catch { continue; }
+          if (!isInternalHost(host, baseHost) || skipUrl(u.url, excludeRes) || isAssetUrl(u.url)) continue;
+          enqueue(u.url, 1); // sitemap URLs are top-level entry points
+        }
+      } catch { /* sitemap optional — never fail the crawl on it */ }
+    }
+
     const flush = (final = false): void => {
       if (pageBuf.length && (final || pageBuf.length >= FLUSH_EVERY)) { flushPages(pageBuf.splice(0)); }
       if (linkBuf.length && (final || linkBuf.length >= FLUSH_EVERY)) { flushLinks(linkBuf.splice(0)); }
@@ -292,14 +310,23 @@ export class Crawler {
         // Self-tune the delay from the throttle signal.
         if (r.throttled) dynamicDelay = Math.min(Math.round(dynamicDelay * 1.5) + 200, 5000);
         else if (dynamicDelay > delayMs) dynamicDelay = Math.max(delayMs, Math.round(dynamicDelay * 0.9));
-        const finalKey = urlKey(r.finalUrl, keyOpts);
-        const isHtml = isHtmlContentType(r.contentType);
+        // Redirect that leaves the internal host or lands on a skip-pattern URL (e.g. an internal
+        // link 301-ing into Shopify's accounts.<domain> OAuth flow): record the ORIGINAL URL as a
+        // redirect-out and do NOT store the off-site target as a page or extract its links.
+        let offsite = false;
+        try { offsite = r.redirects.length > 0 && (!isInternalHost(new URL(r.finalUrl).hostname, baseHost) || skipUrl(r.finalUrl, excludeRes)); } catch { /* unparseable final URL */ }
+        const pageUrl = offsite ? item.url : r.finalUrl;
+        const finalKey = urlKey(pageUrl, keyOpts);
+        const status = offsite ? (r.redirects[0]?.status ?? r.status) : r.status;
+        const isHtml = !offsite && isHtmlContentType(r.contentType);
         const ex = isHtml && r.status === 200 ? extractPage(r.body, r.finalUrl, baseHost, keyOpts, r.xRobotsTag) : null;
         // Only HTML 200s are indexable; otherwise capture WHY not (status/type/directive/canonical).
-        const { indexable, reason } = classifyIndexability(isHtml, r.status, !!ex?.noindex, r.xRobotsTag, ex?.canonicalKey ?? null, finalKey);
+        const { indexable, reason } = offsite
+          ? { indexable: 0, reason: 'redirect' as const }
+          : classifyIndexability(isHtml, r.status, !!ex?.noindex, r.xRobotsTag, ex?.canonicalKey ?? null, finalKey);
 
         pageBuf.push({
-          crawl_id: crawlId, url: r.finalUrl, url_key: finalKey, status_code: r.status,
+          crawl_id: crawlId, url: pageUrl, url_key: finalKey, status_code: status,
           content_type: r.contentType, content_encoding: r.contentEncoding, cache_control: r.cacheControl,
           last_modified: r.lastModified, etag: r.etag, vary: r.vary,
           bytes: r.bytes, response_time_ms: r.timeMs, depth: item.depth,
@@ -374,16 +401,7 @@ export class Crawler {
     // Post-crawl: in-degree (orphans), internal PageRank (iPR) + body-only click depth.
     finalizeLinkGraph(db.db, crawlId, urlKey(seed, keyOpts));
 
-    // Post-crawl: fetch the XML sitemap(s) and store the listed URLs for crawl↔sitemap
-    // reconciliation (indexable-but-not-in-sitemap, sitemap-points-to-dead, sitemap orphans).
-    if (!signal.aborted) {
-      try {
-        const sm = await fetchSitemapUrls(origin, ua, keyOpts);
-        db.db.exec('DELETE FROM sitemap_urls');
-        const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, fetched_at) VALUES (?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
-        db.db.transaction(() => { for (const u of sm.urls) smInsert.run(u.urlKey, u.url); })();
-      } catch { /* sitemap optional — never fail the crawl on it */ }
-    }
+    // (Sitemap is now fetched + stored + used as crawl seeds at the start of the crawl.)
 
     const finishedAt = new Date().toISOString();
     db.db.prepare(

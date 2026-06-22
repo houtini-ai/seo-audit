@@ -280,7 +280,13 @@ export const CHECKS: CheckDef[] = [
     run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key HAVING SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) <= 10 AND SUM(impressions) >= 100`)
       .map(r => { const ctr = r.clicks / r.impressions; const exp = expectedCtr(r.position); return { urlKey: r.urlKey, ctr, exp, position: r.position, impressions: r.impressions }; })
       .filter(x => x.ctr < x.exp * 0.5)
-      .map(x => ({ urlKey: x.urlKey, evidence: { position: Math.round(x.position * 10) / 10, ctr: Math.round(x.ctr * 1000) / 10 + '%', expectedCtr: Math.round(x.exp * 1000) / 10 + '%', impressions: x.impressions } })) : [],
+      .map(x => {
+        const ev: Record<string, unknown> = { position: Math.round(x.position * 10) / 10, ctr: Math.round(x.ctr * 1000) / 10 + '%', expectedCtr: Math.round(x.exp * 1000) / 10 + '%', impressions: x.impressions };
+        // Extreme case: near-zero CTR at a strong position isn't a title problem — a SERP feature
+        // (image/video/AI overview) or navigational intent is taking the clicks. Different fix.
+        if (x.position <= 5 && x.ctr < x.exp * 0.15) ev.note = 'near-zero CTR for the position — likely a SERP feature or navigational intent taking the clicks; check the live SERP before rewriting the title/meta';
+        return { urlKey: x.urlKey, evidence: ev };
+      }) : [],
   },
   // ── Period-over-period (GSC history by date) — the trend questions SEOs live in ──
   {

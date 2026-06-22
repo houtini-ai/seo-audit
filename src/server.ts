@@ -591,8 +591,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       try {
         const r = suggestPages(db.db, { ...(minImpressions != null ? { minImpressions } : {}), ...(maxProposals != null ? { maxProposals } : {}) });
         const top = r.proposals.slice(0, 15).map(p => `• "${p.headTerm}" — ${p.totalImpressions} impr, currently pos ${p.bestPosition}${p.intent ? `, ${p.intent}` : ''} (${p.queries.length} queries)`).join('\n');
+        const intentTip = r.proposals.length && r.proposals.every(p => !p.intent) ? `\n\nTip: run \`search_intent\` for this property first to rank these by search intent (currently unweighted).` : '';
         return {
-          content: [{ type: 'text', text: r.proposals.length ? `${r.proposals.length} new-page opportunities (from ${r.consideredQueries} queries, ${r.afterDedup} after dedup):\n${top}` : `No new-page gaps found (${r.consideredQueries} queries considered). Needs synced GSC data.` }],
+          content: [{ type: 'text', text: r.proposals.length ? `${r.proposals.length} new-page opportunities (from ${r.consideredQueries} queries, ${r.afterDedup} after dedup):\n${top}${intentTip}` : `No new-page gaps found (${r.consideredQueries} queries considered). Needs synced GSC data.` }],
           structuredContent: r as unknown as Record<string, unknown>,
         };
       } finally { db.close(); }

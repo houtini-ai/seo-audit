@@ -1,6 +1,19 @@
 import * as cheerio from 'cheerio';
 import { urlKey, type UrlKeyOptions } from './url-key.js';
 
+/**
+ * Internal = the seed host or its www/apex twin ONLY — not arbitrary sibling subdomains.
+ * accounts./shop./blog. etc. are separate properties; crawling (or following redirects into)
+ * them pulls in junk like Shopify's accounts.<domain> OAuth login pages. Shared by the
+ * link-classifier here and the crawler's redirect-target guard.
+ */
+export const isInternalHost = (targetHost: string, baseHost: string): boolean => {
+  const apex = (h: string): string => (h.startsWith('www.') ? h.slice(4) : h);
+  const a = apex(baseHost.toLowerCase());
+  const t = targetHost.toLowerCase();
+  return t === a || t === `www.${a}`;
+};
+
 export interface ExtractedLink {
   targetUrl: string;
   targetKey: string;
@@ -177,10 +190,7 @@ export function extractPage(
     // Internal = the seed host or its www/apex twin ONLY — not arbitrary sibling subdomains.
     // (accounts./shop./blog. etc. are separate properties; crawling them pulls in junk like
     // Shopify's accounts.<domain> OAuth login pages — infinite param URLs, no SEO value.)
-    const apex = (h: string): string => (h.startsWith('www.') ? h.slice(4) : h);
-    const apexBase = apex(baseHost.toLowerCase());
-    const targetHost = target.hostname.toLowerCase();
-    const isInternal = targetHost === apexBase || targetHost === `www.${apexBase}`;
+    const isInternal = isInternalHost(target.hostname, baseHost);
     if (isInternal) internalLinks++;
     else externalLinks++;
     links.push({
