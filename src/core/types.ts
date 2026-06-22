@@ -18,6 +18,7 @@ export interface FetchOptions {
   rowLimit?: number;
   dataState?: string;
   searchType?: string;
+  fullResync?: boolean; // ignore the incremental resume point and re-pull the whole window
 }
 
 export type JobState = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';

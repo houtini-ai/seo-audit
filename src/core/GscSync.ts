@@ -69,6 +69,22 @@ export class GscSync {
         db.db.exec('DELETE FROM search_analytics');
       }
 
+      // ── Incremental resume ─────────────────────────────────────────────────────────────────
+      // The first sync pulls the requested window; every sync after that only fetches from the
+      // last stored date minus a lag buffer (GSC restates the most recent ~3 days), instead of
+      // re-pulling the whole window. Turns a 30-minute, 1.8M-row refresh into a seconds-long delta.
+      // Runs AFTER the mode-guard: if the table was just wiped (shape conflict) MAX(date) is null →
+      // full window. `fullResync` forces the full window. Only ever NARROWS the window (never widens
+      // past the requested start), and resumes from wherever the data left off (covers any gap).
+      const LAG_DAYS = 3;
+      if (!options.fullResync) {
+        const mx = (db.db.prepare('SELECT MAX(date) d FROM search_analytics').get() as { d: string | null }).d;
+        if (mx) {
+          const resume = new Date(Date.parse(mx) - LAG_DAYS * 86400000).toISOString().slice(0, 10);
+          if (resume > options2.startDate) { options2 = { ...options2, startDate: resume }; }
+        }
+      }
+
       await this.gsc.fetchSearchAnalytics(siteUrl, options2, signal, ({ rows }) => {
         const records = rows.map((row: GscApiRow) => {
           const keys = row.keys ?? [];

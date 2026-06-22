@@ -9,6 +9,7 @@ export interface RefreshOptions {
   inspect?: boolean;   // GSC URL Inspection pass (default true)
   ranks?: boolean;     // DataForSEO over-time sequence (default true if available)
   segments?: boolean;  // also sync device/country breakdowns (heavier; off by default — lite sync)
+  full?: boolean;      // force a full re-pull of the GSC window (default: incremental resume)
   location?: string | number; // DataForSEO target location (name or code)
   startDate?: string;
   endDate?: string;
@@ -52,6 +53,7 @@ export class Refresh {
             startDate: opts.startDate ?? isoDaysAgo(90),
             endDate: opts.endDate ?? isoDaysAgo(0),
             ...(opts.segments ? { dimensions: FULL_DIMENSIONS } : {}),
+            ...(opts.full ? { fullResync: true } : {}),
           },
           p => update({ phase: 'gsc', ...p }),
           signal,
