@@ -19,13 +19,19 @@ export function buildAuditMarkdown(r: AuditResult & { elapsedMs?: number }, site
     `**${r.total} findings** · 🔴 ${sev.crit ?? 0} critical · 🟠 ${sev.high ?? 0} high · 🟡 ${sev.med ?? 0} medium · ⚪ ${sev.low ?? 0} low`,
   ];
   if (!r.integrityOk) out.push('> ⚠ Crawl integrity not verified — treat findings as provisional.');
-  out.push('', '## Top priorities (expected clicks ÷ dev-hour)');
+  // Impact = priority normalised to the run's top finding (preserves magnitude: the #1 issue is
+  // 100, a 10x-smaller one is 10). Shown as a size + index instead of a clicks "forecast" — the
+  // raw expected-clicks figure reads as a promise, which it isn't. Real measured traffic stays.
+  const maxPrio = Math.max(1, ...(r.top ?? []).map((f: any) => f.priority || 0));
+  const sizeOf = (idx: number): string => idx >= 50 ? 'XL' : idx >= 20 ? 'L' : idx >= 5 ? 'M' : 'S';
+  out.push('', '## Top priorities (impact vs effort)');
   (r.top ?? []).slice(0, 12).forEach((f: any, i: number) => {
     const rec = p(f.recommendation), traf = p(f.traffic_at_risk), eff = p(f.effort);
     const pth = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
     const tr = (traf.clicks || traf.impressions) ? ` · ${traf.clicks || 0} clicks / ${traf.impressions || 0} impr` : '';
-    const yld = eff.expectedClicks != null ? ` · ~${eff.expectedClicks} clicks at stake, ~${eff.hours}h` : '';
-    out.push(`${i + 1}. ${SEV_ICON[f.severity] ?? '·'} **${rec.title || f.check_id}** — \`${pth}\`${tr}${yld}`);
+    const idx = Math.round((f.priority || 0) / maxPrio * 100);
+    const effort = eff.hours != null ? ` · ~${eff.hours}h` : '';
+    out.push(`${i + 1}. ${SEV_ICON[f.severity] ?? '·'} **${rec.title || f.check_id}** — \`${pth}\` · impact ${sizeOf(idx)} (${idx}/100)${effort}${tr}`);
     if (rec.text) out.push(`   ${rec.text}`);
   });
   const byCat: Record<string, string[]> = {};
