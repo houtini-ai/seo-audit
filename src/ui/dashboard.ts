@@ -31,8 +31,13 @@ const tableHtml = (headers: string[], rows: string[]): string => `<table><thead>
 const shortPath = (u: string): string => (u || '').replace(/^https?:\/\/[^/]+/, '') || '/';
 
 function palette() {
+  const root = document.documentElement;
+  const isDark = root.getAttribute('data-theme') === 'dark'
+    || root.classList.contains('dark')
+    || (!root.getAttribute('data-theme') && !root.classList.contains('light') && matchMedia('(prefers-color-scheme: dark)').matches);
   return {
     text: cssVar('--color-text-primary', '#0a0b0d'),
+    axisText: isDark ? '#ffffff' : '#000000', // chart axis labels: pure white (dark) / black (light)
     muted: cssVar('--color-text-tertiary', '#62666d'),
     accent: cssVar('--color-accent', '#5b5fff'),
     violet: cssVar('--color-brand-violet', '#8b5cf6'),
@@ -280,7 +285,7 @@ function render(data: DashboardData): void {
 
   const col = palette();
   // axis tick labels + axis names use primary text (high contrast: white on dark, near-black on light)
-  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.text, fontSize: 12 }, nameTextStyle: { color: col.text, fontSize: 12 }, splitLine: { lineStyle: { color: col.grid } } };
+  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.axisText, fontSize: 12 }, nameTextStyle: { color: col.axisText, fontSize: 12 }, splitLine: { lineStyle: { color: col.grid } } };
 
   // Audit findings — severity filter chips + prioritised table, then the categorised report
   renderFindings(data.findings, col);
@@ -397,7 +402,7 @@ function render(data: DashboardData): void {
     grid: { left: 8, right: 44, top: 10, bottom: 24, containLabel: true },
     tooltip: { trigger: 'item', formatter: (pa: any) => `${pa.name}<br/>Δ clicks: ${pa.value >= 0 ? '+' : ''}${pa.value} (now ${kw[pa.dataIndex].clicks})` },
     xAxis: { type: 'value', ...axis },
-    yAxis: { type: 'category', data: kw.map(k => k.query), axisLabel: { color: col.text, width: 180, overflow: 'truncate' }, axisLine: { lineStyle: { color: col.border } } },
+    yAxis: { type: 'category', data: kw.map(k => k.query), axisLabel: { color: col.axisText, width: 180, overflow: 'truncate' }, axisLine: { lineStyle: { color: col.border } } },
     series: [{
       type: 'bar',
       label: { show: true, position: 'right', color: col.muted, fontSize: 11, formatter: (p: any) => (p.value > 0 ? '+' : '') + p.value },
