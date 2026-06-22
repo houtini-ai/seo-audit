@@ -46,6 +46,14 @@
       </div>
 
       <div class="chart-card">
+        <h3>Cannibalisation — who Google picks, week by week</h3>
+        <div class="hint">For a contested query, each competing URL's average position over time. Lines crossing = Google thrashing between your URLs (consolidate them).</div>
+        <select id="cannSelect" aria-label="Choose a contested query"></select>
+        <p class="sr-only" id="cannSummary"></p>
+        <div class="chart" id="cannChart" role="img" aria-label="Competing URL positions over time for a contested query"></div>
+      </div>
+
+      <div class="chart-card">
         <h3>Ranking distribution over time</h3>
         <div class="hint">Impressions by position bucket — top-3 dominance vs page-2 drift, last 90 days</div>
         <p class="sr-only" id="distSummary"></p>

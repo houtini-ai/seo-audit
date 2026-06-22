@@ -35,6 +35,8 @@ export interface DashboardData {
   equityScatter?: { x: number; y: number; t: string }[];
   // Template-level mismatch: where internal equity flows vs where traffic actually comes from.
   templateMismatch?: { template: string; pages: number; iprPct: number; trafficPct: number }[];
+  // Cannibalisation braids: per contested query, each competing URL's weekly average position.
+  cannibalisation?: { query: string; urls: { url: string; points: { week: string; position: number }[] }[] }[];
   findings?: {
     runId: string;
     total: number;
@@ -245,11 +247,32 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         .sort((x, y) => y.iprPct - x.iprPct).slice(0, 8);
     }
 
+    // Cannibalisation braids — queries where multiple URLs compete, each URL's weekly avg position.
+    // The "braid" of crossing lines over time is Google thrashing between URLs (severity = tangle).
+    const cannQueries = db.db.prepare(
+      `WITH pp AS (SELECT query, page_key, SUM(impressions) imp, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+                   FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND date > date(?, '-90 days')
+                   GROUP BY query, page_key HAVING pos < 20 AND imp >= 30)
+       SELECT query, COUNT(*) urls, SUM(imp) imp FROM pp GROUP BY query HAVING COUNT(*) >= 2 ORDER BY imp DESC LIMIT 6`,
+    ).all(maxDate) as { query: string; urls: number; imp: number }[];
+    const cannibalisation = cannQueries.map(q => {
+      const urls = db.db.prepare(`SELECT page_key, SUM(impressions) imp FROM search_analytics WHERE query=? AND page_key IS NOT NULL AND date > date(?, '-90 days') GROUP BY page_key ORDER BY imp DESC LIMIT 4`).all(q.query, maxDate) as { page_key: string }[];
+      return {
+        query: q.query,
+        urls: urls.map(u => ({
+          url: u.page_key,
+          points: (db.db.prepare(`SELECT strftime('%Y-%W', date) week, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos FROM search_analytics WHERE query=? AND page_key=? AND date > date(?, '-90 days') AND impressions > 0 GROUP BY week ORDER BY week`).all(q.query, u.page_key, maxDate) as { week: string; pos: number }[])
+            .map(w => ({ week: w.week, position: Math.round(w.pos * 10) / 10 })),
+        })),
+      };
+    });
+
     return {
       siteUrl,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate },
       equityScatter,
       templateMismatch,
+      cannibalisation,
       rankHistory,
       dateAlignment,
       rankingDistribution,

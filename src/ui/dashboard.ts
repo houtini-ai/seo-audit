@@ -128,6 +128,7 @@ let strikeChart: echarts.ECharts | null = null;
 let kwChart: echarts.ECharts | null = null;
 let mismatchChart: echarts.ECharts | null = null;
 let scatterChart: echarts.ECharts | null = null;
+let cannChart: echarts.ECharts | null = null;
 const ARIA = { aria: { enabled: true } }; // ECharts-generated screen-reader description
 
 const app = new App({ name: 'SEO Audit Console', version: '0.1.0' });
@@ -341,6 +342,36 @@ function render(data: DashboardData): void {
   } else {
     scatterChart.setOption({ ...ARIA, title: { text: 'Run a crawl to map equity vs traffic', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
     $('scatterSummary').textContent = 'Run a crawl (refresh_property) to see the equity map.';
+  }
+
+  // 0b) Cannibalisation braids — per contested query, competing URLs' weekly position over time
+  const cann = data.cannibalisation ?? [];
+  const cannSel = $('cannSelect') as HTMLSelectElement;
+  cannChart?.dispose();
+  cannChart = echarts.init($('cannChart'));
+  if (cann.length) {
+    cannSel.innerHTML = cann.map((q, i) => `<option value="${i}">${esc(q.query)} (${q.urls.length} URLs)</option>`).join('');
+    const palette4 = [col.accent, col.red, col.amber, col.green];
+    const drawBraid = (qi: number): void => {
+      const q = cann[qi];
+      const weeks = [...new Set(q.urls.flatMap(u => u.points.map(p => p.week)))].sort();
+      cannChart!.setOption({
+        ...ARIA,
+        grid: { left: 48, right: 16, top: 28, bottom: 40 },
+        legend: { top: 0, type: 'scroll', textStyle: { color: col.text, fontSize: 11 } },
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: weeks, ...axis },
+        yAxis: { type: 'value', name: 'position', inverse: true, min: 1, ...axis },
+        series: q.urls.map((u, ui) => { const m = new Map(u.points.map(p => [p.week, p.position])); return { name: shortPath(u.url), type: 'line', smooth: true, connectNulls: true, showSymbol: false, lineStyle: { width: 2, color: palette4[ui % 4] }, itemStyle: { color: palette4[ui % 4] }, data: weeks.map(w => m.get(w) ?? null) }; }),
+      }, true);
+    };
+    drawBraid(0);
+    cannSel.onchange = (): void => drawBraid(Number(cannSel.value));
+    $('cannSummary').textContent = `${cann.length} contested queries; each line is a competing URL's weekly average position (higher = better rank).`;
+  } else {
+    cannSel.innerHTML = '';
+    cannChart.setOption({ ...ARIA, title: { text: 'No cannibalisation detected', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    $('cannSummary').textContent = 'No contested queries found.';
   }
 
   // 1) Ranking distribution over time (stacked area) — flagship #1
