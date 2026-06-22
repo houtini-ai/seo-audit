@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AuditDatabase, type Severity } from '../core/AuditDatabase.js';
 import { dbPathFor } from '../core/paths.js';
 import { finalizeLinkGraph } from '../core/linkGraph.js';
+import { snapshotCrawl } from './drift.js';
 import { CHECKS, expectedCtr, type CheckContext, type CheckDef } from './checks.js';
 
 const MAX_PER_CHECK = 500; // bound findings/check so a huge site can't balloon the table
@@ -71,6 +72,9 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       if (cr) {
         const g = db.db.prepare('SELECT MAX(ipr) mi, MAX(inlink_count) mc FROM pages WHERE crawl_id=?').get(cr.crawl_id) as { mi: number | null; mc: number | null };
         if ((g.mi ?? 0) === 0 && (g.mc ?? 0) === 0) finalizeLinkGraph(db.db, cr.crawl_id, null);
+        // Drift snapshot (idempotent per crawl) so change-detection has cross-crawl history.
+        const at = (db.db.prepare(`SELECT COALESCE(finished_at, datetime('now')) at FROM crawl_metadata WHERE crawl_id=?`).get(cr.crawl_id) as { at: string } | undefined)?.at ?? new Date().toISOString();
+        snapshotCrawl(db.db, cr.crawl_id, at);
       }
     }
     const ctx: CheckContext = { db: db.db, gscMaxDate: maxDate };

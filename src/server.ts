@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { getDashboardData } from './core/dashboardData.js';
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 import { buildAuditMarkdown } from './audit/report.js';
+import { diffLatest, buildDriftMarkdown } from './audit/drift.js';
 import { detectTemplates } from './audit/templates.js';
 import { suggestPages } from './audit/opportunities.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
@@ -239,6 +240,26 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         content: [{ type: 'text', text: `${check}: ${r.findings.length} findings` }],
         structuredContent: r as unknown as Record<string, unknown>,
       };
+    },
+  );
+
+  // detect_changes — change-detection / drift: what changed on the site since the last crawl.
+  server.registerTool(
+    'detect_changes',
+    {
+      title: 'Detect changes since the last crawl',
+      description: 'Compare the two most recent crawls and report what changed per URL — status code, indexability, canonical, robots/noindex, title, meta, H1, schema, large content swings — each classified by severity (critical → info). This is the monitor: run refresh_property on different days to build history, then this surfaces regressions (a page that went noindex, a canonical that flipped, a 200 that became a 404). Needs at least two crawls.',
+      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(500).optional() },
+    },
+    async ({ siteUrl, limit }) => {
+      const adb = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try {
+        const d = diffLatest(adb.db);
+        return {
+          content: [{ type: 'text', text: buildDriftMarkdown(d, siteUrl, limit ?? 50) }],
+          structuredContent: d as unknown as Record<string, unknown>,
+        };
+      } finally { adb.close(); }
     },
   );
 

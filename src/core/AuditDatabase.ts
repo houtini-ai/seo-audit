@@ -168,6 +168,31 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_pages_ipr      ON pages(ipr DESC);
     `);
 
+    // ── Change-detection (drift): one persistent snapshot per (crawl, URL) of the SEO-salient
+    // fields. `pages` only ever holds the latest crawl (unique url_key), so cross-crawl diffing
+    // needs its own history table. Written once per crawl at audit time (INSERT OR IGNORE). ──
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS page_snapshots (
+        crawl_id TEXT NOT NULL,
+        url_key TEXT NOT NULL,
+        captured_at TEXT NOT NULL,
+        status_code INTEGER,
+        indexable INTEGER,
+        indexable_reason TEXT,
+        title TEXT,
+        meta_description TEXT,
+        h1 TEXT,
+        canonical_key TEXT,
+        robots TEXT,
+        x_robots_tag TEXT,
+        word_count INTEGER,
+        schema_types TEXT,               -- sorted distinct JSON-LD @types, comma-joined
+        PRIMARY KEY (crawl_id, url_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_snap_urlkey ON page_snapshots(url_key);
+      CREATE INDEX IF NOT EXISTS idx_snap_captured ON page_snapshots(captured_at);
+    `);
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
