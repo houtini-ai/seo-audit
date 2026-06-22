@@ -7,12 +7,18 @@
  * recommended-only fields, unknown properties, and unknown @types are deliberately NOT
  * flagged (Google ignores them; flagging them is false-positive noise that erodes trust).
  *
- * Coverage:
- *  - Required-field map for 20 rich-result @types (Article/Product/Organization/Event/
- *    Recipe/VideoObject/JobPosting/LocalBusiness/Course/FAQPage/QAPage/Review/
- *    AggregateRating/Movie/Book/SoftwareApplication/BreadcrumbList/WebSite + Blog/News).
+ * Coverage (~30 @types):
+ *  - Content: Article/BlogPosting/NewsArticle, FAQPage/QAPage, Review/AggregateRating,
+ *    Movie/Book, VideoObject, Recipe, Course, SoftwareApplication, BreadcrumbList, WebSite, Organization.
+ *  - Commerce: Product (name + one-of offers/review/aggregateRating).
+ *  - Jobs: JobPosting (title/description/datePosted/hiringOrganization + one-of
+ *    jobLocation/jobLocationType/applicantLocationRequirements — so remote jobs aren't flagged).
+ *  - Datasets: Dataset (name, description).
+ *  - Travel: Hotel/LodgingBusiness/Resort/BedAndBreakfast/Restaurant (name, address);
+ *    TouristAttraction/TouristDestination/Trip/TouristTrip (name); LocalBusiness; Event.
+ *  - ONE_OF groups: "at least one of" required-sets (Google treats some fields as alternatives).
  *  - Nested required (Product/SoftwareApplication.offers → price+priceCurrency;
- *    Review.reviewRating → ratingValue), only checked when the parent field is present.
+ *    Review.reviewRating → ratingValue; JobPosting.jobLocation → address), only when present.
  *  - Value sanity: absolute URLs, ISO-8601 dates, ISO-4217 priceCurrency, bare-number price.
  *  - Type-level dedup so a complete + partial node of the same type doesn't false-flag.
  * The `pages.json_ld` column is JSON.stringify(arrayOfRawBlockStrings).
@@ -26,14 +32,14 @@ const REQUIRED: Record<string, string[]> = {
   Article: ['headline', 'author', 'datePublished', 'image'],
   BlogPosting: ['headline', 'author', 'datePublished', 'image'],
   NewsArticle: ['headline', 'author', 'datePublished', 'image'],
-  Product: ['name', 'offers'],
+  Product: ['name'], // + one-of(offers/review/aggregateRating) below
   Organization: ['name', 'url', 'logo'],
   BreadcrumbList: ['itemListElement'],
   WebSite: ['url'],
   Event: ['name', 'startDate', 'location'],
   Recipe: ['name', 'image'],
   VideoObject: ['name', 'thumbnailUrl', 'uploadDate'],
-  JobPosting: ['title', 'description', 'datePosted', 'hiringOrganization', 'jobLocation'],
+  JobPosting: ['title', 'description', 'datePosted', 'hiringOrganization'], // + one-of(location…) below
   LocalBusiness: ['name', 'address'],
   Course: ['name', 'description', 'provider'],
   FAQPage: ['mainEntity'],
@@ -43,14 +49,33 @@ const REQUIRED: Record<string, string[]> = {
   Movie: ['name'],
   Book: ['name', 'author'],
   SoftwareApplication: ['name'],
+  Dataset: ['name', 'description'],
+  // Travel — lodging/food are LocalBusiness subtypes (need name+address); places/trips need a name.
+  Hotel: ['name', 'address'],
+  LodgingBusiness: ['name', 'address'],
+  Resort: ['name', 'address'],
+  BedAndBreakfast: ['name', 'address'],
+  Restaurant: ['name', 'address'],
+  TouristAttraction: ['name'],
+  TouristDestination: ['name'],
+  Trip: ['name'],
+  TouristTrip: ['name'],
+};
+// One-of required: at least one of the group must be present. Google treats these as "any of"
+// (a remote JobPosting uses jobLocationType instead of jobLocation; a Product can qualify via
+// review/aggregateRating instead of offers) — so flatly requiring one member is a false positive.
+const ONE_OF: Record<string, string[][]> = {
+  Product: [['offers', 'review', 'aggregateRating']],
+  JobPosting: [['jobLocation', 'jobLocationType', 'applicantLocationRequirements']],
 };
 // Nested required: e.g. Product.offers must carry price + priceCurrency. Only checked when the
 // parent field is present (so a SoftwareApplication relying on aggregateRating instead of offers
-// isn't flagged for a missing offers.price).
+// isn't flagged for a missing offers.price, and a remote JobPosting isn't flagged for jobLocation).
 const NESTED_REQUIRED: Record<string, { field: string; sub: string[] }> = {
   Product: { field: 'offers', sub: ['price', 'priceCurrency'] },
   SoftwareApplication: { field: 'offers', sub: ['price', 'priceCurrency'] },
   Review: { field: 'reviewRating', sub: ['ratingValue'] },
+  JobPosting: { field: 'jobLocation', sub: ['address'] },
 };
 // Schemas Google has restricted — eligible only in narrow contexts (research/01 #119).
 const FORBIDDEN = new Set(['FAQPage', 'HowTo']);
@@ -141,6 +166,12 @@ function validateNode(node: Record<string, unknown>, issues: SchemaIssue[]): voi
     }
   }
 
+  for (const group of ONE_OF[type] ?? []) {
+    if (!group.some(f => node[f] !== undefined && node[f] !== null && node[f] !== '')) {
+      issues.push({ kind: 'required', type, detail: `${type} needs at least one of: ${group.join(', ')}.`, fields: group });
+    }
+  }
+
   checkValues(node, type, issues);
 }
 
@@ -149,6 +180,9 @@ function fullyComplete(node: Record<string, unknown>, type: string): boolean {
   const required = REQUIRED[type];
   if (!required) return false;
   if (!required.every(f => node[f] !== undefined && node[f] !== null && node[f] !== '')) return false;
+  for (const group of ONE_OF[type] ?? []) {
+    if (!group.some(f => node[f] !== undefined && node[f] !== null && node[f] !== '')) return false;
+  }
   const nested = NESTED_REQUIRED[type];
   if (nested) {
     const fv = node[nested.field];
