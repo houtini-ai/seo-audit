@@ -284,6 +284,18 @@ export class Crawler {
       } catch { /* sitemap optional — never fail the crawl on it */ }
     }
 
+    // Also seed from GSC-known URLs (pages Google sends traffic to) so coverage doesn't depend on
+    // the site's sitemap being complete — e.g. simracing has 334 sitemap URLs but GSC knows 1,299.
+    // page_key is already a normalised URL; off-host/junk/asset filtered; bounded by maxPages.
+    try {
+      for (const row of db.db.prepare(`SELECT DISTINCT page_key FROM search_analytics WHERE page_key IS NOT NULL`).all() as { page_key: string }[]) {
+        if (discovered >= maxPages) break;
+        let host: string; try { host = new URL(row.page_key).hostname; } catch { continue; }
+        if (!isInternalHost(host, baseHost) || skipUrl(row.page_key, excludeRes) || isAssetUrl(row.page_key)) continue;
+        enqueue(row.page_key, 1);
+      }
+    } catch { /* no GSC data (e.g. crawl-only on a non-synced property) — fine */ }
+
     const flush = (final = false): void => {
       if (pageBuf.length && (final || pageBuf.length >= FLUSH_EVERY)) { flushPages(pageBuf.splice(0)); }
       if (linkBuf.length && (final || linkBuf.length >= FLUSH_EVERY)) { flushLinks(linkBuf.splice(0)); }
