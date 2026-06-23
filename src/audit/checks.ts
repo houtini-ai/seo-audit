@@ -44,6 +44,12 @@ const spanDays = (c: CheckContext): number => {
 };
 // HTML pages only — match the MIME type before any charset parameter (mirrors isHtmlContentType).
 const HTML_CT = `(LOWER(content_type) LIKE 'text/html%' OR LOWER(content_type) LIKE 'application/xhtml+xml%')`;
+// Paginated archive URLs (/page/2, ?page=3, ?paged=2). They legitimately share titles/metas with
+// page 1 and are intentionally absent from sitemaps, so they must NOT generate duplicate-title /
+// duplicate-meta / missing-meta / not-in-sitemap false positives. Pass the column reference
+// (e.g. 'url_key' or 'p.url_key') so it composes with table aliases.
+const notPagination = (col = 'url_key'): string =>
+  `${col} NOT GLOB '*/page/[0-9]*' AND ${col} NOT LIKE '%page=%' AND ${col} NOT LIKE '%paged=%'`;
 
 // Significant query terms (drop stopwords; keep ≥2 chars so "vr"/"pc"/"ai" count).
 const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'with', 'your', 'you', 'is', 'are', 'best', 'how', 'what', 'vs', 'why', 'can']);
@@ -85,12 +91,12 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'duplicate-title', category: 'onpage', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'Duplicate title tag', fix: 'Make each indexable page’s title unique.',
-    run: (c) => rows(c, `SELECT url_key urlKey, title FROM pages WHERE status_code=200 AND indexable=1 AND title IS NOT NULL AND TRIM(title)!='' AND LOWER(TRIM(title)) IN (SELECT LOWER(TRIM(title)) FROM pages WHERE status_code=200 AND indexable=1 AND title IS NOT NULL GROUP BY LOWER(TRIM(title)) HAVING COUNT(*)>1)`).map(r => ({ urlKey: r.urlKey, evidence: { title: r.title } })),
+    run: (c) => rows(c, `SELECT url_key urlKey, title FROM pages WHERE status_code=200 AND indexable=1 AND ${notPagination()} AND title IS NOT NULL AND TRIM(title)!='' AND LOWER(TRIM(title)) IN (SELECT LOWER(TRIM(title)) FROM pages WHERE status_code=200 AND indexable=1 AND ${notPagination()} AND title IS NOT NULL GROUP BY LOWER(TRIM(title)) HAVING COUNT(*)>1)`).map(r => ({ urlKey: r.urlKey, evidence: { title: r.title } })),
   },
   {
     id: 'missing-meta-description', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
     title: 'Missing meta description', fix: 'Add a unique meta description (~120–155 chars).',
-    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND (meta_description IS NULL OR TRIM(meta_description)='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND ${notPagination()} AND (meta_description IS NULL OR TRIM(meta_description)='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
   },
   {
     id: 'missing-h1', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
@@ -355,7 +361,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'duplicate-meta-description', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'Duplicate meta description', fix: 'Give each indexable page a unique meta description.',
-    run: (c) => rows(c, `SELECT url_key urlKey, meta_description md FROM pages WHERE status_code=200 AND indexable=1 AND meta_description IS NOT NULL AND TRIM(meta_description)!='' AND LOWER(TRIM(meta_description)) IN (SELECT LOWER(TRIM(meta_description)) FROM pages WHERE status_code=200 AND indexable=1 AND meta_description IS NOT NULL AND TRIM(meta_description)!='' GROUP BY LOWER(TRIM(meta_description)) HAVING COUNT(*)>1)`).map(r => ({ urlKey: r.urlKey, evidence: { metaDescription: r.md } })),
+    run: (c) => rows(c, `SELECT url_key urlKey, meta_description md FROM pages WHERE status_code=200 AND indexable=1 AND ${notPagination()} AND meta_description IS NOT NULL AND TRIM(meta_description)!='' AND LOWER(TRIM(meta_description)) IN (SELECT LOWER(TRIM(meta_description)) FROM pages WHERE status_code=200 AND indexable=1 AND ${notPagination()} AND meta_description IS NOT NULL AND TRIM(meta_description)!='' GROUP BY LOWER(TRIM(meta_description)) HAVING COUNT(*)>1)`).map(r => ({ urlKey: r.urlKey, evidence: { metaDescription: r.md } })),
   },
   {
     id: 'title-h1-mismatch', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
@@ -686,7 +692,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Indexable pages missing from the sitemap', fix: 'Add these indexable pages to the XML sitemap so Google discovers and prioritises them.',
     run: (c) => {
       if (!sitemapHasRows(c)) return [];
-      return rows(c, `SELECT p.url_key urlKey FROM pages p LEFT JOIN sitemap_urls s ON s.url_key = p.url_key WHERE p.status_code = 200 AND p.indexable = 1 AND s.url_key IS NULL`)
+      return rows(c, `SELECT p.url_key urlKey FROM pages p LEFT JOIN sitemap_urls s ON s.url_key = p.url_key WHERE p.status_code = 200 AND p.indexable = 1 AND ${notPagination('p.url_key')} AND s.url_key IS NULL`)
         .map(r => ({ urlKey: r.urlKey, evidence: {} }));
     },
   },
