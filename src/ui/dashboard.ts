@@ -197,6 +197,61 @@ function evidenceSummary(ev: Record<string, unknown>): string {
     .slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ');
 }
 
+// Executive summary — synthesises the dashboard data into a plain-language read: a traffic verdict,
+// where the biggest opportunities are, what's urgent, and a prioritised "start here" action list.
+function renderExecSummary(data: DashboardData): void {
+  const el = $('execSummary'); if (!el) return;
+  const c = data.summary?.current, p = data.summary?.prior;
+  if (!c) { el.innerHTML = '<p class="muted">Run a sync to populate the summary.</p>'; return; }
+
+  const pct = (a: number, b: number): number => b ? Math.round((a - b) / b * 100) : (a > 0 ? 100 : 0);
+  const clkPct = pct(c.clicks, p?.clicks ?? 0);
+  const arrow = (n: number): string => n > 0 ? `▲ ${n}%` : n < 0 ? `▼ ${Math.abs(n)}%` : 'flat';
+  const dir = clkPct > 3 ? 'growing' : clkPct < -3 ? 'declining' : 'holding steady';
+  const posShift = p ? Math.round((p.position - c.position) * 10) / 10 : 0; // positive = improved (lower rank number)
+  const lead = `Organic search is <strong>${dir}</strong>: <strong>${fmt(c.clicks)}</strong> clicks and <strong>${fmt(c.impressions)}</strong> impressions in the last 28 days (clicks ${arrow(clkPct)} vs the prior 28), at an average position of <strong>${c.position.toFixed(1)}</strong>${posShift ? ` (${posShift > 0 ? 'improved' : 'slipped'} ${Math.abs(posShift)} spot${Math.abs(posShift) === 1 ? '' : 's'})` : ''}.`;
+
+  const fc = data.findings;
+  const parts: string[] = [`<p class="exec-lead">${lead}</p>`];
+
+  if (fc && fc.byCheck?.length) {
+    const bySev: Record<string, number> = {};
+    for (const b of fc.byCheck) bySev[b.severity] = (bySev[b.severity] ?? 0) + b.count;
+    const cnt = (id: string): number => fc.byCheck.filter((b: any) => b.check_id === id).reduce((s: number, b: any) => s + b.count, 0);
+
+    const ctr = cnt('ctr-below-expected');
+    const strike = data.strikingDistance?.length ?? cnt('striking-distance');
+    const cann = data.cannibalisation?.length ?? cnt('keyword-cannibalisation');
+    const opp: string[] = [];
+    if (ctr) opp.push(`<strong>${ctr}</strong> page${ctr > 1 ? 's' : ''} rank well but are under-clicked — a title/meta rewrite is the fastest lever`);
+    if (strike) opp.push(`<strong>${strike}</strong> quer${strike > 1 ? 'ies' : 'y'} sit in striking distance (page 2) and could reach page 1 with a small push`);
+    if (cann) opp.push(`<strong>${cann}</strong> quer${cann > 1 ? 'ies are' : 'y is'} cannibalised across multiple URLs`);
+    if (opp.length) parts.push(`<p><span class="exec-tag">Opportunities</span> ${opp.join('; ')}.</p>`);
+
+    const crit = bySev['crit'] ?? 0, high = bySev['high'] ?? 0;
+    if (crit || high) {
+      const worst = fc.top?.find((f: any) => f.severity === 'crit') ?? fc.top?.[0];
+      const worstTitle = worst ? safeJson(worst.recommendation).title : '';
+      parts.push(`<p><span class="exec-tag urgent">Fix first</span> ${crit ? `<strong>${crit}</strong> critical` : ''}${crit && high ? ' and ' : ''}${high ? `<strong>${high}</strong> high-severity` : ''} issue${(crit + high) > 1 ? 's' : ''} need attention${worstTitle ? ` — starting with “${esc(worstTitle)}”` : ''}.</p>`);
+    }
+
+    const seen = new Set<string>(); const actions: any[] = [];
+    for (const f of fc.top ?? []) { if (actions.length >= 4) break; if (seen.has(f.check_id)) continue; seen.add(f.check_id); actions.push(f); }
+    if (actions.length) {
+      const lis = actions.map(f => {
+        const rec = safeJson(f.recommendation), ev = safeJson(f.evidence);
+        const where = f.url_key ? esc((f.url_key.replace(/^https?:\/\/[^/]+/, '') || '/')) : (ev.query ? `“${esc(String(ev.query))}”` : 'site-wide');
+        const sz = (f.size ?? '').toString();
+        return `<li><span class="impact impact-${sz.toLowerCase() || 's'}">${esc(sz || '–')}</span> ${esc(rec.title || f.check_id)} <span class="exec-where">— ${where}</span></li>`;
+      }).join('');
+      parts.push(`<div class="exec-actions"><div class="exec-actions-title">Start here — your highest-impact fixes</div><ol>${lis}</ol></div>`);
+    }
+  } else {
+    parts.push('<p class="muted">Run <code>run_audit</code> to populate findings and the prioritised action list.</p>');
+  }
+  el.innerHTML = parts.join('');
+}
+
 // Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
 function renderRecommendations(fc: DashboardData['findings']): void {
   const el = $('recs');
@@ -310,6 +365,8 @@ function render(data: DashboardData): void {
   // axis tick labels + axis names use primary text (high contrast: white on dark, near-black on light)
   const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.axisText, fontSize: 12 }, nameTextStyle: { color: col.axisText, fontSize: 12 }, splitLine: { lineStyle: { color: col.grid } } };
 
+  // Executive summary — plain-language read of performance + the prioritised "start here" list
+  renderExecSummary(data);
   // Audit findings — severity filter chips + prioritised table, then the categorised report
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);
