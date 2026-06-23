@@ -258,9 +258,14 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const adb = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
       try {
         const d = diffLatest(adb.db);
+        // Cap the changes array in structuredContent to `limit` — the full diff can be tens of
+        // thousands of rows (e.g. a crawl-methodology change) and blow the MCP token ceiling. The
+        // summary keeps the TRUE totals; markdown is already limited.
+        const lim = limit ?? 50;
+        const sc = { ...d, changes: d.changes.slice(0, lim), changesReturned: Math.min(lim, d.changes.length), changesTotal: d.changes.length };
         return {
-          content: [{ type: 'text', text: buildDriftMarkdown(d, siteUrl, limit ?? 50) }],
-          structuredContent: d as unknown as Record<string, unknown>,
+          content: [{ type: 'text', text: buildDriftMarkdown(d, siteUrl, lim) }],
+          structuredContent: sc as unknown as Record<string, unknown>,
         };
       } finally { adb.close(); }
     },
