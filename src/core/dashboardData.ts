@@ -22,6 +22,7 @@ export interface DashboardData {
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
+  contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
   topKeywords?: {
     query: string;
     clicks: number;
@@ -204,6 +205,19 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       return { urlKey: p.page_key, clicks: p.clicks, prevClicks: prev.clicks, clicksChangePct: Math.round(pct), impressions: p.impressions, position: Math.round(p.position * 10) / 10, category: pageCategory(p, prev) };
     });
 
+    // Content decay & refresh ROI — pages that earned ≥10 clicks last period and have since fallen
+    // ≥20%, ranked by clicks lost (the recoverable upside from a content refresh). Fact-based: every
+    // row is a real page with a measured before/after over matched 28-day windows.
+    const contentDecay = (db.db.prepare(
+      `WITH cur AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+                    FROM search_analytics WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '-28 days') GROUP BY page_key),
+            prev AS (SELECT page_key, SUM(clicks) c FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-56 days') AND date <= date(?, '-28 days') GROUP BY page_key)
+       SELECT prev.page_key url, prev.c prevC, COALESCE(cur.c,0) curC, COALESCE(cur.i,0) curI, COALESCE(cur.pos,0) pos
+       FROM prev LEFT JOIN cur ON cur.page_key=prev.page_key
+       WHERE prev.c >= 10 AND COALESCE(cur.c,0) < prev.c * 0.8
+       ORDER BY (prev.c - COALESCE(cur.c,0)) DESC LIMIT 30`).all(maxDate, maxDate, maxDate) as { url: string; prevC: number; curC: number; curI: number; pos: number }[])
+      .map(r => ({ urlKey: r.url, prevClicks: r.prevC, clicks: r.curC, lost: r.prevC - r.curC, dropPct: Math.round((1 - r.curC / r.prevC) * 100), impressions: r.curI, position: Math.round(r.pos * 10) / 10 }));
+
     // Keyword ranking movement (first-seen vs last-seen position over 90d)
     const keywordMovement = (db.db.prepare(
       `WITH q AS (SELECT query, MIN(date) fd, MAX(date) ld FROM search_analytics WHERE query IS NOT NULL AND ${UB} AND date > date(?, '-90 days') GROUP BY query HAVING SUM(impressions) >= 50 AND MIN(date) < MAX(date))
@@ -336,6 +350,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       rankingDistribution,
       strikingDistance,
       quickWins,
+      contentDecay,
       summary: {
         current: { ...cur, ctr: ctr(cur) },
         prior: { ...prior, ctr: ctr(prior) },

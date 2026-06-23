@@ -12,6 +12,7 @@ interface DashboardData {
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
+  contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
   topKeywords?: { query: string; clicks: number; prevClicks: number; clicksChange: number; position: number; prevPosition: number }[];
   rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
   dateAlignment?: { note: string };
@@ -653,6 +654,19 @@ function render(data: DashboardData): void {
   $('quickWinsTable').innerHTML = qwTop.length
     ? `<table><thead><tr><th>Query</th><th>Opportunity</th><th class="num">Pos</th><th class="num">Impr</th><th class="num">CTR / exp.</th><th class="num">Clicks recoverable</th></tr></thead><tbody>${qwRows}</tbody></table>`
     : '<p class="muted">No quick wins surfaced — run a sync + audit, or this property is already clicking to potential.</p>';
+
+  // Content decay — pages to refresh, ranked by clicks lost
+  const decay = data.contentDecay ?? [];
+  const decayRows = decay.map(d => {
+    const path = esc((d.urlKey || '').replace(/^https?:\/\/[^/]+/, '') || '/');
+    return `<tr><td class="url" title="${esc(d.urlKey || '')}">${path}</td>` +
+      `<td class="num">${fmt(d.prevClicks)}</td><td class="num">${fmt(d.clicks)}</td>` +
+      `<td class="num"><span class="impact ${d.dropPct >= 60 ? 'impact-xl' : d.dropPct >= 35 ? 'impact-l' : 'impact-m'}">−${d.dropPct}%</span></td>` +
+      `<td class="num">${fmt(d.lost)}</td><td class="num">${fmt(d.impressions)}</td><td class="num">${d.position || '—'}</td></tr>`;
+  }).join('');
+  $('contentDecayTable').innerHTML = decay.length
+    ? `<table><thead><tr><th>Page</th><th class="num">Was</th><th class="num">Now</th><th class="num">Drop</th><th class="num">Clicks lost</th><th class="num">Impr</th><th class="num">Pos</th></tr></thead><tbody>${decayRows}</tbody></table>`
+    : '<p class="muted">No significant content decay — no page lost 20%+ of its clicks vs the prior 28 days.</p>';
 
   // 4) Top keyword performance (green/red + signed label so colour isn't the only cue)
   const kw = (data.topKeywords ?? []).slice().reverse(); // horizontal bar reads top-down
