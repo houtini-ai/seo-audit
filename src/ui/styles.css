@@ -273,11 +273,16 @@ body {
 .metric-card .chg { margin: 0; }
 .metric-spark { color: var(--accent); opacity: 0.5; flex: 0 0 auto; height: 26px; width: 96px; }
 
-/* Executive-summary headline scorecard — the 3 numbers read first */
-.exec-headline { display: flex; flex-wrap: wrap; gap: 36px; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); }
-.eh-num { font-family: var(--font-mono); font-size: 30px; font-weight: 500; line-height: 1.05; letter-spacing: -0.02em; color: var(--text-primary); }
-.eh-lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 7px; }
-.eh-lbl .chg { font-size: 12px; }
+/* Executive summary — 60/40 editorial split: narrative+actions left, scorecard right */
+.exec-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 28px; align-items: start; }
+@media (max-width: 720px) { .exec-grid { grid-template-columns: 1fr; } }
+.exec-main { min-width: 0; }
+.exec-score { background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius); padding: 4px 18px; }
+.es-stat { padding: 14px 0; border-top: 1px solid var(--border-subtle); }
+.es-stat:first-child { border-top: none; }
+.es-num { font-family: var(--font-mono); font-size: 30px; font-weight: 500; line-height: 1.05; letter-spacing: -0.02em; color: var(--text-primary); display: flex; align-items: baseline; gap: 9px; }
+.es-num .chg { font-size: 13px; }
+.es-lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
 
 /* Table row hover — scannability */
 .findings-table tbody tr { transition: background .12s ease; }

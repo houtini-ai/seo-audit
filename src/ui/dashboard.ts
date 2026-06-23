@@ -32,7 +32,14 @@ const esc = (s: string): string => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '
 const safeJson = (s: string): any => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
 const catClass = (c: string): string => /(top performer|gained|entered)/.test(c) ? 'cat-up' : /(low performer|lost|dropped)/.test(c) ? 'cat-down' : /declining/.test(c) ? 'cat-warn' : /improve/.test(c) ? 'cat-info' : 'cat-neutral';
 const tableHtml = (headers: string[], rows: string[]): string => `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
-const shortPath = (u: string): string => (u || '').replace(/^https?:\/\/[^/]+/, '') || '/';
+// Domain-stripped path, middle-truncated when long so the meaningful slug END survives (an SEO
+// reads the page identifier at the end of the path — never truncate that off). Callers esc() it.
+const shortPath = (u: string, max = 56): string => {
+  const p = (u || '').replace(/^https?:\/\/[^/]+/, '') || '/';
+  if (p.length <= max) return p;
+  const keep = Math.floor((max - 1) / 2);
+  return `${p.slice(0, keep)}…${p.slice(-keep)}`;
+};
 
 function palette() {
   const root = document.documentElement;
@@ -216,17 +223,12 @@ function renderExecSummary(data: DashboardData): void {
   const lead = `Organic search is <strong>${dir}</strong>: <strong>${fmt(c.clicks)}</strong> clicks and <strong>${fmt(c.impressions)}</strong> impressions in the last 28 days (clicks ${arrow(clkPct)} vs the prior 28), at an average position of <strong>${c.position.toFixed(1)}</strong>${posShift ? ` (${posShift > 0 ? 'improved' : 'slipped'} ${Math.abs(posShift)} spot${Math.abs(posShift) === 1 ? '' : 's'})` : ''}.`;
 
   const fc = data.findings;
-  // Headline scorecard — the three numbers an SEO reads first: clicks (+delta), critical issues, upside.
   const critCount = fc?.byCheck?.filter((b: any) => b.severity === 'crit').reduce((s: number, b: any) => s + b.count, 0) ?? 0;
   const recoverable = (data.quickWins ?? []).reduce((s, q) => s + (q.type === 'snippet' || q.type === 'striking' ? q.potential : 0), 0);
   const clkCls = clkPct > 0 ? 'up' : clkPct < 0 ? 'down' : 'flat';
-  const headline = `<div class="exec-headline">` +
-    `<div class="eh-stat"><div class="eh-num">${fmt(c.clicks)}</div><div class="eh-lbl">clicks · 28d <span class="chg ${clkCls}">${arrow(clkPct)}</span></div></div>` +
-    `<div class="eh-stat"><div class="eh-num" style="color:${critCount ? 'var(--red)' : 'var(--green)'}">${critCount}</div><div class="eh-lbl">critical issue${critCount === 1 ? '' : 's'}</div></div>` +
-    `<div class="eh-stat"><div class="eh-num">${fmt(recoverable)}</div><div class="eh-lbl">clicks recoverable</div></div>` +
-    `</div>`;
-  const parts: string[] = [headline, `<p class="exec-lead">${lead}</p>`];
 
+  // LEFT (60%): the narrative + the prioritised action list.
+  const main: string[] = [`<p class="exec-lead">${lead}</p>`];
   if (fc && fc.byCheck?.length) {
     const bySev: Record<string, number> = {};
     for (const b of fc.byCheck) bySev[b.severity] = (bySev[b.severity] ?? 0) + b.count;
@@ -239,13 +241,13 @@ function renderExecSummary(data: DashboardData): void {
     if (ctr) opp.push(`<strong>${ctr}</strong> page${ctr > 1 ? 's' : ''} rank well but are under-clicked — a title/meta rewrite is the fastest lever`);
     if (strike) opp.push(`<strong>${strike}</strong> quer${strike > 1 ? 'ies' : 'y'} sit in striking distance (page 2) and could reach page 1 with a small push`);
     if (cann) opp.push(`<strong>${cann}</strong> quer${cann > 1 ? 'ies are' : 'y is'} cannibalised across multiple URLs`);
-    if (opp.length) parts.push(`<p><span class="exec-tag">Opportunities</span> ${opp.join('; ')}.</p>`);
+    if (opp.length) main.push(`<p><span class="exec-tag">Opportunities</span> ${opp.join('; ')}.</p>`);
 
     const crit = bySev['crit'] ?? 0, high = bySev['high'] ?? 0;
     if (crit || high) {
       const worst = fc.top?.find((f: any) => f.severity === 'crit') ?? fc.top?.[0];
       const worstTitle = worst ? safeJson(worst.recommendation).title : '';
-      parts.push(`<p><span class="exec-tag urgent">Fix first</span> ${crit ? `<strong>${crit}</strong> critical` : ''}${crit && high ? ' and ' : ''}${high ? `<strong>${high}</strong> high-severity` : ''} issue${(crit + high) > 1 ? 's' : ''} need attention${worstTitle ? ` — starting with “${esc(worstTitle)}”` : ''}.</p>`);
+      main.push(`<p><span class="exec-tag urgent">Fix first</span> ${crit ? `<strong>${crit}</strong> critical` : ''}${crit && high ? ' and ' : ''}${high ? `<strong>${high}</strong> high-severity` : ''} issue${(crit + high) > 1 ? 's' : ''} need attention${worstTitle ? ` — starting with “${esc(worstTitle)}”` : ''}.</p>`);
     }
 
     const seen = new Set<string>(); const actions: any[] = [];
@@ -253,16 +255,25 @@ function renderExecSummary(data: DashboardData): void {
     if (actions.length) {
       const lis = actions.map(f => {
         const rec = safeJson(f.recommendation), ev = safeJson(f.evidence);
-        const where = f.url_key ? esc((f.url_key.replace(/^https?:\/\/[^/]+/, '') || '/')) : (ev.query ? `“${esc(String(ev.query))}”` : 'site-wide');
+        const where = f.url_key ? esc(shortPath(f.url_key)) : (ev.query ? `“${esc(String(ev.query))}”` : 'site-wide');
         const sz = (f.size ?? '').toString();
         return `<li><span class="impact impact-${sz.toLowerCase() || 's'}">${esc(sz || '–')}</span> ${esc(rec.title || f.check_id)} <span class="exec-where">— ${where}</span></li>`;
       }).join('');
-      parts.push(`<div class="exec-actions"><div class="exec-actions-title">Start here — your highest-impact fixes</div><ol>${lis}</ol></div>`);
+      main.push(`<div class="exec-actions"><div class="exec-actions-title">Start here — your highest-impact fixes</div><ol>${lis}</ol></div>`);
     }
   } else {
-    parts.push('<p class="muted">Run <code>run_audit</code> to populate findings and the prioritised action list.</p>');
+    main.push('<p class="muted">Run <code>run_audit</code> to populate findings and the prioritised action list.</p>');
   }
-  el.innerHTML = parts.join('');
+
+  // RIGHT (40%): the scorecard — the three numbers an SEO weighs first, in one shaded box.
+  const stat = (num: string, label: string, color = ''): string =>
+    `<div class="es-stat"><div class="es-num"${color ? ` style="color:${color}"` : ''}>${num}</div><div class="es-lbl">${label}</div></div>`;
+  const score =
+    stat(`${fmt(c.clicks)} <span class="chg ${clkCls}">${arrow(clkPct)}</span>`, 'clicks · last 28d') +
+    stat(String(critCount), `critical issue${critCount === 1 ? '' : 's'}`, critCount ? 'var(--red)' : 'var(--green)') +
+    stat(fmt(recoverable), 'clicks recoverable');
+
+  el.innerHTML = `<div class="exec-grid"><div class="exec-main">${main.join('')}</div><aside class="exec-score">${score}</aside></div>`;
 }
 
 // Branded vs non-branded split — transparent brand match, surfaced so the user can verify it.
@@ -290,7 +301,7 @@ function renderRecommendations(fc: DashboardData['findings']): void {
   if (!fc || !fc.recommendations?.length) { el.innerHTML = '<p class="muted">No audit yet — run run_audit.</p>'; return; }
   const exampleRow = (ex: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number }): string => {
     const fullPath = ex?.urlKey ? (ex.urlKey.replace(/^https?:\/\/[^/]+/, '') || '/') : '';
-    const path = esc(fullPath.length > 72 ? fullPath.slice(0, 72) + '…' : fullPath);
+    const path = esc(ex?.urlKey ? shortPath(ex.urlKey) : '');
     const ev = (ex?.evidence ?? {}) as Record<string, unknown>;
     const detail = esc(evidenceSummary(ev));
     const traffic = (ex.clicks || ex.impressions) ? `<span class="rec-ex-traf">${fmt(ex.clicks)} clicks · ${fmt(ex.impressions)} impr</span>` : '';
@@ -349,7 +360,7 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
   const drawTable = (): void => {
     const rows = fc.top.filter(f => active === 'all' || f.severity === active).slice(0, 25).map(f => {
       const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk), ev = safeJson(f.evidence);
-      const path = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
+      const path = f.url_key ? shortPath(f.url_key) : '—';
       const pct = Math.max(3, Math.round((f.priority / maxPrio) * 100));
       const sz = (f.size ?? '').toString();
       const szClass = 'impact-' + (sz.toLowerCase() || 's');
@@ -431,7 +442,7 @@ function render(data: DashboardData): void {
 
   const col = palette();
   // axis tick labels + axis names use primary text (high contrast: white on dark, near-black on light)
-  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.axisText, fontSize: 12 }, nameTextStyle: { color: col.axisText, fontSize: 12 }, splitLine: { lineStyle: { color: col.grid } } };
+  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.axisText, fontSize: 12 }, nameTextStyle: { color: col.axisText, fontSize: 12 }, splitLine: { lineStyle: { color: col.grid, type: 'dashed' as const, opacity: 0.6 } } };
 
   // Executive summary — plain-language read of performance + the prioritised "start here" list
   renderExecSummary(data);
@@ -690,7 +701,7 @@ function render(data: DashboardData): void {
   // Content decay — pages to refresh, ranked by clicks lost
   const decay = data.contentDecay ?? [];
   const decayRows = decay.map(d => {
-    const path = esc((d.urlKey || '').replace(/^https?:\/\/[^/]+/, '') || '/');
+    const path = esc(shortPath(d.urlKey || ''));
     return `<tr><td class="url" title="${esc(d.urlKey || '')}">${path}</td>` +
       `<td class="num">${fmt(d.prevClicks)}</td><td class="num">${fmt(d.clicks)}</td>` +
       `<td class="num"><span class="impact ${d.dropPct >= 60 ? 'impact-xl' : d.dropPct >= 35 ? 'impact-l' : 'impact-m'}">−${d.dropPct}%</span></td>` +
@@ -710,7 +721,7 @@ function render(data: DashboardData): void {
         // Cross-type (different page templates competing) is the most actionable — lead with it.
         const cross = q.crossType ? '<span class="impact impact-xl">Cross-type</span>' : '';
         const rows = q.urls.map(u => {
-          const path = esc((u.url || '').replace(/^https?:\/\/[^/]+/, '') || '/');
+          const path = esc(shortPath(u.url || ''));
           return `<div class="rec-ex"><a class="rec-url" href="${esc(u.url || '')}" title="${esc(u.url || '')}" target="_blank" rel="noopener">${path}</a><span class="cann-type">${esc(u.template)}</span><span class="rec-ex-detail">pos ${u.position}</span><span class="rec-ex-traf">${fmt(u.clicks)} clicks · ${fmt(u.impressions)} impr</span></div>`;
         }).join('');
         return `<details class="rec-acc"><summary>` +
