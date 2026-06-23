@@ -193,6 +193,19 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_snap_captured ON page_snapshots(captured_at);
     `);
 
+    // Agent-readiness result (one row per origin) — populated by check_agent_readiness, read by
+    // the dashboard. Live HTTP probe, not crawl-derived, so it persists separately.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_readiness (
+        origin TEXT PRIMARY KEY,
+        score INTEGER,
+        level TEXT,
+        checks TEXT,        -- JSON [{id,category,label,present,detail,fix}]
+        by_category TEXT,   -- JSON [{category,passed,total}]
+        checked_at TEXT
+      );
+    `);
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

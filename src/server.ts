@@ -276,6 +276,14 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async ({ siteUrl }) => {
       const r = await checkAgentReadiness(siteUrl);
+      // Persist so the dashboard/export can show it (live probe, not crawl-derived).
+      try {
+        const adb = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+        adb.db.prepare(`INSERT INTO agent_readiness (origin,score,level,checks,by_category,checked_at) VALUES (?,?,?,?,?,datetime('now'))
+          ON CONFLICT(origin) DO UPDATE SET score=excluded.score, level=excluded.level, checks=excluded.checks, by_category=excluded.by_category, checked_at=excluded.checked_at`)
+          .run(r.origin, r.score, r.level, JSON.stringify(r.checks), JSON.stringify(r.byCategory));
+        adb.close();
+      } catch { /* persistence is best-effort */ }
       return {
         content: [{ type: 'text', text: buildAgentReadinessMarkdown(r) }],
         structuredContent: r as unknown as Record<string, unknown>,

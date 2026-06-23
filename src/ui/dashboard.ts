@@ -344,6 +344,27 @@ function render(data: DashboardData): void {
     $('scatterSummary').textContent = 'Run a crawl (refresh_property) to see the equity map.';
   }
 
+  // 0a) Agent readiness panel (populated by check_agent_readiness; live probe, persisted)
+  const ar = data.agentReadiness;
+  if (ar) {
+    const scoreColor = ar.score >= 80 ? 'var(--color-status-live)' : ar.score >= 50 ? 'var(--color-status-warning)' : 'var(--color-status-error)';
+    const cats = ar.byCategory.map(c => `<div style="background:var(--color-background-secondary,rgba(127,127,127,0.08));border-radius:8px;padding:8px 12px;"><div style="font-size:12px;color:var(--color-text-secondary)">${esc(c.category)}</div><div style="font-size:18px;font-weight:500">${c.passed}<span style="color:var(--color-text-tertiary,#888)">/${c.total}</span></div></div>`).join('');
+    const items = ar.checks.map(c => `<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:0.5px solid var(--color-border-standard,rgba(127,127,127,0.15))">
+      <span style="color:${c.present ? 'var(--color-status-live)' : 'var(--color-text-tertiary,#999)'};font-weight:500;min-width:14px">${c.present ? '✓' : '○'}</span>
+      <span style="min-width:200px">${esc(c.label)}</span>
+      <span style="color:var(--color-text-secondary);font-size:13px">${esc(c.detail)}</span>
+      ${c.present ? '' : `<span style="color:var(--color-text-tertiary,#888);font-size:12px;font-style:italic;margin-left:auto;max-width:46%;text-align:right">${esc(c.fix)}</span>`}</div>`).join('');
+    $('agentPanel').innerHTML =
+      `<div style="display:flex;align-items:center;gap:16px;margin:4px 0 12px">
+        <div style="font-size:40px;font-weight:500;color:${scoreColor};line-height:1">${ar.score}<span style="font-size:18px;color:var(--color-text-tertiary,#888)">/100</span></div>
+        <div style="font-size:16px;font-weight:500">${esc(ar.level)}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px">${cats}</div>
+      <div>${items}</div>`;
+  } else {
+    $('agentPanel').innerHTML = '<p class="muted">Run <code>check_agent_readiness</code> for this site to populate the agent-readiness score.</p>';
+  }
+
   // 0b) Cannibalisation braids — per contested query, competing URLs' weekly position over time
   const cann = data.cannibalisation ?? [];
   const cannSel = $('cannSelect') as HTMLSelectElement;

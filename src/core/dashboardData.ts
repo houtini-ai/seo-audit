@@ -39,6 +39,8 @@ export interface DashboardData {
   cannibalisation?: { query: string; urls: { url: string; points: { week: string; position: number }[] }[] }[];
   // Top internally-linked pages + their live status — a non-200 high up here is a big equity leak.
   topLinkedPages?: { url: string; inlinks: number; status: number | null; indexable: boolean; reason: string | null }[];
+  // Agent readiness (from check_agent_readiness) — how ready the site is for AI agents.
+  agentReadiness?: { score: number; level: string; checkedAt: string; byCategory: { category: string; passed: number; total: number }[]; checks: { id: string; category: string; label: string; present: boolean; detail: string; fix: string }[] };
   findings?: {
     runId: string;
     total: number;
@@ -254,6 +256,11 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const topLinkedPages = (db.db.prepare(`SELECT url_key, COALESCE(inlink_count,0) inl, status_code, indexable, indexable_reason FROM pages WHERE is_internal=1 ORDER BY inlink_count DESC, status_code LIMIT 30`).all() as any[])
       .map(p => ({ url: p.url_key, inlinks: p.inl, status: p.status_code, indexable: !!p.indexable, reason: p.indexable_reason }));
 
+    // Agent readiness — latest result persisted by check_agent_readiness (one property per DB).
+    const arRow = db.db.prepare(`SELECT score, level, checks, by_category, checked_at FROM agent_readiness ORDER BY checked_at DESC LIMIT 1`).get() as { score: number; level: string; checks: string; by_category: string; checked_at: string } | undefined;
+    const parseJ = (s: string): any => { try { return JSON.parse(s || '[]'); } catch { return []; } };
+    const agentReadiness = arRow ? { score: arRow.score, level: arRow.level, checkedAt: arRow.checked_at, byCategory: parseJ(arRow.by_category), checks: parseJ(arRow.checks) } : undefined;
+
     // Cannibalisation braids — queries where multiple URLs compete, each URL's weekly avg position.
     // The "braid" of crossing lines over time is Google thrashing between URLs (severity = tangle).
     const cannQueries = db.db.prepare(
@@ -281,6 +288,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       templateMismatch,
       cannibalisation,
       topLinkedPages,
+      agentReadiness,
       rankHistory,
       dateAlignment,
       rankingDistribution,
