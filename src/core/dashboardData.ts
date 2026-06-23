@@ -1,6 +1,7 @@
 import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
 import { gscFreshness } from './gscFreshness.js';
+import { expectedCtr } from './ctrModel.js';
 
 export interface DashboardData {
   siteUrl: string;
@@ -20,6 +21,7 @@ export interface DashboardData {
   };
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
+  quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   topKeywords?: {
     query: string;
     clicks: number;
@@ -152,6 +154,31 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       )
       .all(maxDate) as { query: string; position: number; impressions: number; clicks: number }[])
       .map(r => ({ ...r, position: Math.round(r.position * 10) / 10 }));
+
+    // Quick-wins matrix — every query with real impressions (≤ pos 20), plotted CTR vs position
+    // against the expected-CTR curve. Two opportunity types: 'striking' (page 2 → push to page 1)
+    // and 'snippet' (ranks page-1 but under-clicked vs expected). potential = recoverable clicks,
+    // grounded in the same CTR model the audit uses. 'ok' queries are context dots.
+    const quickWins = (db.db.prepare(
+      `SELECT query, SUM(impressions) impr, SUM(clicks) clicks, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+       FROM search_analytics WHERE query IS NOT NULL AND ${UB} AND date > date(?, '-28 days')
+       GROUP BY query HAVING SUM(impressions) >= 50 AND pos <= 20
+       ORDER BY SUM(impressions) DESC LIMIT 300`).all(maxDate) as { query: string; impr: number; clicks: number; pos: number }[])
+      .map(r => {
+        const ctr = r.impr ? r.clicks / r.impr : 0;
+        const exp = expectedCtr(r.pos);
+        // STRICT: near-zero CTR at a page-1 position is NOT a snippet-rewrite win — a SERP feature
+        // (AI overview / video / pack), cannibalisation, or tracking gap is eating the clicks. Bucket
+        // it as 'serp' (verify, no recoverable promise) so we never over-state the opportunity.
+        const type: 'striking' | 'snippet' | 'serp' | 'ok' =
+          r.pos > 10 ? 'striking'
+            : (r.pos <= 10 && ctr < exp * 0.1) ? 'serp'
+              : (ctr < exp * 0.6 ? 'snippet' : 'ok');
+        const potential = type === 'striking' ? Math.max(0, r.impr * expectedCtr(8) - r.clicks)
+          : type === 'snippet' ? Math.max(0, r.impr * exp - r.clicks) : 0; // serp/ok carry no recoverable estimate
+        return { query: r.query, position: Math.round(r.pos * 10) / 10, impressions: r.impr, clicks: r.clicks, ctr: Math.round(ctr * 1000) / 10, expectedCtr: Math.round(exp * 1000) / 10, type, potential: Math.round(potential) };
+      })
+      .sort((a, b) => b.potential - a.potential);
 
     // DataForSEO over-time sequence + GSC↔DataForSEO date-range reconciliation
     const rankHistory = db.db
@@ -308,6 +335,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       dateAlignment,
       rankingDistribution,
       strikingDistance,
+      quickWins,
       summary: {
         current: { ...cur, ctr: ctr(cur) },
         prior: { ...prior, ctr: ctr(prior) },

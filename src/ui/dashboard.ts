@@ -11,6 +11,7 @@ interface DashboardData {
   rankTrend?: { date: string; clicks: number; position: number }[];
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
+  quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   topKeywords?: { query: string; clicks: number; prevClicks: number; clicksChange: number; position: number; prevPosition: number }[];
   rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
   dateAlignment?: { note: string };
@@ -129,6 +130,7 @@ let kwChart: echarts.ECharts | null = null;
 let mismatchChart: echarts.ECharts | null = null;
 let scatterChart: echarts.ECharts | null = null;
 let cannChart: echarts.ECharts | null = null;
+let quickWinsChart: echarts.ECharts | null = null;
 const ARIA = { aria: { enabled: true } }; // ECharts-generated screen-reader description
 
 const app = new App({ name: 'SEO Audit Console', version: '0.1.0' });
@@ -605,6 +607,53 @@ function render(data: DashboardData): void {
   });
   $('strikeSummary').textContent = `${strike.length} queries ranking on page two (positions 11–20) with impressions — page-1 opportunities; bubble size is clicks.`;
 
+  // 3b) Quick-wins matrix — CTR vs position against the expected-CTR curve, coloured by opportunity
+  const qw = data.quickWins ?? [];
+  quickWinsChart?.dispose();
+  quickWinsChart = echarts.init($('quickWinsChart'));
+  if (qw.length) {
+    // Expected-CTR curve derived from the data points (server's model) — no client-side duplication.
+    const curveMap = new Map<number, number>();
+    for (const q of qw) { const rp = Math.round(q.position); if (rp >= 1 && rp <= 10 && !curveMap.has(rp)) curveMap.set(rp, q.expectedCtr); }
+    const curve = [...curveMap.entries()].sort((a, b) => a[0] - b[0]);
+    const bub = (v: any) => Math.max(6, Math.min(46, 6 + Math.sqrt(v[2]) * 2.2));
+    const SER_NAME: Record<string, string> = { striking: 'Striking distance', snippet: 'Under-clicked', serp: 'Verify (SERP/cannibalisation)', ok: 'On track' };
+    const ser = (type: string, color: string, opacity: number) => ({
+      name: SER_NAME[type], type: 'scatter', symbolSize: bub, itemStyle: { color, opacity },
+      data: qw.filter(q => q.type === type).map(q => [q.position, q.ctr, q.impressions, q.expectedCtr, q.potential, q.query, q.type]),
+    });
+    quickWinsChart.setOption({
+      ...ARIA,
+      grid: { left: 56, right: 24, top: 34, bottom: 42 },
+      legend: { top: 0, textStyle: { color: col.text, fontSize: 12 }, data: [SER_NAME.striking, SER_NAME.snippet, SER_NAME.serp, SER_NAME.ok, 'Expected CTR'] },
+      tooltip: { trigger: 'item', formatter: (p: any) => Array.isArray(p.value) ? `${esc(String(p.value[5]))}<br/>pos ${p.value[0]} · CTR ${p.value[1]}% (expected ${p.value[3]}%)<br/>${fmt(p.value[2])} impressions${p.value[6] === 'serp' ? '<br/><em>near-zero CTR — likely a SERP feature or cannibalisation; verify before rewriting</em>' : ` · ~${fmt(p.value[4])} clicks recoverable`}` : '' },
+      xAxis: { type: 'value', name: 'avg position', min: 1, max: 20, ...axis },
+      yAxis: { type: 'value', name: 'CTR %', min: 0, ...axis },
+      series: [
+        ser('ok', col.muted, 0.28),
+        ser('serp', col.red, 0.5),
+        ser('striking', col.amber, 0.7),
+        ser('snippet', col.accent, 0.7),
+        { name: 'Expected CTR', type: 'line', data: curve, lineStyle: { color: col.text, type: 'dashed', width: 1.5, opacity: 0.5 }, symbol: 'none', tooltip: { show: false }, z: 1 },
+      ],
+    });
+  } else {
+    quickWinsChart.setOption({ ...ARIA, graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No query data yet — sync Search Console.', fill: col.muted, fontSize: 13 } } });
+  }
+
+  // Biggest quick wins table — ranked by recoverable clicks
+  const qwTop = qw.filter(q => q.type !== 'ok' && q.potential > 0).slice(0, 20);
+  const qwTypeLabel: Record<string, string> = { striking: 'Striking distance', snippet: 'Under-clicked' };
+  const qwRows = qwTop.map(q =>
+    `<tr><td>${esc(q.query)}</td>` +
+    `<td><span class="impact ${q.type === 'striking' ? 'impact-l' : 'impact-m'}">${qwTypeLabel[q.type] || q.type}</span></td>` +
+    `<td class="num">${q.position}</td><td class="num">${fmt(q.impressions)}</td>` +
+    `<td class="num">${q.ctr}% <span class="muted">/ ${q.expectedCtr}%</span></td>` +
+    `<td class="num">${fmt(q.potential)}</td></tr>`).join('');
+  $('quickWinsTable').innerHTML = qwTop.length
+    ? `<table><thead><tr><th>Query</th><th>Opportunity</th><th class="num">Pos</th><th class="num">Impr</th><th class="num">CTR / exp.</th><th class="num">Clicks recoverable</th></tr></thead><tbody>${qwRows}</tbody></table>`
+    : '<p class="muted">No quick wins surfaced — run a sync + audit, or this property is already clicking to potential.</p>';
+
   // 4) Top keyword performance (green/red + signed label so colour isn't the only cue)
   const kw = (data.topKeywords ?? []).slice().reverse(); // horizontal bar reads top-down
   kwChart?.dispose();
@@ -655,7 +704,7 @@ function render(data: DashboardData): void {
 // Tabbed nav: switch panels, and resize the ECharts in the newly-shown panel — charts created in a
 // display:none panel lay out at 0×0, so they must be resized once their container is visible.
 function setupTabs(): void {
-  const live = (): (echarts.ECharts | null)[] => [distChart, rankHistChart, rankChart, strikeChart, kwChart, mismatchChart, scatterChart, cannChart];
+  const live = (): (echarts.ECharts | null)[] => [distChart, rankHistChart, rankChart, strikeChart, kwChart, mismatchChart, scatterChart, cannChart, quickWinsChart];
   const resizeVisible = (): void => { for (const c of live()) { try { if (c && (c.getDom() as HTMLElement).offsetParent !== null) c.resize(); } catch { /* disposed */ } } };
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
     btn.onclick = (): void => {

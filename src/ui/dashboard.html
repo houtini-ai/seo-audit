@@ -18,6 +18,7 @@
         <button class="tab-btn active" data-panel="overview" role="tab">Overview</button>
         <button class="tab-btn" data-panel="findings" role="tab">Findings</button>
         <button class="tab-btn" data-panel="recommendations" role="tab">Recommendations</button>
+        <button class="tab-btn" data-panel="opportunities" role="tab">Opportunities</button>
         <button class="tab-btn" data-panel="search" role="tab">Search performance</button>
         <button class="tab-btn" data-panel="architecture" role="tab">Architecture</button>
       </nav>
@@ -53,6 +54,19 @@
           <div class="hint">Every issue grouped by category. Click any row to expand the recommended fix and real examples from your site — the audit deliverable.</div>
           <div class="recs-controls" id="recsControls"></div>
           <div id="recs"></div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="opportunities" role="tabpanel">
+        <div class="chart-card">
+          <h3>Quick-wins matrix — clicks vs potential</h3>
+          <div class="hint">Every query plotted by average position (x) and click-through rate (y) against Google's expected-CTR curve (dashed). <span style="color:var(--color-status-warning)">Amber</span> = striking distance (page 2, push to page 1); <span style="color:var(--accent)">blue</span> = ranks page 1 but under-clicked (rewrite the snippet). Bubble size = impressions.</div>
+          <div class="chart" id="quickWinsChart" role="img" aria-label="Quick-wins matrix: CTR versus position"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Biggest quick wins — ranked by recoverable clicks</h3>
+          <div class="hint">The highest-opportunity queries, scored by clicks you could recover by closing the CTR gap or reaching page 1. Every row is grounded in real Search Console data.</div>
+          <div id="quickWinsTable" class="findings-table"></div>
         </div>
       </section>
 

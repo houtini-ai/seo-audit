@@ -3,6 +3,7 @@ import type { FindingLabel, Severity } from '../core/AuditDatabase.js';
 import { validateJsonLdColumn, type SchemaIssueKind } from './schema-validate.js';
 import { urlKey } from '../core/url-key.js';
 import { parseJsonLdNodes, nodeType } from './templates.js';
+import { expectedCtr } from '../core/ctrModel.js';
 
 /**
  * Check registry. Each check is a pure read over the AuditDatabase (crawl + GSC +
@@ -79,9 +80,9 @@ function schemaFindings(ctx: CheckContext, kinds: SchemaIssueKind[]): RawFinding
   return out;
 }
 
-// Rough position→expected-CTR curve (desktop+mobile blended) for the CTR-gap check.
-const CTR_CURVE: Record<number, number> = { 1: 0.28, 2: 0.15, 3: 0.11, 4: 0.08, 5: 0.06, 6: 0.05, 7: 0.04, 8: 0.032, 9: 0.028, 10: 0.025 };
-export const expectedCtr = (pos: number): number => CTR_CURVE[Math.max(1, Math.min(10, Math.round(pos)))] ?? 0.02;
+// Position→expected-CTR curve lives in core/ctrModel (shared with the dashboard). Re-export it so
+// existing `import { expectedCtr } from './checks.js'` call sites keep working.
+export { expectedCtr };
 
 export const CHECKS: CheckDef[] = [
   // ── On-page (crawl, deterministic) ──────────────────────────────────────
