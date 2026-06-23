@@ -71,10 +71,24 @@ export interface DashboardData {
 
 interface Totals { clicks: number; impressions: number; position: number }
 
+// Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
+// invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
+const PAYLOAD_VERSION = '2';
+
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
   const db = new AuditDatabase(dbPathFor(dataDir, siteUrl));
   try {
+    // Cache: the payload is ~20 GROUP-BY scans over search_analytics (~6s at 1.8M rows) but only
+    // changes on sync/audit. Probe a cheap data-version; serve the cached JSON on a hit.
+    const ver = db.db.prepare(
+      `SELECT (SELECT MAX(date)||':'||COALESCE(MAX(rowid),0) FROM search_analytics) sa,
+              (SELECT run_id FROM audit_runs ORDER BY started_at DESC LIMIT 1) run,
+              (SELECT COALESCE(MAX(rowid),0) FROM pages) pg`).get() as { sa: string | null; run: string | null; pg: number };
+    const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}`;
+    const hit = db.db.prepare('SELECT payload FROM dashboard_cache WHERE id=1 AND version=?').get(version) as { payload: string } | undefined;
+    if (hit) return JSON.parse(hit.payload) as DashboardData;
+
     // Use the finalised date (trailing partial GSC days trimmed) for ALL windows + charts, so the
     // dashboard never shows the "traffic tanking" cliff of unfinalised data.
     const fresh = gscFreshness(db.db);
@@ -400,7 +414,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       return { query, urlCount: urls.length, totalImpressions, totalClicks, verdict, urls: urls.slice(0, 6) };
     }).sort((a, b) => b.totalImpressions - a.totalImpressions).slice(0, 40);
 
-    return {
+    const payload: DashboardData = {
       siteUrl,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate, rawMaxDate: fresh.rawMax ?? maxDate, trimmedDays: fresh.trimmedDays },
       equityScatter,
@@ -428,6 +442,13 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       keywordMovement,
       findings,
     };
+    // Best-effort cache write (skip silently if the DB is read-only).
+    try {
+      db.db.prepare(`INSERT INTO dashboard_cache (id, version, payload, created_at) VALUES (1, ?, ?, datetime('now'))
+        ON CONFLICT(id) DO UPDATE SET version=excluded.version, payload=excluded.payload, created_at=excluded.created_at`)
+        .run(version, JSON.stringify(payload));
+    } catch { /* cache is an optimisation, never block the dashboard on it */ }
+    return payload;
   } finally {
     db.close();
   }

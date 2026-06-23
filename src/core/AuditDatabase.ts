@@ -26,6 +26,12 @@ export class AuditDatabase {
     this.db.pragma('synchronous = NORMAL'); // WAL + NORMAL: durable enough, far fewer fsyncs
     this.db.pragma('busy_timeout = 10000');  // wait for locks instead of throwing SQLITE_BUSY (concurrent access)
     this.db.pragma('foreign_keys = ON');
+    // Performance: large sites have millions of search_analytics rows and the dashboard runs ~20
+    // GROUP-BY scans over them. A big page cache + memory-mapped I/O keeps the hot table resident
+    // and runs GROUP BY temp b-trees in RAM — big wins on the 1M+ row properties, no accuracy cost.
+    this.db.pragma('cache_size = -262144');  // 256 MB page cache (negative = KiB)
+    this.db.pragma('mmap_size = 536870912'); // 512 MB memory-mapped I/O
+    this.db.pragma('temp_store = MEMORY');   // GROUP BY / ORDER BY scratch in RAM, not on disk
     this.initializeTables();
   }
 
@@ -74,6 +80,17 @@ export class AuditDatabase {
       -- in group-key order so SQLite can aggregate without a full re-sort on big GSC tables.
       CREATE INDEX IF NOT EXISTS idx_sa_pk_date ON search_analytics(page_key, date, clicks, impressions, position);
       CREATE INDEX IF NOT EXISTS idx_sa_q_pk_date ON search_analytics(query, page_key, date, impressions, clicks, position);
+
+      -- Dashboard payload cache: the dashboard runs ~20 GROUP-BY scans over search_analytics, which
+      -- is ~6s on a 1.8M-row property. The result only changes on sync/audit, so we cache the JSON
+      -- keyed by a cheap data-version and serve repeat views/exports instantly (accuracy preserved:
+      -- any data change bumps the version and forces a recompute). Single row (id=1).
+      CREATE TABLE IF NOT EXISTS dashboard_cache (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `);
 
     // ── Crawl snapshot (from seo-crawler-mcp), url_key added, redirects captured ─
