@@ -14,6 +14,7 @@ interface DashboardData {
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
   cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; urls: { url: string; impressions: number; clicks: number; position: number }[] }[];
+  brandedSplit?: { brand: string; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number; priorNonBrandedClicks: number };
   topKeywords?: { query: string; clicks: number; prevClicks: number; clicksChange: number; position: number; prevPosition: number }[];
   rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
   dateAlignment?: { note: string };
@@ -256,6 +257,25 @@ function renderExecSummary(data: DashboardData): void {
   el.innerHTML = parts.join('');
 }
 
+// Branded vs non-branded split — transparent brand match, surfaced so the user can verify it.
+function renderBrandedSplit(data: DashboardData): void {
+  const el = $('brandedSplit'); if (!el) return;
+  const b = data.brandedSplit;
+  if (!b) { el.innerHTML = '<p class="muted">Brand could not be auto-detected from this property.</p>'; return; }
+  const hint = $('brandedHint');
+  if (hint) hint.innerHTML = `Branded = queries containing <strong>“${esc(b.brand)}”</strong> (auto-detected from the domain). How much of your demand is people looking for you vs discovering you — last 28 days.`;
+  const bc = b.branded.clicks, nc = b.nonBranded.clicks, tc = bc + nc;
+  const bpct = tc ? Math.round(bc / tc * 100) : 0, npct = 100 - bpct;
+  const dpc = (cur: number, prev: number): number => prev ? Math.round((cur - prev) / prev * 100) : (cur > 0 ? 100 : 0);
+  const arrow = (n: number): string => n > 0 ? `<span style="color:var(--green)">▲ ${n}%</span>` : n < 0 ? `<span style="color:var(--red)">▼ ${Math.abs(n)}%</span>` : '<span class="muted">flat</span>';
+  el.innerHTML =
+    `<div class="split-bar"><span class="split-branded" style="width:${bpct}%"></span><span class="split-nonbranded" style="width:${npct}%"></span></div>` +
+    `<div class="split-legend">` +
+    `<div class="split-item"><span class="split-dot dot-branded"></span><div><div class="split-k">Branded · ${bpct}%</div><div class="split-v">${fmt(bc)} clicks ${arrow(dpc(bc, b.priorBrandedClicks))} · ${fmt(b.branded.impressions)} impr</div></div></div>` +
+    `<div class="split-item"><span class="split-dot dot-nonbranded"></span><div><div class="split-k">Non-branded · ${npct}%</div><div class="split-v">${fmt(nc)} clicks ${arrow(dpc(nc, b.priorNonBrandedClicks))} · ${fmt(b.nonBranded.impressions)} impr</div></div></div>` +
+    `</div>`;
+}
+
 // Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
 function renderRecommendations(fc: DashboardData['findings']): void {
   const el = $('recs');
@@ -388,6 +408,7 @@ function render(data: DashboardData): void {
 
   // Executive summary — plain-language read of performance + the prioritised "start here" list
   renderExecSummary(data);
+  renderBrandedSplit(data);
   // Audit findings — severity filter chips + prioritised table, then the categorised report
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);

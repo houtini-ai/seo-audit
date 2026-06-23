@@ -24,6 +24,7 @@ export interface DashboardData {
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
   cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; urls: { url: string; impressions: number; clicks: number; position: number }[] }[];
+  brandedSplit?: { brand: string; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number; priorNonBrandedClicks: number };
   topKeywords?: {
     query: string;
     clicks: number;
@@ -98,6 +99,38 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const cur = totals('-28 days');
     const prior = totals('-56 days', '-28 days');
     const ctr = (t: Totals): number => (t.impressions ? t.clicks / t.impressions : 0);
+
+    // Branded vs non-branded — brand derived from the property's registrable label, matched against
+    // the space-stripped query (so "sim racing cockpit" matches brand "simracingcockpit"). Done in
+    // one SQL pass. The detected brand is surfaced in the UI so the split is verifiable, not a
+    // black box — for descriptive domains where the brand equals a generic term, the user can see it.
+    const host = siteUrl.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+    const brandKey = (host.split('.')[0] ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    let brandedSplit: DashboardData['brandedSplit'];
+    if (brandKey.length >= 3) {
+      // Whole-token match (brand surrounded by word boundaries), NOT substring — so a 3-letter brand
+      // like "ehi" matches the query "ehi inspections" but NOT "vehicle". Strict: this under-detects
+      // for descriptive concatenated domains (where the brand is typed spaced = the category) rather
+      // than over-detecting — a wrong split is worse than a conservative one.
+      const tok = `% ${brandKey} %`;
+      const splitRow = db.db.prepare(
+        `SELECT COALESCE(SUM(CASE WHEN (' '||LOWER(query)||' ') LIKE ? THEN clicks ELSE 0 END),0) bClk,
+                COALESCE(SUM(CASE WHEN (' '||LOWER(query)||' ') LIKE ? THEN impressions ELSE 0 END),0) bImp,
+                COALESCE(SUM(clicks),0) tClk, COALESCE(SUM(impressions),0) tImp
+         FROM search_analytics WHERE query IS NOT NULL AND ${UB} AND date > date(?, '-28 days')`)
+        .get(tok, tok, maxDate) as { bClk: number; bImp: number; tClk: number; tImp: number };
+      const priorRow = db.db.prepare(
+        `SELECT COALESCE(SUM(CASE WHEN (' '||LOWER(query)||' ') LIKE ? THEN clicks ELSE 0 END),0) bClk, COALESCE(SUM(clicks),0) tClk
+         FROM search_analytics WHERE query IS NOT NULL AND date > date(?, '-56 days') AND date <= date(?, '-28 days')`)
+        .get(tok, maxDate, maxDate) as { bClk: number; tClk: number };
+      brandedSplit = {
+        brand: brandKey,
+        branded: { clicks: splitRow.bClk, impressions: splitRow.bImp },
+        nonBranded: { clicks: splitRow.tClk - splitRow.bClk, impressions: splitRow.tImp - splitRow.bImp },
+        priorBrandedClicks: priorRow.bClk,
+        priorNonBrandedClicks: priorRow.tClk - priorRow.bClk,
+      };
+    }
 
     const rankTrend = db.db
       .prepare(
@@ -374,6 +407,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       templateMismatch,
       cannibalisation,
       cannibalisationTable,
+      brandedSplit,
       topLinkedPages,
       agentReadiness,
       rankHistory,

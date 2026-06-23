@@ -247,3 +247,16 @@ body {
 .rec-url:hover { text-decoration: underline; }
 .rec-ex-detail { color: var(--text-muted); font-size: 12px; }
 .rec-ex-traf { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+/* Branded vs non-branded split */
+.split-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; margin: 8px 0 16px; background: var(--bg-input); }
+.split-bar span { display: block; height: 100%; }
+.split-branded { background: var(--accent); }
+.split-nonbranded { background: var(--color-brand-violet); }
+.split-legend { display: flex; flex-wrap: wrap; gap: 28px; }
+.split-item { display: flex; gap: 9px; align-items: baseline; }
+.split-dot { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; transform: translateY(1px); }
+.dot-branded { background: var(--accent); }
+.dot-nonbranded { background: var(--color-brand-violet); }
+.split-k { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.split-v { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
