@@ -256,22 +256,39 @@ function renderExecSummary(data: DashboardData): void {
 function renderRecommendations(fc: DashboardData['findings']): void {
   const el = $('recs');
   if (!fc || !fc.recommendations?.length) { el.innerHTML = '<p class="muted">No audit yet — run run_audit.</p>'; return; }
+  const exampleRow = (ex: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number }): string => {
+    const fullPath = ex?.urlKey ? (ex.urlKey.replace(/^https?:\/\/[^/]+/, '') || '/') : '';
+    const path = esc(fullPath.length > 72 ? fullPath.slice(0, 72) + '…' : fullPath);
+    const ev = (ex?.evidence ?? {}) as Record<string, unknown>;
+    const detail = esc(evidenceSummary(ev));
+    const traffic = (ex.clicks || ex.impressions) ? `<span class="rec-ex-traf">${fmt(ex.clicks)} clicks · ${fmt(ex.impressions)} impr</span>` : '';
+    const loc = fullPath
+      ? `<a class="rec-url" href="${esc(ex.urlKey || '')}" title="${esc(fullPath)}" target="_blank" rel="noopener">${path}</a>`
+      : (ev.query ? `<span class="rec-q">“${esc(String(ev.query))}”</span>` : '<span class="muted">site-wide</span>');
+    return `<div class="rec-ex">${loc}${detail ? ` <span class="rec-ex-detail">${detail}</span>` : ''}${traffic}</div>`;
+  };
   el.innerHTML = fc.recommendations.map(cat => {
     const items = cat.checks.map(c => {
-      const ex = c.example;
-      const fullPath = ex?.urlKey ? (ex.urlKey.replace(/^https?:\/\/[^/]+/, '') || '/') : '';
-      const path = esc(fullPath.length > 72 ? fullPath.slice(0, 72) + '…' : fullPath); // keep long/query URLs to one line
-      const detail = ex ? esc(evidenceSummary(ex.evidence)) : '';
-      const traffic = ex && (ex.clicks || ex.impressions) ? ` · ${ex.clicks} clicks / ${ex.impressions} impr` : '';
-      const example = ex && (fullPath || detail)
-        ? `<div class="rec-example"><span class="rec-label">Example</span> ${fullPath ? `<a class="rec-url" href="${esc(ex!.urlKey || '')}" title="${esc(fullPath)}" target="_blank" rel="noopener">${path}</a>` : '(site-wide)'}${detail ? ` — ${detail}` : ''}${traffic}</div>`
+      const exs = (c.examples?.length ? c.examples : (c.example ? [c.example] : []));
+      const examplesHtml = exs.length
+        ? `<div class="rec-examples"><div class="rec-label">Example${exs.length > 1 ? 's' : ''}</div>${exs.map(exampleRow).join('')}</div>`
         : '';
-      return `<div class="rec-item"><div class="rec-head"><span class="sev ${c.severity}">${c.severity}</span>` +
-        `<span class="rec-title">${esc(c.title)}</span><span class="rec-count">${c.count} affected</span></div>` +
-        `${example}<div class="rec-fix"><span class="rec-label">Fix</span> ${esc(c.fix)}</div></div>`;
+      return `<details class="rec-acc">` +
+        `<summary><span class="sev ${c.severity}">${c.severity}</span><span class="rec-title">${esc(c.title)}</span><span class="rec-count">${c.count}</span><span class="rec-chev" aria-hidden="true">›</span></summary>` +
+        `<div class="rec-body"><div class="rec-fix"><span class="rec-label">Fix</span> ${esc(c.fix)}</div>${examplesHtml}</div>` +
+        `</details>`;
     }).join('');
     return `<div class="rec-cat"><h4 class="rec-cat-title">${esc(CAT_LABEL[cat.category] || cat.category)} <span class="rec-cat-count">${cat.checks.length}</span></h4>${items}</div>`;
   }).join('');
+
+  const ctrl = $('recsControls');
+  if (ctrl) {
+    ctrl.innerHTML = `<button class="recs-btn" data-act="expand">Expand all</button><button class="recs-btn" data-act="collapse">Collapse all</button>`;
+    ctrl.querySelectorAll<HTMLButtonElement>('.recs-btn').forEach(b => b.addEventListener('click', () => {
+      const open = b.dataset.act === 'expand';
+      el.querySelectorAll('details').forEach(d => { (d as HTMLDetailsElement).open = open; });
+    }));
+  }
 }
 
 // Findings: severity count-chips (click to filter) + a prioritised table with a

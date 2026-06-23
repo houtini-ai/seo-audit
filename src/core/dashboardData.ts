@@ -58,6 +58,7 @@ export interface DashboardData {
         severity: string;
         count: number;
         example: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number } | null;
+        examples: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number }[];
       }[];
     }[];
   } | null;
@@ -208,23 +209,29 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       const exRows = db.db.prepare('SELECT check_id, url_key, evidence, traffic_at_risk, recommendation, priority FROM findings WHERE run_id=? ORDER BY priority DESC').all(lastRun.run_id) as
         { check_id: string; url_key: string | null; evidence: string; traffic_at_risk: string; recommendation: string; priority: number }[];
       const parse = (s: string): any => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
-      const exByCheck = new Map<string, typeof exRows[number]>();
-      for (const r of exRows) if (!exByCheck.has(r.check_id)) exByCheck.set(r.check_id, r);
+      // Up to 3 representative examples per check (highest-priority first) → richer recs view.
+      const exByCheck = new Map<string, typeof exRows>();
+      for (const r of exRows) { const arr = exByCheck.get(r.check_id) ?? []; if (arr.length < 3) { arr.push(r); exByCheck.set(r.check_id, arr); } }
 
       const SEV_RANK: Record<string, number> = { crit: 0, high: 1, med: 2, low: 3, info: 4 };
       const catMap = new Map<string, NonNullable<DashboardData['findings']>['recommendations'][number]['checks']>();
+      const mkEx = (r: typeof exRows[number]): { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number } => {
+        const t = parse(r.traffic_at_risk);
+        return { urlKey: r.url_key, evidence: parse(r.evidence), clicks: t.clicks || 0, impressions: t.impressions || 0 };
+      };
       for (const c of byCheck) {
-        const ex = exByCheck.get(c.check_id);
-        const rec = ex ? parse(ex.recommendation) : {};
-        const traf = ex ? parse(ex.traffic_at_risk) : {};
+        const exs = exByCheck.get(c.check_id) ?? [];
+        const rec = exs[0] ? parse(exs[0].recommendation) : {};
         const list = catMap.get(c.category) ?? [];
+        const examples = exs.map(mkEx);
         list.push({
           checkId: c.check_id,
           title: rec.title || c.check_id,
           fix: rec.text || '',
           severity: c.severity,
           count: c.count,
-          example: ex ? { urlKey: ex.url_key, evidence: parse(ex.evidence), clicks: traf.clicks || 0, impressions: traf.impressions || 0 } : null,
+          example: examples[0] ?? null,
+          examples,
         });
         catMap.set(c.category, list);
       }

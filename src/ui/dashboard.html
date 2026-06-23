@@ -16,7 +16,8 @@
       </div>
       <nav class="tabs" id="tabs" role="tablist">
         <button class="tab-btn active" data-panel="overview" role="tab">Overview</button>
-        <button class="tab-btn" data-panel="findings" role="tab">Findings &amp; fixes</button>
+        <button class="tab-btn" data-panel="findings" role="tab">Findings</button>
+        <button class="tab-btn" data-panel="recommendations" role="tab">Recommendations</button>
         <button class="tab-btn" data-panel="search" role="tab">Search performance</button>
         <button class="tab-btn" data-panel="architecture" role="tab">Architecture</button>
       </nav>
@@ -44,9 +45,13 @@
           <div class="sev-chips" id="sevChips" role="group" aria-label="Filter findings by severity"></div>
           <div id="findingsTable" class="findings-table"></div>
         </div>
+      </section>
+
+      <section class="tab-panel" data-panel="recommendations" role="tabpanel">
         <div class="chart-card" id="recsCard">
-          <h3>Recommendations</h3>
-          <div class="hint">Every issue grouped by category, with a real example from your site and the suggested fix — the audit deliverable.</div>
+          <h3>Technical recommendations</h3>
+          <div class="hint">Every issue grouped by category. Click any row to expand the recommended fix and real examples from your site — the audit deliverable.</div>
+          <div class="recs-controls" id="recsControls"></div>
           <div id="recs"></div>
         </div>
       </section>
