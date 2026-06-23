@@ -168,6 +168,17 @@ Your Search Console data and the crawl live in local SQLite files under `SAC_DAT
 
 ---
 
+## What's coming
+
+A few things I'm building next, in rough order:
+
+- **Phrases you rank for but never say.** Search Console knows the queries Google sends you; the crawl knows your copy. Where they diverge - you rank for "X" but "X" appears nowhere in the page's body - there's a quick content win. The title and H1 versions of this already ship; the body-copy one is next.
+- **Structured-data opportunities, by template.** Not "you have no schema" (most modern stores have plenty), but "this template could earn review stars or an FAQ rich result and doesn't." One fix per template corrects every page in the cluster.
+- **Agent readiness.** The one I'm most interested in. The web is quietly growing a second audience - AI agents - and they find sites through `llms.txt`, `agents.md`, the AI-bot rules in your robots.txt, MCP server cards, and now WebMCP. Almost no SEO tool checks any of it. I want a score and a copy-paste checklist for whether your site is ready for the agents already crawling it.
+- **A printable report.** A proper A4 document you can hand a client, not a slide deck.
+
+Got a weird edge case you wish a tool caught? Tell me - that's exactly how the merged GSC×crawl checks got built.
+
 ## Contributing
 
 Issues and PRs welcome. The check registry (`src/audit/checks.ts`) is built to be extended - each check is a pure read over the joined data that returns findings with evidence, so adding one is fairly self-contained. There's an end-to-end smoke test (`npm run smoke`) and per-feature probes (`npm run probe:*`) to keep you honest.
