@@ -23,7 +23,7 @@ export interface DashboardData {
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
-  cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; urls: { url: string; impressions: number; clicks: number; position: number }[] }[];
+  cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; crossType: boolean; urls: { url: string; impressions: number; clicks: number; position: number; template: string }[] }[];
   brandedSplit?: { brand: string; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number; priorNonBrandedClicks: number };
   topKeywords?: {
     query: string;
@@ -73,7 +73,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '3';
+const PAYLOAD_VERSION = '4';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -391,9 +391,11 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     });
 
     // Cannibalisation table — the full list (not just the 6 braided). One query for every
-    // (query,page_key) pair that competes, grouped client-side into a per-query verdict. 'split' =
-    // clicks fragmented across URLs (consolidate); 'dominant' = one URL wins most clicks (lower
-    // urgency, differentiate the rest). Fact-based: real impressions/clicks/position per URL.
+    // (query,page_key) pair that competes, grouped client-side. Verdict by IMPRESSION share (robust:
+    // impressions are always present, so a single noise click can't flip it): 'dominant' = Google
+    // overwhelmingly shows one URL (≥70%, low urgency); 'split' = it rotates between URLs
+    // (consolidate). crossType = the competing URLs are DIFFERENT page types (e.g. a category page
+    // and an article) — the clearest intent confusion and the most actionable to resolve.
     const cannRows = db.db.prepare(
       `WITH pp AS (SELECT query, page_key, SUM(impressions) imp, SUM(clicks) clk, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
                    FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${UB} AND date > date(?, '-90 days')
@@ -401,23 +403,27 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
             multi AS (SELECT query FROM pp GROUP BY query HAVING COUNT(*) >= 2)
        SELECT pp.query, pp.page_key, pp.imp, pp.clk, pp.pos FROM pp JOIN multi ON multi.query = pp.query
        ORDER BY pp.query, pp.imp DESC`).all(maxDate) as { query: string; page_key: string; imp: number; clk: number; pos: number }[];
-    const cannMap = new Map<string, { url: string; impressions: number; clicks: number; position: number }[]>();
+    const cannMap = new Map<string, { url: string; impressions: number; clicks: number; position: number; template: string }[]>();
     for (const r of cannRows) {
       const arr = cannMap.get(r.query) ?? [];
-      arr.push({ url: r.page_key, impressions: r.imp, clicks: r.clk, position: Math.round(r.pos * 10) / 10 });
+      arr.push({ url: r.page_key, impressions: r.imp, clicks: r.clk, position: Math.round(r.pos * 10) / 10, template: templateBucket(r.page_key) });
       cannMap.set(r.query, arr);
     }
     const cannibalisationTable = [...cannMap.entries()].map(([query, urls]) => {
       const totalImpressions = urls.reduce((s, u) => s + u.impressions, 0);
       const totalClicks = urls.reduce((s, u) => s + u.clicks, 0);
-      // Judge dominance by clicks when there are enough to be meaningful; otherwise fall back to
-      // impression share (a query with ~0 clicks across 5 URLs is fragmented, not "dominant").
-      const share = (sel: (u: typeof urls[number]) => number, total: number): number =>
-        total > 0 ? Math.max(...urls.map(sel)) / total : 0;
-      const dominant = totalClicks >= 5 ? share(u => u.clicks, totalClicks) : share(u => u.impressions, totalImpressions);
-      const verdict: 'split' | 'dominant' = dominant < 0.8 ? 'split' : 'dominant';
-      return { query, urlCount: urls.length, totalImpressions, totalClicks, verdict, urls: urls.slice(0, 6) };
-    }).sort((a, b) => b.totalImpressions - a.totalImpressions).slice(0, 40);
+      // Impression share of the most-shown URL — robust to click noise (the old click-share verdict
+      // could flip 'dominant' on a single click in the 5–10 total-clicks band).
+      const imprShare = totalImpressions > 0 ? Math.max(...urls.map(u => u.impressions)) / totalImpressions : 0;
+      const verdict: 'split' | 'dominant' = imprShare >= 0.7 ? 'dominant' : 'split';
+      // Cross-type = the competing URLs span 2+ page templates (e.g. a /category page vs an article).
+      const crossType = new Set(urls.map(u => u.template)).size >= 2;
+      return { query, urlCount: urls.length, totalImpressions, totalClicks, verdict, crossType, urls: urls.slice(0, 6) };
+    }).sort((a, b) =>
+      (Number(b.crossType) - Number(a.crossType)) ||                                   // cross-type first (most actionable)
+      ((a.verdict === 'split' ? 0 : 1) - (b.verdict === 'split' ? 0 : 1)) ||           // then split before dominant
+      (b.totalImpressions - a.totalImpressions),                                       // then by reach
+    ).slice(0, 40);
 
     const payload: DashboardData = {
       siteUrl,

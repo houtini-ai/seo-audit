@@ -13,7 +13,7 @@ interface DashboardData {
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
-  cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; urls: { url: string; impressions: number; clicks: number; position: number }[] }[];
+  cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; crossType: boolean; urls: { url: string; impressions: number; clicks: number; position: number; template: string }[] }[];
   brandedSplit?: { brand: string; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number; priorNonBrandedClicks: number };
   topKeywords?: { query: string; clicks: number; prevClicks: number; clicksChange: number; position: number; prevPosition: number }[];
   rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
@@ -707,12 +707,14 @@ function render(data: DashboardData): void {
         const verd = q.verdict === 'split'
           ? '<span class="impact impact-l">Split</span>'
           : '<span class="impact impact-s">Dominant</span>';
+        // Cross-type (different page templates competing) is the most actionable — lead with it.
+        const cross = q.crossType ? '<span class="impact impact-xl">Cross-type</span>' : '';
         const rows = q.urls.map(u => {
           const path = esc((u.url || '').replace(/^https?:\/\/[^/]+/, '') || '/');
-          return `<div class="rec-ex"><a class="rec-url" href="${esc(u.url || '')}" title="${esc(u.url || '')}" target="_blank" rel="noopener">${path}</a><span class="rec-ex-detail">pos ${u.position}</span><span class="rec-ex-traf">${fmt(u.clicks)} clicks · ${fmt(u.impressions)} impr</span></div>`;
+          return `<div class="rec-ex"><a class="rec-url" href="${esc(u.url || '')}" title="${esc(u.url || '')}" target="_blank" rel="noopener">${path}</a><span class="cann-type">${esc(u.template)}</span><span class="rec-ex-detail">pos ${u.position}</span><span class="rec-ex-traf">${fmt(u.clicks)} clicks · ${fmt(u.impressions)} impr</span></div>`;
         }).join('');
         return `<details class="rec-acc"><summary>` +
-          `${verd}<span class="rec-title">“${esc(q.query)}”</span>` +
+          `${cross}${verd}<span class="rec-title">“${esc(q.query)}”</span>` +
           `<span class="rec-count">${q.urlCount} URLs · ${fmt(q.totalClicks)} clicks · ${fmt(q.totalImpressions)} impr</span><span class="rec-chev" aria-hidden="true">›</span>` +
           `</summary><div class="rec-body"><div class="rec-examples"><div class="rec-label">Competing URLs</div>${rows}</div></div></details>`;
       }).join('')
