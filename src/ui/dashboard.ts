@@ -374,6 +374,20 @@ function render(data: DashboardData): void {
     $('cannSummary').textContent = 'No contested queries found.';
   }
 
+  // 0d) Top internally-linked pages with their current status code (a non-200 high up = equity leak)
+  const tlp = data.topLinkedPages ?? [];
+  const statusBadge = (s: number | null): string => {
+    if (s == null) return '<span class="cat cat-neutral">?</span>';
+    const cls = s === 200 ? 'cat-up' : s >= 400 ? 'cat-down' : s >= 300 ? 'cat-warn' : 'cat-neutral';
+    return `<span class="cat ${cls}">${s}</span>`;
+  };
+  $('topLinkedTable').innerHTML = tlp.length
+    ? tableHtml(['URL', 'Inlinks', 'Status', 'Indexable'], tlp.map(p =>
+      `<tr><td class="url" title="${esc(p.url)}">${esc(shortPath(p.url))}</td><td class="num">${p.inlinks}</td><td>${statusBadge(p.status)}</td><td>${p.indexable ? '✓' : '✗ ' + esc(p.reason || '')}</td></tr>`))
+    : '<p class="muted">Run a crawl (refresh_property) to see the internal-link hierarchy.</p>';
+  const tlpBroken = tlp.filter(p => p.status !== 200).length;
+  $('topLinkedSummary').textContent = `Top ${tlp.length} internally-linked pages by inlink count; ${tlpBroken} return a non-200 status.`;
+
   // 1) Ranking distribution over time (stacked area) — flagship #1
   const dist = data.rankingDistribution ?? [];
   const buckets = [

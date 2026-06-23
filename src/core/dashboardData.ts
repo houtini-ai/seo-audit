@@ -37,6 +37,8 @@ export interface DashboardData {
   templateMismatch?: { template: string; pages: number; iprPct: number; trafficPct: number }[];
   // Cannibalisation braids: per contested query, each competing URL's weekly average position.
   cannibalisation?: { query: string; urls: { url: string; points: { week: string; position: number }[] }[] }[];
+  // Top internally-linked pages + their live status — a non-200 high up here is a big equity leak.
+  topLinkedPages?: { url: string; inlinks: number; status: number | null; indexable: boolean; reason: string | null }[];
   findings?: {
     runId: string;
     total: number;
@@ -247,6 +249,11 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         .sort((x, y) => y.iprPct - x.iprPct).slice(0, 8);
     }
 
+    // Top internally-linked pages with their current status code (most-linked first). A 404/redirect
+    // high in this list is a major leak — lots of internal links pointing at a dead/redirected URL.
+    const topLinkedPages = (db.db.prepare(`SELECT url_key, COALESCE(inlink_count,0) inl, status_code, indexable, indexable_reason FROM pages WHERE is_internal=1 ORDER BY inlink_count DESC, status_code LIMIT 30`).all() as any[])
+      .map(p => ({ url: p.url_key, inlinks: p.inl, status: p.status_code, indexable: !!p.indexable, reason: p.indexable_reason }));
+
     // Cannibalisation braids — queries where multiple URLs compete, each URL's weekly avg position.
     // The "braid" of crossing lines over time is Google thrashing between URLs (severity = tangle).
     const cannQueries = db.db.prepare(
@@ -273,6 +280,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       equityScatter,
       templateMismatch,
       cannibalisation,
+      topLinkedPages,
       rankHistory,
       dateAlignment,
       rankingDistribution,
