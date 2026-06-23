@@ -23,6 +23,7 @@ export interface DashboardData {
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
+  cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; urls: { url: string; impressions: number; clicks: number; position: number }[] }[];
   topKeywords?: {
     query: string;
     clicks: number;
@@ -337,12 +338,42 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       };
     });
 
+    // Cannibalisation table — the full list (not just the 6 braided). One query for every
+    // (query,page_key) pair that competes, grouped client-side into a per-query verdict. 'split' =
+    // clicks fragmented across URLs (consolidate); 'dominant' = one URL wins most clicks (lower
+    // urgency, differentiate the rest). Fact-based: real impressions/clicks/position per URL.
+    const cannRows = db.db.prepare(
+      `WITH pp AS (SELECT query, page_key, SUM(impressions) imp, SUM(clicks) clk, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+                   FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${UB} AND date > date(?, '-90 days')
+                   GROUP BY query, page_key HAVING pos < 20 AND imp >= 30),
+            multi AS (SELECT query FROM pp GROUP BY query HAVING COUNT(*) >= 2)
+       SELECT pp.query, pp.page_key, pp.imp, pp.clk, pp.pos FROM pp JOIN multi ON multi.query = pp.query
+       ORDER BY pp.query, pp.imp DESC`).all(maxDate) as { query: string; page_key: string; imp: number; clk: number; pos: number }[];
+    const cannMap = new Map<string, { url: string; impressions: number; clicks: number; position: number }[]>();
+    for (const r of cannRows) {
+      const arr = cannMap.get(r.query) ?? [];
+      arr.push({ url: r.page_key, impressions: r.imp, clicks: r.clk, position: Math.round(r.pos * 10) / 10 });
+      cannMap.set(r.query, arr);
+    }
+    const cannibalisationTable = [...cannMap.entries()].map(([query, urls]) => {
+      const totalImpressions = urls.reduce((s, u) => s + u.impressions, 0);
+      const totalClicks = urls.reduce((s, u) => s + u.clicks, 0);
+      // Judge dominance by clicks when there are enough to be meaningful; otherwise fall back to
+      // impression share (a query with ~0 clicks across 5 URLs is fragmented, not "dominant").
+      const share = (sel: (u: typeof urls[number]) => number, total: number): number =>
+        total > 0 ? Math.max(...urls.map(sel)) / total : 0;
+      const dominant = totalClicks >= 5 ? share(u => u.clicks, totalClicks) : share(u => u.impressions, totalImpressions);
+      const verdict: 'split' | 'dominant' = dominant < 0.8 ? 'split' : 'dominant';
+      return { query, urlCount: urls.length, totalImpressions, totalClicks, verdict, urls: urls.slice(0, 6) };
+    }).sort((a, b) => b.totalImpressions - a.totalImpressions).slice(0, 40);
+
     return {
       siteUrl,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate, rawMaxDate: fresh.rawMax ?? maxDate, trimmedDays: fresh.trimmedDays },
       equityScatter,
       templateMismatch,
       cannibalisation,
+      cannibalisationTable,
       topLinkedPages,
       agentReadiness,
       rankHistory,

@@ -13,6 +13,7 @@ interface DashboardData {
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
+  cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; urls: { url: string; impressions: number; clicks: number; position: number }[] }[];
   topKeywords?: { query: string; clicks: number; prevClicks: number; clicksChange: number; position: number; prevPosition: number }[];
   rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
   dateAlignment?: { note: string };
@@ -667,6 +668,24 @@ function render(data: DashboardData): void {
   $('contentDecayTable').innerHTML = decay.length
     ? `<table><thead><tr><th>Page</th><th class="num">Was</th><th class="num">Now</th><th class="num">Drop</th><th class="num">Clicks lost</th><th class="num">Impr</th><th class="num">Pos</th></tr></thead><tbody>${decayRows}</tbody></table>`
     : '<p class="muted">No significant content decay — no page lost 20%+ of its clicks vs the prior 28 days.</p>';
+
+  // Cannibalisation — accordion per contested query, expand to the competing URLs
+  const cannT = data.cannibalisationTable ?? [];
+  $('cannTable').innerHTML = cannT.length
+    ? cannT.map(q => {
+        const verd = q.verdict === 'split'
+          ? '<span class="impact impact-l">Split</span>'
+          : '<span class="impact impact-s">Dominant</span>';
+        const rows = q.urls.map(u => {
+          const path = esc((u.url || '').replace(/^https?:\/\/[^/]+/, '') || '/');
+          return `<div class="rec-ex"><a class="rec-url" href="${esc(u.url || '')}" title="${esc(u.url || '')}" target="_blank" rel="noopener">${path}</a><span class="rec-ex-detail">pos ${u.position}</span><span class="rec-ex-traf">${fmt(u.clicks)} clicks · ${fmt(u.impressions)} impr</span></div>`;
+        }).join('');
+        return `<details class="rec-acc"><summary>` +
+          `${verd}<span class="rec-title">“${esc(q.query)}”</span>` +
+          `<span class="rec-count">${q.urlCount} URLs · ${fmt(q.totalClicks)} clicks · ${fmt(q.totalImpressions)} impr</span><span class="rec-chev" aria-hidden="true">›</span>` +
+          `</summary><div class="rec-body"><div class="rec-examples"><div class="rec-label">Competing URLs</div>${rows}</div></div></details>`;
+      }).join('')
+    : '<p class="muted">No cannibalisation detected — no query has 2+ of your URLs competing with real impressions.</p>';
 
   // 4) Top keyword performance (green/red + signed label so colour isn't the only cue)
   const kw = (data.topKeywords ?? []).slice().reverse(); // horizontal bar reads top-down
