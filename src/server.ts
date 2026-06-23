@@ -12,6 +12,7 @@ import { getDashboardData } from './core/dashboardData.js';
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 import { buildAuditMarkdown } from './audit/report.js';
 import { diffLatest, buildDriftMarkdown } from './audit/drift.js';
+import { checkAgentReadiness, buildAgentReadinessMarkdown } from './core/agentReadiness.js';
 import { detectTemplates } from './audit/templates.js';
 import { suggestPages } from './audit/opportunities.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
@@ -260,6 +261,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           structuredContent: d as unknown as Record<string, unknown>,
         };
       } finally { adb.close(); }
+    },
+  );
+
+  // check_agent_readiness — is the site ready for AI agents? (the agentic-SEO / GEO frontier)
+  server.registerTool(
+    'check_agent_readiness',
+    {
+      title: 'Check agent readiness (AI-agent / GEO signals)',
+      description: 'Probe a site for AI-agent readiness — the signals agents use to discover and use it: robots.txt AI-bot rules + Content Signals, sitemap, Link headers, llms.txt, agents.md, Markdown content negotiation, Web Bot Auth, MCP server card, Agent Skills, API Catalog, OAuth discovery. Returns a 0–100 score, a level (Basic web presence → Agent-native), and a per-check checklist with copy-paste fixes. Live HTTP probes of the property origin (no crawl/GSC needed). Modelled on Cloudflare\'s isitagentready.com.',
+      inputSchema: { siteUrl: z.string() },
+    },
+    async ({ siteUrl }) => {
+      const r = await checkAgentReadiness(siteUrl);
+      return {
+        content: [{ type: 'text', text: buildAgentReadinessMarkdown(r) }],
+        structuredContent: r as unknown as Record<string, unknown>,
+      };
     },
   );
 
