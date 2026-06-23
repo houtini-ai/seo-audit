@@ -81,11 +81,16 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
   try {
     // Cache: the payload is ~20 GROUP-BY scans over search_analytics (~6s at 1.8M rows) but only
     // changes on sync/audit. Probe a cheap data-version; serve the cached JSON on a hit.
+    // Probe every table the payload reads from — search_analytics + pages + the latest audit run,
+    // PLUS agent_readiness and rank_history (written by check_agent_readiness / track_ranks via their
+    // own paths). Omitting the latter two would serve a stale dashboard after those tools run.
     const ver = db.db.prepare(
       `SELECT (SELECT MAX(date)||':'||COALESCE(MAX(rowid),0) FROM search_analytics) sa,
               (SELECT run_id FROM audit_runs ORDER BY started_at DESC LIMIT 1) run,
-              (SELECT COALESCE(MAX(rowid),0) FROM pages) pg`).get() as { sa: string | null; run: string | null; pg: number };
-    const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}`;
+              (SELECT COALESCE(MAX(rowid),0) FROM pages) pg,
+              (SELECT COALESCE(MAX(checked_at),'') FROM agent_readiness) ar,
+              (SELECT COUNT(*)||':'||COALESCE(MAX(period),'') FROM rank_history) rh`).get() as { sa: string | null; run: string | null; pg: number; ar: string | null; rh: string | null };
+    const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}|${ver.ar ?? ''}|${ver.rh ?? ''}`;
     const hit = db.db.prepare('SELECT payload FROM dashboard_cache WHERE id=1 AND version=?').get(version) as { payload: string } | undefined;
     if (hit) return JSON.parse(hit.payload) as DashboardData;
 
