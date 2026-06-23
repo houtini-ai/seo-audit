@@ -221,6 +221,12 @@ body {
 .exec-actions li::before { content: counter(ea); font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); min-width: 14px; }
 .exec-where { color: var(--text-muted); font-size: 12px; }
 
+/* Segmented control — Issues & fixes view toggle */
+.seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--bg-input); border-radius: var(--radius-sm); margin: 6px 0 16px; }
+.seg-btn { font-size: 13px; font-weight: 500; color: var(--text-muted); background: transparent; border: none; border-radius: 5px; padding: 6px 14px; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.seg-btn:hover { color: var(--text-secondary); }
+.seg-btn.active { color: var(--text-primary); background: var(--bg-card); box-shadow: var(--shadow-card); }
+
 /* Technical recommendations — accordion (native <details>) */
 .recs-controls { display: flex; gap: 8px; margin: 4px 0 16px; }
 .recs-btn { font-size: 12px; font-weight: 500; color: var(--text-secondary); background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 5px 11px; cursor: pointer; }

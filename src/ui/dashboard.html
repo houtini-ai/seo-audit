@@ -16,8 +16,7 @@
       </div>
       <nav class="tabs" id="tabs" role="tablist">
         <button class="tab-btn active" data-panel="overview" role="tab">Overview</button>
-        <button class="tab-btn" data-panel="findings" role="tab">Findings</button>
-        <button class="tab-btn" data-panel="recommendations" role="tab">Recommendations</button>
+        <button class="tab-btn" data-panel="issues" role="tab">Issues &amp; fixes</button>
         <button class="tab-btn" data-panel="opportunities" role="tab">Opportunities</button>
         <button class="tab-btn" data-panel="search" role="tab">Search performance</button>
         <button class="tab-btn" data-panel="architecture" role="tab">Architecture</button>
@@ -31,29 +30,25 @@
           <div id="execSummary"></div>
         </div>
         <div class="exportbar" id="exportbar"></div>
-        <div class="chart-card">
-          <h3>Agent readiness — is your site ready for AI agents?</h3>
-          <div class="hint">How discoverable and usable your site is for AI agents — llms.txt, agents.md, AI-bot rules, MCP server card and more. Run <code>check_agent_readiness</code> to populate.</div>
-          <div id="agentPanel"></div>
-        </div>
       </section>
 
-      <section class="tab-panel" data-panel="findings" role="tabpanel">
+      <section class="tab-panel" data-panel="issues" role="tabpanel">
         <div class="chart-card" id="findingsCard">
-          <h3>Issues found — prioritised</h3>
-          <div class="hint">Ranked by impact ÷ effort using real traffic at risk. Run <code>run_audit</code> to populate.</div>
-          <p class="sr-only" id="findingsSummary"></p>
-          <div class="sev-chips" id="sevChips" role="group" aria-label="Filter findings by severity"></div>
-          <div id="findingsTable" class="findings-table"></div>
-        </div>
-      </section>
-
-      <section class="tab-panel" data-panel="recommendations" role="tabpanel">
-        <div class="chart-card" id="recsCard">
-          <h3>Technical recommendations</h3>
-          <div class="hint">Every issue grouped by category. Click any row to expand the recommended fix and real examples from your site — the audit deliverable.</div>
-          <div class="recs-controls" id="recsControls"></div>
-          <div id="recs"></div>
+          <h3>Issues &amp; fixes</h3>
+          <div class="hint">Every issue found in the audit, ranked by impact ÷ effort using real traffic at risk. Switch to <strong>By category</strong> for the recommended fix and real examples. Run <code>run_audit</code> to populate.</div>
+          <div class="seg" id="issuesToggle" role="tablist" aria-label="Issues view">
+            <button class="seg-btn active" data-view="list" role="tab">Prioritised list</button>
+            <button class="seg-btn" data-view="grouped" role="tab">By category (with fixes)</button>
+          </div>
+          <div id="issuesListView">
+            <p class="sr-only" id="findingsSummary"></p>
+            <div class="sev-chips" id="sevChips" role="group" aria-label="Filter findings by severity"></div>
+            <div id="findingsTable" class="findings-table"></div>
+          </div>
+          <div id="issuesGroupedView" style="display:none">
+            <div class="recs-controls" id="recsControls"></div>
+            <div id="recs"></div>
+          </div>
         </div>
       </section>
 
@@ -77,6 +72,13 @@
           <h3>Keyword cannibalisation — competing URLs</h3>
           <div class="hint">Queries where 2+ of your URLs compete for the same term (last 90 days). Click a row to see the competing pages. <span style="color:var(--red)">Split</span> = clicks fragmented across URLs (consolidate into one strong page); <span style="color:var(--text-muted)">Dominant</span> = one URL already wins most clicks (differentiate or noindex the rest).</div>
           <div id="cannTable"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Cannibalisation over time — who Google picks</h3>
+          <div class="hint">Pick a contested query to see each competing URL's average position week by week. Lines crossing = Google thrashing between your URLs — the case for consolidating them.</div>
+          <select id="cannSelect" aria-label="Choose a contested query"></select>
+          <p class="sr-only" id="cannSummary"></p>
+          <div class="chart" id="cannChart" role="img" aria-label="Competing URL positions over time for a contested query"></div>
         </div>
       </section>
 
@@ -104,19 +106,6 @@
           <div class="hint">Average position (line, higher = better rank) and daily clicks (bars), last 90 days</div>
           <p class="sr-only" id="rankSummary"></p>
           <div class="chart" id="rankChart" role="img" aria-label="Average position and clicks over time"></div>
-        </div>
-        <div class="chart-card">
-          <h3>Striking-distance keywords</h3>
-          <div class="hint">Queries ranking 11–20 (page 2) with real impressions — the low-effort wins. Bubble size = clicks.</div>
-          <p class="sr-only" id="strikeSummary"></p>
-          <div class="chart" id="strikeChart" role="img" aria-label="Striking-distance keywords scatter"></div>
-        </div>
-        <div class="chart-card">
-          <h3>Cannibalisation — who Google picks, week by week</h3>
-          <div class="hint">For a contested query, each competing URL's average position over time. Lines crossing = Google thrashing between your URLs (consolidate them).</div>
-          <select id="cannSelect" aria-label="Choose a contested query"></select>
-          <p class="sr-only" id="cannSummary"></p>
-          <div class="chart" id="cannChart" role="img" aria-label="Competing URL positions over time for a contested query"></div>
         </div>
         <div class="chart-card">
           <h3>Top keyword performance — 28d vs prior</h3>
@@ -164,6 +153,11 @@
           <div class="hint">Your most internally-linked URLs. A non-200 status near the top means lots of internal links point at a dead or redirected page — a direct equity leak.</div>
           <p class="sr-only" id="topLinkedSummary"></p>
           <div id="topLinkedTable"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Agent readiness — is your site ready for AI agents?</h3>
+          <div class="hint">How discoverable and usable your site is for AI agents — llms.txt, agents.md, AI-bot rules, MCP server card and more. Run <code>check_agent_readiness</code> to populate.</div>
+          <div id="agentPanel"></div>
         </div>
       </section>
     </div>

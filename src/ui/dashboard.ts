@@ -128,7 +128,6 @@ let currentData: DashboardData | null = null;
 let distChart: echarts.ECharts | null = null;
 let rankHistChart: echarts.ECharts | null = null;
 let rankChart: echarts.ECharts | null = null;
-let strikeChart: echarts.ECharts | null = null;
 let kwChart: echarts.ECharts | null = null;
 let mismatchChart: echarts.ECharts | null = null;
 let scatterChart: echarts.ECharts | null = null;
@@ -179,7 +178,7 @@ app.ontoolresult = (result) => {
   if (sc?.siteUrl) loadDashboard(sc.siteUrl);
 };
 
-window.addEventListener('resize', () => { distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); strikeChart?.resize(); kwChart?.resize(); });
+window.addEventListener('resize', () => { distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); kwChart?.resize(); });
 
 const SEV_ORDER = ['crit', 'high', 'med', 'low', 'info'] as const;
 const SEV_LABEL: Record<string, string> = { crit: 'Critical', high: 'High', med: 'Medium', low: 'Low', info: 'Info' };
@@ -611,24 +610,7 @@ function render(data: DashboardData): void {
   });
   $('rankSummary').textContent = `Average Google position (higher is better) and daily clicks over ${trend.length} days.`;
 
-  // 3) Striking-distance keywords (bubble) — flagship #2
-  const strike = data.strikingDistance ?? [];
-  strikeChart?.dispose();
-  strikeChart = echarts.init($('strikeChart'));
-  strikeChart.setOption({
-    ...ARIA,
-    grid: { left: 60, right: 24, top: 20, bottom: 40 },
-    tooltip: { trigger: 'item', formatter: (p: any) => `${strike[p.dataIndex].query}<br/>pos ${p.value[0]}, ${p.value[1]} impressions, ${strike[p.dataIndex].clicks} clicks` },
-    xAxis: { type: 'value', name: 'avg position', min: 10, max: 20, inverse: true, ...axis },
-    yAxis: { type: 'value', name: 'impressions', ...axis },
-    series: [{
-      type: 'scatter',
-      symbolSize: (v: number[]) => Math.max(6, Math.min(42, 6 + Math.sqrt(v[2]) * 3)),
-      itemStyle: { color: col.accent, opacity: 0.6 },
-      data: strike.map(s => [s.position, s.impressions, s.clicks]),
-    }],
-  });
-  $('strikeSummary').textContent = `${strike.length} queries ranking on page two (positions 11–20) with impressions — page-1 opportunities; bubble size is clicks.`;
+  // (Striking-distance now lives in the Opportunities quick-wins matrix — no separate scatter.)
 
   // 3b) Quick-wins matrix — CTR vs position against the expected-CTR curve, coloured by opportunity
   const qw = data.quickWins ?? [];
@@ -758,7 +740,7 @@ function render(data: DashboardData): void {
 // Tabbed nav: switch panels, and resize the ECharts in the newly-shown panel — charts created in a
 // display:none panel lay out at 0×0, so they must be resized once their container is visible.
 function setupTabs(): void {
-  const live = (): (echarts.ECharts | null)[] => [distChart, rankHistChart, rankChart, strikeChart, kwChart, mismatchChart, scatterChart, cannChart, quickWinsChart];
+  const live = (): (echarts.ECharts | null)[] => [distChart, rankHistChart, rankChart, kwChart, mismatchChart, scatterChart, cannChart, quickWinsChart];
   const resizeVisible = (): void => { for (const c of live()) { try { if (c && (c.getDom() as HTMLElement).offsetParent !== null) c.resize(); } catch { /* disposed */ } } };
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
     btn.onclick = (): void => {
@@ -766,6 +748,17 @@ function setupTabs(): void {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
       document.querySelectorAll<HTMLElement>('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === panel));
       resizeVisible();
+    };
+  });
+
+  // Issues & fixes: toggle between the prioritised list and the by-category (with fixes) view.
+  const list = $('issuesListView'), grouped = $('issuesGroupedView');
+  document.querySelectorAll<HTMLButtonElement>('#issuesToggle .seg-btn').forEach(btn => {
+    btn.onclick = (): void => {
+      const showList = btn.dataset.view === 'list';
+      document.querySelectorAll('#issuesToggle .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+      list.style.display = showList ? 'block' : 'none';
+      grouped.style.display = showList ? 'none' : 'block';
     };
   });
 }
