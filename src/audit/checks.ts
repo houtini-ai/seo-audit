@@ -115,11 +115,12 @@ export const CHECKS: CheckDef[] = [
   },
   // ── Indexation / crawlability ───────────────────────────────────────────
   {
-    id: 'canonical-mismatch', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
-    title: 'Canonical points elsewhere', fix: 'Confirm the declared canonical is intentional; self-canonical by default.',
-    run: (c) => rows(c, `SELECT url_key urlKey, canonical_url FROM pages WHERE status_code=200 AND canonical_key IS NOT NULL AND canonical_key != url_key`).map(r => ({ urlKey: r.urlKey, evidence: { canonical: r.canonical_url } })),
-  },
-  {
+    // RETIRED: 'canonical-mismatch' (was HIGH). A 200 page whose canonical points to a *healthy*
+    // 200 indexable URL is intentional consolidation (slug variants, category merges) — normal SEO,
+    // not an issue, yet it fired HIGH on every such page (pure noise). Every actionable case is
+    // already covered by a higher-signal check: broken-canonical-target (unhealthy target),
+    // canonical-ignored (Google ranks the non-canonical page), canonical-conflict (GSC disagrees).
+    // So plain "canonical points elsewhere" has no high-confidence residual — removed.
     id: 'broken-internal-links', category: 'crawlability', severity: 'crit', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
     title: 'Internal links to 4xx/5xx', fix: 'Repoint internal links to a live, canonical URL.',
     run: (c) => rows(c, `SELECT l.target_key urlKey, p.status_code status, COUNT(DISTINCT l.source_key) sources FROM links l JOIN pages p ON p.url_key=l.target_key WHERE l.is_internal=1 AND p.status_code >= 400 AND p.status_code NOT IN (429,503) GROUP BY l.target_key`).map(r => ({ urlKey: r.urlKey, evidence: { status: r.status, linkingPages: r.sources } })),
@@ -304,7 +305,10 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'ctr-below-expected', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'CTR far below position-expected', fix: 'Rewrite title/meta — ranking well but under-clicked (snippet opportunity).',
-    run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key HAVING SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) <= 10 AND SUM(impressions) >= 100`)
+    // High-confidence floor: ≥500 impressions/28d. A title/meta rewrite (HIGH, ~3h) is only
+    // worth flagging where the snippet earns enough visibility for a CTR lift to pay back — a
+    // 100-impression page at 1% vs 3% expected is a 2-clicks gap, not a HIGH issue.
+    run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key HAVING SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) <= 10 AND SUM(impressions) >= 500`)
       .map(r => { const ctr = r.clicks / r.impressions; const exp = expectedCtr(r.position); return { urlKey: r.urlKey, ctr, exp, position: r.position, impressions: r.impressions }; })
       .filter(x => x.ctr < x.exp * 0.5)
       .map(x => {
