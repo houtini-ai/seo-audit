@@ -118,25 +118,40 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
         const E = Math.max(chk.effortBase * scale, 0.0001); // effort in ~hours
         const Y = yieldOf(chk);
         for (const f of findings) {
-          const traf: Traffic = (f.urlKey ? trafficMap.get(f.urlKey) : null) ?? { clicks: 0, impressions: 0, position: 0 };
+          const ev = (f.evidence ?? {}) as any;
+          const evImpr = Number(ev.impressions) || 0;
+          const evClicks = Number(ev.clicks) || 0;
+          const evPos = parseFloat(String(ev.positions ?? ev.position ?? '')) || 0;
+          const hasQuery = ev.query != null && String(ev.query).length > 0;
+          const pageTraf = f.urlKey ? trafficMap.get(f.urlKey) : null;
+          // Choose the right stake per finding shape:
+          //  • per-query findings (evidence has a `query`: striking-distance, cannibalisation) →
+          //    the query's OWN impressions/clicks (so 2.7k shows 2.7k, not the page's 257k total,
+          //    and multiple per-query findings on one page get DISTINCT priorities);
+          //  • page-level findings on a known URL (ctr-below-expected, missing-meta, …) →
+          //    the page's real GSC traffic (keeps its actual clicks, not 0);
+          //  • null-url findings that still carry evidence traffic → that evidence.
+          let traf: Traffic;
+          if (hasQuery) {
+            traf = { clicks: evClicks, impressions: evImpr, position: evPos || (pageTraf?.position ?? 0) };
+          } else if (pageTraf) {
+            traf = pageTraf;
+          } else if (evImpr > 0 || evClicks > 0) {
+            traf = { clicks: evClicks, impressions: evImpr, position: evPos };
+          } else {
+            traf = { clicks: 0, impressions: 0, position: 0 };
+          }
           // T = expected monthly clicks at stake: max(current clicks recovered, potential from
-          // impressions × CTR@position).
+          // impressions × CTR@position). Site-wide findings with no traffic signal fall back to a
+          // severity fraction of total site clicks.
           let T: number;
-          if (f.urlKey) {
+          if (traf.impressions > 0 || traf.clicks > 0) {
             const potential = traf.impressions > 0 ? traf.impressions * expectedCtr(traf.position || 10) : 0;
             T = Math.max(traf.clicks, potential);
+          } else if (!f.urlKey) {
+            T = siteClicks * SITEWIDE_FRACTION[chk.severity];
           } else {
-            // Query/site-level findings (no url): rank by the query's OWN opportunity if the check
-            // put impressions/clicks in evidence (e.g. keyword-cannibalisation) — so a 57k-impression
-            // query outranks a 12k one — else fall back to a severity fraction of total site clicks.
-            const evImpr = Number((f.evidence as any)?.impressions) || 0;
-            const evClicks = Number((f.evidence as any)?.clicks) || 0;
-            if (evImpr > 0 || evClicks > 0) {
-              const bestPos = parseFloat(String((f.evidence as any)?.positions ?? (f.evidence as any)?.position ?? '')) || 10;
-              T = Math.max(evClicks, evImpr * expectedCtr(bestPos));
-            } else {
-              T = siteClicks * SITEWIDE_FRACTION[chk.severity];
-            }
+            T = 0; // floored below
           }
           T = Math.max(T, SEVERITY_FLOOR[chk.severity]); // floor so zero-GSC findings aren't lost
           const priority = (T * Y * chk.certainty) / E; // expected clicks per dev-hour

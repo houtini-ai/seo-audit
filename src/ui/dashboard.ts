@@ -244,12 +244,13 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
 
   const drawTable = (): void => {
     const rows = fc.top.filter(f => active === 'all' || f.severity === active).slice(0, 25).map(f => {
-      const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk);
+      const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk), ev = safeJson(f.evidence);
       const path = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
       const pct = Math.max(3, Math.round((f.priority / maxPrio) * 100));
       const sz = (f.size ?? '').toString();
       const szClass = 'impact-' + (sz.toLowerCase() || 's');
-      return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}</td>` +
+      const qLabel = ev.query ? ` <span style="color:var(--text-muted);font-size:12px">“${esc(String(ev.query))}”</span>` : '';
+      return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}${qLabel}</td>` +
         `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
         `<td class="num">${traf.impressions || 0}</td>` +
         `<td class="prio"><span class="impact ${szClass}">${esc(sz || '–')} ${f.impact ?? pct}</span></td>` +
