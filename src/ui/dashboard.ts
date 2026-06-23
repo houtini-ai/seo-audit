@@ -252,7 +252,7 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
       return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}</td>` +
         `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
         `<td class="num">${traf.impressions || 0}</td>` +
-        `<td class="prio"><span class="prio-wrap"><span class="prio-bar s-${f.severity}" style="width:${pct}%"></span><span class="impact ${szClass}">${esc(sz || '–')} ${f.impact ?? pct}</span></span></td>` +
+        `<td class="prio"><span class="impact ${szClass}">${esc(sz || '–')} ${f.impact ?? pct}</span></td>` +
         `<td class="fix" title="${esc(rec.text || '')}">${esc(rec.text || '')}</td></tr>`;
     });
     tableEl.innerHTML = rows.length

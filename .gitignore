@@ -29,3 +29,4 @@ crawl-tests/**/raw/
 # OS
 .DS_Store
 Thumbs.db
+.preview/
