@@ -377,6 +377,24 @@ export const CHECKS: CheckDef[] = [
       .map(r => ({ urlKey: null, evidence: { url: r.url, previousClicks: r.prevC, currentClicks: r.curC, clicksGained: r.curC - r.prevC, clicks: r.curC, impressions: r.curI, position: Math.round(r.pos * 10) / 10 } })),
   },
   {
+    id: 'traffic-to-dead-url', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Search traffic to a dead (non-200) URL', fix: 'Google still sends clicks/impressions to this URL but the crawl returns a 4xx/5xx — recover the page or 301 it to the best live equivalent so the demand isn’t lost. (The "directive contradicts reality" join: you rank for a page that no longer works.)',
+    run: (c) => c.gscMaxDate ? rows(c, `SELECT p.url_key urlKey, p.status_code st, SUM(sa.clicks) clicks, SUM(sa.impressions) impressions FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key WHERE p.status_code >= 400 AND sa.${win(c.gscMaxDate)} GROUP BY p.url_key HAVING SUM(sa.impressions) >= 10 ORDER BY clicks DESC, impressions DESC LIMIT 40`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { status: r.st, clicks: r.clicks, impressions: r.impressions, note: `HTTP ${r.st} but still earning search traffic` } })) : [],
+  },
+  {
+    id: 'impressions-rising-clicks-flat', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Impressions rising but clicks flat (CTR erosion)', fix: 'Google is showing this page MORE than it used to, yet you’re not winning more clicks — a stale title/meta, or a SERP feature (AI overview, snippet, pack) is taking them. Rewrite the snippet or target the feature.',
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 56) ? [] : rows(c, `
+      WITH cur AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos FROM search_analytics WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key),
+           prev AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i FROM search_analytics WHERE page_key IS NOT NULL AND ${winPrev(c.gscMaxDate)} GROUP BY page_key)
+      SELECT cur.page_key url, prev.i prevImpr, cur.i curImpr, prev.c prevClicks, cur.c curClicks, cur.pos pos
+      FROM cur JOIN prev ON prev.page_key=cur.page_key
+      WHERE prev.i >= 200 AND cur.i >= prev.i * 1.3 AND cur.c <= prev.c
+      ORDER BY (cur.i - prev.i) DESC LIMIT 40`)
+      .map(r => ({ urlKey: null, evidence: { url: r.url, previousImpressions: r.prevImpr, currentImpressions: r.curImpr, impressionsChange: '+' + Math.round((r.curImpr / r.prevImpr - 1) * 100) + '%', previousClicks: r.prevClicks, currentClicks: r.curClicks, impressions: r.curImpr, clicks: r.curClicks, position: Math.round(r.pos * 10) / 10 } })),
+  },
+  {
     id: 'h1-missing-top-query', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'Top query missing from the H1', fix: 'Work the page’s top-performing query into the <h1> — it ranks for this term but the main heading doesn’t mention it.',
     run: (c) => {
