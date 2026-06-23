@@ -17,6 +17,19 @@ body {
 .site { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
 .range { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
 
+/* Tabbed navigation — editorial/minimalist: text tabs, accent underline on active */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 22px; flex-wrap: wrap; }
+.tab-btn {
+  font-family: var(--font); font-size: 13px; font-weight: 500; letter-spacing: -0.005em;
+  color: var(--text-muted); background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 9px 14px; margin-bottom: -1px; cursor: pointer; transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active { color: var(--text-primary); border-bottom-color: var(--accent); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; animation: tabIn .24s cubic-bezier(0.16,1,0.3,1); }
+@keyframes tabIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
 .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
 .metric-card {
   background: var(--bg-card);

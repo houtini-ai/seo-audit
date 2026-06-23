@@ -14,116 +14,119 @@
         <div class="site" id="site"></div>
         <div class="range" id="range"></div>
       </div>
-      <div class="metrics" id="metrics"></div>
-      <div class="exportbar" id="exportbar"></div>
+      <nav class="tabs" id="tabs" role="tablist">
+        <button class="tab-btn active" data-panel="overview" role="tab">Overview</button>
+        <button class="tab-btn" data-panel="findings" role="tab">Findings &amp; fixes</button>
+        <button class="tab-btn" data-panel="search" role="tab">Search performance</button>
+        <button class="tab-btn" data-panel="architecture" role="tab">Architecture</button>
+      </nav>
 
-      <div class="chart-card" id="findingsCard">
-        <h3>Issues found — prioritised</h3>
-        <div class="hint">Ranked by impact ÷ effort using real traffic at risk. Run <code>run_audit</code> to populate.</div>
-        <p class="sr-only" id="findingsSummary"></p>
-        <div class="sev-chips" id="sevChips" role="group" aria-label="Filter findings by severity"></div>
-        <div id="findingsTable" class="findings-table"></div>
-      </div>
-
-      <div class="chart-card" id="recsCard">
-        <h3>Recommendations</h3>
-        <div class="hint">Every issue grouped by category, with a real example from your site and the suggested fix — the audit deliverable.</div>
-        <div id="recs"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Agent readiness — is your site ready for AI agents?</h3>
-        <div class="hint">How discoverable and usable your site is for AI agents — llms.txt, agents.md, AI-bot rules, MCP server card and more. Run <code>check_agent_readiness</code> to populate.</div>
-        <div id="agentPanel"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Where your link equity flows vs where traffic comes from</h3>
-        <div class="hint">Internal PageRank share vs organic traffic share, by template. A tall blue bar with little green beside it = equity flowing into a dead end.</div>
-        <p class="sr-only" id="mismatchSummary"></p>
-        <div class="chart" id="mismatchChart" role="img" aria-label="Internal equity share versus organic traffic share by template"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Equity vs reality — every URL</h3>
-        <div class="hint">Internal PageRank (x) vs impressions (y, log), coloured by template. Bottom-right = equity black holes (high authority, no traffic); top-left = starved winners (traffic, little equity).</div>
-        <p class="sr-only" id="scatterSummary"></p>
-        <div class="chart" id="scatterChart" role="img" aria-label="Internal PageRank versus impressions scatter by template"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Cannibalisation — who Google picks, week by week</h3>
-        <div class="hint">For a contested query, each competing URL's average position over time. Lines crossing = Google thrashing between your URLs (consolidate them).</div>
-        <select id="cannSelect" aria-label="Choose a contested query"></select>
-        <p class="sr-only" id="cannSummary"></p>
-        <div class="chart" id="cannChart" role="img" aria-label="Competing URL positions over time for a contested query"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Top linked pages — and their status</h3>
-        <div class="hint">Your most internally-linked URLs. A non-200 status near the top means lots of internal links point at a dead or redirected page — a direct equity leak.</div>
-        <p class="sr-only" id="topLinkedSummary"></p>
-        <div id="topLinkedTable"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Ranking distribution over time</h3>
-        <div class="hint">Impressions by position bucket — top-3 dominance vs page-2 drift, last 90 days</div>
-        <p class="sr-only" id="distSummary"></p>
-        <div class="chart" id="distChart" role="img" aria-label="Ranking distribution over time"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Search visibility over time — DataForSEO</h3>
-        <div class="hint">Ranking keywords by position bucket each month, with estimated traffic value (red line)</div>
-        <p class="sr-only" id="rankHistSummary"></p>
-        <div class="chart" id="rankHistChart" role="img" aria-label="DataForSEO ranking distribution over time"></div>
-        <div class="hint" id="alignNote"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Rank &amp; clicks over time</h3>
-        <div class="hint">Average position (line, higher = better rank) and daily clicks (bars), last 90 days</div>
-        <p class="sr-only" id="rankSummary"></p>
-        <div class="chart" id="rankChart" role="img" aria-label="Average position and clicks over time"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Striking-distance keywords</h3>
-        <div class="hint">Queries ranking 11–20 (page 2) with real impressions — the low-effort wins. Bubble size = clicks.</div>
-        <p class="sr-only" id="strikeSummary"></p>
-        <div class="chart" id="strikeChart" role="img" aria-label="Striking-distance keywords scatter"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Top keyword performance — 28d vs prior</h3>
-        <div class="hint">Green = improved · red = declined · the signed number is the click change · click a bar for related terms</div>
-        <p class="sr-only" id="kwSummary"></p>
-        <div class="chart" id="kwChart" role="img" aria-label="Top keyword performance change, 28 days versus prior"></div>
-        <div id="related" class="related"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Page performance — 28d vs prior</h3>
-        <div class="hint">Which pages to update, categorised by trend.</div>
-        <p class="sr-only" id="pagePerfSummary"></p>
-        <div id="pagePerfTable" class="findings-table"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Keyword ranking movement — 90d</h3>
-        <div class="hint">Wins &amp; losses: first-seen vs last-seen average position.</div>
-        <p class="sr-only" id="movementSummary"></p>
-        <div id="movementTable" class="findings-table"></div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Breakdowns</h3>
-        <div class="twocol">
-          <div><h4>By device</h4><div id="deviceTable" class="findings-table"></div></div>
-          <div><h4>Top countries</h4><div id="countryTable" class="findings-table"></div></div>
+      <section class="tab-panel active" data-panel="overview" role="tabpanel">
+        <div class="metrics" id="metrics"></div>
+        <div class="exportbar" id="exportbar"></div>
+        <div class="chart-card">
+          <h3>Agent readiness — is your site ready for AI agents?</h3>
+          <div class="hint">How discoverable and usable your site is for AI agents — llms.txt, agents.md, AI-bot rules, MCP server card and more. Run <code>check_agent_readiness</code> to populate.</div>
+          <div id="agentPanel"></div>
         </div>
-      </div>
+      </section>
+
+      <section class="tab-panel" data-panel="findings" role="tabpanel">
+        <div class="chart-card" id="findingsCard">
+          <h3>Issues found — prioritised</h3>
+          <div class="hint">Ranked by impact ÷ effort using real traffic at risk. Run <code>run_audit</code> to populate.</div>
+          <p class="sr-only" id="findingsSummary"></p>
+          <div class="sev-chips" id="sevChips" role="group" aria-label="Filter findings by severity"></div>
+          <div id="findingsTable" class="findings-table"></div>
+        </div>
+        <div class="chart-card" id="recsCard">
+          <h3>Recommendations</h3>
+          <div class="hint">Every issue grouped by category, with a real example from your site and the suggested fix — the audit deliverable.</div>
+          <div id="recs"></div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="search" role="tabpanel">
+        <div class="chart-card">
+          <h3>Ranking distribution over time</h3>
+          <div class="hint">Impressions by position bucket — top-3 dominance vs page-2 drift, last 90 days</div>
+          <p class="sr-only" id="distSummary"></p>
+          <div class="chart" id="distChart" role="img" aria-label="Ranking distribution over time"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Search visibility over time — DataForSEO</h3>
+          <div class="hint">Ranking keywords by position bucket each month, with estimated traffic value (red line)</div>
+          <p class="sr-only" id="rankHistSummary"></p>
+          <div class="chart" id="rankHistChart" role="img" aria-label="DataForSEO ranking distribution over time"></div>
+          <div class="hint" id="alignNote"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Rank &amp; clicks over time</h3>
+          <div class="hint">Average position (line, higher = better rank) and daily clicks (bars), last 90 days</div>
+          <p class="sr-only" id="rankSummary"></p>
+          <div class="chart" id="rankChart" role="img" aria-label="Average position and clicks over time"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Striking-distance keywords</h3>
+          <div class="hint">Queries ranking 11–20 (page 2) with real impressions — the low-effort wins. Bubble size = clicks.</div>
+          <p class="sr-only" id="strikeSummary"></p>
+          <div class="chart" id="strikeChart" role="img" aria-label="Striking-distance keywords scatter"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Cannibalisation — who Google picks, week by week</h3>
+          <div class="hint">For a contested query, each competing URL's average position over time. Lines crossing = Google thrashing between your URLs (consolidate them).</div>
+          <select id="cannSelect" aria-label="Choose a contested query"></select>
+          <p class="sr-only" id="cannSummary"></p>
+          <div class="chart" id="cannChart" role="img" aria-label="Competing URL positions over time for a contested query"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Top keyword performance — 28d vs prior</h3>
+          <div class="hint">Green = improved · red = declined · the signed number is the click change · click a bar for related terms</div>
+          <p class="sr-only" id="kwSummary"></p>
+          <div class="chart" id="kwChart" role="img" aria-label="Top keyword performance change, 28 days versus prior"></div>
+          <div id="related" class="related"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Page performance — 28d vs prior</h3>
+          <div class="hint">Which pages to update, categorised by trend.</div>
+          <p class="sr-only" id="pagePerfSummary"></p>
+          <div id="pagePerfTable" class="findings-table"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Keyword ranking movement — 90d</h3>
+          <div class="hint">Wins &amp; losses: first-seen vs last-seen average position.</div>
+          <p class="sr-only" id="movementSummary"></p>
+          <div id="movementTable" class="findings-table"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Breakdowns</h3>
+          <div class="twocol">
+            <div><h4>By device</h4><div id="deviceTable" class="findings-table"></div></div>
+            <div><h4>Top countries</h4><div id="countryTable" class="findings-table"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="architecture" role="tabpanel">
+        <div class="chart-card">
+          <h3>Where your link equity flows vs where traffic comes from</h3>
+          <div class="hint">Internal PageRank share vs organic traffic share, by template. A tall blue bar with little green beside it = equity flowing into a dead end.</div>
+          <p class="sr-only" id="mismatchSummary"></p>
+          <div class="chart" id="mismatchChart" role="img" aria-label="Internal equity share versus organic traffic share by template"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Equity vs reality — every URL</h3>
+          <div class="hint">Internal PageRank (x) vs impressions (y, log), coloured by template. Bottom-right = equity black holes (high authority, no traffic); top-left = starved winners (traffic, little equity).</div>
+          <p class="sr-only" id="scatterSummary"></p>
+          <div class="chart" id="scatterChart" role="img" aria-label="Internal PageRank versus impressions scatter by template"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Top linked pages — and their status</h3>
+          <div class="hint">Your most internally-linked URLs. A non-200 status near the top means lots of internal links point at a dead or redirected page — a direct equity leak.</div>
+          <p class="sr-only" id="topLinkedSummary"></p>
+          <div id="topLinkedTable"></div>
+        </div>
+      </section>
     </div>
     <div class="empty" id="empty" style="display:none">No data yet — run <code>refresh_property</code> or <code>sync_gsc</code> for this property first.</div>
   </div>

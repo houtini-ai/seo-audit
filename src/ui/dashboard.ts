@@ -553,6 +553,23 @@ function render(data: DashboardData): void {
   $('countryTable').innerHTML = ct.length
     ? tableHtml(['Country', 'Clicks', 'Prev', 'Impr'], ct.map(c => `<tr><td>${esc(c.country.toUpperCase())}</td><td class="num">${c.clicks}</td><td class="num">${c.prevClicks}</td><td class="num">${c.impressions}</td></tr>`))
     : '<div class="hint">—</div>';
+
+  setupTabs();
+}
+
+// Tabbed nav: switch panels, and resize the ECharts in the newly-shown panel — charts created in a
+// display:none panel lay out at 0×0, so they must be resized once their container is visible.
+function setupTabs(): void {
+  const live = (): (echarts.ECharts | null)[] => [distChart, rankHistChart, rankChart, strikeChart, kwChart, mismatchChart, scatterChart, cannChart];
+  const resizeVisible = (): void => { for (const c of live()) { try { if (c && (c.getDom() as HTMLElement).offsetParent !== null) c.resize(); } catch { /* disposed */ } } };
+  document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
+    btn.onclick = (): void => {
+      const panel = btn.dataset.panel;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll<HTMLElement>('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === panel));
+      resizeVisible();
+    };
+  });
 }
 
 function buildExportBar(data: DashboardData): void {
