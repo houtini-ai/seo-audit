@@ -1,10 +1,11 @@
 import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
+import { gscFreshness } from './gscFreshness.js';
 
 export interface DashboardData {
   siteUrl: string;
   empty?: boolean;
-  dateRange?: { current: string; prior: string; maxDate: string };
+  dateRange?: { current: string; prior: string; maxDate: string; rawMaxDate: string; trimmedDays: number };
   summary?: {
     current: { clicks: number; impressions: number; ctr: number; position: number };
     prior: { clicks: number; impressions: number; ctr: number; position: number };
@@ -68,14 +69,21 @@ interface Totals { clicks: number; impressions: number; position: number }
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
   const db = new AuditDatabase(dbPathFor(dataDir, siteUrl));
   try {
-    const maxRow = db.db.prepare('SELECT MAX(date) d FROM search_analytics').get() as { d: string | null };
-    const maxDate = maxRow?.d;
+    // Use the finalised date (trailing partial GSC days trimmed) for ALL windows + charts, so the
+    // dashboard never shows the "traffic tanking" cliff of unfinalised data.
+    const fresh = gscFreshness(db.db);
+    const maxDate = fresh.effectiveMax;
     if (!maxDate) return { siteUrl, empty: true };
+    // Upper bound: never include unfinalised days past effectiveMax. Windows anchored on maxDate
+    // only set a lower bound (date > date(maxDate,'-Nd')), so without this the partial trailing
+    // days would still slip into current-period sums and the daily charts. (Prior windows already
+    // cap below maxDate, so they don't need it.) maxDate is our own ISO date — safe to interpolate.
+    const UB = `date <= '${maxDate}'`;
 
     const totals = (start: string, end?: string): Totals => {
       const where = end
         ? `date > date(?, '${start}') AND date <= date(?, '${end}')`
-        : `date > date(?, '${start}')`;
+        : `date > date(?, '${start}') AND ${UB}`;
       const args = end ? [maxDate, maxDate] : [maxDate];
       const r = db.db
         .prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position FROM search_analytics WHERE ${where}`)
@@ -89,14 +97,14 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const rankTrend = db.db
       .prepare(
         `SELECT date, COALESCE(SUM(clicks),0) clicks, COALESCE(AVG(position),0) position
-         FROM search_analytics WHERE date > date(?, '-90 days') GROUP BY date ORDER BY date`,
+         FROM search_analytics WHERE ${UB} AND date > date(?, '-90 days') GROUP BY date ORDER BY date`,
       )
       .all(maxDate) as { date: string; clicks: number; position: number }[];
 
     const curKw = db.db
       .prepare(
         `SELECT query, SUM(clicks) clicks, AVG(position) position
-         FROM search_analytics WHERE query IS NOT NULL AND date > date(?, '-28 days')
+         FROM search_analytics WHERE query IS NOT NULL AND ${UB} AND date > date(?, '-28 days')
          GROUP BY query ORDER BY clicks DESC LIMIT 15`,
       )
       .all(maxDate) as { query: string; clicks: number; position: number }[];
@@ -129,7 +137,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
            COALESCE(SUM(CASE WHEN position>3 AND position<=10 THEN impressions ELSE 0 END),0) b2,
            COALESCE(SUM(CASE WHEN position>10 AND position<=20 THEN impressions ELSE 0 END),0) b3,
            COALESCE(SUM(CASE WHEN position>20 THEN impressions ELSE 0 END),0) b4
-         FROM search_analytics WHERE date > date(?, '-90 days') GROUP BY date ORDER BY date`,
+         FROM search_analytics WHERE ${UB} AND date > date(?, '-90 days') GROUP BY date ORDER BY date`,
       )
       .all(maxDate) as { date: string; b1: number; b2: number; b3: number; b4: number }[];
 
@@ -137,7 +145,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const strikingDistance = (db.db
       .prepare(
         `SELECT query, AVG(position) position, SUM(impressions) impressions, SUM(clicks) clicks
-         FROM search_analytics WHERE query IS NOT NULL AND date > date(?, '-28 days')
+         FROM search_analytics WHERE query IS NOT NULL AND ${UB} AND date > date(?, '-28 days')
          GROUP BY query HAVING AVG(position) > 10 AND AVG(position) <= 20 AND SUM(impressions) > 0
          ORDER BY SUM(impressions) DESC LIMIT 40`,
       )
@@ -152,17 +160,17 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const dateAlignment = reconcileRanges(gscMin, maxDate, rankHistory ?? []);
 
     // Device breakdown (current vs prior 28d)
-    const devCur = db.db.prepare(`SELECT device, SUM(clicks) clicks, SUM(impressions) impressions, AVG(position) position FROM search_analytics WHERE device <> '' AND date > date(?, '-28 days') GROUP BY device`).all(maxDate) as any[];
+    const devCur = db.db.prepare(`SELECT device, SUM(clicks) clicks, SUM(impressions) impressions, AVG(position) position FROM search_analytics WHERE device <> '' AND ${UB} AND date > date(?, '-28 days') GROUP BY device`).all(maxDate) as any[];
     const devPrior = new Map((db.db.prepare(`SELECT device, SUM(clicks) clicks FROM search_analytics WHERE device <> '' AND date > date(?, '-56 days') AND date <= date(?, '-28 days') GROUP BY device`).all(maxDate, maxDate) as any[]).map(d => [d.device, d.clicks]));
     const deviceBreakdown = devCur.map(d => ({ device: d.device, clicks: d.clicks, prevClicks: (devPrior.get(d.device) as number) ?? 0, impressions: d.impressions, ctr: d.impressions ? d.clicks / d.impressions : 0, position: Math.round(d.position * 10) / 10 }));
 
     // Country breakdown (top 10 current, with prior clicks)
     const ctyPrior = new Map((db.db.prepare(`SELECT country, SUM(clicks) clicks FROM search_analytics WHERE country <> '' AND date > date(?, '-56 days') AND date <= date(?, '-28 days') GROUP BY country`).all(maxDate, maxDate) as any[]).map(c => [c.country, c.clicks]));
-    const countryBreakdown = (db.db.prepare(`SELECT country, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE country <> '' AND date > date(?, '-28 days') GROUP BY country ORDER BY clicks DESC LIMIT 10`).all(maxDate) as any[]).map(c => ({ country: c.country, clicks: c.clicks, prevClicks: (ctyPrior.get(c.country) as number) ?? 0, impressions: c.impressions }));
+    const countryBreakdown = (db.db.prepare(`SELECT country, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE country <> '' AND ${UB} AND date > date(?, '-28 days') GROUP BY country ORDER BY clicks DESC LIMIT 10`).all(maxDate) as any[]).map(c => ({ country: c.country, clicks: c.clicks, prevClicks: (ctyPrior.get(c.country) as number) ?? 0, impressions: c.impressions }));
 
     // Page performance + categorisation (current vs prior 28d)
     const pagePrior = new Map((db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-56 days') AND date <= date(?, '-28 days') GROUP BY page_key`).all(maxDate, maxDate) as any[]).map(p => [p.page_key, p]));
-    const pagePerformance = (db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions, AVG(position) position FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-28 days') GROUP BY page_key ORDER BY clicks DESC LIMIT 40`).all(maxDate) as any[]).map(p => {
+    const pagePerformance = (db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions, AVG(position) position FROM search_analytics WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '-28 days') GROUP BY page_key ORDER BY clicks DESC LIMIT 40`).all(maxDate) as any[]).map(p => {
       const prev = (pagePrior.get(p.page_key) as any) ?? { clicks: 0, impressions: 0 };
       const pct = prev.clicks ? ((p.clicks - prev.clicks) / prev.clicks) * 100 : (p.clicks > 0 ? 100 : 0);
       return { urlKey: p.page_key, clicks: p.clicks, prevClicks: prev.clicks, clicksChangePct: Math.round(pct), impressions: p.impressions, position: Math.round(p.position * 10) / 10, category: pageCategory(p, prev) };
@@ -170,7 +178,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
 
     // Keyword ranking movement (first-seen vs last-seen position over 90d)
     const keywordMovement = (db.db.prepare(
-      `WITH q AS (SELECT query, MIN(date) fd, MAX(date) ld FROM search_analytics WHERE query IS NOT NULL AND date > date(?, '-90 days') GROUP BY query HAVING SUM(impressions) >= 50 AND MIN(date) < MAX(date))
+      `WITH q AS (SELECT query, MIN(date) fd, MAX(date) ld FROM search_analytics WHERE query IS NOT NULL AND ${UB} AND date > date(?, '-90 days') GROUP BY query HAVING SUM(impressions) >= 50 AND MIN(date) < MAX(date))
        SELECT q.query,
          (SELECT AVG(position) FROM search_analytics s WHERE s.query=q.query AND s.date=q.fd AND s.impressions>0) firstPos,
          (SELECT AVG(position) FROM search_analytics s WHERE s.query=q.query AND s.date=q.ld AND s.impressions>0) lastPos,
@@ -234,7 +242,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const pageRows = db.db.prepare(`SELECT url_key, COALESCE(ipr,0) ipr FROM pages WHERE status_code=200 AND indexable=1`).all() as { url_key: string; ipr: number }[];
     if (pageRows.length) {
       const g28 = new Map<string, { clicks: number; impr: number }>();
-      for (const r of db.db.prepare(`SELECT page_key, SUM(clicks) c, SUM(impressions) i FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-28 days') GROUP BY page_key`).all(maxDate) as any[]) g28.set(r.page_key, { clicks: r.c, impr: r.i });
+      for (const r of db.db.prepare(`SELECT page_key, SUM(clicks) c, SUM(impressions) i FROM search_analytics WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '-28 days') GROUP BY page_key`).all(maxDate) as any[]) g28.set(r.page_key, { clicks: r.c, impr: r.i });
       const scatter: NonNullable<DashboardData['equityScatter']> = [];
       const agg = new Map<string, { ipr: number; clicks: number; n: number }>();
       for (const p of pageRows) {
@@ -265,17 +273,17 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     // The "braid" of crossing lines over time is Google thrashing between URLs (severity = tangle).
     const cannQueries = db.db.prepare(
       `WITH pp AS (SELECT query, page_key, SUM(impressions) imp, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
-                   FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND date > date(?, '-90 days')
+                   FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${UB} AND date > date(?, '-90 days')
                    GROUP BY query, page_key HAVING pos < 20 AND imp >= 30)
        SELECT query, COUNT(*) urls, SUM(imp) imp FROM pp GROUP BY query HAVING COUNT(*) >= 2 ORDER BY imp DESC LIMIT 6`,
     ).all(maxDate) as { query: string; urls: number; imp: number }[];
     const cannibalisation = cannQueries.map(q => {
-      const urls = db.db.prepare(`SELECT page_key, SUM(impressions) imp FROM search_analytics WHERE query=? AND page_key IS NOT NULL AND date > date(?, '-90 days') GROUP BY page_key ORDER BY imp DESC LIMIT 4`).all(q.query, maxDate) as { page_key: string }[];
+      const urls = db.db.prepare(`SELECT page_key, SUM(impressions) imp FROM search_analytics WHERE query=? AND page_key IS NOT NULL AND ${UB} AND date > date(?, '-90 days') GROUP BY page_key ORDER BY imp DESC LIMIT 4`).all(q.query, maxDate) as { page_key: string }[];
       return {
         query: q.query,
         urls: urls.map(u => ({
           url: u.page_key,
-          points: (db.db.prepare(`SELECT strftime('%Y-%W', date) week, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos FROM search_analytics WHERE query=? AND page_key=? AND date > date(?, '-90 days') AND impressions > 0 GROUP BY week ORDER BY week`).all(q.query, u.page_key, maxDate) as { week: string; pos: number }[])
+          points: (db.db.prepare(`SELECT strftime('%Y-%W', date) week, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos FROM search_analytics WHERE query=? AND page_key=? AND ${UB} AND date > date(?, '-90 days') AND impressions > 0 GROUP BY week ORDER BY week`).all(q.query, u.page_key, maxDate) as { week: string; pos: number }[])
             .map(w => ({ week: w.week, position: Math.round(w.pos * 10) / 10 })),
         })),
       };
@@ -283,7 +291,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
 
     return {
       siteUrl,
-      dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate },
+      dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate, rawMaxDate: fresh.rawMax ?? maxDate, trimmedDays: fresh.trimmedDays },
       equityScatter,
       templateMismatch,
       cannibalisation,

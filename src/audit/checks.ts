@@ -34,7 +34,9 @@ export interface CheckDef {
 }
 
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
-const win = (d: string): string => `date > date('${d}', '-28 days')`;
+// d is the finalised GSC date (partial trailing days already trimmed upstream); cap the window at
+// it so checks never count unfinalised days. winPrev already caps below d, so it's unaffected.
+const win = (d: string): string => `date > date('${d}', '-28 days') AND date <= '${d}'`;
 // Prior 28-day window (the 28 days BEFORE the current window) — for period-over-period checks.
 const winPrev = (d: string): string => `date <= date('${d}', '-28 days') AND date > date('${d}', '-56 days')`;
 // Days of GSC history actually held — period-over-period checks need enough span to be meaningful.

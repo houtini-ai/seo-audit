@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AuditDatabase, type Severity } from '../core/AuditDatabase.js';
 import { dbPathFor } from '../core/paths.js';
 import { finalizeLinkGraph } from '../core/linkGraph.js';
+import { gscFreshness } from '../core/gscFreshness.js';
 import { snapshotCrawl } from './drift.js';
 import { CHECKS, expectedCtr, type CheckContext, type CheckDef } from './checks.js';
 
@@ -61,7 +62,9 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
   const t0 = Date.now();
   const db = new AuditDatabase(dbPathFor(dataDir, siteUrl));
   try {
-    const maxDate = (db.db.prepare('SELECT MAX(date) d FROM search_analytics').get() as { d: string | null }).d;
+    // Finalised GSC date (trailing partial days trimmed) — keeps the audit's 28d windows and the
+    // per-page traffic map consistent with the dashboard, and free of unfinalised-data distortion.
+    const maxDate = gscFreshness(db.db).effectiveMax;
     const pageCount = (db.db.prepare('SELECT COUNT(*) c FROM pages').get() as { c: number }).c;
 
     // Self-heal: if the latest crawl's link-graph was left unpopulated (e.g. the crawl process
@@ -90,14 +93,14 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
     if (maxDate) {
       for (const row of db.db.prepare(
         `SELECT page_key, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position
-         FROM search_analytics WHERE page_key IS NOT NULL AND date > date(?, '-28 days') GROUP BY page_key`,
+         FROM search_analytics WHERE page_key IS NOT NULL AND date <= '${maxDate}' AND date > date(?, '-28 days') GROUP BY page_key`,
       ).all(maxDate) as (Traffic & { page_key: string })[]) {
         trafficMap.set(row.page_key, { clicks: row.clicks, impressions: row.impressions, position: row.position });
       }
     }
     // Total site clicks in the window — the baseline for site-wide (null-url) findings (6e).
     const siteClicks = maxDate
-      ? (db.db.prepare(`SELECT COALESCE(SUM(clicks),0) c FROM search_analytics WHERE date > date(?, '-28 days')`).get(maxDate) as { c: number }).c
+      ? (db.db.prepare(`SELECT COALESCE(SUM(clicks),0) c FROM search_analytics WHERE date <= '${maxDate}' AND date > date(?, '-28 days')`).get(maxDate) as { c: number }).c
       : 0;
     const insert = db.db.prepare(
       `INSERT INTO findings (run_id, check_id, category, severity, labels, certainty, url_key, evidence, traffic_at_risk, effort, priority, recommendation)
@@ -195,7 +198,7 @@ export function runSingleCheck(dataDir: string, siteUrl: string, checkId: string
   if (!chk) throw new Error(`Unknown check: ${checkId}. See list_checks.`);
   const db = new AuditDatabase(dbPathFor(dataDir, siteUrl));
   try {
-    const maxDate = (db.db.prepare('SELECT MAX(date) d FROM search_analytics').get() as { d: string | null }).d;
+    const maxDate = gscFreshness(db.db).effectiveMax;
     const findings = chk.run({ db: db.db, gscMaxDate: maxDate }).slice(0, limit);
     return { check: checkId, findings };
   } finally {

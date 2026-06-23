@@ -6,7 +6,7 @@ interface Totals { clicks: number; impressions: number; ctr: number; position: n
 interface DashboardData {
   siteUrl: string;
   empty?: boolean;
-  dateRange?: { current: string; prior?: string; maxDate: string };
+  dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number };
   summary?: { current: Totals; prior: Totals };
   rankTrend?: { date: string; clicks: number; position: number }[];
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
@@ -287,7 +287,16 @@ function render(data: DashboardData): void {
   if (data.empty || !data.summary) { $('empty').style.display = 'flex'; return; }
   $('content').style.display = 'block';
   $('site').textContent = data.siteUrl;
-  $('range').textContent = data.dateRange?.current ?? '';
+  const dr = data.dateRange;
+  $('range').textContent = dr?.current ?? '';
+  if (dr && dr.trimmedDays && dr.trimmedDays > 0 && dr.rawMaxDate) {
+    const rangeEl = $('range');
+    rangeEl.title = `Search Console data runs to ${dr.rawMaxDate}, but the last ${dr.trimmedDays} day${dr.trimmedDays > 1 ? 's' : ''} are still being finalised by Google and are excluded so the charts don’t show a false drop.`;
+    const note = document.createElement('span');
+    note.className = 'range-note';
+    note.textContent = ` · excl. last ${dr.trimmedDays}d (GSC not finalised)`;
+    rangeEl.appendChild(note);
+  }
 
   const c = data.summary.current, p = data.summary.prior;
   const pctChg = (a: number, b: number): number => (b ? ((a - b) / b) * 100 : 0);

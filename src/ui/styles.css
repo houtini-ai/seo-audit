@@ -202,3 +202,6 @@ body {
 .ar-check { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--border-subtle); font-size: 13px; }
 .ar-check .ar-ok { color: var(--green); } .ar-check .ar-no { color: var(--color-text-quaternary); }
 .ar-check .ar-fix { color: var(--text-muted); font-size: 12px; }
+
+/* "data not finalised" note next to the date range */
+.range-note { color: var(--text-muted); font-size: 12px; cursor: help; }
