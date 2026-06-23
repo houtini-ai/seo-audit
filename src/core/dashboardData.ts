@@ -11,7 +11,7 @@ export interface DashboardData {
     current: { clicks: number; impressions: number; ctr: number; position: number };
     prior: { clicks: number; impressions: number; ctr: number; position: number };
   };
-  rankTrend?: { date: string; clicks: number; position: number }[];
+  rankTrend?: { date: string; clicks: number; impressions: number; position: number }[];
   rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
   dateAlignment?: {
     gsc: { start: string; end: string } | null;
@@ -73,7 +73,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '2';
+const PAYLOAD_VERSION = '3';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -148,10 +148,10 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
 
     const rankTrend = db.db
       .prepare(
-        `SELECT date, COALESCE(SUM(clicks),0) clicks, COALESCE(AVG(position),0) position
+        `SELECT date, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position
          FROM search_analytics WHERE ${UB} AND date > date(?, '-90 days') GROUP BY date ORDER BY date`,
       )
-      .all(maxDate) as { date: string; clicks: number; position: number }[];
+      .all(maxDate) as { date: string; clicks: number; impressions: number; position: number }[];
 
     const curKw = db.db
       .prepare(

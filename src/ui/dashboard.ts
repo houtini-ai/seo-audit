@@ -8,7 +8,7 @@ interface DashboardData {
   empty?: boolean;
   dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number };
   summary?: { current: Totals; prior: Totals };
-  rankTrend?: { date: string; clicks: number; position: number }[];
+  rankTrend?: { date: string; clicks: number; impressions: number; position: number }[];
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
@@ -216,7 +216,16 @@ function renderExecSummary(data: DashboardData): void {
   const lead = `Organic search is <strong>${dir}</strong>: <strong>${fmt(c.clicks)}</strong> clicks and <strong>${fmt(c.impressions)}</strong> impressions in the last 28 days (clicks ${arrow(clkPct)} vs the prior 28), at an average position of <strong>${c.position.toFixed(1)}</strong>${posShift ? ` (${posShift > 0 ? 'improved' : 'slipped'} ${Math.abs(posShift)} spot${Math.abs(posShift) === 1 ? '' : 's'})` : ''}.`;
 
   const fc = data.findings;
-  const parts: string[] = [`<p class="exec-lead">${lead}</p>`];
+  // Headline scorecard — the three numbers an SEO reads first: clicks (+delta), critical issues, upside.
+  const critCount = fc?.byCheck?.filter((b: any) => b.severity === 'crit').reduce((s: number, b: any) => s + b.count, 0) ?? 0;
+  const recoverable = (data.quickWins ?? []).reduce((s, q) => s + (q.type === 'snippet' || q.type === 'striking' ? q.potential : 0), 0);
+  const clkCls = clkPct > 0 ? 'up' : clkPct < 0 ? 'down' : 'flat';
+  const headline = `<div class="exec-headline">` +
+    `<div class="eh-stat"><div class="eh-num">${fmt(c.clicks)}</div><div class="eh-lbl">clicks · 28d <span class="chg ${clkCls}">${arrow(clkPct)}</span></div></div>` +
+    `<div class="eh-stat"><div class="eh-num" style="color:${critCount ? 'var(--red)' : 'var(--green)'}">${critCount}</div><div class="eh-lbl">critical issue${critCount === 1 ? '' : 's'}</div></div>` +
+    `<div class="eh-stat"><div class="eh-num">${fmt(recoverable)}</div><div class="eh-lbl">clicks recoverable</div></div>` +
+    `</div>`;
+  const parts: string[] = [headline, `<p class="exec-lead">${lead}</p>`];
 
   if (fc && fc.byCheck?.length) {
     const bySev: Record<string, number> = {};
@@ -369,12 +378,25 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
   $('findingsSummary').textContent = `${fc.total} findings across ${fc.byCheck.length} checks, ranked by impact ÷ effort.`;
 }
 
-function metricCard(label: string, value: string, change: number, lowerIsBetter = false): string {
+// Tiny inline-SVG sparkline (no axes, single muted line) — the 28-day shape behind a KPI.
+function sparkline(series: number[], lowerIsBetter = false): string {
+  const pts = series.filter(v => Number.isFinite(v));
+  if (pts.length < 2) return '';
+  const w = 96, h = 26, min = Math.min(...pts), max = Math.max(...pts), span = max - min || 1;
+  // For position (lower=better) invert Y so an improving trend still rises visually.
+  const norm = (v: number): number => lowerIsBetter ? (v - min) / span : 1 - (v - min) / span;
+  const step = w / (pts.length - 1);
+  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(norm(v) * (h - 4) + 2).toFixed(1)}`).join(' ');
+  return `<svg class="metric-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+function metricCard(label: string, value: string, change: number, lowerIsBetter = false, spark: number[] = []): string {
   const better = lowerIsBetter ? change < 0 : change > 0;
   const cls = change === 0 ? 'flat' : better ? 'up' : 'down';
   const arrow = change === 0 ? '' : change > 0 ? '▲' : '▼';
   const pct = `${arrow} ${Math.abs(Math.round(change))}%`;
-  return `<div class="metric-card"><div class="label">${label}</div><div class="value">${value}</div><div class="chg ${cls}">${pct}</div></div>`;
+  return `<div class="metric-card"><div class="label">${label}</div><div class="value">${value}</div>` +
+    `<div class="metric-foot"><span class="chg ${cls}">${pct}</span>${sparkline(spark, lowerIsBetter)}</div></div>`;
 }
 
 function render(data: DashboardData): void {
@@ -395,11 +417,17 @@ function render(data: DashboardData): void {
 
   const c = data.summary.current, p = data.summary.prior;
   const pctChg = (a: number, b: number): number => (b ? ((a - b) / b) * 100 : 0);
+  // 28-day daily series for the KPI sparklines (tail of the 90-day rankTrend).
+  const spark = (data.rankTrend ?? []).slice(-28);
+  const sClicks = spark.map(d => d.clicks);
+  const sImpr = spark.map(d => d.impressions);
+  const sCtr = spark.map(d => d.impressions ? d.clicks / d.impressions : 0);
+  const sPos = spark.map(d => d.position).filter(v => v > 0);
   $('metrics').innerHTML =
-    metricCard('Clicks', fmt(c.clicks), pctChg(c.clicks, p.clicks)) +
-    metricCard('Impressions', fmt(c.impressions), pctChg(c.impressions, p.impressions)) +
-    metricCard('CTR', `${(c.ctr * 100).toFixed(1)}%`, pctChg(c.ctr, p.ctr)) +
-    metricCard('Avg position', c.position.toFixed(1), pctChg(c.position, p.position), true);
+    metricCard('Clicks', fmt(c.clicks), pctChg(c.clicks, p.clicks), false, sClicks) +
+    metricCard('Impressions', fmt(c.impressions), pctChg(c.impressions, p.impressions), false, sImpr) +
+    metricCard('CTR', `${(c.ctr * 100).toFixed(1)}%`, pctChg(c.ctr, p.ctr), false, sCtr) +
+    metricCard('Avg position', c.position.toFixed(1), pctChg(c.position, p.position), true, sPos);
 
   const col = palette();
   // axis tick labels + axis names use primary text (high contrast: white on dark, near-black on light)
@@ -733,6 +761,11 @@ function render(data: DashboardData): void {
   $('countryTable').innerHTML = ct.length
     ? tableHtml(['Country', 'Clicks', 'Prev', 'Impr'], ct.map(c => `<tr><td>${esc(c.country.toUpperCase())}</td><td class="num">${c.clicks}</td><td class="num">${c.prevClicks}</td><td class="num">${c.impressions}</td></tr>`))
     : '<div class="hint">—</div>';
+  // Hide breakdowns that carry only one value (e.g. a single-country property) — a one-row table is
+  // noise, not insight. Show a block only with genuine variety (2+ rows); hide the card if neither has.
+  const showDev = dv.length >= 2, showCty = ct.length >= 2;
+  const setVis = (id: string, on: boolean): void => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none'; };
+  setVis('deviceBlock', showDev); setVis('countryBlock', showCty); setVis('breakdownsCard', showDev || showCty);
 
   setupTabs();
 }

@@ -266,3 +266,18 @@ body {
 .dot-nonbranded { background: var(--color-brand-violet); }
 .split-k { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .split-v { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* KPI sparkline foot — 28-day shape behind each metric */
+.metric-card .metric-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.metric-card .chg { margin: 0; }
+.metric-spark { color: var(--accent); opacity: 0.5; flex: 0 0 auto; height: 26px; width: 96px; }
+
+/* Executive-summary headline scorecard — the 3 numbers read first */
+.exec-headline { display: flex; flex-wrap: wrap; gap: 36px; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); }
+.eh-num { font-family: var(--font-mono); font-size: 30px; font-weight: 500; line-height: 1.05; letter-spacing: -0.02em; color: var(--text-primary); }
+.eh-lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 7px; }
+.eh-lbl .chg { font-size: 12px; }
+
+/* Table row hover — scannability */
+.findings-table tbody tr { transition: background .12s ease; }
+.findings-table tbody tr:hover { background: var(--bg-input); }
