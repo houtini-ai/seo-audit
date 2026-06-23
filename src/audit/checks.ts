@@ -362,7 +362,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'index-bloat', category: 'indexation', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Indexable page with no search traffic', fix: 'No impressions in 90 days despite being indexable — consolidate, improve, or noindex/prune to concentrate crawl budget and internal authority (confirm it isn’t seasonal or brand-new first).',
-    run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT url_key urlKey, ipr FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND click_depth >= 1 AND url_key NOT IN (SELECT DISTINCT page_key FROM search_analytics WHERE page_key IS NOT NULL AND date > date('${c.gscMaxDate}','-90 days') AND impressions > 0) ORDER BY ipr DESC LIMIT 100`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'indexable but zero impressions in 90 days', ipr: Math.round(r.ipr) } })),
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT url_key urlKey, ipr FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND click_depth >= 1 AND url_key NOT IN (SELECT DISTINCT page_key FROM search_analytics WHERE page_key IS NOT NULL AND date <= '${c.gscMaxDate}' AND date > date('${c.gscMaxDate}','-90 days') AND impressions > 0) ORDER BY ipr DESC LIMIT 100`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'indexable but zero impressions in 90 days', ipr: Math.round(r.ipr) } })),
   },
   // ── On-page parity (crawl-only, deterministic) ──
   {
@@ -426,7 +426,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Internal authority wasted on a no-traffic page', fix: 'High internal link equity (iPR) and Google does rank it (it earns impressions), yet it gets zero clicks — rewrite the title/snippet or improve the page, or repoint that authority to pages that convert it. (Requires impressions, so functional pages with no search demand are excluded.)',
     run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions
       FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key
-      WHERE p.indexable=1 AND p.ipr >= 50 AND p.click_depth >= 1 AND sa.date > date('${c.gscMaxDate}','-90 days')
+      WHERE p.indexable=1 AND p.ipr >= 50 AND p.click_depth >= 1 AND sa.date <= '${c.gscMaxDate}' AND sa.date > date('${c.gscMaxDate}','-90 days')
       GROUP BY p.url_key HAVING SUM(sa.clicks)=0 AND SUM(sa.impressions) >= 100
       ORDER BY p.ipr DESC LIMIT 50`).map(r => ({ urlKey: r.urlKey, evidence: { ipr: Math.round(r.ipr), inlinks: r.inl, impressions: r.impressions, clicks: 0, note: 'high internal authority + impressions, zero clicks in 90 days' } })),
   },
