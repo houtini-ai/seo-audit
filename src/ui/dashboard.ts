@@ -234,20 +234,30 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
   const maxPrio = Math.max(...fc.top.map(f => f.priority), 0.0001);
   let active = 'all';
 
+  // Severity health bar — proportion of all findings by severity, at a glance
+  const HB_CLASS: Record<string, string> = { crit: 'hb-crit', high: 'hb-high', med: 'hb-med', low: 'hb-low', info: 'hb-low' };
+  const hbTotal = SEV_ORDER.reduce((s, x) => s + (sevCounts[x] ?? 0), 0) || 1;
+  const healthBar = `<div class="health-bar" role="img" aria-label="Findings by severity">` +
+    SEV_ORDER.filter(s => sevCounts[s]).map(s =>
+      `<span class="${HB_CLASS[s]}" style="width:${((sevCounts[s] / hbTotal) * 100).toFixed(1)}%" title="${SEV_LABEL[s]}: ${sevCounts[s]}"></span>`).join('') +
+    `</div>`;
+
   const drawTable = (): void => {
     const rows = fc.top.filter(f => active === 'all' || f.severity === active).slice(0, 25).map(f => {
       const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk);
       const path = (f.url_key || '—').replace(/^https?:\/\/[^/]+/, '') || '/';
       const pct = Math.max(3, Math.round((f.priority / maxPrio) * 100));
+      const sz = (f.size ?? '').toString();
+      const szClass = 'impact-' + (sz.toLowerCase() || 's');
       return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}</td>` +
         `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
         `<td class="num">${traf.impressions || 0}</td>` +
-        `<td class="prio"><span class="prio-wrap"><span class="prio-bar s-${f.severity}" style="width:${pct}%"></span><span class="prio-val">${esc((f.size ?? '') + ' ' + (f.impact ?? pct))}</span></span></td>` +
+        `<td class="prio"><span class="prio-wrap"><span class="prio-bar s-${f.severity}" style="width:${pct}%"></span><span class="impact ${szClass}">${esc(sz || '–')} ${f.impact ?? pct}</span></span></td>` +
         `<td class="fix" title="${esc(rec.text || '')}">${esc(rec.text || '')}</td></tr>`;
     });
     tableEl.innerHTML = rows.length
-      ? `<table><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th><th>Fix</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
-      : '<p class="muted">No findings at this severity in the top results.</p>';
+      ? healthBar + `<table><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th><th>Fix</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      : healthBar + '<p class="muted">No findings at this severity in the top results.</p>';
   };
   const drawChips = (): void => {
     const chip = (sev: string, label: string, n: number): string =>
@@ -348,19 +358,20 @@ function render(data: DashboardData): void {
   const ar = data.agentReadiness;
   if (ar) {
     const scoreColor = ar.score >= 80 ? 'var(--color-status-live)' : ar.score >= 50 ? 'var(--color-status-warning)' : 'var(--color-status-error)';
-    const cats = ar.byCategory.map(c => `<div style="background:var(--color-background-secondary,rgba(127,127,127,0.08));border-radius:8px;padding:8px 12px;"><div style="font-size:12px;color:var(--color-text-secondary)">${esc(c.category)}</div><div style="font-size:18px;font-weight:500">${c.passed}<span style="color:var(--color-text-tertiary,#888)">/${c.total}</span></div></div>`).join('');
-    const items = ar.checks.map(c => `<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:0.5px solid var(--color-border-standard,rgba(127,127,127,0.15))">
-      <span style="color:${c.present ? 'var(--color-status-live)' : 'var(--color-text-tertiary,#999)'};font-weight:500;min-width:14px">${c.present ? '✓' : '○'}</span>
-      <span style="min-width:200px">${esc(c.label)}</span>
-      <span style="color:var(--color-text-secondary);font-size:13px">${esc(c.detail)}</span>
-      ${c.present ? '' : `<span style="color:var(--color-text-tertiary,#888);font-size:12px;font-style:italic;margin-left:auto;max-width:46%;text-align:right">${esc(c.fix)}</span>`}</div>`).join('');
+    // SVG score ring — circumference arc proportional to score, colour-graded
+    const R = 46, CIRC = 2 * Math.PI * R, off = CIRC * (1 - Math.max(0, Math.min(100, ar.score)) / 100);
+    const ring = `<div class="ar-ring"><svg viewBox="0 0 104 104" width="104" height="104" aria-hidden="true">
+        <circle cx="52" cy="52" r="${R}" fill="none" stroke="var(--bg-input)" stroke-width="9"/>
+        <circle cx="52" cy="52" r="${R}" fill="none" stroke="${scoreColor}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${CIRC.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 52 52)"/>
+      </svg><div class="ar-score"><div class="ar-num" style="color:${scoreColor}">${ar.score}</div><div class="ar-of">/ 100</div></div></div>`;
+    const cats = ar.byCategory.map(c => `<div class="ar-cat"><div class="c-label">${esc(c.category)}</div><div class="c-val">${c.passed}<span style="color:var(--text-muted)">/${c.total}</span></div></div>`).join('');
+    const items = ar.checks.map(c => `<div class="ar-check">
+      <span class="${c.present ? 'ar-ok' : 'ar-no'}" style="min-width:14px;font-weight:600">${c.present ? '✓' : '○'}</span>
+      <span style="flex:1">${esc(c.label)}${c.present && c.detail ? ` <span style="color:var(--text-muted)">— ${esc(c.detail)}</span>` : ''}</span>
+      ${c.present ? '' : `<span class="ar-fix" style="max-width:48%;text-align:right">${esc(c.fix)}</span>`}</div>`).join('');
     $('agentPanel').innerHTML =
-      `<div style="display:flex;align-items:center;gap:16px;margin:4px 0 12px">
-        <div style="font-size:40px;font-weight:500;color:${scoreColor};line-height:1">${ar.score}<span style="font-size:18px;color:var(--color-text-tertiary,#888)">/100</span></div>
-        <div style="font-size:16px;font-weight:500">${esc(ar.level)}</div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px">${cats}</div>
-      <div>${items}</div>`;
+      `<div class="ar-top">${ring}<div class="ar-meta"><div class="ar-level">${esc(ar.level)}</div><div class="ar-cats">${cats}</div></div></div>
+      <div class="ar-checks">${items}</div>`;
   } else {
     $('agentPanel').innerHTML = '<p class="muted">Run <code>check_agent_readiness</code> for this site to populate the agent-readiness score.</p>';
   }
