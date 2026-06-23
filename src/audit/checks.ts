@@ -533,13 +533,23 @@ export const CHECKS: CheckDef[] = [
   },
   {
     id: 'broken-canonical-target', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
-    title: 'Canonical points to a broken/non-indexable URL', fix: 'Point the canonical at a live, indexable (200, non-noindex) URL — a canonical to a 4xx/5xx/redirect/noindex target is ignored by Google.',
-    // Join the declared canonical_key back to the crawl. Only flag when we crawled the target and
-    // it's non-200 or noindex (don't FP on targets we never crawled). Skip self-canonicals.
-    run: (c) => rows(c, `SELECT p.url_key urlKey, p.canonical_url canon, t.status_code st, t.noindex ni
+    title: 'Canonical points to a broken or unhealthy URL', fix: 'Point the canonical at a live, indexable, self-canonical HTTPS URL — Google ignores a canonical whose target is a 4xx/5xx/redirect, noindex, itself canonicalised elsewhere (a chain/loop), or an HTTPS→HTTP downgrade.',
+    // Join the declared canonical_key back to the crawl. Only flag when we crawled the target.
+    // Skip self-canonicals. Covers: non-200 target, noindex target, canonical chain/loop (target
+    // canonicalises onward), and HTTPS→HTTP downgrade (research: Sitebulb indexability hints).
+    run: (c) => rows(c, `SELECT p.url_key urlKey, p.canonical_url canon, p.canonical_key ck, t.status_code st, t.noindex ni, t.canonical_key tck
       FROM pages p JOIN pages t ON t.url_key = p.canonical_key
       WHERE p.canonical_key IS NOT NULL AND p.canonical_key != p.url_key AND p.status_code = 200
-        AND (t.status_code != 200 OR t.noindex = 1)`).map(r => ({ urlKey: r.urlKey, evidence: { canonical: r.canon, targetStatus: r.st, targetNoindex: !!r.ni } })),
+        AND (t.status_code != 200 OR t.noindex = 1
+          OR (t.canonical_key IS NOT NULL AND t.canonical_key != t.url_key)
+          OR (p.url_key LIKE 'https://%' AND p.canonical_url LIKE 'http://%'))`)
+      .map(r => {
+        const reason = r.st !== 200 ? `target returns HTTP ${r.st}`
+          : r.ni ? 'target is noindex'
+          : (r.tck && r.tck !== r.ck) ? (r.tck === r.urlKey ? 'canonical loop (target points back here)' : 'canonical chain (target canonicalises onward)')
+          : 'HTTPS page canonicalises to an HTTP URL';
+        return { urlKey: r.urlKey, evidence: { canonical: r.canon, targetStatus: r.st, reason } };
+      }),
   },
   {
     id: 'faceted-spider-trap', category: 'crawlability', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'global',
