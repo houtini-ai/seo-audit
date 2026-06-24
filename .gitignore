@@ -30,3 +30,4 @@ crawl-tests/**/raw/
 .DS_Store
 Thumbs.db
 .preview/
+research/
