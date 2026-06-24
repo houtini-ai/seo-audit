@@ -92,6 +92,18 @@ export function urlKey(rawUrl: string, options: UrlKeyOptions = {}): string {
   return `${u.protocol}//${u.host}${u.pathname}${query ? `?${query}` : ''}`;
 }
 
+/**
+ * The registrable brand label of a property — the first domain label, lower-cased, alphanumerics
+ * only (so "sc-domain:ehi.com.au" → "ehi", "https://www.sim-racing.gg/" → "simracing"). Returns null
+ * for labels under 3 chars (too short to match safely). Used for whole-token brand matching:
+ * `(' '||LOWER(query)||' ') LIKE '% '||brand||' %'` — same scheme as the dashboard's branded split.
+ */
+export function brandToken(siteUrl: string): string | null {
+  const host = (siteUrl ?? '').replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+  const b = (host.split('.')[0] ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return b.length >= 3 ? b : null;
+}
+
 /** Derive the hostForm to use from a GSC property identifier. */
 export function hostFormForProperty(siteUrl: string): UrlKeyOptions['hostForm'] {
   // Domain properties ("sc-domain:example.com") cover both — default to apex.

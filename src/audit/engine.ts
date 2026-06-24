@@ -3,6 +3,7 @@ import { AuditDatabase, type Severity } from '../core/AuditDatabase.js';
 import { dbPathFor } from '../core/paths.js';
 import { finalizeLinkGraph } from '../core/linkGraph.js';
 import { gscFreshness } from '../core/gscFreshness.js';
+import { brandToken } from '../core/url-key.js';
 import { snapshotCrawl } from './drift.js';
 import { CHECKS, expectedCtr, type CheckContext, type CheckDef } from './checks.js';
 
@@ -80,7 +81,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
         snapshotCrawl(db.db, cr.crawl_id, at);
       }
     }
-    const ctx: CheckContext = { db: db.db, gscMaxDate: maxDate };
+    const ctx: CheckContext = { db: db.db, gscMaxDate: maxDate, brand: brandToken(siteUrl) };
     const runId = randomUUID().slice(0, 8);
 
     let checks = CHECKS;
@@ -199,7 +200,7 @@ export function runSingleCheck(dataDir: string, siteUrl: string, checkId: string
   const db = new AuditDatabase(dbPathFor(dataDir, siteUrl));
   try {
     const maxDate = gscFreshness(db.db).effectiveMax;
-    const findings = chk.run({ db: db.db, gscMaxDate: maxDate }).slice(0, limit);
+    const findings = chk.run({ db: db.db, gscMaxDate: maxDate, brand: brandToken(siteUrl) }).slice(0, limit);
     return { check: checkId, findings };
   } finally {
     db.close();

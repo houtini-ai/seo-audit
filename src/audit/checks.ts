@@ -15,6 +15,7 @@ import { expectedCtr } from '../core/ctrModel.js';
 export interface CheckContext {
   db: Database.Database;
   gscMaxDate: string | null; // null = no GSC data; G-checks skip
+  brand?: string | null;     // registrable brand label (alnum), for excluding branded queries; null = unknown
 }
 export interface RawFinding {
   urlKey?: string | null;
@@ -40,6 +41,10 @@ const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.
 const win = (d: string): string => `date > date('${d}', '-28 days') AND date <= '${d}'`;
 // Prior 28-day window (the 28 days BEFORE the current window) — for period-over-period checks.
 const winPrev = (d: string): string => `date <= date('${d}', '-28 days') AND date > date('${d}', '-56 days')`;
+// SQL clause to drop branded queries (whole-token match). Brand is alnum-only so safe to inline.
+// Branded multi-URL ranking is sitelinks, not cannibalisation; branded top-queries aren't anchor targets.
+const brandExcl = (c: CheckContext): string =>
+  c.brand ? `AND (' ' || LOWER(query) || ' ') NOT LIKE '% ${c.brand} %'` : '';
 // Days of GSC history actually held — period-over-period checks need enough span to be meaningful.
 const spanDays = (c: CheckContext): number => {
   const r = c.db.prepare(`SELECT julianday(MAX(date)) - julianday(MIN(date)) d FROM search_analytics`).get() as { d: number | null };
@@ -339,7 +344,7 @@ export const CHECKS: CheckDef[] = [
         SELECT query, page_key, SUM(clicks) clicks, SUM(impressions) impressions,
                SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
         FROM search_analytics
-        WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)}
+        WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} ${brandExcl(c)}
         GROUP BY query, page_key
         HAVING pos < 20 AND SUM(impressions) >= 10
       ),
@@ -538,7 +543,7 @@ export const CHECKS: CheckDef[] = [
       if (!c.gscMaxDate) return [];
       const top = rows(c, `SELECT s.page_key urlKey, s.query query, s.impr impressions FROM
         (SELECT page_key, query, SUM(impressions) impr, ROW_NUMBER() OVER (PARTITION BY page_key ORDER BY SUM(impressions) DESC) rn
-         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
+         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} ${brandExcl(c)} GROUP BY page_key, query) s
         JOIN pages p ON p.url_key = s.page_key
         WHERE s.rn = 1 AND p.indexable = 1 AND s.impr >= 100`);
       // Pool only GENUINE editorial anchors: drop self-links, navigational/CTA boilerplate
