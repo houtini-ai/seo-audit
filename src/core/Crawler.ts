@@ -223,7 +223,7 @@ export class Crawler {
          json_ld, og_tags, hreflang, redirects, internal_links, external_links,
          image_count, images_without_alt, images_missing_dimensions, canonical_count, canonical_relative,
          h2_count, heading_skips, rel_next, rel_prev, rel_amphtml, mixed_content_count, twitter_tags,
-         has_microdata, has_rdfa, security_headers)
+         has_microdata, has_rdfa, body_chunks, security_headers)
        VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@content_encoding,@cache_control,
          @last_modified,@etag,@vary,@bytes,@response_time_ms,@depth,
          @is_internal,@indexable,@indexable_reason,@noindex,@title,@title_length,@meta_description,@meta_description_length,
@@ -231,7 +231,7 @@ export class Crawler {
          @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links,
          @image_count,@images_without_alt,@images_missing_dimensions,@canonical_count,@canonical_relative,
          @h2_count,@heading_skips,@rel_next,@rel_prev,@rel_amphtml,@mixed_content_count,@twitter_tags,
-         @has_microdata,@has_rdfa,@security_headers)
+         @has_microdata,@has_rdfa,@body_chunks,@security_headers)
        ON CONFLICT(url_key) DO NOTHING`,
     );
     // Robots-disallowed URLs are NOT fetched (we respect robots), but we record them as
@@ -360,6 +360,7 @@ export class Crawler {
           rel_next: ex?.relNext ? 1 : 0, rel_prev: ex?.relPrev ? 1 : 0, rel_amphtml: ex?.relAmphtml ?? null,
           mixed_content_count: ex?.mixedContentCount ?? 0, twitter_tags: ex?.twitterTags ?? null,
           has_microdata: ex?.hasMicrodata ? 1 : 0, has_rdfa: ex?.hasRdfa ? 1 : 0,
+          body_chunks: ex?.bodyChunks?.length ? JSON.stringify(ex.bodyChunks) : null,
           security_headers: r.securityHeaders,
         });
 

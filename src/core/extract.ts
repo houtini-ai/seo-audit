@@ -57,6 +57,7 @@ export interface ExtractedPage {
   twitterTags: string | null;      // JSON of twitter:* meta
   hasMicrodata: boolean;
   hasRdfa: boolean;
+  bodyChunks: { heading: string; level: number; text: string }[]; // content segmented by heading (RAG layer)
   links: ExtractedLink[];
 }
 
@@ -101,6 +102,40 @@ export function extractPage(
   $body('script, style, noscript, template').remove();
   const bodyText = $body('body').text().replace(/\s+/g, ' ').trim();
   const wordCount = bodyText ? bodyText.split(' ').length : 0;
+
+  // Body chunks: visible content segmented by heading, boilerplate stripped — the data layer for the
+  // content-cluster checks (phrase gaps, RAG alignment, extractability). Depth-first reading-order
+  // walk: a heading starts a new chunk; other text accrues to the current one. No DOM mutation.
+  const bodyChunks: { heading: string; level: number; text: string }[] = [];
+  {
+    const $c = cheerio.load(html);
+    $c('script, style, noscript, template, nav, header, footer, aside').remove();
+    const root = ($c('main').first()[0] ?? $c('article').first()[0] ?? $c('body')[0]) as any;
+    const ws = (t: string): string => t.replace(/\s+/g, ' ').trim();
+    let cur: { heading: string; level: number; parts: string[] } = { heading: '', level: 0, parts: [] };
+    const flush = (): void => {
+      const text = ws(cur.parts.join(' '));
+      if (cur.heading || text) bodyChunks.push({ heading: cur.heading, level: cur.level, text: text.slice(0, 1500) });
+    };
+    const walk = (node: any): void => {
+      for (const child of node.children ?? []) {
+        if (child.type === 'tag') {
+          if (/^h[1-6]$/.test(child.name)) {
+            flush();
+            cur = { heading: ws($c(child).text()), level: Number(child.name[1]), parts: [] };
+          } else {
+            walk(child);
+          }
+        } else if (child.type === 'text' && child.data && child.data.trim()) {
+          cur.parts.push(child.data);
+        }
+      }
+    };
+    if (root) { walk(root); flush(); }
+    const kept = bodyChunks.filter(c => c.heading || c.text.length > 20).slice(0, 40);
+    bodyChunks.length = 0;
+    bodyChunks.push(...kept);
+  }
 
   const jsonLdBlocks: string[] = [];
   $('script[type="application/ld+json"]').each((_, el) => {
@@ -237,6 +272,7 @@ export function extractPage(
     twitterTags: Object.keys(tw).length ? JSON.stringify(tw) : null,
     hasMicrodata,
     hasRdfa,
+    bodyChunks,
     links,
   };
 }

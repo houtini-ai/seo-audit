@@ -169,6 +169,7 @@ export class AuditDatabase {
         twitter_tags TEXT,                     -- JSON of twitter:* meta
         has_microdata INTEGER DEFAULT 0,
         has_rdfa INTEGER DEFAULT 0,
+        body_chunks TEXT,                -- JSON [{heading,level,text}] — content segmented by heading (RAG layer)
         inlink_count INTEGER DEFAULT 0,  -- in-degree (computed post-crawl: orphans)
         ipr REAL DEFAULT 0,              -- internal PageRank 0–100 (computed post-crawl)
         click_depth INTEGER,             -- body-only shortest path from home (post-crawl; null=unreachable via body)
@@ -419,6 +420,7 @@ export class AuditDatabase {
     ensure('pages', 'twitter_tags', 'twitter_tags TEXT');
     ensure('pages', 'has_microdata', 'has_microdata INTEGER DEFAULT 0');
     ensure('pages', 'has_rdfa', 'has_rdfa INTEGER DEFAULT 0');
+    ensure('pages', 'body_chunks', 'body_chunks TEXT');
     ensure('pages', 'click_depth', 'click_depth INTEGER');
     ensure('pages', 'indexable_reason', 'indexable_reason TEXT');
     // property-level backlink profile summary (from DataForSEO backlinks/summary)

@@ -421,6 +421,67 @@ export const CHECKS: CheckDef[] = [
         .map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, h1: x.h1 } }));
     },
   },
+  // ── Content cluster (AI-era / RAG layer): exploit the chunked body text captured at crawl ──
+  {
+    id: 'body-missing-top-query', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Top query missing from the page body', fix: 'The page ranks for this query yet its terms appear nowhere — not the title, H1, or body copy. Add a section that actually covers the topic; if it can’t, the page is too thin to hold the ranking and a stronger page should target it.',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const r = rows(c, `SELECT s.page_key urlKey, s.query query, s.impr impressions, p.title title, p.h1 h1, p.body_chunks bc FROM
+        (SELECT page_key, query, SUM(impressions) impr, ROW_NUMBER() OVER (PARTITION BY page_key ORDER BY SUM(impressions) DESC) rn
+         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
+        JOIN pages p ON p.url_key = s.page_key
+        WHERE s.rn = 1 AND p.indexable = 1 AND p.body_chunks IS NOT NULL AND s.impr >= 100`);
+      return r.filter(x => {
+        const q = terms(x.query); if (!q.length) return false;
+        let body = `${x.title || ''} ${x.h1 || ''}`;
+        try { for (const ch of JSON.parse(x.bc)) body += ` ${ch.heading || ''} ${ch.text || ''}`; } catch { /* skip */ }
+        return !q.some((w: string) => titleHasTerm(body, w)); // none of the query's terms appear on the page
+      }).map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, note: 'query terms absent from title, H1 and body' } }));
+    },
+  },
+  {
+    id: 'poor-chunkability', category: 'content', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Content has no heading structure (poor RAG boundaries)', fix: 'Break the copy into headed sections (h2/h3). AI search and featured snippets lift self-contained, headed passages — a wall of text with no subheadings gives them no clean chunk to quote.',
+    run: (c) => rows(c, `SELECT url_key urlKey, word_count wc, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND word_count >= 400 AND body_chunks IS NOT NULL`)
+      .filter(x => { try { return JSON.parse(x.bc).filter((k: any) => k.heading && k.level >= 2).length <= 1; } catch { return false; } })
+      .map(x => ({ urlKey: x.urlKey, evidence: { wordCount: x.wc, note: '400+ words with ≤1 subheading — one undifferentiated block' } })),
+  },
+  {
+    id: 'rag-answer-gap', category: 'merged', severity: 'med', labels: ['G', 'N'], certainty: 0.6, effortBase: 5, fixType: 'per-page',
+    title: 'No single passage answers the ranking query (RAG gap)', fix: 'The page contains the query’s terms but scattered across sections — no one chunk (heading + paragraph) holds them together. AI answers lift a single self-contained passage, so add one that directly answers the query in ~50 words. (Heuristic — confirm the query’s intent first.)',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const r = rows(c, `SELECT s.page_key urlKey, s.query query, s.impr impressions, p.title title, p.body_chunks bc FROM
+        (SELECT page_key, query, SUM(impressions) impr, ROW_NUMBER() OVER (PARTITION BY page_key ORDER BY SUM(impressions) DESC) rn
+         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
+        JOIN pages p ON p.url_key = s.page_key
+        WHERE s.rn = 1 AND p.indexable = 1 AND p.body_chunks IS NOT NULL AND s.impr >= 200`);
+      return r.filter(x => {
+        const q = terms(x.query); if (q.length < 2) return false; // only multi-term queries can be "scattered"
+        let chunks: any[]; try { chunks = JSON.parse(x.bc); } catch { return false; }
+        const whole = `${x.title || ''} ${chunks.map(ch => `${ch.heading || ''} ${ch.text || ''}`).join(' ')}`;
+        if (!q.every((w: string) => titleHasTerm(whole, w))) return false;             // page must contain all terms (else it's body-missing)
+        return !chunks.some(ch => { const h = `${ch.heading || ''} ${ch.text || ''}`; return q.every((w: string) => titleHasTerm(h, w)); }); // but no single chunk does
+      }).map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, note: 'terms present but never together in one passage' } }));
+    },
+  },
+  {
+    id: 'low-extractability', category: 'content', severity: 'low', labels: ['D', 'N'], certainty: 0.5, effortBase: 3, fixType: 'per-page',
+    title: 'Passages depend on context (low answer-extractability)', fix: 'Half or more of this page’s sections open with “it / this / they / there…” or never name the subject — lifted out of the page by an LLM they read as meaningless. Open key sections by naming the entity. (Heuristic.)',
+    run: (c) => {
+      const out: { urlKey: string | null; evidence: Record<string, unknown> }[] = [];
+      const PRON = /^(it|this|that|these|those|they|he|she|there|here|such|one)\b/i;
+      for (const x of rows(c, `SELECT url_key urlKey, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND word_count >= 400 AND body_chunks IS NOT NULL`)) {
+        let chunks: any[]; try { chunks = JSON.parse(x.bc); } catch { continue; }
+        const bodied = chunks.filter((k: any) => k.text && k.text.length > 60);
+        if (bodied.length < 3) continue;
+        const dep = bodied.filter((k: any) => PRON.test(String(k.text).trim())).length;
+        if (dep / bodied.length >= 0.5) out.push({ urlKey: x.urlKey, evidence: { dependentSections: dep, totalSections: bodied.length, note: `${Math.round(dep / bodied.length * 100)}% of sections open context-dependent` } });
+      }
+      return out;
+    },
+  },
   {
     id: 'high-ipr-no-traffic', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Internal authority wasted on a no-traffic page', fix: 'High internal link equity (iPR) and Google does rank it (it earns impressions), yet it gets zero clicks — rewrite the title/snippet or improve the page, or repoint that authority to pages that convert it. (Requires impressions, so functional pages with no search demand are excluded.)',
