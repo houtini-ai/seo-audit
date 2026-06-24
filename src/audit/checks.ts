@@ -519,6 +519,49 @@ export const CHECKS: CheckDef[] = [
       .map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.q, maxPassageScore: x.mps, impressions: x.impr ?? 0, note: 'best passage scores below the reranker confidence threshold' } })),
   },
   {
+    // Dejan: search weights the opening heavily and AI answers front-load. If the ranking query's
+    // terms are present LATER in the page but absent from the opening (~first 2 chunks / ~200 words),
+    // the answer is buried. (body-missing-top-query handles total absence; this is the buried case.)
+    // Informational intent only — front-loading matters less for navigational/transactional queries.
+    id: 'answer-not-front-loaded', category: 'merged', severity: 'med', labels: ['G', 'N'], certainty: 0.6, effortBase: 3, fixType: 'per-page',
+    title: 'Answer to the ranking query is buried, not front-loaded', fix: 'The page covers its top query but the terms don’t appear up top (the intro / first section). Google weights the opening heavily and AI answers front-load — move a direct ~50–100-word answer to the first section. (Heuristic — informational queries.)',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const INFO = /\b(how|what|why|when|which|who|guide|tutorial|best|vs|versus|is|are|does|do|can|should|tips|ideas|examples|meaning|definition|setup|settings)\b/i;
+      const r = rows(c, `SELECT s.page_key urlKey, s.query query, s.impr impressions, p.title title, p.body_chunks bc FROM
+        (SELECT page_key, query, SUM(impressions) impr, ROW_NUMBER() OVER (PARTITION BY page_key ORDER BY SUM(impressions) DESC) rn
+         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
+        JOIN pages p ON p.url_key = s.page_key
+        WHERE s.rn = 1 AND p.indexable = 1 AND p.body_chunks IS NOT NULL AND p.word_count >= 800 AND s.impr >= 100`);
+      return r.filter(x => {
+        if (!INFO.test(x.query)) return false;
+        const q = terms(x.query); if (!q.length) return false;
+        let chunks: any[]; try { chunks = JSON.parse(x.bc); } catch { return false; }
+        const front = `${x.title || ''} ${chunks.slice(0, 2).map((k: any) => `${k.heading || ''} ${k.text || ''}`).join(' ')}`.slice(0, 1200);
+        const whole = `${x.title || ''} ${chunks.map((k: any) => `${k.heading || ''} ${k.text || ''}`).join(' ')}`;
+        return q.some((w: string) => titleHasTerm(whole, w)) && !q.some((w: string) => titleHasTerm(front, w));
+      }).map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, note: 'query terms appear later in the page but not in the opening' } }));
+    },
+  },
+  {
+    // Dejan "density beats length": AI grounds ~370 words/page, diminishing past ~1,500. A very long
+    // page with an over-long unbroken section grounds poorly — split it into focused, headed passages.
+    id: 'content-bloat', category: 'content', severity: 'low', labels: ['D', 'N'], certainty: 0.6, effortBase: 5, fixType: 'per-page',
+    title: 'Over-long section dilutes AI-grounding (density beats length)', fix: 'This page has a very long unbroken section. AI search grounds only ~370 words per page with sharp diminishing returns past ~1,500 — break the long section into focused, headed passages (or tighten it) so each answers one thing cleanly.',
+    run: (c) => {
+      const out: { urlKey: string | null; evidence: Record<string, unknown> }[] = [];
+      // Use the real (uncapped) word_count ÷ number of headed sections — chunk TEXT is capped at
+      // extraction, so we infer over-long sections from words-per-heading, not from chunk length.
+      for (const x of rows(c, `SELECT url_key urlKey, word_count wc, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND word_count >= 2500 AND body_chunks IS NOT NULL`)) {
+        let chunks: any[]; try { chunks = JSON.parse(x.bc); } catch { continue; }
+        const headed = chunks.filter((k: any) => k.heading && k.level >= 2).length;
+        const wordsPerSection = Math.round(x.wc / Math.max(1, headed));
+        if (wordsPerSection > 500) out.push({ urlKey: x.urlKey, evidence: { wordCount: x.wc, headedSections: headed, wordsPerSection, note: 'long page with sparse headings — sections average >500 words, too large to ground cleanly' } });
+      }
+      return out;
+    },
+  },
+  {
     id: 'high-ipr-no-traffic', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Internal authority wasted on a no-traffic page', fix: 'High internal link equity (iPR) and Google does rank it (it earns impressions), yet it gets zero clicks — rewrite the title/snippet or improve the page, or repoint that authority to pages that convert it. (Requires impressions, so functional pages with no search demand are excluded.)',
     run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions
