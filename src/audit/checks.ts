@@ -326,9 +326,14 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'keyword-cannibalisation', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Keyword cannibalisation', fix: 'Consolidate or differentiate — multiple URLs compete for one query.',
-    // Only count URLs that actually rank for the query (impression-weighted position < 20) so a
-    // page ranking #3 + a page at #85 isn't flagged; and exclude "dominance" where the two best
-    // pages both sit in positions 1–2 (indented/double results are good, not cannibalisation).
+    // A URL only "competes" if it ranks for the query (impression-weighted pos < 20) AND holds a
+    // non-trivial share of the leader's impressions — ≥10% and ≥10 impressions. Without that share
+    // floor, incidental long-tail appearances (a page picking up 1–7 impressions for the query)
+    // counted as competitors: e.g. "best vr headset" reported 10 URLs when ONE page held 59,570
+    // impressions at pos 1.1 and the other nine had 1–7 each — not cannibalisation, Google had
+    // decided. We also exclude "dominance" where the best pages both sit at pos 1–2 (indented/double
+    // results are good). NOTE: branded queries can still surface sitelinks as pseudo-competitors —
+    // a brand-aware exclusion is a separate refinement.
     run: (c) => c.gscMaxDate ? rows(c, `
       WITH per_page AS (
         SELECT query, page_key, SUM(clicks) clicks, SUM(impressions) impressions,
@@ -336,10 +341,12 @@ export const CHECKS: CheckDef[] = [
         FROM search_analytics
         WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)}
         GROUP BY query, page_key
-        HAVING pos < 20
-      )
+        HAVING pos < 20 AND SUM(impressions) >= 10
+      ),
+      ranked AS (SELECT *, MAX(impressions) OVER (PARTITION BY query) topImpr FROM per_page),
+      competing AS (SELECT * FROM ranked WHERE impressions >= topImpr * 0.1)
       SELECT query, COUNT(*) urls, SUM(clicks) clicks, SUM(impressions) impressions, MIN(pos) bestPos, MAX(pos) worstPos
-      FROM per_page GROUP BY query
+      FROM competing GROUP BY query
       HAVING COUNT(*) >= 2 AND SUM(impressions) >= 50 AND NOT (MAX(pos) <= 2)
       ORDER BY impressions DESC LIMIT 40`).map(r => ({ urlKey: null, evidence: { query: r.query, competingUrls: r.urls, clicks: r.clicks, impressions: r.impressions, positions: `${Math.round(r.bestPos * 10) / 10}–${Math.round(r.worstPos * 10) / 10}` } })) : [],
   },
