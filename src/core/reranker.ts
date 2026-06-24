@@ -9,16 +9,36 @@ env.cacheDir = path.join(homedir(), '.cache', 'seo-audit-console-models');
 env.allowLocalModels = false;
 
 const MODEL = 'Xenova/ms-marco-MiniLM-L-6-v2';
-type Loaded = { tokenizer: any; model: any };
+type Loaded = { tokenizer: any; model: any; device: string };
 let loading: Promise<Loaded> | null = null;
 
-/** Lazy singleton — first call downloads (~25MB) + warms the model; later calls reuse it. */
+// Prefer the GPU when present. onnxruntime-node bundles the DirectML provider (any DX12 GPU on
+// Windows — incl. NVIDIA), not the CUDA EP, so 'dml' is the GPU path; fall back to CPU if it won't
+// init. (mirrors ai-detect's `cuda if available else cpu`, adapted to our ONNX runtime). Override
+// with SAC_RERANK_DEVICE=cpu|dml. fp32 — DirectML doesn't run the q8-quantised graph.
+const DEVICE_ORDER: string[] = process.env.SAC_RERANK_DEVICE
+  ? [process.env.SAC_RERANK_DEVICE]
+  : ['dml', 'cpu'];
+
+/** Lazy singleton — first call downloads (~25MB) + warms the model on the best device; later calls reuse it. */
 function load(): Promise<Loaded> {
   if (!loading) {
-    loading = (async () => ({
-      tokenizer: await AutoTokenizer.from_pretrained(MODEL),
-      model: await AutoModelForSequenceClassification.from_pretrained(MODEL),
-    }))();
+    loading = (async () => {
+      const tokenizer = await AutoTokenizer.from_pretrained(MODEL);
+      for (let i = 0; i < DEVICE_ORDER.length; i++) {
+        const device = DEVICE_ORDER[i];
+        try {
+          const model = await AutoModelForSequenceClassification.from_pretrained(MODEL, { device: device as 'dml' | 'cpu' | 'cuda' | 'auto', dtype: 'fp32' });
+          console.error(`[reranker] ms-marco-MiniLM loaded on ${device}`);
+          return { tokenizer, model, device };
+        } catch (e) {
+          const last = i === DEVICE_ORDER.length - 1;
+          console.error(`[reranker] device '${device}' unavailable${last ? '' : ', falling back'}: ${e instanceof Error ? e.message.slice(0, 100) : e}`);
+          if (last) throw e;
+        }
+      }
+      throw new Error('reranker: no usable device');
+    })();
   }
   return loading;
 }
