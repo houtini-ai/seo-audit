@@ -183,3 +183,20 @@ Rationale: the moat (1) first (biggest differentiation, all deps ready); 2 + 4 a
 
 ## Confidence note
 1–5 are HIGH confidence (no unknown deps, data already captured, patterns proven). 6–8 carry one real risk each (browser/CrUX/large-files) — flagged so they're not promised as quick wins. Nothing in 1–5 needs new research; it's all build.
+
+---
+
+## Research-informed candidates — Hobo "Technical SEO 2025" + Dejan grounding chunks (studied 2026-06-24)
+Full study + scope mapping: [plan/research-hobo-dejan.md](research-hobo-dejan.md) (raw sources gitignored under `research/reference/`).
+
+The leak-informed Hobo framework largely **validates what we already build** (internal prominence = our iPR; signal coherence; clean canonicalisation; schema; GSC-satisfaction proxies). Genuinely **new & in-scope** items (we have the data), priority order:
+
+1. **anchor-text coherence** (Hobo "Signal Coherence" / Goldmine) — for each page, do the INBOUND internal anchors (`links.anchor_text`) share significant terms with its title/H1/top GSC query? Deterministic, novel, data in hand. _Highest value._
+2. **stale-content** (`lastSignificantUpdate` proxy) — JSON-LD Article `dateModified` old AND traffic-decay → refresh candidate.
+3. **content-density / grounding-bloat** (Dejan "density beats length": 3k+-word pages get only ~13% AI-grounding coverage) — long pages with a low headed-chunk ratio → tighten/split. Uses `word_count` + `body_chunks`.
+4. **answer front-loading** — extend `rag-answer-gap`: is the top-query answer in chunk 0–1 (intro) or buried? Grounding is ranking-weighted + front-loaded.
+5. _(optional, heuristic, low priority)_ cert-expiry TLS probe (`badSslCertificate`); topical-focus proxy (`siteFocusScore`/`siteRadius` from entity/template concentration).
+
+**OUT OF SCOPE — unmeasurable from outside** (these are Google-internal *scores*; we approximate via iPR + GSC, we do NOT fake them): `siteAuthority` / `Q*` / `NSR` / `contentEffort` / true `OriginalContentScore`, `NavBoost` / `lastLongestClicks` / `clutterScore`, `spamrank`. Using the documented terms in recommendation *copy* is fair; claiming to *compute* them is not (stays true to "a wrong finding is worse than none").
+
+Dejan numbers worth keeping in mind for content checks: grounding budget ≈2,000 words/query; median ~377 words (2,427 chars) selected/page; avg chunk ≈15.5 words; diminishing returns past ~1,500 words.
