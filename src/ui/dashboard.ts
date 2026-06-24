@@ -208,6 +208,58 @@ function evidenceSummary(ev: Record<string, unknown>): string {
     .slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ');
 }
 
+// Human labels for the evidence keys our checks emit (the rest fall back to a camelCase splitter).
+const FI_LABEL: Record<string, string> = {
+  competingUrls: 'Competing URLs', expectedCtr: 'Expected CTR', ctr: 'CTR', position: 'Position', positions: 'Position range',
+  inboundInContentLinks: 'Inbound in-content links', linkingPages: 'Linking pages', impressionsChange: 'Impressions change',
+  previousImpressions: 'Prev impressions', currentImpressions: 'Current impressions', previousClicks: 'Prev clicks',
+  currentClicks: 'Current clicks', previousPosition: 'Prev position', currentPosition: 'Current position',
+  slippedBy: 'Slipped by', clicksLost: 'Clicks lost', dropPercent: 'Drop', dropPct: 'Drop', h1Count: 'H1 count', titleLength: 'Title length',
+};
+// Long/free-text evidence reads better as a full-width note than a stat chip.
+const FI_NOTE_KEYS = new Set(['note', 'metaDescription', 'title', 'googleCanonical', 'userCanonical', 'found']);
+const humanizeKey = (k: string): string =>
+  FI_LABEL[k] ?? ((s) => s.charAt(0).toUpperCase() + s.slice(1))(k.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' '));
+const fmtEvVal = (k: string, v: unknown): string =>
+  typeof v === 'number' ? (/position/i.test(k) ? v.toFixed(1) : fmt(v)) : String(v);
+
+// The expanded row: the full recommendation (untruncated) + every evidence field as a readable
+// snapshot — stat chips for scalars, notes for free text — plus traffic-at-risk and the effort/payoff.
+function findingDetailHtml(f: any): string {
+  const rec = safeJson(f.recommendation), ev = safeJson(f.evidence) as Record<string, unknown>;
+  const traf = safeJson(f.traffic_at_risk), eff = safeJson(f.effort);
+  const chips: string[] = [], notes: string[] = [];
+  for (const [k, v] of Object.entries(ev)) {
+    if (v == null || typeof v === 'object') continue;
+    if (k === 'query' || k === 'url') continue; // query is in the row label; url is linked below
+    const sv = String(v);
+    if (FI_NOTE_KEYS.has(k) || sv.length > 48) {
+      const val = (k === 'googleCanonical' || k === 'userCanonical') ? `<code>${esc(sv)}</code>` : esc(sv);
+      notes.push(`<div class="fi-note"><span class="fi-k">${esc(humanizeKey(k))}</span> ${val}</div>`);
+    } else {
+      chips.push(`<div class="fi-stat"><span class="fi-v">${esc(fmtEvVal(k, v))}</span><span class="fi-k">${esc(humanizeKey(k))}</span></div>`);
+    }
+  }
+  const issues = (ev as any).issues;
+  if (Array.isArray(issues) && issues.length) {
+    notes.push(`<div class="fi-note"><span class="fi-k">Issues</span> ${issues.slice(0, 6).map((i: any) => esc(String(i?.detail ?? i))).join('; ')}${issues.length > 6 ? ` (+${issues.length - 6} more)` : ''}</div>`);
+  }
+  const meta: string[] = [];
+  if (traf.clicks != null || traf.impressions != null) {
+    meta.push(`<span class="fi-m"><b>${fmt(traf.clicks || 0)}</b> clicks · <b>${fmt(traf.impressions || 0)}</b> impr${traf.position != null ? ` · pos <b>${Number(traf.position).toFixed(1)}</b>` : ''} <span class="fi-mlbl">at risk</span></span>`);
+  }
+  if (eff && (eff.hours || eff.expectedClicks)) {
+    meta.push(`<span class="fi-m">~<b>${eff.hours || 0}</b>h · ≈<b>${fmt(Math.round(eff.expectedClicks || 0))}</b> clicks${eff.fixType ? ` · ${esc(String(eff.fixType))}` : ''} <span class="fi-mlbl">payoff</span></span>`);
+  }
+  const url = f.url_key ? `<a class="fi-link" href="${esc(f.url_key)}" target="_blank" rel="noopener">${esc(f.url_key)}</a>` : '';
+  return `<div class="fi-detail">` +
+    (rec.text ? `<p class="fi-rec">${esc(rec.text)}</p>` : '') +
+    (chips.length ? `<div class="fi-grid">${chips.join('')}</div>` : '') +
+    notes.join('') +
+    (meta.length || url ? `<div class="fi-meta">${meta.join('')}${url}<code class="fi-check">${esc(f.check_id)}</code></div>` : '') +
+    `</div>`;
+}
+
 // Executive summary — synthesises the dashboard data into a plain-language read: a traffic verdict,
 // where the biggest opportunities are, what's urgent, and a prioritised "start here" action list.
 function renderExecSummary(data: DashboardData): void {
@@ -358,22 +410,38 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
     `</div>`;
 
   const drawTable = (): void => {
-    const rows = fc.top.filter(f => active === 'all' || f.severity === active).slice(0, 25).map(f => {
+    const list = fc.top.filter(f => active === 'all' || f.severity === active).slice(0, 25);
+    const rows = list.map((f, i) => {
       const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk), ev = safeJson(f.evidence);
       const path = f.url_key ? shortPath(f.url_key) : '—';
       const pct = Math.max(3, Math.round((f.priority / maxPrio) * 100));
       const sz = (f.size ?? '').toString();
       const szClass = 'impact-' + (sz.toLowerCase() || 's');
       const qLabel = ev.query ? ` <span style="color:var(--text-muted);font-size:12px">“${esc(String(ev.query))}”</span>` : '';
-      return `<tr><td><span class="sev ${f.severity}">${f.severity}</span></td><td>${esc(rec.title || f.check_id)}${qLabel}</td>` +
+      return `<tr class="fi-row" data-fi="${i}" tabindex="0" role="button" aria-expanded="false">` +
+        `<td><span class="sev ${f.severity}">${f.severity}</span></td>` +
+        `<td><span class="fi-chev" aria-hidden="true">›</span>${esc(rec.title || f.check_id)}${qLabel}</td>` +
         `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
         `<td class="num">${traf.impressions || 0}</td>` +
         `<td class="prio"><span class="impact ${szClass}">${esc(sz || '–')} ${f.impact ?? pct}</span></td>` +
-        `<td class="fix" title="${esc(rec.text || '')}">${esc(rec.text || '')}</td></tr>`;
+        `<td class="fix" title="${esc(rec.text || '')}">${esc(rec.text || '')}</td></tr>` +
+        `<tr class="fi-detail-row" hidden><td colspan="7">${findingDetailHtml(f)}</td></tr>`;
     });
     tableEl.innerHTML = rows.length
       ? healthBar + `<table><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th><th>Fix</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
       : healthBar + '<p class="muted">No findings at this severity in the top results.</p>';
+    tableEl.querySelectorAll<HTMLElement>('.fi-row').forEach(row => {
+      const toggle = (): void => {
+        const det = row.nextElementSibling as HTMLElement | null;
+        if (!det || !det.classList.contains('fi-detail-row')) return;
+        const open = det.hasAttribute('hidden');
+        det.toggleAttribute('hidden', !open);
+        row.classList.toggle('open', open);
+        row.setAttribute('aria-expanded', String(open));
+      };
+      row.addEventListener('click', toggle);
+      row.addEventListener('keydown', e => { const k = (e as KeyboardEvent).key; if (k === 'Enter' || k === ' ') { e.preventDefault(); toggle(); } });
+    });
   };
   const drawChips = (): void => {
     const chip = (sev: string, label: string, n: number): string =>
