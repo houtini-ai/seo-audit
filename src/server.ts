@@ -18,6 +18,7 @@ import { suggestPages } from './audit/opportunities.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
 import { dbPathFor, sanitizeProperty } from './core/paths.js';
 import { scoreSitePassages } from './core/passageScore.js';
+import { buildDraftBrief } from './core/draftBrief.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks } from './generators/index.js';
 
 import { urlKey, hostFormForProperty } from './core/url-key.js';
@@ -261,6 +262,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         content: [{ type: 'text', text: `Scored ${r.scored} ranking pages; ${r.flagged} have no strongly-relevant passage (score < 3) — run_audit surfaces them as weak-passage-answer.${lines ? `\n\nWeakest:\n${lines}` : ''}` }],
         structuredContent: r as unknown as Record<string, unknown>,
       };
+    },
+  );
+
+  server.registerTool(
+    'draft_content',
+    {
+      title: 'Draft a grounded fix in the author\'s own voice',
+      description: 'Assemble a GROUNDED writing brief for a page so YOU (the assistant) can draft the fix — no bundled LLM. Returns the ranking-query gap, the page\'s OWN passages as voice exemplars (match tone/pace/lexicon), and the most query-relevant existing passages (selected by the reranker) as facts to ground in. Use it on a weak-passage-answer / not-front-loaded page to write a self-contained answer passage in the site\'s voice, inventing nothing. Omit urlKey to target the weakest-scoring page. Needs body_chunks (+ score_passages for the gap).',
+      inputSchema: { siteUrl: z.string(), urlKey: z.string().optional() },
+    },
+    async ({ siteUrl, urlKey }) => {
+      const r = await buildDraftBrief(dataDir(), siteUrl, urlKey);
+      if ('error' in r) return { content: [{ type: 'text', text: r.error }], structuredContent: r };
+      const voice = r.voice.map((v, i) => `  [V${i + 1}${v.heading ? ` · ${v.heading}` : ''}] ${v.text}`).join('\n');
+      const facts = r.facts.map((f, i) => `  [F${i + 1} · rel ${f.relevance}${f.heading ? ` · ${f.heading}` : ''}] ${f.text}`).join('\n');
+      const text = `WRITING BRIEF — ${r.url}\nTarget query: “${r.topQuery ?? '(unknown)'}”\nGap: ${r.gap}\n\nTASK\n${r.brief}\n\nVOICE (match this — the page's own writing):\n${voice || '  (no substantial passages)'}\n\nFACTS (ground in these — the page's most query-relevant content; invent nothing beyond them):\n${facts || '  (none)'}`;
+      return { content: [{ type: 'text', text }], structuredContent: r as unknown as Record<string, unknown> };
     },
   );
 
