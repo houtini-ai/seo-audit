@@ -266,7 +266,29 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'internal-links-to-redirects', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
     title: 'Internal links pointing through redirects', fix: 'Repoint internal links to the final URL (saves crawl + equity).',
-    run: (c) => rows(c, `SELECT l.target_key urlKey, COUNT(DISTINCT l.source_key) sources FROM links l JOIN pages p ON p.url_key=l.target_key WHERE l.is_internal=1 AND p.redirects IS NOT NULL GROUP BY l.target_key`).map(r => ({ urlKey: r.urlKey, evidence: { linkingPages: r.sources } })),
+    // Flag a link ONLY if the raw href it uses is itself a redirect source — i.e. that exact URL
+    // appears as a `from` hop in some redirect chain. The old query flagged any link whose target
+    // page merely HAD a `redirects` entry, which fired site-wide on www-canonical properties: every
+    // page records the seed apex→www hop, yet the actual hrefs already use the final (www) URL and
+    // never redirect. Matching the href (fragment-stripped) against the real redirect-source set is
+    // robust to that normalisation artefact.
+    run: (c) => {
+      const fromSet = new Set<string>();
+      for (const r of rows(c, `SELECT redirects FROM pages WHERE redirects IS NOT NULL AND redirects <> '[]'`)) {
+        try { for (const h of JSON.parse(r.redirects) as { from?: string }[]) if (h.from) fromSet.add(h.from); } catch { /* skip bad json */ }
+      }
+      if (!fromSet.size) return [];
+      const counts = new Map<string, Set<string>>();
+      for (const l of rows(c, `SELECT target_key, target_url, source_key FROM links WHERE is_internal=1`)) {
+        const url = l.target_url as string;
+        const hash = url.indexOf('#');
+        const href = hash >= 0 ? url.slice(0, hash) : url;
+        if (!fromSet.has(href)) continue;
+        let set = counts.get(l.target_key); if (!set) counts.set(l.target_key, set = new Set());
+        set.add(l.source_key);
+      }
+      return [...counts].map(([urlKey, srcs]) => ({ urlKey, evidence: { linkingPages: srcs.size } }));
+    },
   },
   {
     id: 'missing-structured-data', category: 'schema', severity: 'low', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'per-page',
