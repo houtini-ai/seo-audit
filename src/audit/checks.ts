@@ -47,6 +47,22 @@ const spanDays = (c: CheckContext): number => {
 };
 // HTML pages only — match the MIME type before any charset parameter (mirrors isHtmlContentType).
 const HTML_CT = `(LOWER(content_type) LIKE 'text/html%' OR LOWER(content_type) LIKE 'application/xhtml+xml%')`;
+// Newest dateModified/datePublished anywhere in a page's JSON-LD (recurses @graph/arrays) — the
+// effective "last meaningfully updated" date. json_ld is a JSON array of raw block strings.
+const newestSchemaDate = (jl: string | null): string | null => {
+  if (!jl) return null;
+  let best = -Infinity, bestStr: string | null = null;
+  const scan = (o: any): void => {
+    if (!o || typeof o !== 'object') return;
+    for (const key of ['dateModified', 'datePublished']) {
+      const v = o[key];
+      if (typeof v === 'string') { const t = Date.parse(v); if (!isNaN(t) && t > best) { best = t; bestStr = v; } }
+    }
+    for (const k in o) if (o[k] && typeof o[k] === 'object') scan(o[k]);
+  };
+  try { for (const block of JSON.parse(jl) as string[]) { try { scan(JSON.parse(block)); } catch { /* skip block */ } } } catch { /* skip */ }
+  return bestStr;
+};
 // Paginated archive URLs (/page/2, ?page=3, ?paged=2). They legitimately share titles/metas with
 // page 1 and are intentionally absent from sitemaps, so they must NOT generate duplicate-title /
 // duplicate-meta / missing-meta / not-in-sitemap false positives. Pass the column reference
@@ -557,6 +573,33 @@ export const CHECKS: CheckDef[] = [
         const headed = chunks.filter((k: any) => k.heading && k.level >= 2).length;
         const wordsPerSection = Math.round(x.wc / Math.max(1, headed));
         if (wordsPerSection > 500) out.push({ urlKey: x.urlKey, evidence: { wordCount: x.wc, headedSections: headed, wordsPerSection, note: 'long page with sparse headings — sections average >500 words, too large to ground cleanly' } });
+      }
+      return out;
+    },
+  },
+  {
+    // Hobo Level 3 freshness / lastSignificantUpdate. Gemini guard: YoY windows (negate seasonality
+    // + zero-click-SERP CTR loss). Flag when the page hasn't been meaningfully re-dated in >12 months
+    // AND clicks are down >25% YoY AND impressions down >15% YoY (impressions confirm ranking decay,
+    // not just CTR). Needs ~13 months of GSC — guarded by spanDays so it stays silent on shallow syncs.
+    id: 'stale-content', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    title: 'Stale page declining year-on-year', fix: 'This page hasn’t been meaningfully updated in over a year and its Search Console clicks are down sharply versus the same period last year — refresh and expand the content (and honestly re-date it) to rebuild the freshness signal Google rewards.',
+    run: (c) => {
+      if (!c.gscMaxDate || spanDays(c) < 400) return []; // need ~13 months for a clean YoY comparison
+      const d = c.gscMaxDate;
+      const out: { urlKey: string | null; evidence: Record<string, unknown> }[] = [];
+      const rs = rows(c, `
+        WITH cur AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i FROM search_analytics WHERE page_key IS NOT NULL AND date <= '${d}' AND date > date('${d}','-90 days') GROUP BY page_key),
+             py AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i FROM search_analytics WHERE page_key IS NOT NULL AND date <= date('${d}','-365 days') AND date > date('${d}','-455 days') GROUP BY page_key)
+        SELECT cur.page_key url, cur.c curC, cur.i curI, py.c pyC, py.i pyI, p.json_ld jl
+        FROM cur JOIN py ON py.page_key = cur.page_key JOIN pages p ON p.url_key = cur.page_key
+        WHERE p.indexable = 1 AND py.c >= 50 AND cur.c < py.c * 0.75 AND cur.i < py.i * 0.85
+        ORDER BY (py.c - cur.c) DESC LIMIT 40`);
+      for (const x of rs) {
+        const dm = newestSchemaDate(x.jl); if (!dm) continue;
+        const ageDays = (Date.parse(d) - Date.parse(dm)) / 86400000;
+        if (!(ageDays >= 365)) continue; // only genuinely stale pages (>12 months since last schema date)
+        out.push({ urlKey: null, evidence: { url: x.url, dateModified: dm.slice(0, 10), clicksYoY: `${x.pyC}→${x.curC} (-${Math.round((1 - x.curC / x.pyC) * 100)}%)`, impressionsYoY: `${x.pyI}→${x.curI}`, clicks: x.pyC - x.curC, impressions: x.pyI } });
       }
       return out;
     },
