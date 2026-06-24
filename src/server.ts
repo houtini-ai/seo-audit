@@ -17,6 +17,7 @@ import { detectTemplates } from './audit/templates.js';
 import { suggestPages } from './audit/opportunities.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
 import { dbPathFor, sanitizeProperty } from './core/paths.js';
+import { scoreSitePassages } from './core/passageScore.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks } from './generators/index.js';
 
 import { urlKey, hostFormForProperty } from './core/url-key.js';
@@ -241,6 +242,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const r = runSingleCheck(dataDir(), siteUrl, check, limit);
       return {
         content: [{ type: 'text', text: `${check}: ${r.findings.length} findings` }],
+        structuredContent: r as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    'score_passages',
+    {
+      title: 'Score passage relevance (AI-search readiness)',
+      description: 'Run a local cross-encoder reranker (ms-marco-MiniLM-L-6-v2, downloaded once to a cache, no Python) over each ranking page\'s heading chunks against its top Search Console query, and persist the single best-passage relevance score. It SCORES relevance (a classifier — it cannot hallucinate). Powers the `weak-passage-answer` check — the "RAG snippetability" test: does any passage confidently answer the query, the way AI/passage search re-ranks? On-demand + ML-heavy (~0.6s/page), bounded to pages that already rank. `limit` caps pages (highest-impression first); `minImpressions` sets the floor (default 50). First run downloads ~25MB. Re-run after a re-crawl.',
+      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(2000).optional(), minImpressions: z.number().int().min(0).optional() },
+    },
+    async ({ siteUrl, limit, minImpressions }) => {
+      const r = await scoreSitePassages(dataDir(), siteUrl, { limit, minImpressions });
+      const lines = r.weakest.slice(0, 15).map(w => `  ${w.score}  ${w.url.replace(/^https?:\/\/[^/]+/, '')} · "${w.query}"`).join('\n');
+      return {
+        content: [{ type: 'text', text: `Scored ${r.scored} ranking pages; ${r.flagged} have no strongly-relevant passage (score < 3) — run_audit surfaces them as weak-passage-answer.${lines ? `\n\nWeakest:\n${lines}` : ''}` }],
         structuredContent: r as unknown as Record<string, unknown>,
       };
     },

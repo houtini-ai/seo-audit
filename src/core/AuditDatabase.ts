@@ -170,6 +170,10 @@ export class AuditDatabase {
         has_microdata INTEGER DEFAULT 0,
         has_rdfa INTEGER DEFAULT 0,
         body_chunks TEXT,                -- JSON [{heading,level,text}] — content segmented by heading (RAG layer)
+        max_passage_score REAL,          -- cross-encoder best-passage relevance vs top GSC query (score_passages)
+        max_passage_query TEXT,          -- the query that best-passage score was computed against
+        max_passage_impr INTEGER,        -- that query's impressions at scoring time (for priority)
+        max_passage_at TEXT,             -- when scored
         inlink_count INTEGER DEFAULT 0,  -- in-degree (computed post-crawl: orphans)
         ipr REAL DEFAULT 0,              -- internal PageRank 0–100 (computed post-crawl)
         click_depth INTEGER,             -- body-only shortest path from home (post-crawl; null=unreachable via body)
@@ -421,6 +425,10 @@ export class AuditDatabase {
     ensure('pages', 'has_microdata', 'has_microdata INTEGER DEFAULT 0');
     ensure('pages', 'has_rdfa', 'has_rdfa INTEGER DEFAULT 0');
     ensure('pages', 'body_chunks', 'body_chunks TEXT');
+    ensure('pages', 'max_passage_score', 'max_passage_score REAL');
+    ensure('pages', 'max_passage_query', 'max_passage_query TEXT');
+    ensure('pages', 'max_passage_impr', 'max_passage_impr INTEGER');
+    ensure('pages', 'max_passage_at', 'max_passage_at TEXT');
     ensure('pages', 'click_depth', 'click_depth INTEGER');
     ensure('pages', 'indexable_reason', 'indexable_reason TEXT');
     // property-level backlink profile summary (from DataForSEO backlinks/summary)

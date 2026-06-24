@@ -507,6 +507,18 @@ export const CHECKS: CheckDef[] = [
     },
   },
   {
+    // The "RAG snippetability" test. A local cross-encoder (the kind AI search uses to re-rank) scored
+    // every chunk against the page's top query; we persisted the single best-passage score. A low max
+    // means no dense, extractable answer anywhere on the page — it will lose in AI/passage search even
+    // if it keyword-matches. Model-derived (not deterministic truth) → N label, includeJudgement-gated.
+    // Requires `score_passages` to have run (like CWV needs page_lighthouse).
+    id: 'weak-passage-answer', category: 'merged', severity: 'high', labels: ['G', 'N'], certainty: 0.8, effortBase: 5, fixType: 'per-page',
+    title: 'No passage strongly answers the ranking query (AI-search risk)', fix: 'A local neural reranker found no single passage on this page that confidently answers its top query — the page covers the topic loosely but offers no dense, extractable answer, so AI/passage search will prefer a clearer source. Add a focused, self-contained passage: a heading that states the question + a direct ~50-word answer up top. Run `score_passages` to (re)populate.',
+    run: (c) => rows(c, `SELECT url_key urlKey, max_passage_score mps, max_passage_query q, max_passage_impr impr FROM pages
+      WHERE indexable=1 AND max_passage_score IS NOT NULL AND max_passage_score < 3`)
+      .map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.q, maxPassageScore: x.mps, impressions: x.impr ?? 0, note: 'best passage scores below the reranker confidence threshold' } })),
+  },
+  {
     id: 'high-ipr-no-traffic', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Internal authority wasted on a no-traffic page', fix: 'High internal link equity (iPR) and Google does rank it (it earns impressions), yet it gets zero clicks — rewrite the title/snippet or improve the page, or repoint that authority to pages that convert it. (Requires impressions, so functional pages with no search demand are excluded.)',
     run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions
