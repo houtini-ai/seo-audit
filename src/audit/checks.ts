@@ -541,12 +541,20 @@ export const CHECKS: CheckDef[] = [
          FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
         JOIN pages p ON p.url_key = s.page_key
         WHERE s.rn = 1 AND p.indexable = 1 AND s.impr >= 100`);
+      // Pool only GENUINE editorial anchors: drop self-links, navigational/CTA boilerplate
+      // ("Home", "Skip to content", "Read more", "Write a review"…) and anchors with no letters
+      // ("(0)", page numbers, arrows). Without this the pool was dominated by chrome — e.g. the EHI
+      // homepage's 2,940 inbound "Home" breadcrumb links read as "anchors that don't mention 'ehi'",
+      // and Shopify "Write a review"/"(0)" card chrome flagged product pages on SKU-fragment queries.
       const anchors = new Map<string, { pool: string; n: number }>();
       for (const a of rows(c, `SELECT target_key tk, GROUP_CONCAT(anchor_text, ' ') pool, COUNT(*) n
-         FROM links WHERE is_internal = 1 AND placement = 'body' AND anchor_text IS NOT NULL AND TRIM(anchor_text) != ''
+         FROM links WHERE is_internal = 1 AND placement = 'body' AND source_key <> target_key
+           AND anchor_text IS NOT NULL AND TRIM(anchor_text) != ''
+           AND LOWER(TRIM(anchor_text)) GLOB '*[a-z]*'
+           AND LOWER(TRIM(anchor_text)) NOT IN ('home','skip to content','skip to the content','skip to product information','write a review','read more','click here','learn more','more','view','view all','view more','see more','shop now','shop','next','previous','prev','back','menu','close','search','cart','account','log in','login','register')
          GROUP BY target_key`)) anchors.set(a.tk, { pool: a.pool, n: a.n });
       return top.filter(x => {
-        const a = anchors.get(x.urlKey); if (!a || a.n < 3) return false;     // need enough in-content inbound links to judge
+        const a = anchors.get(x.urlKey); if (!a || a.n < 3) return false;     // need enough genuine in-content inbound links to judge
         const q = terms(x.query); return q.length > 0 && !q.some((w: string) => titleHasTerm(a.pool, w));
       }).map(x => { const a = anchors.get(x.urlKey)!; return { urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, inboundInContentLinks: a.n } }; });
     },
