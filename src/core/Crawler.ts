@@ -94,7 +94,8 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
   const redirects: RedirectHop[] = [];
   let current = url;
   let hops = 0;
-  let transientRetries = 0;
+  let transientRetries = 0; // 429/503 backoff budget
+  let netRetries = 0;       // network-error (timeout/reset) budget — separate so a 503 then a timeout doesn't starve it
   const start = Date.now();
   // Known asset file-types: HEAD only (no body download). Falls back to GET if HEAD is refused.
   let method: 'GET' | 'HEAD' = isAssetUrl(url) ? 'HEAD' : 'GET';
@@ -116,12 +117,12 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
     } catch (err) {
       // The server slowed past the timeout or dropped the connection. Don't lose the page to a
       // transient hiccup — wait (10s, 20s, 30s) and retry before giving up, so a slowdown becomes
-      // latency rather than a silent coverage gap. Counts toward the transient-retry budget and
-      // trips `throttled` so the crawl also paces itself down. Surfaces as a failure only after
-      // the budget is exhausted.
-      if (transientRetries < MAX_TRANSIENT_RETRIES) {
-        transientRetries++;
-        await sleep(Math.min(10000 * transientRetries, 30000));
+      // latency rather than a silent coverage gap. Uses its OWN budget (not the 429/503 one) so a
+      // page that 503s then times out still gets full network retries; trips `throttled` so the
+      // crawl paces itself down. Surfaces as a failure only after the budget is exhausted.
+      if (netRetries < MAX_TRANSIENT_RETRIES) {
+        netRetries++;
+        await sleep(Math.min(10000 * netRetries, 30000));
         continue;
       }
       throw err;
@@ -184,7 +185,7 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
       // content-length — body isn't read, so 0 would be misleading).
       bytes: Number(h('content-length')) || (body ? Buffer.byteLength(body) : null),
       timeMs: Date.now() - start,
-      throttled: transientRetries > 0,
+      throttled: transientRetries > 0 || netRetries > 0,
     };
   }
 }

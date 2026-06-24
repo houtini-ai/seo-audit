@@ -2,6 +2,7 @@ import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
 import { gscFreshness } from './gscFreshness.js';
 import { expectedCtr } from './ctrModel.js';
+import { brandToken } from './url-key.js';
 
 export interface DashboardData {
   siteUrl: string;
@@ -123,10 +124,9 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     // the space-stripped query (so "sim racing cockpit" matches brand "simracingcockpit"). Done in
     // one SQL pass. The detected brand is surfaced in the UI so the split is verifiable, not a
     // black box — for descriptive domains where the brand equals a generic term, the user can see it.
-    const host = siteUrl.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
-    const brandKey = (host.split('.')[0] ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const brandKey = brandToken(siteUrl); // shared helper — same derivation the audit's brandExcl uses
     let brandedSplit: DashboardData['brandedSplit'];
-    if (brandKey.length >= 3) {
+    if (brandKey) {
       // Whole-token match (brand surrounded by word boundaries), NOT substring — so a 3-letter brand
       // like "ehi" matches the query "ehi inspections" but NOT "vehicle". Strict: this under-detects
       // for descriptive concatenated domains (where the brand is typed spaced = the category) rather

@@ -65,22 +65,28 @@ for (const r of rows) {
   // (1) not blocked / (2) real results
   if (live.status === 0) { console.log(`  ⚠ NO-RESPONSE  ${tag}  (${live.error})`); blocked++; continue; }
   if (live.status === 403 || live.status === 429 || live.status === 503) { console.log(`  ✗ BLOCKED ${live.status}  ${tag}`); blocked++; continue; }
-  const marker = BLOCK_MARKERS.find((re) => re.test(live.body));
-  if (marker && live.body.length < 30000) { console.log(`  ✗ CHALLENGE-PAGE  ${tag}  (matched ${marker})`); blocked++; continue; }
+  // Challenge/CAPTCHA walls put their marker in the <title>/<head>, so scan the head region
+  // regardless of total size (a >30KB challenge page must not slip through); for small bodies
+  // scan the whole thing too.
+  const head = live.body.slice(0, 5000);
+  const marker = BLOCK_MARKERS.find((re) => re.test(head)) || (live.body.length < 30000 ? BLOCK_MARKERS.find((re) => re.test(live.body)) : undefined);
+  if (marker) { console.log(`  ✗ CHALLENGE-PAGE  ${tag}  (matched ${marker})`); blocked++; continue; }
   if (live.body.length < 500) { console.log(`  ⚠ THIN-BODY ${live.body.length}b  ${tag}`); blocked++; continue; }
 
-  // (3) independent parse vs stored
+  // (3) independent parse vs stored. Coerce stored numerics (NULL → 0) so a NULL column never
+  // reads as a spurious mismatch (null !== n) or a silently-swallowed one (Math.abs(null-n) = NaN).
   const $ = cheerio.load(live.body);
   const liveJsonld = $('script[type="application/ld+json"]').length;
   const storedJsonld = (() => { try { return JSON.parse(r.json_ld || '[]').length; } catch { return 0; } })();
+  const num = (v) => Number(v) || 0;
   const d = [];
   if (norm(r.title) !== norm($('title').first().text())) d.push(`TITLE`);
-  if (r.h1_count !== $('h1').length) d.push(`H1(${r.h1_count}/${$('h1').length})`);
+  if (num(r.h1_count) !== $('h1').length) d.push(`H1(${num(r.h1_count)}/${$('h1').length})`);
   if (norm(r.meta_description) !== norm($('meta[name=description]').attr('content'))) d.push(`META`);
   if (norm(r.canonical_url) !== norm($('link[rel=canonical]').attr('href'))) d.push(`CANON`);
   if ((r.noindex ? 1 : 0) !== (/noindex/i.test(norm($('meta[name=robots]').attr('content'))) ? 1 : 0)) d.push(`NOINDEX`);
   if (storedJsonld !== liveJsonld) d.push(`JSONLD(${storedJsonld}/${liveJsonld})`);
-  if (Math.abs(r.image_count - $('img').length) > 4) d.push(`IMG(${r.image_count}/${$('img').length})`);
+  if (Math.abs(num(r.image_count) - $('img').length) > 4) d.push(`IMG(${num(r.image_count)}/${$('img').length})`);
 
   if (d.length) { console.log(`  ✗ MISMATCH  ${tag}  → ${d.join(' ')}`); mismatched++; }
   else { console.log(`  ✓ ${tag}`); ok++; }

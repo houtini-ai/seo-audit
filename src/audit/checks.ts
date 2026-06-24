@@ -41,10 +41,13 @@ const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.
 const win = (d: string): string => `date > date('${d}', '-28 days') AND date <= '${d}'`;
 // Prior 28-day window (the 28 days BEFORE the current window) — for period-over-period checks.
 const winPrev = (d: string): string => `date <= date('${d}', '-28 days') AND date > date('${d}', '-56 days')`;
-// SQL clause to drop branded queries (whole-token match). Brand is alnum-only so safe to inline.
-// Branded multi-URL ranking is sitelinks, not cannibalisation; branded top-queries aren't anchor targets.
-const brandExcl = (c: CheckContext): string =>
-  c.brand ? `AND (' ' || LOWER(query) || ' ') NOT LIKE '% ${c.brand} %'` : '';
+// SQL clause to drop branded queries (whole-token match). Branded multi-URL ranking is sitelinks,
+// not cannibalisation; branded top-queries aren't anchor targets. The brand is re-sanitised to
+// alnum HERE (not trusting the caller) so inlining it into SQL is unconditionally injection-safe.
+const brandExcl = (c: CheckContext): string => {
+  const b = (c.brand ?? '').replace(/[^a-z0-9]/g, '');
+  return b ? `AND (' ' || LOWER(query) || ' ') NOT LIKE '% ${b} %'` : '';
+};
 // Days of GSC history actually held — period-over-period checks need enough span to be meaningful.
 const spanDays = (c: CheckContext): number => {
   const r = c.db.prepare(`SELECT julianday(MAX(date)) - julianday(MIN(date)) d FROM search_analytics`).get() as { d: number | null };
@@ -276,23 +279,25 @@ export const CHECKS: CheckDef[] = [
     // page merely HAD a `redirects` entry, which fired site-wide on www-canonical properties: every
     // page records the seed apex→www hop, yet the actual hrefs already use the final (www) URL and
     // never redirect. Matching the href (fragment-stripped) against the real redirect-source set is
-    // robust to that normalisation artefact.
+    // robust to that artefact. Kept entirely in SQL (json_each over pages.redirects) so we never
+    // materialise the whole links table in JS — the links table is the largest in the DB.
     run: (c) => {
-      const fromSet = new Set<string>();
-      for (const r of rows(c, `SELECT redirects FROM pages WHERE redirects IS NOT NULL AND redirects <> '[]'`)) {
-        try { for (const h of JSON.parse(r.redirects) as { from?: string }[]) if (h.from) fromSet.add(h.from); } catch { /* skip bad json */ }
-      }
-      if (!fromSet.size) return [];
-      const counts = new Map<string, Set<string>>();
-      for (const l of rows(c, `SELECT target_key, target_url, source_key FROM links WHERE is_internal=1`)) {
-        const url = l.target_url as string;
-        const hash = url.indexOf('#');
-        const href = hash >= 0 ? url.slice(0, hash) : url;
-        if (!fromSet.has(href)) continue;
-        let set = counts.get(l.target_key); if (!set) counts.set(l.target_key, set = new Set());
-        set.add(l.source_key);
-      }
-      return [...counts].map(([urlKey, srcs]) => ({ urlKey, evidence: { linkingPages: srcs.size } }));
+      return rows(c, `
+        WITH redir_src AS (
+          -- Feed json_each a CASE that yields '[]' for any null/invalid value, so it never receives
+          -- malformed JSON regardless of how SQLite orders the scan vs the WHERE (a plain WHERE
+          -- json_valid() guard gets defeated by subquery flattening). Mirrors the old JS try/catch.
+          SELECT DISTINCT json_extract(j.value, '$.from') src
+          FROM pages, json_each(CASE WHEN json_valid(pages.redirects) THEN pages.redirects ELSE '[]' END) j
+          WHERE pages.redirects IS NOT NULL AND pages.redirects <> '[]' AND j.type = 'object'
+        )
+        SELECT l.target_key urlKey, COUNT(DISTINCT l.source_key) sources
+        FROM links l
+        JOIN redir_src r ON r.src = (CASE WHEN instr(l.target_url, '#') > 0
+                                          THEN substr(l.target_url, 1, instr(l.target_url, '#') - 1)
+                                          ELSE l.target_url END)
+        WHERE l.is_internal = 1
+        GROUP BY l.target_key`).map(r => ({ urlKey: r.urlKey, evidence: { linkingPages: r.sources } }));
     },
   },
   {
@@ -332,13 +337,14 @@ export const CHECKS: CheckDef[] = [
     id: 'keyword-cannibalisation', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Keyword cannibalisation', fix: 'Consolidate or differentiate — multiple URLs compete for one query.',
     // A URL only "competes" if it ranks for the query (impression-weighted pos < 20) AND holds a
-    // non-trivial share of the leader's impressions — ≥10% and ≥10 impressions. Without that share
-    // floor, incidental long-tail appearances (a page picking up 1–7 impressions for the query)
-    // counted as competitors: e.g. "best vr headset" reported 10 URLs when ONE page held 59,570
-    // impressions at pos 1.1 and the other nine had 1–7 each — not cannibalisation, Google had
-    // decided. We also exclude "dominance" where the best pages both sit at pos 1–2 (indented/double
-    // results are good). NOTE: branded queries can still surface sitelinks as pseudo-competitors —
-    // a brand-aware exclusion is a separate refinement.
+    // non-trivial share of the leader's impressions — ≥10% of the leader OR ≥500 impressions in its
+    // own right, and ≥10 impressions minimum. Without that floor, incidental long-tail appearances
+    // (a page picking up 1–7 impressions for the query) counted as competitors: e.g. "best vr headset"
+    // reported 10 URLs when ONE page held 59,570 impressions at pos 1.1 and the other nine had 1–7
+    // each — not cannibalisation, Google had decided. The absolute ≥500 backstop keeps a genuine
+    // mid-volume rival under a dominant leader (e.g. 60k leader + a real 4k second page = 6.7%, below
+    // the 10% bar) from being silently dropped. We also exclude "dominance" where the best pages both
+    // sit at pos 1–2 (indented/double results are good). Branded queries are dropped via brandExcl.
     run: (c) => c.gscMaxDate ? rows(c, `
       WITH per_page AS (
         SELECT query, page_key, SUM(clicks) clicks, SUM(impressions) impressions,
@@ -349,7 +355,7 @@ export const CHECKS: CheckDef[] = [
         HAVING pos < 20 AND SUM(impressions) >= 10
       ),
       ranked AS (SELECT *, MAX(impressions) OVER (PARTITION BY query) topImpr FROM per_page),
-      competing AS (SELECT * FROM ranked WHERE impressions >= topImpr * 0.1)
+      competing AS (SELECT * FROM ranked WHERE impressions >= topImpr * 0.1 OR impressions >= 500)
       SELECT query, COUNT(*) urls, SUM(clicks) clicks, SUM(impressions) impressions, MIN(pos) bestPos, MAX(pos) worstPos
       FROM competing GROUP BY query
       HAVING COUNT(*) >= 2 AND SUM(impressions) >= 50 AND NOT (MAX(pos) <= 2)
@@ -546,18 +552,28 @@ export const CHECKS: CheckDef[] = [
          FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} ${brandExcl(c)} GROUP BY page_key, query) s
         JOIN pages p ON p.url_key = s.page_key
         WHERE s.rn = 1 AND p.indexable = 1 AND s.impr >= 100`);
-      // Pool only GENUINE editorial anchors: drop self-links, navigational/CTA boilerplate
-      // ("Home", "Skip to content", "Read more", "Write a review"…) and anchors with no letters
-      // ("(0)", page numbers, arrows). Without this the pool was dominated by chrome — e.g. the EHI
-      // homepage's 2,940 inbound "Home" breadcrumb links read as "anchors that don't mention 'ehi'",
-      // and Shopify "Write a review"/"(0)" card chrome flagged product pages on SKU-fragment queries.
+      // Pool only GENUINE editorial anchors. "Chrome" (nav/footer/breadcrumb/CTA) is detected
+      // STRUCTURALLY, not via an English word-list: an anchor text reused across a large share of
+      // the site's pages is templated boilerplate — e.g. the EHI homepage's 2,940 inbound "Home"
+      // breadcrumb links — and that holds in any language ("Startseite", "Accueil"…). We also drop
+      // self-links and anchors with no letters ("(0)", page numbers, arrows). Editorial in-content
+      // anchors recur on only a handful of pages, so they survive.
       const anchors = new Map<string, { pool: string; n: number }>();
-      for (const a of rows(c, `SELECT target_key tk, GROUP_CONCAT(anchor_text, ' ') pool, COUNT(*) n
-         FROM links WHERE is_internal = 1 AND placement = 'body' AND source_key <> target_key
-           AND anchor_text IS NOT NULL AND TRIM(anchor_text) != ''
-           AND LOWER(TRIM(anchor_text)) GLOB '*[a-z]*'
-           AND LOWER(TRIM(anchor_text)) NOT IN ('home','skip to content','skip to the content','skip to product information','write a review','read more','click here','learn more','more','view','view all','view more','see more','shop now','shop','next','previous','prev','back','menu','close','search','cart','account','log in','login','register')
-         GROUP BY target_key`)) anchors.set(a.tk, { pool: a.pool, n: a.n });
+      for (const a of rows(c, `
+        WITH body_anchors AS (
+          SELECT target_key, anchor_text, source_key, LOWER(TRIM(anchor_text)) atext
+          FROM links
+          WHERE is_internal = 1 AND placement = 'body' AND source_key <> target_key
+            AND anchor_text IS NOT NULL AND TRIM(anchor_text) != '' AND LOWER(TRIM(anchor_text)) GLOB '*[a-z]*'
+        ),
+        templated AS (
+          SELECT atext FROM body_anchors GROUP BY atext
+          HAVING COUNT(DISTINCT source_key) > MAX(20, (SELECT COUNT(*) FROM pages WHERE status_code = 200 AND ${HTML_CT}) * 0.15)
+        )
+        SELECT target_key tk, GROUP_CONCAT(anchor_text, ' ') pool, COUNT(*) n
+        FROM body_anchors
+        WHERE atext NOT IN (SELECT atext FROM templated)
+        GROUP BY target_key`)) anchors.set(a.tk, { pool: a.pool, n: a.n });
       return top.filter(x => {
         const a = anchors.get(x.urlKey); if (!a || a.n < 3) return false;     // need enough genuine in-content inbound links to judge
         const q = terms(x.query); return q.length > 0 && !q.some((w: string) => titleHasTerm(a.pool, w));
