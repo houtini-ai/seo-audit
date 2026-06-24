@@ -483,6 +483,30 @@ export const CHECKS: CheckDef[] = [
     },
   },
   {
+    // Hobo "Signal Coherence" / Goldmine; leak: anchor_mismatch. Google leans on internal anchors to
+    // understand a page's topic — if the IN-CONTENT inbound anchors never mention the query the page
+    // actually ranks for, that's an incoherent internal signal. Guard against boilerplate FPs by using
+    // ONLY placement='body' anchors (nav/footer/aside excluded) and requiring ≥3 of them.
+    id: 'anchor-text-incoherent', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Internal anchors don’t mention the page’s top query', fix: 'The in-content internal links pointing at this page never use its top-ranking query in their anchor text — and Google leans on internal anchors to understand what a page is about. Re-anchor the key internal links with descriptive, query-relevant text instead of generic “read more” / brand-only labels.',
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const top = rows(c, `SELECT s.page_key urlKey, s.query query, s.impr impressions FROM
+        (SELECT page_key, query, SUM(impressions) impr, ROW_NUMBER() OVER (PARTITION BY page_key ORDER BY SUM(impressions) DESC) rn
+         FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key, query) s
+        JOIN pages p ON p.url_key = s.page_key
+        WHERE s.rn = 1 AND p.indexable = 1 AND s.impr >= 100`);
+      const anchors = new Map<string, { pool: string; n: number }>();
+      for (const a of rows(c, `SELECT target_key tk, GROUP_CONCAT(anchor_text, ' ') pool, COUNT(*) n
+         FROM links WHERE is_internal = 1 AND placement = 'body' AND anchor_text IS NOT NULL AND TRIM(anchor_text) != ''
+         GROUP BY target_key`)) anchors.set(a.tk, { pool: a.pool, n: a.n });
+      return top.filter(x => {
+        const a = anchors.get(x.urlKey); if (!a || a.n < 3) return false;     // need enough in-content inbound links to judge
+        const q = terms(x.query); return q.length > 0 && !q.some((w: string) => titleHasTerm(a.pool, w));
+      }).map(x => { const a = anchors.get(x.urlKey)!; return { urlKey: x.urlKey, evidence: { topQuery: x.query, impressions: x.impressions, inboundInContentLinks: a.n } }; });
+    },
+  },
+  {
     id: 'high-ipr-no-traffic', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Internal authority wasted on a no-traffic page', fix: 'High internal link equity (iPR) and Google does rank it (it earns impressions), yet it gets zero clicks — rewrite the title/snippet or improve the page, or repoint that authority to pages that convert it. (Requires impressions, so functional pages with no search demand are excluded.)',
     run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions
