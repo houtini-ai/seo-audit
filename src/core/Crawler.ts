@@ -99,18 +99,33 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
   // Known asset file-types: HEAD only (no body download). Falls back to GET if HEAD is refused.
   let method: 'GET' | 'HEAD' = isAssetUrl(url) ? 'HEAD' : 'GET';
   while (true) {
-    const res = await fetch(current, {
-      method,
-      redirect: 'manual',
-      // pages change between crawls — ask upstream caches/CDNs for the current copy
-      headers: {
-        'user-agent': ua,
-        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'cache-control': 'no-cache',
-        pragma: 'no-cache',
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+    let res: Response;
+    try {
+      res = await fetch(current, {
+        method,
+        redirect: 'manual',
+        // pages change between crawls — ask upstream caches/CDNs for the current copy
+        headers: {
+          'user-agent': ua,
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'cache-control': 'no-cache',
+          pragma: 'no-cache',
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+    } catch (err) {
+      // The server slowed past the timeout or dropped the connection. Don't lose the page to a
+      // transient hiccup — wait (10s, 20s, 30s) and retry before giving up, so a slowdown becomes
+      // latency rather than a silent coverage gap. Counts toward the transient-retry budget and
+      // trips `throttled` so the crawl also paces itself down. Surfaces as a failure only after
+      // the budget is exhausted.
+      if (transientRetries < MAX_TRANSIENT_RETRIES) {
+        transientRetries++;
+        await sleep(Math.min(10000 * transientRetries, 30000));
+        continue;
+      }
+      throw err;
+    }
     // Transient throttling (429 Too Many Requests / 503 Service Unavailable) is NOT a broken
     // page — back off (respecting Retry-After) and retry, so a fast crawl doesn't poison the
     // data with rate-limit statuses. Only the final status after retries is recorded.
