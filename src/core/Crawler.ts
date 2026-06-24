@@ -201,7 +201,7 @@ export class Crawler {
     update: (p: Record<string, unknown>) => void,
     signal: AbortSignal,
   ): Promise<CrawlResult> {
-    const maxPages = opts.maxPages ?? 1000;
+    const maxPages = opts.maxPages ?? 4000;
     const maxDepth = opts.maxDepth ?? 10;
     const concurrency = Math.max(1, Math.min(opts.maxConcurrency ?? 4, 16));
     const delayMs = opts.delayMs ?? 250;
