@@ -877,7 +877,45 @@ function render(data: DashboardData): void {
   const setVis = (id: string, on: boolean): void => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none'; };
   setVis('deviceBlock', showDev); setVis('countryBlock', showCty); setVis('breakdownsCard', showDev || showCty);
 
+  // Make the data tables click-to-sort by any column (the findings list is excluded — its rows come
+  // in expand/detail pairs that re-ordering would break).
+  ['quickWinsTable', 'contentDecayTable', 'pagePerfTable', 'movementTable', 'deviceTable', 'countryTable'].forEach(id => makeSortable($(id)));
+
   setupTabs();
+}
+
+// Make a rendered data table sortable: click a header to sort rows by that column. Numeric columns are
+// detected from the `num` cell class and sort numerically (blanks/“—” sink to the bottom); the rest sort
+// alphabetically. Direction toggles per click. Re-wired on every render (innerHTML is rebuilt each time).
+function makeSortable(container: HTMLElement | null): void {
+  const table = container?.querySelector('table'); if (!table) return;
+  const tbody = table.querySelector('tbody'); if (!tbody) return;
+  const ths = [...table.querySelectorAll('thead th')] as HTMLElement[];
+  const first = tbody.querySelector('tr');
+  const toNum = (raw: string): number => { const m = raw.replace(/[−–]/g, '-').match(/-?\d[\d,]*\.?\d*/); return m ? parseFloat(m[0].replace(/,/g, '')) : NaN; };
+  ths.forEach((th, i) => {
+    if (th.classList.contains('nosort')) return;
+    const numeric = !!first && (first.children[i] as HTMLElement | undefined)?.classList.contains('num');
+    th.classList.add('sortable-th');
+    th.addEventListener('click', () => {
+      const dir = th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending';
+      ths.forEach(h => { h.removeAttribute('aria-sort'); h.classList.remove('sort-asc', 'sort-desc'); });
+      th.setAttribute('aria-sort', dir);
+      th.classList.add(dir === 'ascending' ? 'sort-asc' : 'sort-desc');
+      const val = (tr: Element): string => (tr.children[i] as HTMLElement | undefined)?.getAttribute('data-sort') ?? ((tr.children[i] as HTMLElement | undefined)?.textContent ?? '').trim();
+      const rows = [...tbody.querySelectorAll(':scope > tr')];
+      rows.sort((a, b) => {
+        if (numeric) {
+          const x = toNum(val(a)), y = toNum(val(b)), ax = isNaN(x), ay = isNaN(y);
+          if (ax && ay) return 0; if (ax) return 1; if (ay) return -1;
+          return dir === 'ascending' ? x - y : y - x;
+        }
+        const x = val(a).toLowerCase(), y = val(b).toLowerCase(), c = x < y ? -1 : x > y ? 1 : 0;
+        return dir === 'ascending' ? c : -c;
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
 }
 
 // Tabbed nav: switch panels, and resize the ECharts in the newly-shown panel — charts created in a

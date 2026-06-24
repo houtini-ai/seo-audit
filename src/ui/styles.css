@@ -90,6 +90,13 @@ body {
 .findings-table td.prio { white-space: nowrap; }
 .findings-table tr:hover td { background: var(--bg-card-hover); }
 
+/* click-to-sort headers */
+.findings-table th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.findings-table th.sortable-th:hover { color: var(--text-secondary); }
+.findings-table th.sortable-th::after { content: '⇅'; opacity: .3; margin-left: 5px; font-size: 10px; }
+.findings-table th.sort-asc::after { content: '▲'; opacity: .85; color: var(--accent); }
+.findings-table th.sort-desc::after { content: '▼'; opacity: .85; color: var(--accent); }
+
 /* expandable finding rows — click a row for the full data snapshot */
 .findings-table .fi-row { cursor: pointer; }
 .findings-table .fi-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
