@@ -69,7 +69,13 @@ export async function buildDraftBrief(
       : page.mps < 3 ? `weak-passage (best passage scores ${page.mps} — no section confidently answers the query)`
         : `the page already answers this (score ${page.mps}) — consider a refresh/expansion instead`;
 
-    const brief = `Draft a self-contained passage — a clear heading + a ~50–90-word answer — that DIRECTLY answers the query “${topQuery ?? '(unknown)'}” for this page. Lead with a one-sentence direct answer, then support it. Match the TONE, PACE and LEXICON of the VOICE samples exactly; do not impose a different house style. Use ONLY facts present in the facts/voice content below — do NOT invent specs, prices, dates, or claims. If a needed fact is missing, write around what's there and note the gap.`;
+    const brief = [
+      `Make the SMALLEST change that closes the gap for the query “${topQuery ?? '(unknown)'}”: draft ONE self-contained passage to slot in (a clear heading + ~50–90 words) — not a rewrite. Preserve the rest of the page; this is a surgical addition (less intervention is better).`,
+      `Lead with a one-sentence direct answer, then support it.`,
+      `VOICE: match the tone, pace and lexicon of the voice samples exactly — first-person, from someone who owns and uses the gear, naming specific products. British English, contractions, no tidy "in conclusion" bow.`,
+      `AVOID AI slop: no em dashes; no clichés ("landscape", "elevate", "whether you're…", "in today's…", "dive in", "it's worth noting"); no formal-transition padding.`,
+      `GROUND STRICTLY: use only facts present in the facts/voice content below — invent no specs, prices, dates or claims. If a needed fact is missing, write around what's there and flag the gap rather than guessing.`,
+    ].join(' ');
 
     return { url: page.url, topQuery, gap, maxPassageScore: page.mps, voice, facts, brief };
   } finally {
