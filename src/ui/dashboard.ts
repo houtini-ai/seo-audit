@@ -530,23 +530,52 @@ function render(data: DashboardData): void {
   cannChart = echarts.init($('cannChart'));
   if (cann.length) {
     cannSel.innerHTML = cann.map((q, i) => `<option value="${i}">${esc(q.query)} (${q.urls.length} URLs)</option>`).join('');
-    const palette4 = [col.accent, col.red, col.amber, col.green];
+    // Brand spectrum for the colliding lines (concrete hex so the canvas can use them).
+    const cssv = getComputedStyle(document.documentElement);
+    const brand = ['--color-brand-cyan', '--color-brand-fuchsia', '--color-brand-violet']
+      .map(v => cssv.getPropertyValue(v).trim() || col.accent);
     const drawBraid = (qi: number): void => {
       const q = cann[qi];
-      const weeks = [...new Set(q.urls.flatMap(u => u.points.map(p => p.week)))].sort();
+      const top = q.urls.slice(0, 3); // only the real contenders — not a spaghetti of every URL
+      const weeks = [...new Set(top.flatMap(u => u.points.map(p => p.week)))].sort();
+      const maps = top.map(u => new Map(u.points.map(p => [p.week, p.position])));
+      // Crossover dots: the week the leader changed (one URL overtook another) — the whole point.
+      const crossovers: [string, number][] = [];
+      for (let a = 0; a < maps.length; a++) {
+        for (let b = a + 1; b < maps.length; b++) {
+          let prevSign = 0;
+          for (const w of weeks) {
+            const pa = maps[a].get(w), pb = maps[b].get(w);
+            if (pa == null || pb == null) continue;
+            const sign = Math.sign(pa - pb);
+            if (sign !== 0 && prevSign !== 0 && sign !== prevSign) crossovers.push([w, (pa + pb) / 2]);
+            if (sign !== 0) prevSign = sign;
+          }
+        }
+      }
+      const lines = top.map((u, ui) => ({
+        name: shortPath(u.url), type: 'line', smooth: true, connectNulls: true, showSymbol: false,
+        lineStyle: { width: 2.5, color: brand[ui % brand.length] }, itemStyle: { color: brand[ui % brand.length] },
+        data: weeks.map(w => maps[ui].get(w) ?? null),
+      }));
       cannChart!.setOption({
         ...ARIA,
         grid: { left: 48, right: 16, top: 28, bottom: 40 },
         legend: { top: 0, type: 'scroll', textStyle: { color: col.text, fontSize: 11 } },
         tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: weeks, ...axis },
-        yAxis: { type: 'value', name: 'position', inverse: true, min: 1, ...axis },
-        series: q.urls.map((u, ui) => { const m = new Map(u.points.map(p => [p.week, p.position])); return { name: shortPath(u.url), type: 'line', smooth: true, connectNulls: true, showSymbol: false, lineStyle: { width: 2, color: palette4[ui % 4] }, itemStyle: { color: palette4[ui % 4] }, data: weeks.map(w => m.get(w) ?? null) }; }),
+        xAxis: { type: 'category', data: weeks, boundaryGap: false, ...axis },
+        yAxis: { type: 'value', name: 'rank (1 = top)', inverse: true, min: 1, ...axis },
+        series: [
+          ...lines,
+          { name: 'Google switched winner', type: 'scatter', data: crossovers, symbolSize: 11,
+            itemStyle: { color: col.text, borderColor: col.surface, borderWidth: 2 }, z: 6,
+            tooltip: { trigger: 'item', formatter: (p: any): string => `Leader changed (week ${p.value[0]})` } },
+        ],
       }, true);
     };
     drawBraid(0);
     cannSel.onchange = (): void => drawBraid(Number(cannSel.value));
-    $('cannSummary').textContent = `${cann.length} contested queries; each line is a competing URL's weekly average position (higher = better rank).`;
+    $('cannSummary').textContent = `${cann.length} contested queries; each line is a competing URL's weekly rank (top = winning). A dot marks the week Google switched which URL it favours.`;
   } else {
     cannSel.innerHTML = '';
     cannChart.setOption({ ...ARIA, title: { text: 'No cannibalisation detected', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
