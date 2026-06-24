@@ -26,7 +26,7 @@ export async function scoreSitePassages(
          FROM search_analytics WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win} GROUP BY page_key, query) s
        JOIN pages p ON p.url_key = s.page_key
        WHERE s.rn = 1 AND p.indexable = 1 AND p.body_chunks IS NOT NULL AND s.impr >= ${minImpr}
-       ORDER BY s.impr DESC ${opts.limit ? `LIMIT ${Math.floor(opts.limit)}` : ''}`,
+       ORDER BY s.impr DESC LIMIT ${opts.limit ? Math.floor(opts.limit) : 500}`,
     ).all() as { urlKey: string; query: string; impressions: number; bc: string }[];
 
     const upd = db.db.prepare(

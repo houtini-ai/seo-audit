@@ -64,7 +64,11 @@ export function computeLinkGraph(db: Database.Database, crawlId: string, seedKey
       for (const { t, w } of adj[i]) next[t] += share * w;
     }
     for (let i = 0; i < N; i++) next[i] += danglingShare;
+    // L1-delta early exit — PageRank usually converges well before 30 iterations; stop once the
+    // vector barely moves so we don't spend the back half of the iterations for no change.
+    let delta = 0; for (let i = 0; i < N; i++) delta += Math.abs(next[i] - pr[i]);
     pr = next;
+    if (delta < 1e-6) break;
   }
   // log-normalise to 0–100 (pr values are all > 0 thanks to the (1-d)/N base)
   let lo = Infinity, hi = -Infinity;

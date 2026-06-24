@@ -245,6 +245,7 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_links_source  ON links(source_key);
       CREATE INDEX IF NOT EXISTS idx_links_target  ON links(target_key);
       CREATE INDEX IF NOT EXISTS idx_links_internal ON links(is_internal);
+      CREATE INDEX IF NOT EXISTS idx_links_internal_placement ON links(is_internal, placement, target_key);
     `);
 
     this.db.exec(`

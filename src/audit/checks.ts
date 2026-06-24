@@ -36,6 +36,10 @@ export interface CheckDef {
 }
 
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
+// Streaming variant — yields one row at a time instead of materialising the whole result set. Use for
+// checks that scan a large/fat column (e.g. body_chunks) and only need independent per-row work, so a
+// big content site doesn't load every page's body text into one array.
+const iterRows = (ctx: CheckContext, sql: string, ...args: unknown[]): IterableIterator<any> => ctx.db.prepare(sql).iterate(...args) as IterableIterator<any>;
 // d is the finalised GSC date (partial trailing days already trimmed upstream); cap the window at
 // it so checks never count unfinalised days. winPrev already caps below d, so it's unaffected.
 const win = (d: string): string => `date > date('${d}', '-28 days') AND date <= '${d}'`;
@@ -266,10 +270,11 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'redirect-chain', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
     title: 'Redirect chain (2+ hops)', fix: 'Collapse to a single hop to the final URL.',
-    run: (c) => rows(c, `SELECT url_key urlKey, redirects FROM pages WHERE redirects IS NOT NULL`)
-      .map(r => ({ urlKey: r.urlKey, hops: (JSON.parse(r.redirects) as unknown[]).length }))
-      .filter(x => x.hops >= 2)
-      .map(x => ({ urlKey: x.urlKey, evidence: { hops: x.hops } })),
+    // Count hops in SQL (json_array_length, guarded by json_valid) and filter to >=2 there — so we
+    // never pull every redirect-bearing page into JS just to count + drop most of them.
+    run: (c) => rows(c, `SELECT url_key urlKey, json_array_length(redirects) hops FROM pages
+      WHERE redirects IS NOT NULL AND json_valid(redirects) AND json_array_length(redirects) >= 2`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { hops: r.hops } })),
   },
   {
     id: 'internal-links-to-redirects', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
@@ -499,9 +504,14 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'poor-chunkability', category: 'content', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'Content has no heading structure (poor RAG boundaries)', fix: 'Break the copy into headed sections (h2/h3). AI search and featured snippets lift self-contained, headed passages — a wall of text with no subheadings gives them no clean chunk to quote.',
-    run: (c) => rows(c, `SELECT url_key urlKey, word_count wc, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND word_count >= 400 AND body_chunks IS NOT NULL`)
-      .filter(x => { try { return JSON.parse(x.bc).filter((k: any) => k.heading && k.level >= 2).length <= 1; } catch { return false; } })
-      .map(x => ({ urlKey: x.urlKey, evidence: { wordCount: x.wc, note: '400+ words with ≤1 subheading — one undifferentiated block' } })),
+    run: (c) => {
+      const out: RawFinding[] = [];
+      for (const x of iterRows(c, `SELECT url_key urlKey, word_count wc, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND word_count >= 400 AND body_chunks IS NOT NULL`)) {
+        let headed: number; try { headed = (JSON.parse(x.bc) as any[]).filter((k: any) => k.heading && k.level >= 2).length; } catch { continue; }
+        if (headed <= 1) out.push({ urlKey: x.urlKey, evidence: { wordCount: x.wc, note: '400+ words with ≤1 subheading — one undifferentiated block' } });
+      }
+      return out;
+    },
   },
   {
     id: 'rag-answer-gap', category: 'merged', severity: 'med', labels: ['G', 'N'], certainty: 0.6, effortBase: 5, fixType: 'per-page',
@@ -528,7 +538,7 @@ export const CHECKS: CheckDef[] = [
     run: (c) => {
       const out: { urlKey: string | null; evidence: Record<string, unknown> }[] = [];
       const PRON = /^(it|this|that|these|those|they|he|she|there|here|such|one)\b/i;
-      for (const x of rows(c, `SELECT url_key urlKey, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND word_count >= 400 AND body_chunks IS NOT NULL`)) {
+      for (const x of iterRows(c, `SELECT url_key urlKey, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND word_count >= 400 AND body_chunks IS NOT NULL`)) {
         let chunks: any[]; try { chunks = JSON.parse(x.bc); } catch { continue; }
         const bodied = chunks.filter((k: any) => k.text && k.text.length > 60);
         if (bodied.length < 3) continue;
@@ -626,7 +636,7 @@ export const CHECKS: CheckDef[] = [
       const out: { urlKey: string | null; evidence: Record<string, unknown> }[] = [];
       // Use the real (uncapped) word_count ÷ number of headed sections — chunk TEXT is capped at
       // extraction, so we infer over-long sections from words-per-heading, not from chunk length.
-      for (const x of rows(c, `SELECT url_key urlKey, word_count wc, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND word_count >= 2500 AND body_chunks IS NOT NULL`)) {
+      for (const x of iterRows(c, `SELECT url_key urlKey, word_count wc, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND word_count >= 2500 AND body_chunks IS NOT NULL`)) {
         let chunks: any[]; try { chunks = JSON.parse(x.bc); } catch { continue; }
         const headed = chunks.filter((k: any) => k.heading && k.level >= 2).length;
         const wordsPerSection = Math.round(x.wc / Math.max(1, headed));
