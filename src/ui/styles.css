@@ -179,11 +179,12 @@ body {
 .hb-med { background: var(--accent); } .hb-low { background: var(--color-text-quaternary); }
 
 /* Impact pills — colour-graded XL / L / M / S */
-.impact { display: inline-block; padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 600; font-family: var(--font-mono); letter-spacing: .2px; white-space: nowrap; }
-.impact-xl { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
-.impact-l  { background: color-mix(in srgb, var(--color-status-warning) 20%, transparent); color: var(--color-status-warning); }
-.impact-m  { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-.impact-s  { background: var(--bg-input); color: var(--text-muted); }
+/* Terminal-style tags: transparent fill, 1px coloured border, uppercase mono */
+.impact { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: var(--font-mono); letter-spacing: .5px; text-transform: uppercase; white-space: nowrap; background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+.impact-xl { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); }
+.impact-l  { color: var(--color-status-warning); border-color: color-mix(in srgb, var(--color-status-warning) 50%, transparent); }
+.impact-m  { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.impact-s  { color: var(--text-muted); border-color: var(--border); }
 
 /* Agent-readiness — score ring + category tiles */
 .ar-top { display: flex; align-items: center; gap: 22px; margin: 6px 0 16px; flex-wrap: wrap; }
