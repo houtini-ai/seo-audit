@@ -175,8 +175,12 @@ export const CHECKS: CheckDef[] = [
   // ── Extractor additions (CLS, headings, mixed content, directives, social) ───
   {
     id: 'images-missing-dimensions', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
-    title: 'Images without width/height (CLS)', fix: 'Set width & height (or CSS aspect-ratio) on <img> so the browser reserves space — avoids layout shift.',
-    run: (c) => rows(c, `SELECT url_key urlKey, images_missing_dimensions n, image_count total FROM pages WHERE status_code=200 AND indexable=1 AND images_missing_dimensions > 0`).map(r => ({ urlKey: r.urlKey, evidence: { missingDimensions: r.n, total: r.total } })),
+    // Lint, NOT a measured Core Web Vital. Missing width/height attributes only cause CLS if the
+    // CSS doesn't already reserve space — modern themes using aspect-ratio / fixed boxes have ~0
+    // measured CLS despite missing attributes. So we report it as a hygiene lint and explicitly say
+    // it's not a confirmed CWV issue; escalate only against field CLS (high-yield-cwv-fail does that).
+    title: 'Images missing width/height attributes', fix: 'Add width & height (or rely on CSS aspect-ratio) so the browser reserves space. NOTE: this is a lint — if your CSS already reserves space (aspect-ratio / fixed box) measured CLS is likely ~0 and there is nothing to fix. Confirm with field CLS before prioritising.',
+    run: (c) => rows(c, `SELECT url_key urlKey, images_missing_dimensions n, image_count total FROM pages WHERE status_code=200 AND indexable=1 AND images_missing_dimensions > 0`).map(r => ({ urlKey: r.urlKey, evidence: { missingDimensions: r.n, total: r.total, note: 'lint only — no measured CLS impact unless field data shows layout shift' } })),
   },
   {
     id: 'heading-hierarchy', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
@@ -973,9 +977,14 @@ export const CHECKS: CheckDef[] = [
   },
   {
     id: 'large-html', category: 'performance', severity: 'low', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'per-page',
-    title: 'Large HTML document', fix: 'Trim the HTML payload (over ~150KB) — bloated markup slows render and First Contentful Paint. Often huge inline SVG/CSS/JSON or unminified output.',
-    run: (c) => rows(c, `SELECT url_key urlKey, bytes FROM pages WHERE status_code=200 AND ${HTML_CT} AND bytes > 150000 ORDER BY bytes DESC`)
-      .map(r => ({ urlKey: r.urlKey, evidence: { bytes: r.bytes } })),
+    title: 'Large HTML document (transferred)', fix: 'Trim the HTML payload — bloated markup slows render and First Contentful Paint (often huge inline SVG/CSS/JSON or unminified output). Judged on TRANSFERRED bytes, not raw: behind a compressing CDN (brotli/gzip) raw size matters far less.',
+    // Severity is on what the browser actually downloads, not raw bytes: a 200KB page served brotli
+    // is ~45KB over the wire and is NOT a real perf problem. We estimate transfer size (raw × ~0.22
+    // for br/gzip, else raw) and only flag pages whose ESTIMATED transferred HTML exceeds ~60KB.
+    run: (c) => rows(c, `SELECT url_key urlKey, bytes, content_encoding enc FROM pages WHERE status_code=200 AND ${HTML_CT} AND bytes > 150000 ORDER BY bytes DESC`)
+      .map(r => { const compressed = /br|gzip|deflate|zstd/i.test(r.enc || ''); const est = compressed ? Math.round(r.bytes * 0.22) : r.bytes; return { urlKey: r.urlKey, est, compressed, raw: r.bytes }; })
+      .filter(x => x.est > 60000)
+      .map(x => ({ urlKey: x.urlKey, evidence: { rawBytes: x.raw, estTransferBytes: x.est, compressed: x.compressed, note: x.compressed ? 'raw HTML; estimated transferred size after CDN compression' : 'served UNCOMPRESSED — enable brotli/gzip' } })),
   },
   {
     id: 'uncompressed-html', category: 'performance', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
