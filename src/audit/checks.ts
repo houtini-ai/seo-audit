@@ -354,21 +354,45 @@ export const CHECKS: CheckDef[] = [
     // mid-volume rival under a dominant leader (e.g. 60k leader + a real 4k second page = 6.7%, below
     // the 10% bar) from being silently dropped. We also exclude "dominance" where the best pages both
     // sit at pos 1–2 (indented/double results are good). Branded queries are dropped via brandExcl.
-    run: (c) => c.gscMaxDate ? rows(c, `
-      WITH per_page AS (
-        SELECT query, page_key, SUM(clicks) clicks, SUM(impressions) impressions,
-               SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
-        FROM search_analytics
-        WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} ${brandExcl(c)}
-        GROUP BY query, page_key
-        HAVING pos < 20 AND SUM(impressions) >= 10
-      ),
-      ranked AS (SELECT *, MAX(impressions) OVER (PARTITION BY query) topImpr FROM per_page),
-      competing AS (SELECT * FROM ranked WHERE impressions >= topImpr * 0.1 OR impressions >= 500)
-      SELECT query, COUNT(*) urls, SUM(clicks) clicks, SUM(impressions) impressions, MIN(pos) bestPos, MAX(pos) worstPos
-      FROM competing GROUP BY query
-      HAVING COUNT(*) >= 2 AND SUM(impressions) >= 50 AND NOT (MAX(pos) <= 2)
-      ORDER BY impressions DESC LIMIT 40`).map(r => ({ urlKey: null, evidence: { query: r.query, competingUrls: r.urls, clicks: r.clicks, impressions: r.impressions, positions: `${Math.round(r.bestPos * 10) / 10}–${Math.round(r.worstPos * 10) / 10}` } })) : [],
+    run: (c) => {
+      if (!c.gscMaxDate) return [];
+      const flagged = rows(c, `
+        WITH per_page AS (
+          SELECT query, page_key, SUM(clicks) clicks, SUM(impressions) impressions,
+                 SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+          FROM search_analytics
+          WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} ${brandExcl(c)}
+          GROUP BY query, page_key
+          HAVING pos < 20 AND SUM(impressions) >= 10
+        ),
+        ranked AS (SELECT *, MAX(impressions) OVER (PARTITION BY query) topImpr FROM per_page),
+        competing AS (SELECT * FROM ranked WHERE impressions >= topImpr * 0.1 OR impressions >= 500)
+        SELECT query, COUNT(*) urls, SUM(clicks) clicks, SUM(impressions) impressions, MIN(pos) bestPos, MAX(pos) worstPos,
+               GROUP_CONCAT(page_key, char(31)) pk, GROUP_CONCAT(CAST(ROUND(impressions) AS INT), char(31)) im, GROUP_CONCAT(ROUND(pos,1), char(31)) ps
+        FROM competing GROUP BY query
+        HAVING COUNT(*) >= 2 AND SUM(impressions) >= 50 AND NOT (MAX(pos) <= 2)
+        ORDER BY impressions DESC LIMIT 40`);
+      const titleOf = c.db.prepare('SELECT title FROM pages WHERE url_key = ?');
+      return flagged.map(r => {
+        const keys = String(r.pk || '').split('\x1f'), imps = String(r.im || '').split('\x1f'), poss = String(r.ps || '').split('\x1f');
+        const items = keys.map((u, i) => ({ url: u, impressions: Number(imps[i]) || 0, position: Number(poss[i]) || 0, title: (titleOf.get(u) as { title?: string } | undefined)?.title ?? null }))
+          .sort((a, b) => b.impressions - a.impressions);
+        // Differentiation signal: do the top-2 competing pages share significant title terms beyond the
+        // query itself? If not (and both are titled), they're likely intentionally distinct pages (e.g.
+        // pairwise comparisons), not true duplicates competing for one intent — annotate, don't suppress.
+        const q = new Set(terms(r.query));
+        const sig = items.slice(0, 2).map(it => terms(it.title ?? '').filter((w: string) => !q.has(w)));
+        const differentiated = sig.length === 2 && items[0].title != null && items[1].title != null
+          && sig[0].filter((w: string) => sig[1].includes(w)).length < 2;
+        const ev: Record<string, unknown> = {
+          query: r.query, competingUrls: r.urls, clicks: r.clicks, impressions: r.impressions,
+          positions: `${Math.round(r.bestPos * 10) / 10}–${Math.round(r.worstPos * 10) / 10}`,
+          urls: items.slice(0, 4).map(it => ({ url: it.url, impressions: it.impressions, position: it.position, title: it.title })),
+        };
+        if (differentiated) ev.note = 'competing URLs have distinct titles — likely intentional differentiation (e.g. pairwise comparisons), not true cannibalisation; verify before consolidating';
+        return { urlKey: null, evidence: ev };
+      });
+    },
   },
   {
     id: 'ctr-below-expected', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
@@ -753,6 +777,22 @@ export const CHECKS: CheckDef[] = [
     id: 'underlinked-high-demand', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'High search demand, low internal authority', fix: 'Add internal links from high-authority (high-iPR) pages — this earns impressions but the site gives it little internal link equity.',
     run: (c) => c.gscMaxDate ? rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key WHERE p.indexable=1 AND p.ipr < 30 AND p.inlink_count BETWEEN 1 AND 3 AND sa.${win(c.gscMaxDate)} GROUP BY p.url_key HAVING SUM(sa.impressions) >= 300 ORDER BY impressions DESC`).map(r => ({ urlKey: r.urlKey, evidence: { impressions: r.impressions, ipr: Math.round(r.ipr), inlinks: r.inl } })) : [],
+  },
+  {
+    // The tier BETWEEN "orphan" (0 inlinks) and "fine": pages reached almost only via nav/footer.
+    // inlink_count counts ALL internal links, so a page sitting in the global nav looks well-linked
+    // even with zero EDITORIAL links — yet Google leans on in-content links for topic + equity. We
+    // count distinct in-content (placement='body') inbound sources; ≤2 + real demand = under-linked.
+    id: 'underlinked-editorial', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'High demand, almost no in-content internal links', fix: 'This page earns real impressions but is reached mainly via nav/footer — add descriptive in-content links to it from related articles. Editorial body links pass more topical context and equity than templated nav links.',
+    run: (c) => c.gscMaxDate ? rows(c, `
+      SELECT p.url_key urlKey, SUM(sa.impressions) impressions,
+             (SELECT COUNT(DISTINCT l.source_key) FROM links l WHERE l.target_key = p.url_key AND l.is_internal = 1 AND l.placement = 'body' AND l.source_key <> p.url_key) bodyLinks
+      FROM pages p JOIN search_analytics sa ON sa.page_key = p.url_key
+      WHERE p.indexable = 1 AND sa.${win(c.gscMaxDate)}
+      GROUP BY p.url_key
+      HAVING SUM(sa.impressions) >= 300 AND bodyLinks <= 2
+      ORDER BY impressions DESC LIMIT 40`).map(r => ({ urlKey: r.urlKey, evidence: { impressions: r.impressions, inContentLinks: r.bodyLinks, note: 'reached mainly via nav/footer — thin on editorial (in-content) links' } })) : [],
   },
   // NOTE: internal anchor-text checks (over-optimisation + generic/empty anchors) prototyped
   // and PULLED twice. Re-evaluated 2026-06-22 against the AgricIDaniel/claude-seo and

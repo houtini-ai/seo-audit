@@ -196,6 +196,43 @@ function fullyComplete(node: Record<string, unknown>, type: string): boolean {
   return true;
 }
 
+/** Coerce a schema numeric field (number or numeric string) to a number, else undefined. */
+function asNum(v: unknown): number | undefined {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim())) return parseFloat(v);
+  return undefined;
+}
+
+// Rating-scale sanity + CROSS-NODE consistency. A page's AggregateRating and its Review(s) must use
+// the same scale, and ratingValue must sit within [worstRating, bestRating]. Catches the real bug a
+// per-node check misses: an AggregateRating on a 0–5 scale (worstRating:0) alongside a Review added
+// on the default 1–5 scale — Google reads them as contradictory. Defaults: worst 1, best 5.
+function checkRatingScales(allNodes: Record<string, unknown>[], issues: SchemaIssue[]): void {
+  const descs: { src: string; value?: number; best?: number; worst?: number }[] = [];
+  for (const n of allNodes) {
+    const t = typeOf(n);
+    if (t === 'AggregateRating') descs.push({ src: 'AggregateRating', value: asNum(n.ratingValue), best: asNum(n.bestRating), worst: asNum(n.worstRating) });
+    if (t === 'Review' && isObj(n.reviewRating)) {
+      const rr = n.reviewRating; descs.push({ src: 'Review.reviewRating', value: asNum(rr.ratingValue), best: asNum(rr.bestRating), worst: asNum(rr.worstRating) });
+    }
+  }
+  if (!descs.length) return;
+  for (const d of descs) {
+    const best = d.best ?? 5, worst = d.worst ?? 1;
+    if (d.best != null && d.worst != null && worst > best) {
+      issues.push({ kind: 'value', type: d.src, detail: `worstRating (${worst}) is greater than bestRating (${best}).`, fields: ['worstRating', 'bestRating'] });
+    }
+    if (d.value != null && (d.value < worst || d.value > best)) {
+      issues.push({ kind: 'value', type: d.src, detail: `ratingValue ${d.value} is outside its ${worst}–${best} scale.`, fields: ['ratingValue'] });
+    }
+  }
+  // Cross-node: only among nodes that explicitly declare a scale (an implicit 1–5 isn't a "choice").
+  const scales = new Set(descs.filter(d => d.best != null || d.worst != null).map(d => `${d.worst ?? 1}–${d.best ?? 5}`));
+  if (scales.size > 1) {
+    issues.push({ kind: 'value', detail: `Inconsistent rating scales across nodes (${[...scales].join(', ')}) — AggregateRating and Review must share the same worstRating/bestRating.`, fields: ['bestRating', 'worstRating'] });
+  }
+}
+
 /** Validate the raw `pages.json_ld` column. Returns all issues found across blocks. */
 export function validateJsonLdColumn(col: string | null): SchemaIssue[] {
   if (!col) return [];
@@ -228,6 +265,8 @@ export function validateJsonLdColumn(col: string | null): SchemaIssue[] {
   // sibling incomplete node of that type for "missing required fields" — Google uses the valid
   // one. (A common WP/RankMath pattern: a complete @graph Article + a second partial Article for
   // entity SEO.) Only suppresses 'required'; parse/context/value/forbidden issues always stand.
+  checkRatingScales(allNodes, issues); // cross-node rating-scale consistency (page-level)
+
   const satisfied = new Set<string>();
   for (const n of allNodes) { const t = typeOf(n); if (t && fullyComplete(n, t)) satisfied.add(t); }
   return satisfied.size ? issues.filter(i => !(i.kind === 'required' && i.type && satisfied.has(i.type))) : issues;
