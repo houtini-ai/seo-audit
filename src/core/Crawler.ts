@@ -97,8 +97,11 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
   let transientRetries = 0; // 429/503 backoff budget
   let netRetries = 0;       // network-error (timeout/reset) budget — separate so a 503 then a timeout doesn't starve it
   const start = Date.now();
-  // Known asset file-types: HEAD only (no body download). Falls back to GET if HEAD is refused.
-  let method: 'GET' | 'HEAD' = isAssetUrl(url) ? 'HEAD' : 'GET';
+  // Always GET — never HEAD. Some servers/CDNs return a different status for HEAD than for GET
+  // (e.g. a 404 on HEAD where GET is 200, or vice-versa), which would mis-record a URL's real
+  // status. We still avoid downloading asset bytes by cancelling the body stream for any non-HTML
+  // response below, so a GET stays as light as a HEAD for images/PDFs/etc.
+  const method = 'GET';
   while (true) {
     let res: Response;
     try {
@@ -147,16 +150,11 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
     }
     const contentType = res.headers.get('content-type') ?? '';
     const isHtml = isHtmlContentType(contentType);
-    // Re-fetch with GET when HEAD is refused (405/501) OR when an asset-typed URL actually
-    // serves HTML — so we never miss a real page, while still HEAD-ing genuine assets.
-    if (method === 'HEAD' && (res.status === 405 || res.status === 501 || isHtml)) { method = 'GET'; continue; }
-    // Only download the body for HTML pages we GET. For everything else (HEAD, or a GET that
-    // turned out non-HTML), abort the transfer so we never pull image/PDF/asset bytes.
+    // Read the body only for HTML; for any non-HTML response (image/PDF/asset) abort the transfer
+    // so we never pull the bytes — keeping the always-GET fetch as cheap as a HEAD would have been.
     let body = '';
-    if (method === 'GET') {
-      if (isHtml) body = await res.text();
-      else { try { await res.body?.cancel(); } catch { /* already closed */ } }
-    }
+    if (isHtml) body = await res.text();
+    else { try { await res.body?.cancel(); } catch { /* already closed */ } }
     const h = (name: string): string | null => res.headers.get(name);
     const sec: Record<string, string> = {};
     for (const [k, name] of [
