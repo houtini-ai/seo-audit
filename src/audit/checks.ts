@@ -54,7 +54,11 @@ const brandExcl = (c: CheckContext): string => {
 };
 // Days of GSC history actually held — period-over-period checks need enough span to be meaningful.
 const spanDays = (c: CheckContext): number => {
-  const r = c.db.prepare(`SELECT julianday(MAX(date)) - julianday(MIN(date)) d FROM search_analytics`).get() as { d: number | null };
+  // Span must be measured up to the FINALISED max date the windows actually key off
+  // (gscMaxDate is trimmed ~3 days below raw MAX(date)) — measuring the raw span lets the
+  // ≥56-day guard pass while the previous-28d window still reaches before MIN(date),
+  // undercounting the prior period (rising-pages FPs, traffic-decay FNs).
+  const r = c.db.prepare(`SELECT julianday(?) - julianday(MIN(date)) d FROM search_analytics`).get(c.gscMaxDate ?? null) as { d: number | null };
   return r?.d ?? 0;
 };
 // HTML pages only — match the MIME type before any charset parameter (mirrors isHtmlContentType).
@@ -80,7 +84,9 @@ const newestSchemaDate = (jl: string | null): string | null => {
 // duplicate-meta / missing-meta / not-in-sitemap false positives. Pass the column reference
 // (e.g. 'url_key' or 'p.url_key') so it composes with table aliases.
 const notPagination = (col = 'url_key'): string =>
-  `${col} NOT GLOB '*/page/[0-9]*' AND ${col} NOT LIKE '%page=%' AND ${col} NOT LIKE '%paged=%'`;
+  // Anchor the param name to ?/& — a bare LIKE '%page=%' also matches per_page=/on_page=/
+  // homepage=, wrongly exempting those URLs from duplicate-title/meta/sitemap checks.
+  `${col} NOT GLOB '*/page/[0-9]*' AND ${col} NOT GLOB '*[?&]page=[0-9]*' AND ${col} NOT GLOB '*[?&]paged=[0-9]*'`;
 
 // Significant query terms (drop stopwords; keep ≥2 chars so "vr"/"pc"/"ai" count).
 const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'with', 'your', 'you', 'is', 'are', 'best', 'how', 'what', 'vs', 'why', 'can']);
@@ -451,7 +457,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'index-bloat', category: 'indexation', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Indexable page with no search traffic', fix: 'No impressions in 90 days despite being indexable — consolidate, improve, or noindex/prune to concentrate crawl budget and internal authority (confirm it isn’t seasonal or brand-new first).',
-    run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT url_key urlKey, ipr FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND click_depth >= 1 AND url_key NOT IN (SELECT DISTINCT page_key FROM search_analytics WHERE page_key IS NOT NULL AND date <= '${c.gscMaxDate}' AND date > date('${c.gscMaxDate}','-90 days') AND impressions > 0) ORDER BY ipr DESC LIMIT 100`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'indexable but zero impressions in 90 days', ipr: Math.round(r.ipr) } })),
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT url_key urlKey, ipr FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND COALESCE(click_depth, 999) >= 1 AND url_key NOT IN (SELECT DISTINCT page_key FROM search_analytics WHERE page_key IS NOT NULL AND date <= '${c.gscMaxDate}' AND date > date('${c.gscMaxDate}','-90 days') AND impressions > 0) ORDER BY ipr DESC LIMIT 100`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'indexable but zero impressions in 90 days', ipr: Math.round(r.ipr) } })),
   },
   // ── On-page parity (crawl-only, deterministic) ──
   {
@@ -681,7 +687,7 @@ export const CHECKS: CheckDef[] = [
     id: 'stale-content', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Stale page declining year-on-year', fix: 'This page hasn’t been meaningfully updated in over a year and its Search Console clicks are down sharply versus the same period last year — refresh and expand the content (and honestly re-date it) to rebuild the freshness signal Google rewards.',
     run: (c) => {
-      if (!c.gscMaxDate || spanDays(c) < 400) return []; // need ~13 months for a clean YoY comparison
+      if (!c.gscMaxDate || spanDays(c) < 455) return []; // YoY window reaches back 455 days — anything less truncates the prior-year period
       const d = c.gscMaxDate;
       const out: { urlKey: string | null; evidence: Record<string, unknown> }[] = [];
       const rs = rows(c, `
@@ -705,7 +711,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Internal authority wasted on a no-traffic page', fix: 'High internal link equity (iPR) and Google does rank it (it earns impressions), yet it gets zero clicks — rewrite the title/snippet or improve the page, or repoint that authority to pages that convert it. (Requires impressions, so functional pages with no search demand are excluded.)',
     run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT p.url_key urlKey, p.ipr ipr, p.inlink_count inl, SUM(sa.impressions) impressions
       FROM pages p JOIN search_analytics sa ON sa.page_key=p.url_key
-      WHERE p.indexable=1 AND p.ipr >= 50 AND p.click_depth >= 1 AND sa.date <= '${c.gscMaxDate}' AND sa.date > date('${c.gscMaxDate}','-90 days')
+      WHERE p.indexable=1 AND p.ipr >= 50 AND COALESCE(p.click_depth, 999) >= 1 AND sa.date <= '${c.gscMaxDate}' AND sa.date > date('${c.gscMaxDate}','-90 days')
       GROUP BY p.url_key HAVING SUM(sa.clicks)=0 AND SUM(sa.impressions) >= 100
       ORDER BY p.ipr DESC LIMIT 50`).map(r => ({ urlKey: r.urlKey, evidence: { ipr: Math.round(r.ipr), inlinks: r.inl, impressions: r.impressions, clicks: 0, note: 'high internal authority + impressions, zero clicks in 90 days' } })),
   },
@@ -745,7 +751,9 @@ export const CHECKS: CheckDef[] = [
       // from crawl" is unreliable. Tie the guard to the crawl that produced the CURRENT
       // pages (not the latest crawl_metadata row, which may be a later failed crawl).
       const m = c.db.prepare('SELECT urls_crawled c, max_pages m FROM crawl_metadata WHERE crawl_id = (SELECT crawl_id FROM pages LIMIT 1)').get() as { c: number; m: number } | undefined;
-      if (!m || m.c === 0 || m.c >= m.m) return [];
+      // max_pages is nullable (NULL = no cap = complete crawl) — `c >= null` coerces to
+      // `c >= 0`, which would silently disable the check forever on capless crawls.
+      if (!m || m.c === 0 || (m.m != null && m.c >= m.m)) return [];
       return rows(c, `SELECT page_key urlKey, SUM(clicks) clicks, SUM(impressions) impressions FROM search_analytics
         WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key
         HAVING SUM(impressions) >= 50 AND page_key NOT IN (SELECT url_key FROM pages)
@@ -942,7 +950,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Paginated pages canonicalising away from themselves', fix: 'Make each paginated page (page 2, 3, …) self-canonical. Canonicalising page 2+ back to page 1 tells Google the deeper pages are duplicates, so products/articles linked only from page 2+ drop out of the crawl.',
     run: (c) => rows(c, `SELECT url_key urlKey, url, canonical_url canon FROM pages
         WHERE status_code=200 AND canonical_count>0 AND canonical_key IS NOT NULL AND canonical_key != url_key
-          AND (rel_prev=1 OR url LIKE '%/page/%' OR url LIKE '%page=%' OR url LIKE '%?p=%' OR url LIKE '%&p=%')`)
+          AND (rel_prev=1 OR url LIKE '%/page/%' OR url GLOB '*[?&]page=[0-9]*' OR url GLOB '*[?&]paged=[0-9]*' OR url GLOB '*[?&]p=[0-9]*')`)
       .filter(r => !/[?&](page|p)=1(\b|&|$)/.test(r.url) && !/\/page\/1(\/?$|\?)/.test(r.url)) // page 1 self-canonicalising to base is fine
       .map(r => ({ urlKey: r.urlKey, evidence: { url: r.url, canonical: r.canon } })),
   },
@@ -1021,7 +1029,9 @@ export const CHECKS: CheckDef[] = [
     // Severity is on what the browser actually downloads, not raw bytes: a 200KB page served brotli
     // is ~45KB over the wire and is NOT a real perf problem. We estimate transfer size (raw × ~0.22
     // for br/gzip, else raw) and only flag pages whose ESTIMATED transferred HTML exceeds ~60KB.
-    run: (c) => rows(c, `SELECT url_key urlKey, bytes, content_encoding enc FROM pages WHERE status_code=200 AND ${HTML_CT} AND bytes > 150000 ORDER BY bytes DESC`)
+    // Prefilter at the 60KB threshold itself, not higher — an UNCOMPRESSED 60–150KB page
+    // (est = raw) is exactly the case that matters most and must reach the est filter.
+    run: (c) => rows(c, `SELECT url_key urlKey, bytes, content_encoding enc FROM pages WHERE status_code=200 AND ${HTML_CT} AND bytes > 60000 ORDER BY bytes DESC`)
       .map(r => { const compressed = /br|gzip|deflate|zstd/i.test(r.enc || ''); const est = compressed ? Math.round(r.bytes * 0.22) : r.bytes; return { urlKey: r.urlKey, est, compressed, raw: r.bytes }; })
       .filter(x => x.est > 60000)
       .map(x => ({ urlKey: x.urlKey, evidence: { rawBytes: x.raw, estTransferBytes: x.est, compressed: x.compressed, note: x.compressed ? 'raw HTML; estimated transferred size after CDN compression' : 'served UNCOMPRESSED — enable brotli/gzip' } })),
@@ -1052,7 +1062,7 @@ function hreflangFindings(ctx: CheckContext): HreflangOut {
   for (const p of ctx.db.prepare(`SELECT url_key, status_code, noindex FROM pages`).all() as { url_key: string; status_code: number | null; noindex: number | null }[])
     status.set(p.url_key, { status: p.status_code, noindex: p.noindex });
 
-  // declared[sourceKey] = set of internal alternate targetKeys (excluding x-default + self)
+  // declared[sourceKey] = set of internal alternate targetKeys (excluding self)
   const declared = new Map<string, Set<string>>();
   const parsed: { srcKey: string; targets: { key: string; lang: string }[] }[] = [];
   for (const p of pageRows) {
@@ -1067,7 +1077,10 @@ function hreflangFindings(ctx: CheckContext): HreflangOut {
       targets.push({ key, lang: (lang || '').toLowerCase() });
     }
     parsed.push({ srcKey: p.url_key, targets });
-    declared.set(p.url_key, new Set(targets.filter(t => t.lang !== 'x-default').map(t => t.key)));
+    // A return link via x-default is a VALID return tag (common when x-default is the
+    // homepage) — include all targets here; x-default is only excluded as a reciprocation
+    // *requirement* in the loop below, never as a way of satisfying one.
+    declared.set(p.url_key, new Set(targets.map(t => t.key)));
   }
 
   const broken: RawFinding[] = [];

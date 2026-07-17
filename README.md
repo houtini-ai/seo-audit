@@ -32,7 +32,7 @@ That last bit matters more than it sounds. Severity is what crawlers sell you. Y
 - **Prioritised by yield.** `Priority = (expected clicks × yield × certainty) / effort-hours`. A 5,000-page template tweak doesn't get to out-rank a single critical canonical bug just because it touches more URLs.
 - **Finding, then fix.** It doesn't only flag things. It writes the remediation: valid JSON-LD built from your own page data, 301 rules for broken links, internal-link suggestions from your highest-authority pages. All dry-run - it returns artifacts, it never touches your site.
 - **Honest about confidence.** Every finding is labelled deterministic (here are the bytes) or judgement (gated behind a flag). In my view a wrong finding is worse than no finding at all, so the heuristic stuff has to ask permission.
-- **Around 64 checks.** Crawlability, indexability (with the *reason* a URL isn't indexable), duplication and canonicalisation, on-page, structured data, internationalisation, security, performance, sitemap reconciliation, backlinks, and the GSC × crawl questions that only make sense when the two are joined - including the *trend* questions you actually live in: pages losing clicks period-over-period, page-one rankings slipping, queries that have dropped out, and index bloat that earns nothing.
+- **Over 80 checks.** Crawlability, indexability (with the *reason* a URL isn't indexable), duplication and canonicalisation, on-page, structured data, internationalisation, security, performance, sitemap reconciliation, backlinks, and the GSC × crawl questions that only make sense when the two are joined - including the *trend* questions you actually live in: pages losing clicks period-over-period, page-one rankings slipping, queries that have dropped out, and index bloat that earns nothing.
 - **Conversational, and visual.** It runs inside Claude Desktop, so you ask follow-ups, drill in, and pull up a shareable HTML dashboard or a markdown report when you're done.
 
 ---
@@ -44,7 +44,7 @@ Once it's installed (that's further down), the whole audit is a short conversati
 ### 1. Pull your data
 > *"Refresh sc-domain:example.com"*
 
-`refresh_property` syncs your Search Console history, crawls your site, inspects index coverage, and works out internal PageRank and click-depth. The crawl is polite - it respects robots.txt, backs off when a host rate-limits, and never downloads images (HEAD only, so it gets the status and size without pulling the bytes). You watch progress live. Big sites stay light.
+`refresh_property` syncs your Search Console history, crawls your site, inspects index coverage, and works out internal PageRank and click-depth. The crawl is polite - it respects robots.txt, backs off when a host rate-limits, and never downloads images or other assets (it records their status and size without pulling the bytes). You watch progress live. Big sites stay light.
 
 ### 2. Run the audit
 > *"Run an SEO audit on example.com"*
@@ -129,7 +129,7 @@ DataForSEO is what powers the paid-data tools: **keyword search volume**, **SERP
 
 > One gotcha: the **Backlinks API is a separate DataForSEO subscription** from SERP / Keywords / Labs. If it isn't activated, `pull_backlinks` will tell you so rather than failing quietly.
 
-Everything else - the crawl, the merge, around 50 of the checks, the priority model, the fixes, the dashboard - works with **just Search Console**.
+Everything else - the crawl, the merge, most of the checks, the priority model, the fixes, the dashboard - works with **just Search Console**.
 
 ---
 
@@ -145,6 +145,9 @@ Everything else - the crawl, the merge, around 50 of the checks, the priority mo
 | `list_templates` | Cluster pages into templates (one fix → N pages) |
 | `suggest_pages` | New-page ideas grounded in real demand |
 | `get_dashboard` · `export_report` | Interactive in-chat dashboard · shareable HTML |
+| `detect_changes` | What changed between the two most recent crawls, by severity |
+| `check_agent_readiness` | 0-100 AI-agent readiness score (llms.txt, agents.md, MCP cards…) with fixes |
+| `score_passages` | Local relevance model: does any passage answer the page's top query? |
 | `keyword_volume` · `related_terms` · `search_intent` | DataForSEO keyword data |
 | `competitors_domain` · `page_intersection` | DataForSEO competitive / content-gap |
 | `page_lighthouse` · `pull_backlinks` · `resolve_entities` | Lab CWV · backlinks · Wikidata entities |
@@ -156,7 +159,7 @@ Everything else - the crawl, the merge, around 50 of the checks, the priority mo
 
 - **The join key (`url_key`).** GSC `page` and crawl `url` both normalise down to the same key - force HTTPS, unify www and apex, strip tracking params, and so on. Everything joins on that. It's the whole trick, really.
 - **One SQLite database per property** (WAL, prepared statements). Your data stays on your machine.
-- **A polite, self-contained crawler.** Respects robots.txt. Records *why* a URL isn't indexable (404, noindex, X-Robots, canonicalised, robots-blocked, non-HTML). HEAD-only for images, PDFs and assets, so it gets status and size and never the bytes. Skips the junk - internal search, faceted params, login flows. And it backs off when a host starts rate-limiting, which is what keeps it reliable on the big sites.
+- **A polite, self-contained crawler.** Respects robots.txt. Records *why* a URL isn't indexable (404, noindex, X-Robots, canonicalised, robots-blocked, non-HTML). Always GETs (a HEAD can return a different status than the GET would), but abandons the body for images, PDFs and assets - status and size, never the bytes. Skips the junk - internal search, faceted params, login flows. And it backs off when a host starts rate-limiting, which is what keeps it reliable on the big sites.
 - **Scored once, sorted by yield.** `(expected clicks × yield × certainty) / effort`. Covering-indexed, so the audit stays fast even when the GSC table runs to millions of rows.
 - **Owned-site only, dry-run fixes.** It crawls sites you control, and the generators return artifacts. They never write to your site. That's a line I won't cross.
 
@@ -172,7 +175,7 @@ Your Search Console data and the crawl live in local SQLite files under `SAC_DAT
 
 A few things I'm building next, in rough order:
 
-- **Phrases you rank for but never say.** Search Console knows the queries Google sends you; the crawl knows your copy. Where they diverge - you rank for "X" but "X" appears nowhere in the page's body - there's a quick content win. The title and H1 versions of this already ship; the body-copy one is next.
+- **Phrases you rank for but never say** (shipped). Search Console knows the queries Google sends you; the crawl knows your copy. Where they diverge - you rank for "X" but "X" appears nowhere in the title, H1 *or* body - there's a quick content win. There's even a local relevance model (`score_passages`) that checks whether any passage on the page actually *answers* the query, the way AI search extracts answers. Still to come: a dedicated per-page table of every ranking phrase your copy never uses.
 - **Structured-data opportunities, by template.** Not "you have no schema" (most modern stores have plenty), but "this template could earn review stars or an FAQ rich result and doesn't." One fix per template corrects every page in the cluster.
 - **Agent readiness** (first version shipped). The web is quietly growing a second audience - AI agents - and they find sites through `llms.txt`, `agents.md`, the AI-bot rules in your robots.txt, MCP server cards, and now WebMCP. Almost no SEO tool checks any of it. `check_agent_readiness` already scores your site 0-100 across discoverability, content, bot-access-control and capabilities, with copy-paste fixes. Still to come: a WebMCP advisory (which tool actions you could expose) and the agent-commerce protocols.
 - **A printable report.** A proper A4 document you can hand a client, not a slide deck.

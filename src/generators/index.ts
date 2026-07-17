@@ -41,7 +41,8 @@ function absUrl(v: string | undefined, base: string): string | undefined {
 
 export function generateJsonLd(page: any): JsonLdResult {
   const type = inferType(page.url_key);
-  const og: Record<string, string> = page.og_tags ? JSON.parse(page.og_tags) : {};
+  // A malformed og_tags row must degrade to a fix without og:image, not error the tool call.
+  const og: Record<string, string> = (() => { try { return page.og_tags ? JSON.parse(page.og_tags) : {}; } catch { return {}; } })();
   const filledFrom: string[] = [];
   const todo: string[] = [];
   const o: Record<string, unknown> = { '@context': 'https://schema.org', '@type': type };
@@ -75,17 +76,48 @@ export function generateJsonLd(page: any): JsonLdResult {
 // ── Redirect suggestion (for broken-internal-links / 404s) ────────────────
 export interface RedirectResult { brokenUrl: string; suggested: string | null; score: number; rule: string }
 
-export function suggestRedirect(brokenUrl: string, livePages: { url: string }[], format: 'htaccess' | 'nginx' | 'nextjs' = 'htaccess'): RedirectResult {
+export type RedirectFormat = 'htaccess' | 'nginx' | 'nextjs';
+
+// Escape regex metacharacters — a path with `.`/`+`/`(` must not match other URLs or
+// break the nginx config load.
+const reEsc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// One exact-match 301 rule. htaccess uses RedirectMatch with an anchored regex — plain
+// `Redirect 301 /from /to` is PREFIX-matching and silently redirects every sub-path.
+export function redirectRule(fromPath: string, toPath: string, format: RedirectFormat): string {
+  return format === 'nginx' ? `rewrite ^${reEsc(fromPath)}$ ${toPath} permanent;`
+    : format === 'nextjs' ? `{ source: '${fromPath}', destination: '${toPath}', permanent: true },`
+    : `RedirectMatch 301 ^${reEsc(fromPath)}$ ${toPath}`;
+}
+
+/**
+ * Suggest a 301 for a broken/redirecting URL. When the crawler already RECORDED the real
+ * destination (redirect findings), pass it as `knownTarget` — it is used verbatim. Token-
+ * overlap fuzzy matching is only the fallback for genuinely dead URLs (404s) where no
+ * destination is known; a fuzzy guess presented as a paste-ready rule can be confidently wrong.
+ */
+export function suggestRedirect(brokenUrl: string, livePages: { url: string }[], format: RedirectFormat = 'htaccess', knownTarget?: string | null): RedirectResult {
+  const from = pathOf(brokenUrl);
+  if (knownTarget) {
+    return { brokenUrl, suggested: knownTarget, score: 1, rule: redirectRule(from, pathOf(knownTarget), format) };
+  }
   let best: string | null = null, bestScore = 0;
   for (const p of livePages) { const s = tokenOverlap(brokenUrl, p.url); if (s > bestScore) { bestScore = s; best = p.url; } }
-  const from = pathOf(brokenUrl);
   const to = best ? pathOf(best) : '/';
   const rule = !best || bestScore < 0.34
     ? `# no confident match for ${from} — choose a target manually`
-    : format === 'nginx' ? `rewrite ^${from}$ ${to} permanent;`
-    : format === 'nextjs' ? `{ source: '${from}', destination: '${to}', permanent: true },`
-    : `Redirect 301 ${from} ${to}`;
+    : redirectRule(from, to, format);
   return { brokenUrl, suggested: bestScore >= 0.34 ? best : null, score: Math.round(bestScore * 100) / 100, rule };
+}
+
+/** Collapse a recorded redirect chain: one exact-match rule per hop, straight to the final URL. */
+export function collapseChainRules(finalUrl: string, hops: { from: string; to: string }[], format: RedirectFormat): { finalUrl: string; rules: string[] } {
+  const toPath = pathOf(finalUrl);
+  const rules = hops
+    .map(h => pathOf(h.from))
+    .filter(fromPath => fromPath !== toPath)
+    .map(fromPath => redirectRule(fromPath, toPath, format));
+  return { finalUrl, rules };
 }
 
 // ── Internal-link suggestions (for orphan / striking-distance) ────────────

@@ -9,6 +9,16 @@ import { urlKey, type UrlKeyOptions } from './url-key.js';
  */
 const LOC = /<loc>\s*([^<\s]+?)\s*<\/loc>/gi;
 
+// XML sitemaps legally escape URL characters (?a=1&b=2 is stored as ?a=1&amp;b=2). Decode
+// numeric + the five predefined entities so stored URLs match crawl/GSC url_keys and the
+// crawler seeds fetch the real URL, not the literal `&amp;` form. `&amp;` is decoded last
+// so `&amp;lt;` correctly yields `&lt;` rather than `<`.
+const decodeXmlEntities = (s: string): string => s
+  .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  .replace(/&amp;/g, '&');
+
 async function fetchText(url: string, ua: string): Promise<string | null> {
   try {
     const res = await fetch(url, { headers: { 'user-agent': ua }, signal: AbortSignal.timeout(15000) });
@@ -46,7 +56,7 @@ export async function fetchSitemapUrls(
     if (!txt) continue;
     const isIndex = /<sitemapindex[\s>]/i.test(txt);
     for (const m of txt.matchAll(LOC)) {
-      const loc = m[1];
+      const loc = decodeXmlEntities(m[1]);
       if (isIndex) {
         if (queue.length + fetched < maxSitemaps) queue.push(loc); // child sitemap
       } else {

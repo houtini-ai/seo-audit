@@ -30,6 +30,18 @@ async function probe(url: string, accept = '*/*'): Promise<Probe> {
   } catch { return { ok: false, status: 0, ct: '', text: '', link: null }; }
 }
 
+// `res.ok` alone is not "present": a SPA/CDN with a catch-all 200 route serves its HTML
+// shell for /llms.txt, /agents.md and every /.well-known/* probe — the exact soft-404
+// pattern the audit's own soft-404-shell check exists to catch. Validate the body shape.
+const looksHtml = (p: Probe): boolean => /text\/html/.test(p.ct) || /^\s*(<!doctype\s|<html[\s>])/i.test(p.text);
+const textReal = (p: Probe): boolean => p.ok && p.text.trim().length > 0 && !looksHtml(p);
+const jsonReal = (p: Probe): boolean => {
+  if (!p.ok || looksHtml(p)) return false;
+  if (/json/.test(p.ct)) return true;
+  try { JSON.parse(p.text); return true; } catch { return false; }
+};
+const xmlReal = (p: Probe): boolean => p.ok && (/xml/.test(p.ct) || /<\?xml|<(urlset|sitemapindex)[\s>]/i.test(p.text));
+
 function originOf(siteUrl: string): string {
   const bare = siteUrl.replace(/^sc-domain:/, '');
   try { return new URL(/^https?:\/\//.test(bare) ? bare : `https://${bare}`).origin; } catch { return `https://${bare.replace(/\/.*$/, '')}`; }
@@ -47,26 +59,30 @@ export async function checkAgentReadiness(siteUrl: string): Promise<AgentReadine
     probe(u('/.well-known/http-message-signatures-directory')),
   ]);
 
-  const robotsTxt = robots.text;
-  const hasAiRules = robots.ok && AI_BOTS.test(robotsTxt);
-  const hasContentSignals = robots.ok && /content-signal\s*:/i.test(robotsTxt);
-  const hasSitemapDirective = robots.ok && /^\s*sitemap\s*:/im.test(robotsTxt);
+  const robotsReal = textReal(robots);
+  const robotsTxt = robotsReal ? robots.text : '';
+  const hasAiRules = robotsReal && AI_BOTS.test(robotsTxt);
+  const hasContentSignals = robotsReal && /content-signal\s*:/i.test(robotsTxt);
+  const hasSitemapDirective = robotsReal && /^\s*sitemap\s*:/im.test(robotsTxt);
   const mdNegotiated = homeMd.ok && /text\/markdown/.test(homeMd.ct);
+  const sitemapReal = xmlReal(sitemap);
+  const llmsReal = textReal(llms);
+  const agentsMdReal = textReal(agentsMd);
 
   const checks: AgentCheck[] = [
-    { id: 'robots-txt', category: 'Discoverability', present: robots.ok, label: 'robots.txt present', detail: robots.ok ? `200 (${robotsTxt.length} bytes)` : `not found (${robots.status})`, fix: 'Serve a /robots.txt — the base discovery file every crawler and agent checks first.' },
-    { id: 'sitemap', category: 'Discoverability', present: sitemap.ok || hasSitemapDirective, label: 'XML sitemap', detail: sitemap.ok ? 'sitemap.xml found' : hasSitemapDirective ? 'declared in robots.txt' : 'none found', fix: 'Publish /sitemap.xml and reference it with a `Sitemap:` line in robots.txt.' },
+    { id: 'robots-txt', category: 'Discoverability', present: robotsReal, label: 'robots.txt present', detail: robotsReal ? `200 (${robotsTxt.length} bytes)` : robots.ok ? 'returns HTML (catch-all route, not a real robots.txt)' : `not found (${robots.status})`, fix: 'Serve a /robots.txt — the base discovery file every crawler and agent checks first.' },
+    { id: 'sitemap', category: 'Discoverability', present: sitemapReal || hasSitemapDirective, label: 'XML sitemap', detail: sitemapReal ? 'sitemap.xml found' : hasSitemapDirective ? 'declared in robots.txt' : sitemap.ok ? 'returns non-XML (catch-all route)' : 'none found', fix: 'Publish /sitemap.xml and reference it with a `Sitemap:` line in robots.txt.' },
     { id: 'link-headers', category: 'Discoverability', present: !!home.link, label: 'Link response headers (RFC 8288)', detail: home.link ? home.link.slice(0, 120) : 'no Link header on the homepage', fix: 'Emit Link: headers pointing agents to your API/docs/llms.txt (rel="describedby" etc.).' },
-    { id: 'llms-txt', category: 'Content', present: llms.ok, label: 'llms.txt', detail: llms.ok ? `200 (${llms.text.length} bytes)` : `not found (${llms.status})`, fix: 'Add /llms.txt — a plain-text reading list pointing agents at your most useful pages/docs.' },
-    { id: 'agents-md', category: 'Content', present: agentsMd.ok, label: 'agents.md', detail: agentsMd.ok ? `200 (${agentsMd.text.length} bytes)` : `not found (${agentsMd.status})`, fix: 'Add /agents.md describing how agents should use your site (allowed actions, endpoints, etiquette).' },
+    { id: 'llms-txt', category: 'Content', present: llmsReal, label: 'llms.txt', detail: llmsReal ? `200 (${llms.text.length} bytes)` : llms.ok ? 'returns HTML (catch-all route, not a real llms.txt)' : `not found (${llms.status})`, fix: 'Add /llms.txt — a plain-text reading list pointing agents at your most useful pages/docs.' },
+    { id: 'agents-md', category: 'Content', present: agentsMdReal, label: 'agents.md', detail: agentsMdReal ? `200 (${agentsMd.text.length} bytes)` : agentsMd.ok ? 'returns HTML (catch-all route, not a real agents.md)' : `not found (${agentsMd.status})`, fix: 'Add /agents.md describing how agents should use your site (allowed actions, endpoints, etiquette).' },
     { id: 'markdown-negotiation', category: 'Content', present: mdNegotiated, label: 'Markdown content negotiation', detail: mdNegotiated ? 'serves text/markdown on Accept' : 'returns HTML only', fix: 'Honour `Accept: text/markdown` (or an index.md fallback) so agents read clean content without parsing HTML.' },
     { id: 'ai-bot-rules', category: 'Bot access control', present: hasAiRules, label: 'AI-bot rules in robots.txt', detail: hasAiRules ? 'names AI crawlers (GPTBot/ClaudeBot/…)' : 'no AI-specific user-agents', fix: 'Add explicit allow/disallow rules for AI user-agents (GPTBot, ClaudeBot, Google-Extended, PerplexityBot, CCBot…).' },
     { id: 'content-signals', category: 'Bot access control', present: hasContentSignals, label: 'Content Signals', detail: hasContentSignals ? 'Content-Signal directives present' : 'none', fix: 'Add Cloudflare Content-Signal directives (ai-train / ai-input / search) to robots.txt to state how your content may be used.' },
-    { id: 'web-bot-auth', category: 'Bot access control', present: webBotAuth.ok, label: 'Web Bot Auth', detail: webBotAuth.ok ? 'signature directory present' : 'not found', fix: 'Publish /.well-known/http-message-signatures-directory so well-behaved agents can authenticate.' },
-    { id: 'mcp-server-card', category: 'Capabilities', present: mcpCard.ok, label: 'MCP server card', detail: mcpCard.ok ? 'server-card.json present' : 'not found', fix: 'Expose /.well-known/mcp/server-card.json so agents can discover your MCP server + tools.' },
-    { id: 'agent-skills', category: 'Capabilities', present: skills.ok, label: 'Agent Skills', detail: skills.ok ? 'agent-skills index present' : 'not found', fix: 'Declare capabilities at /.well-known/agent-skills/index.json (agentskills.io).' },
-    { id: 'api-catalog', category: 'Capabilities', present: apiCatalog.ok, label: 'API Catalog (RFC 9727)', detail: apiCatalog.ok ? 'api-catalog present' : 'not found', fix: 'Publish /.well-known/api-catalog listing your machine-usable APIs.' },
-    { id: 'oauth-discovery', category: 'Capabilities', present: oauthPR.ok || oauthAS.ok, label: 'OAuth discovery (RFC 8414/9728)', detail: (oauthPR.ok || oauthAS.ok) ? 'oauth metadata present' : 'not found', fix: 'If agents need authenticated actions, expose OAuth metadata at /.well-known/oauth-protected-resource (RFC 9728).' },
+    { id: 'web-bot-auth', category: 'Bot access control', present: jsonReal(webBotAuth), label: 'Web Bot Auth', detail: jsonReal(webBotAuth) ? 'signature directory present' : 'not found', fix: 'Publish /.well-known/http-message-signatures-directory so well-behaved agents can authenticate.' },
+    { id: 'mcp-server-card', category: 'Capabilities', present: jsonReal(mcpCard), label: 'MCP server card', detail: jsonReal(mcpCard) ? 'server-card.json present' : 'not found', fix: 'Expose /.well-known/mcp/server-card.json so agents can discover your MCP server + tools.' },
+    { id: 'agent-skills', category: 'Capabilities', present: jsonReal(skills), label: 'Agent Skills', detail: jsonReal(skills) ? 'agent-skills index present' : 'not found', fix: 'Declare capabilities at /.well-known/agent-skills/index.json (agentskills.io).' },
+    { id: 'api-catalog', category: 'Capabilities', present: jsonReal(apiCatalog), label: 'API Catalog (RFC 9727)', detail: jsonReal(apiCatalog) ? 'api-catalog present' : 'not found', fix: 'Publish /.well-known/api-catalog listing your machine-usable APIs.' },
+    { id: 'oauth-discovery', category: 'Capabilities', present: jsonReal(oauthPR) || jsonReal(oauthAS), label: 'OAuth discovery (RFC 8414/9728)', detail: (jsonReal(oauthPR) || jsonReal(oauthAS)) ? 'oauth metadata present' : 'not found', fix: 'If agents need authenticated actions, expose OAuth metadata at /.well-known/oauth-protected-resource (RFC 9728).' },
   ];
 
   const cats: AgentCategory[] = ['Discoverability', 'Content', 'Bot access control', 'Capabilities'];

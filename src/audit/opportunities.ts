@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { gscFreshness } from '../core/gscFreshness.js';
 
 /**
  * New-page opportunity engine (Phase 6c). Grounded in REAL demand (GSC), with ruthless
@@ -38,9 +39,11 @@ interface Opts { minImpressions?: number; maxProposals?: number; clusterThreshol
 export function suggestPages(db: Database.Database, opts: Opts = {}): { proposals: PageProposal[]; consideredQueries: number; afterDedup: number } {
   const minImpr = opts.minImpressions ?? 50;
   const clusterT = opts.clusterThreshold ?? 0.5;
-  const maxDate = (db.prepare('SELECT MAX(date) d FROM search_analytics').get() as { d: string | null }).d;
+  // Window off the FINALISED max date (raw MAX(date) includes 1–3 unfinalised, systematically
+  // low days that deflate impressions and can shift a query across the rank/dominance thresholds).
+  const maxDate = gscFreshness(db).effectiveMax;
   if (!maxDate) return { proposals: [], consideredQueries: 0, afterDedup: 0 };
-  const win = `date > date('${maxDate}', '-28 days')`;
+  const win = `date > date('${maxDate}', '-28 days') AND date <= '${maxDate}'`;
 
   // Demand: per query × page (impression-weighted position).
   const qp = db.prepare(

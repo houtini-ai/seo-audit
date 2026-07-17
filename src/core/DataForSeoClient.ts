@@ -76,6 +76,14 @@ export class DataForSeoClient {
     }
 
     return this.serialize(async () => {
+      // Re-check the cache now that we hold the single-worker slot: a concurrent identical
+      // call may have just paid for and cached this exact request — don't double-spend.
+      const again = this.cache
+        .prepare('SELECT response_json, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
+        .get(key) as { response_json: string; fetched_at: string } | undefined;
+      if (again && Date.now() - Date.parse(again.fetched_at) < this.ttlMs) {
+        return { tasks: JSON.parse(again.response_json), cached: true, cost: 0 };
+      }
       const res = await fetch(`${BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { Authorization: this.auth, 'content-type': 'application/json' },

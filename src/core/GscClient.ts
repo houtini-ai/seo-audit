@@ -5,6 +5,9 @@ const ROW_LIMIT = 25000; // GSC API max per request
 const DEFAULT_DIMENSIONS = ['query', 'page', 'date', 'device', 'country'];
 const MAX_RETRIES = 3;
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503];
+// Node network errors carry a string code, not an HTTP status — a mid-sync connection
+// blip should be retried, not fail the whole multi-page sync job.
+const RETRYABLE_NET_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EAI_AGAIN', 'EPIPE', 'ENOTFOUND', 'UND_ERR_SOCKET']);
 
 async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -12,7 +15,9 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
       return await fn();
     } catch (err: any) {
       const status = err?.code || err?.response?.status || err?.status;
-      const isRetryable = RETRYABLE_STATUS_CODES.includes(Number(status));
+      const isRetryable = RETRYABLE_STATUS_CODES.includes(Number(status))
+        || RETRYABLE_NET_CODES.has(String(status))
+        || RETRYABLE_NET_CODES.has(String(err?.cause?.code));
       if (!isRetryable || attempt === retries) throw err;
       const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
       console.error(`[GSC] Retryable error (${status}), attempt ${attempt + 1}/${retries}, waiting ${delay}ms...`);

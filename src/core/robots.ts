@@ -37,8 +37,16 @@ function parseRules(txt: string, uaToken: string): Rule[] {
     }
   }
 
+  // RFC 9309 §2.2.1: only the MOST SPECIFIC matching group applies — a bot-specific group
+  // replaces the `*` group entirely (it does not merge with it). Otherwise a site that
+  // whitelists this bot (`User-agent: seo-audit-console / Allow: /`) alongside a broad
+  // `User-agent: * / Disallow: /` would still be blocked. Groups at equal specificity merge.
   const ua = uaToken.toLowerCase();
-  return groups.filter(g => g.agents.some(a => a === '*' || ua.includes(a))).flatMap(g => g.rules);
+  const agentScore = (a: string): number => (a === '*' ? 0 : ua.includes(a) ? a.length : -1);
+  const groupScore = (g: { agents: string[] }): number => Math.max(-1, ...g.agents.map(agentScore));
+  const best = Math.max(-1, ...groups.map(groupScore));
+  if (best < 0) return [];
+  return groups.filter(g => groupScore(g) === best).flatMap(g => g.rules);
 }
 
 function makeRules(rules: Rule[]): RobotsRules {

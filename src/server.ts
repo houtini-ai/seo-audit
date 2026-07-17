@@ -19,7 +19,7 @@ import { AuditDatabase } from './core/AuditDatabase.js';
 import { dbPathFor, sanitizeProperty } from './core/paths.js';
 import { scoreSitePassages } from './core/passageScore.js';
 import { buildDraftBrief } from './core/draftBrief.js';
-import { generateJsonLd, suggestRedirect, suggestInternalLinks } from './generators/index.js';
+import { generateJsonLd, suggestRedirect, suggestInternalLinks, collapseChainRules } from './generators/index.js';
 
 import { urlKey, hostFormForProperty } from './core/url-key.js';
 import { GscClient } from './core/GscClient.js';
@@ -196,6 +196,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async ({ path: newPath }) => {
       if (newPath) {
+        // Persist an ABSOLUTE path — a relative one resolves against the host process's
+        // cwd, which differs across Claude Desktop launches, so DBs would "disappear".
+        newPath = path.resolve(newPath);
         mkdirSync(newPath, { recursive: true });
         writeFileSync(CONFIG_PATH, JSON.stringify({ dataDir: newPath }, null, 2));
         return {
@@ -241,9 +244,18 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async ({ siteUrl, check, limit }) => {
       const r = runSingleCheck(dataDir(), siteUrl, check, limit);
+      // Hosts cap the model-facing result (~60k chars). On evidence-heavy checks a large
+      // `limit` can blow that ceiling and error the whole call — trim findings (keeping the
+      // true total) instead of failing. Same guard pattern as detect_changes.
+      let sc: Record<string, unknown> = { ...r, findingsTotal: r.findings.length };
+      let findings = r.findings;
+      while (findings.length > 25 && JSON.stringify({ ...sc, findings }).length > 45000) {
+        findings = findings.slice(0, Math.floor(findings.length / 2));
+      }
+      sc = { ...sc, findings, findingsReturned: findings.length };
       return {
-        content: [{ type: 'text', text: `${check}: ${r.findings.length} findings` }],
-        structuredContent: r as unknown as Record<string, unknown>,
+        content: [{ type: 'text', text: `${check}: ${r.findings.length} findings${findings.length < r.findings.length ? ` (${findings.length} returned — result trimmed to fit the token cap; use a smaller limit for paging)` : ''}` }],
+        structuredContent: sc,
       };
     },
   );
@@ -390,9 +402,37 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             fix = generateJsonLd(page);
             break;
           }
-          case 'broken-internal-links':
-          case 'internal-links-to-redirects':
           case 'redirect-chain': {
+            // The finding's url_key IS the chain's final page — its row holds the recorded
+            // hops. Collapse each hop straight to the final URL; never fuzzy-match here.
+            const page = db.db.prepare('SELECT url, redirects FROM pages WHERE url_key = ?').get(affectedKey) as
+              | { url: string; redirects: string | null } | undefined;
+            let hops: { from: string; to: string }[] = [];
+            try { hops = page?.redirects ? JSON.parse(page.redirects) : []; } catch { /* malformed chain */ }
+            kind = 'redirect';
+            fix = page && hops.length
+              ? { ...collapseChainRules(page.url, hops, redirectFormat ?? 'htaccess'), chain: hops }
+              : { explanation: 'Redirect chain no longer present in the latest crawl — re-crawl and re-audit.' };
+            break;
+          }
+          case 'internal-links-to-redirects': {
+            // The flagged key is a redirect SOURCE; the crawler recorded where it actually
+            // goes — find the chain containing it and use that real destination.
+            const hostForm = hostFormForProperty(siteUrl) ?? 'asis';
+            let knownTarget: string | null = null;
+            for (const row of db.db.prepare(`SELECT url, redirects FROM pages WHERE redirects IS NOT NULL AND redirects <> ''`).iterate() as IterableIterator<{ url: string; redirects: string }>) {
+              try {
+                const hops = JSON.parse(row.redirects) as { from?: string }[];
+                if (hops.some(h => h.from && urlKey(String(h.from), { hostForm }) === affectedKey)) { knownTarget = row.url; break; }
+              } catch { /* skip malformed */ }
+            }
+            kind = 'redirect';
+            fix = suggestRedirect(affectedKey ?? '', [], redirectFormat ?? 'htaccess', knownTarget);
+            break;
+          }
+          case 'broken-internal-links': {
+            // Genuinely dead target (4xx/5xx) — no recorded destination exists, so fall back
+            // to token-overlap fuzzy matching against live pages.
             const livePages = db.db
               .prepare('SELECT url FROM pages WHERE status_code = 200 AND indexable = 1')
               .all() as { url: string }[];
@@ -409,7 +449,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             // boolean/over-long search string (common on job boards) — not usable anchor text.
             const q = evidence.query as string | undefined;
             const cleanQuery = q && q.length <= 60 && !/["()]|\bor\b|\bnot\b|\s-\w/i.test(q) ? q : undefined;
-            const anchor = cleanQuery ?? page?.h1 ?? page?.title ?? q ?? '';
+            // Never fall back to the raw q — it was just rejected as unusable anchor text.
+            const anchor = cleanQuery ?? page?.h1 ?? page?.title ?? '';
             kind = 'internal-links';
             fix = suggestInternalLinks(db.db, affectedKey ?? '', anchor);
             break;

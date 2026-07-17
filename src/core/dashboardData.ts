@@ -93,7 +93,8 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
               (SELECT COUNT(*)||':'||COALESCE(MAX(period),'') FROM rank_history) rh`).get() as { sa: string | null; run: string | null; pg: number; ar: string | null; rh: string | null };
     const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}|${ver.ar ?? ''}|${ver.rh ?? ''}`;
     const hit = db.db.prepare('SELECT payload FROM dashboard_cache WHERE id=1 AND version=?').get(version) as { payload: string } | undefined;
-    if (hit) return JSON.parse(hit.payload) as DashboardData;
+    // A corrupt/truncated cache row must fall through to a rebuild, not throw forever.
+    if (hit) { try { return JSON.parse(hit.payload) as DashboardData; } catch { /* rebuild below */ } }
 
     // Use the finalised date (trailing partial GSC days trimmed) for ALL windows + charts, so the
     // dashboard never shows the "traffic tanking" cliff of unfinalised data.
@@ -307,7 +308,8 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       const exByCheck = new Map<string, typeof exRows>();
       for (const r of exRows) { const arr = exByCheck.get(r.check_id) ?? []; if (arr.length < 3) { arr.push(r); exByCheck.set(r.check_id, arr); } }
 
-      const SEV_RANK: Record<string, number> = { crit: 0, high: 1, med: 2, low: 3, info: 4 };
+      const SEV: Record<string, number> = { crit: 0, high: 1, med: 2, low: 3, info: 4 };
+      const sevRank = (s: string): number => SEV[s] ?? 5; // unknown severity sorts last, not NaN
       const catMap = new Map<string, NonNullable<DashboardData['findings']>['recommendations'][number]['checks']>();
       const mkEx = (r: typeof exRows[number]): { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number } => {
         const t = parse(r.traffic_at_risk);
@@ -330,8 +332,8 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         catMap.set(c.category, list);
       }
       const recommendations = [...catMap.entries()]
-        .map(([category, checks]) => ({ category, checks: checks.sort((a, b) => (SEV_RANK[a.severity] - SEV_RANK[b.severity]) || (b.count - a.count)) }))
-        .sort((a, b) => Math.min(...a.checks.map(c => SEV_RANK[c.severity])) - Math.min(...b.checks.map(c => SEV_RANK[c.severity])));
+        .map(([category, checks]) => ({ category, checks: checks.sort((a, b) => (sevRank(a.severity) - sevRank(b.severity)) || (b.count - a.count)) }))
+        .sort((a, b) => Math.min(...a.checks.map(c => sevRank(c.severity))) - Math.min(...b.checks.map(c => sevRank(c.severity))));
 
       findings = { runId: lastRun.run_id, total: lastRun.finding_count, finishedAt: lastRun.finished_at, byCheck, top, recommendations };
     }

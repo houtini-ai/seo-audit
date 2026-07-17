@@ -91,7 +91,9 @@ export function extractPage(
     ?? ($('meta[http-equiv="Content-Type"]').attr('content')?.match(/charset=([\w-]+)/i)?.[1] ?? null);
   const canonicalEls = $('link[rel="canonical"]');
   const canonicalRaw = canonicalEls.first().attr('href')?.trim() ?? null;
-  const canonicalUrl = canonicalRaw ? new URL(canonicalRaw, pageUrl).toString() : null;
+  // A malformed canonical href (e.g. `href="http://"`) must not make the whole page
+  // extraction throw — that would record a fine 200 page as a fetch failure.
+  const canonicalUrl = canonicalRaw ? (() => { try { return new URL(canonicalRaw, pageUrl).toString(); } catch { return null; } })() : null;
   const canonicalRelative = canonicalRaw != null && !/^https?:\/\//i.test(canonicalRaw);
   const robots = $('meta[name="robots"]').attr('content')?.trim() ?? null;
   const viewport = $('meta[name="viewport"]').attr('content')?.trim() ?? null;

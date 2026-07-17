@@ -128,4 +128,4 @@ Fix your top three items, then run the audit again to watch them drop off the li
 
 That lists every feature with an example you can copy.
 
-> **Coming soon:** phrases you rank for but never mention in your copy, template-level structured-data opportunities, and an "agent readiness" check (is your site ready for AI agents — `llms.txt`, `agents.md`, AI-bot rules, WebMCP). See the [README roadmap](../README.md#whats-coming).
+> **More to explore:** the audit already flags phrases you rank for but never mention in your copy, and you can ask *"check agent readiness for yoursite.com"* to score how ready your site is for AI agents (`llms.txt`, `agents.md`, AI-bot rules). Template-level structured-data opportunities are coming next — see the [README roadmap](../README.md#whats-coming).

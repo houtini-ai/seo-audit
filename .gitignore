@@ -26,8 +26,16 @@ crawl-tests/**/*.json
 crawl-tests/**/*.html
 crawl-tests/**/raw/
 
+# Build/tooling caches
+*.tsbuildinfo
+.vite/
+*.log
+
 # OS
 .DS_Store
 Thumbs.db
 .preview/
+
+# Large competitor xlsx datasets (the tracked research/*.md reference docs predate this
+# rule and stay in git; anything NEW under research/ is ignored)
 research/

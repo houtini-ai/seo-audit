@@ -37,7 +37,7 @@ export class WikidataClient {
   async searchEntity(query: string, language = 'en'): Promise<{ id: string; label: string; description?: string } | null> {
     const q = query.trim();
     if (!q) return null;
-    const url = `${API}?action=wbsearchentities&format=json&type=item&limit=1&language=${language}&uselang=${language}&search=${encodeURIComponent(q)}`;
+    const url = `${API}?action=wbsearchentities&format=json&type=item&limit=1&language=${encodeURIComponent(language)}&uselang=${encodeURIComponent(language)}&search=${encodeURIComponent(q)}`;
     const j = await this.getJson(url);
     const hit = j?.search?.[0];
     return hit?.id ? { id: hit.id, label: hit.label ?? q, description: hit.description } : null;

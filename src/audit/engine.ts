@@ -93,7 +93,8 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
     const trafficMap = new Map<string, Traffic>();
     if (maxDate) {
       for (const row of db.db.prepare(
-        `SELECT page_key, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position
+        `SELECT page_key, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions,
+                COALESCE(SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0), 0) position
          FROM search_analytics WHERE page_key IS NOT NULL AND date <= '${maxDate}' AND date > date(?, '-28 days') GROUP BY page_key`,
       ).all(maxDate) as (Traffic & { page_key: string })[]) {
         trafficMap.set(row.page_key, { clicks: row.clicks, impressions: row.impressions, position: row.position });
@@ -125,7 +126,11 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
           const ev = (f.evidence ?? {}) as any;
           const evImpr = Number(ev.impressions) || 0;
           const evClicks = Number(ev.clicks) || 0;
-          const evPos = parseFloat(String(ev.positions ?? ev.position ?? '')) || 0;
+          // `positions` can be a range string ("1.1–15.3", cannibalisation). parseFloat would
+          // take the BEST position and price the whole query's impressions at its CTR (wildly
+          // inflating T when the leader sits at #1) — use the midpoint of the range instead.
+          const posNums = String(ev.positions ?? ev.position ?? '').match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+          const evPos = posNums.length ? posNums.reduce((a, b) => a + b, 0) / posNums.length : 0;
           const hasQuery = ev.query != null && String(ev.query).length > 0;
           const pageTraf = f.urlKey ? trafficMap.get(f.urlKey) : null;
           // Choose the right stake per finding shape:

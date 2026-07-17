@@ -65,9 +65,14 @@ export class GscSync {
       const wantsSegments = dims.includes('device');
       // Only wipe on a genuine, unavoidable shape conflict (e.g. an explicit lite→segmented
       // upgrade, or a pre-existing mixed table) — never on the routine preserve path above.
-      if ((wantsSegments && hasLite) || (!wantsSegments && hasSegmented)) {
+      // The wipe is DEFERRED into the same transaction as the first fetched batch: if the
+      // API call fails or the job is aborted before any rows arrive, months of history are
+      // NOT destroyed and replaced by nothing.
+      let mustWipe = (wantsSegments && hasLite) || (!wantsSegments && hasSegmented);
+      const wipeAndInsert = db.db.transaction((records: Record<string, unknown>[]) => {
         db.db.exec('DELETE FROM search_analytics');
-      }
+        for (const r of records) insert.run(r);
+      });
 
       // ── Incremental resume ─────────────────────────────────────────────────────────────────
       // The first sync pulls the requested window; every sync after that only fetches from the
@@ -77,10 +82,16 @@ export class GscSync {
       // full window. `fullResync` forces the full window. Only ever NARROWS the window (never widens
       // past the requested start), and resumes from wherever the data left off (covers any gap).
       const LAG_DAYS = 3;
-      if (!options.fullResync) {
+      if (!options.fullResync && !mustWipe) { // a pending wipe means the stored MAX(date) is the OLD shape's — pull the full window
         const mx = (db.db.prepare('SELECT MAX(date) d FROM search_analytics').get() as { d: string | null }).d;
         if (mx) {
           const resume = new Date(Date.parse(mx) - LAG_DAYS * 86400000).toISOString().slice(0, 10);
+          // Already synced past the requested window (e.g. a historical/comparison pull whose
+          // endDate predates the stored data): no-op instead of calling GSC with start > end.
+          if (resume > options2.endDate) {
+            db.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(siteUrl);
+            return { siteUrl, rowsFetched: 0, startDate: options2.startDate, endDate: options2.endDate };
+          }
           if (resume > options2.startDate) { options2 = { ...options2, startDate: resume }; }
         }
       }
@@ -104,7 +115,8 @@ export class GscSync {
             position: row.position,
           };
         });
-        insertMany(records);
+        if (mustWipe) { wipeAndInsert(records); mustWipe = false; }
+        else insertMany(records);
         total += records.length;
         update({ siteUrl, rowsFetched: total });
       });

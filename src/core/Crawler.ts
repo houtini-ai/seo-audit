@@ -143,6 +143,9 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
     }
     if (res.status >= 300 && res.status < 400 && res.headers.get('location') && hops < maxHops) {
       const loc = new URL(res.headers.get('location')!, current).toString();
+      // Drain the redirect response's body (some servers attach HTML to 301s) so the
+      // keep-alive connection is released — otherwise redirect-heavy crawls leak sockets.
+      try { await res.body?.cancel(); } catch { /* already closed */ }
       redirects.push({ from: current, to: loc, status: res.status });
       current = loc;
       hops++;
@@ -222,10 +225,21 @@ export class Crawler {
     ).run(crawlId, seed, baseHost, maxDepth, maxPages, ua, startedAt);
 
     try {
-    // A crawl is a fresh snapshot of the current site — clear prior crawl data so
+    // A crawl is a fresh snapshot of the current site — prior crawl data is cleared so
     // re-crawls reflect changes (the "fix → re-crawl → verify" loop) instead of
     // accumulating stale pages / duplicate links. GSC/inspection/findings are separate.
-    db.db.exec('DELETE FROM links; DELETE FROM errors; DELETE FROM pages;');
+    // The pages/links wipe is DEFERRED until the first successful page write: if the crawl
+    // dies before fetching anything (site down, seed unreachable), the previous good
+    // snapshot survives instead of leaving every downstream consumer an empty table.
+    // (It must still run before the first insert — old rows would otherwise absorb the
+    // new crawl's writes via ON CONFLICT(url_key) DO NOTHING.)
+    db.db.exec('DELETE FROM errors;'); // per-crawl diagnostics, not part of the snapshot
+    let wipedPrior = false;
+    const ensureWiped = (): void => {
+      if (wipedPrior) return;
+      db.db.exec('DELETE FROM links; DELETE FROM pages;');
+      wipedPrior = true;
+    };
 
     const robots = await fetchRobots(origin, ua);
 
@@ -268,6 +282,7 @@ export class Crawler {
     const pageBuf: Record<string, unknown>[] = [];
     const linkBuf: Record<string, unknown>[] = [];
     const visited = new Set<string>();
+    const emitted = new Set<string>(); // final url_keys already extracted+written
     const frontier: { url: string; depth: number }[] = [];
     let crawled = 0, failed = 0, skipped = 0, discovered = 0;
 
@@ -295,22 +310,26 @@ export class Crawler {
           if (!isInternalHost(host, baseHost) || skipUrl(u.url, excludeRes) || isAssetUrl(u.url)) continue;
           enqueue(u.url, 1); // sitemap URLs are top-level entry points
         }
-      } catch { /* sitemap optional — never fail the crawl on it */ }
+      } catch (err) { console.error('[crawl] sitemap seed skipped:', err instanceof Error ? err.message : String(err)); }
     }
 
     // Also seed from GSC-known URLs (pages Google sends traffic to) so coverage doesn't depend on
     // the site's sitemap being complete — e.g. simracing has 334 sitemap URLs but GSC knows 1,299.
     // page_key is already a normalised URL; off-host/junk/asset filtered; bounded by maxPages.
     try {
-      for (const row of db.db.prepare(`SELECT DISTINCT page_key FROM search_analytics WHERE page_key IS NOT NULL`).all() as { page_key: string }[]) {
+      // Seed with the RAW GSC page URL, not the normalised page_key — the key strips
+      // trailing slashes / sorts params, so fetching it can add a phantom 301 hop (or 404)
+      // on sites where the canonical form matters. Fall back to page_key for old rows.
+      for (const row of db.db.prepare(`SELECT DISTINCT COALESCE(page, page_key) AS u FROM search_analytics WHERE COALESCE(page, page_key) IS NOT NULL`).all() as { u: string }[]) {
         if (discovered >= maxPages) break;
-        let host: string; try { host = new URL(row.page_key).hostname; } catch { continue; }
-        if (!isInternalHost(host, baseHost) || skipUrl(row.page_key, excludeRes) || isAssetUrl(row.page_key)) continue;
-        enqueue(row.page_key, 1);
+        let host: string; try { host = new URL(row.u).hostname; } catch { continue; }
+        if (!isInternalHost(host, baseHost) || skipUrl(row.u, excludeRes) || isAssetUrl(row.u)) continue;
+        enqueue(row.u, 1);
       }
-    } catch { /* no GSC data (e.g. crawl-only on a non-synced property) — fine */ }
+    } catch (err) { console.error('[crawl] GSC seed skipped:', err instanceof Error ? err.message : String(err)); }
 
     const flush = (final = false): void => {
+      if (pageBuf.length || linkBuf.length) ensureWiped();
       if (pageBuf.length && (final || pageBuf.length >= FLUSH_EVERY)) { flushPages(pageBuf.splice(0)); }
       if (linkBuf.length && (final || linkBuf.length >= FLUSH_EVERY)) { flushLinks(linkBuf.splice(0)); }
     };
@@ -328,6 +347,7 @@ export class Crawler {
       if (dynamicDelay) await sleep(dynamicDelay);
       const path = (() => { try { return new URL(item.url).pathname; } catch { return '/'; } })();
       if (!robots.isAllowed(path)) {
+        ensureWiped();
         try { robotsInsert.run({ crawl_id: crawlId, url: item.url, url_key: urlKey(item.url, keyOpts), depth: item.depth }); } catch { /* dup */ }
         skipped++; return;
       }
@@ -343,6 +363,11 @@ export class Crawler {
         try { offsite = r.redirects.length > 0 && (!isInternalHost(new URL(r.finalUrl).hostname, baseHost) || skipUrl(r.finalUrl, excludeRes)); } catch { /* unparseable final URL */ }
         const pageUrl = offsite ? item.url : r.finalUrl;
         const finalKey = urlKey(pageUrl, keyOpts);
+        // Multiple enqueued URLs can redirect to the same final page. The pages table
+        // dedupes via ON CONFLICT(url_key), but re-extracting the same HTML would insert
+        // its outlinks AGAIN, inflating inlink_count/iPR weights — so skip re-processing.
+        if (emitted.has(finalKey)) { crawled++; flush(); return; }
+        emitted.add(finalKey);
         const status = offsite ? (r.redirects[0]?.status ?? r.status) : r.status;
         const isHtml = !offsite && isHtmlContentType(r.contentType);
         const ex = isHtml && r.status === 200 ? extractPage(r.body, r.finalUrl, baseHost, keyOpts, r.xRobotsTag) : null;

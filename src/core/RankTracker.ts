@@ -46,8 +46,10 @@ export class RankTracker {
            pos_11_20=excluded.pos_11_20, pos_21_100=excluded.pos_21_100, etv=excluded.etv,
            keyword_count=excluded.keyword_count, fetched_at=datetime('now')`,
       );
-      const rows = items.map(it => {
+      const rows = items.filter(it => Number.isInteger(it?.year) && Number.isInteger(it?.month)).map(it => {
         const o = it.metrics?.organic ?? {};
+        // Guard year/month — a malformed item would upsert an "undefined-NaN" period row
+        // that then poisons the dashboard's rank-history axis and date reconciliation.
         const period = `${it.year}-${String(it.month).padStart(2, '0')}`;
         const pos_1_3 = n(o.pos_1) + n(o.pos_2_3);
         const pos_4_10 = n(o.pos_4_10);

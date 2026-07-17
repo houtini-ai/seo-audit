@@ -1,0 +1,21 @@
+# Ship only dist/ + README + LICENSE + package/server.json (pre-publish checklist in CLAUDE.md)
+src/
+scripts/
+research/
+plan/
+docs/
+audit/
+findings/
+crawl-tests/
+.claude/
+.secrets/
+.preview/
+*.db
+*.db-wal
+*.db-shm
+*.map
+CLAUDE.md
+tsconfig*.json
+vite.config.ts
+.env
+.env.*

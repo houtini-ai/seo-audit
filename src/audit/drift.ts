@@ -79,8 +79,12 @@ export function buildDriftMarkdown(d: DriftResult, siteUrl: string, limit = 50):
 
 /** Diff the two most recent snapshots in the DB. */
 export function diffLatest(db: Database.Database): DriftResult {
+  // captured_at arrives in two formats: SQLite's 'YYYY-MM-DD HH:MM:SS' (finished_at) and
+  // ISO 'YYYY-MM-DDTHH:MM:SSZ' (the killed-crawl fallback). Compared raw, 'T' > ' ' makes
+  // any ISO stamp sort "newer" than a same-day SQLite stamp regardless of actual time —
+  // inverting baseline/current and reporting every change backwards. Normalise first.
   const crawls = db.prepare(
-    'SELECT crawl_id, MAX(captured_at) at FROM page_snapshots GROUP BY crawl_id ORDER BY at DESC LIMIT 2',
+    `SELECT crawl_id, MAX(REPLACE(REPLACE(captured_at, 'T', ' '), 'Z', '')) at FROM page_snapshots GROUP BY crawl_id ORDER BY at DESC LIMIT 2`,
   ).all() as { crawl_id: string; at: string }[];
   if (crawls.length < 2) {
     return { baselineCrawl: null, currentCrawl: crawls[0]?.crawl_id ?? null, baselineAt: null, currentAt: crawls[0]?.at ?? null, changes: [], summary: {} };
