@@ -8,6 +8,12 @@
   "bin": {
     "seo-audit-console": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "server.json",
+    "README.md",
+    "LICENSE"
+  ],
   "author": "Richard Baxter <hello@houtini.com>",
   "license": "Apache-2.0",
   "repository": {
@@ -51,7 +57,8 @@
     "probe:6d": "node scripts/probe-6d.mjs",
     "probe:migrate": "node scripts/probe-migrate.mjs",
     "probe:boot": "node scripts/probe-boot.mjs",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "engines": {
     "node": ">=20.0.0"
