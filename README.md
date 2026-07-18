@@ -10,7 +10,21 @@ I've run a lot of technical SEO audits over the years. The hard part was never *
 
 So I built the tool I always wanted. SEO Audit Console is a [Model Context Protocol](https://modelcontextprotocol.io) server that merges your **Google Search Console history** with a **first-party crawl of your site** (and, if you want it, **DataForSEO**) into one thing: a prioritised, evidence-backed audit you can interrogate inside Claude Desktop. It hands you paste-ready fixes. And every finding traces back to a real datapoint, so nothing is a black box.
 
-If you want the step-by-step version with screenshots, start with the **[how-to guide](docs/how-to-guide.md)**. This README is the full map.
+If you want the step-by-step version with screenshots, start with the **[how-to guide](docs/how-to-guide.md)**. This README is the full map - and it assumes nothing, so if you're newer to SEO, start at the next section and read straight down.
+
+---
+
+## New to this? Here's the thirty-second version
+
+Three ideas, and the whole tool falls out of them.
+
+**Google Search Console** (GSC) is Google's free reporting service for site owners. It tells you which searches your pages appeared for, how many people saw you (impressions), how many clicked, and where you ranked. It's the closest thing to ground truth in SEO - it's Google telling you, per query and per page, what actually happened. Most people glance at the graphs and leave. There's far more in there.
+
+**A crawl** is a program visiting your site the way Google's own crawler does - following links, reading each page's HTML, noting titles, redirects, broken links, directives like `noindex`. A crawl tells you what your site *says*. It doesn't tell you what Google *did* about it.
+
+**The merge is the product.** Put those two datasets side by side, joined page by page, and you can ask questions neither can answer alone. Which pages earn impressions but have a title that never mentions the query? Which pages does Google send traffic to that your own navigation can't even reach? Which two pages are competing against each other for the same search? A crawler can't see any of that. Neither can a keyword tool. The overlap is where the money is.
+
+Everything below is a conversation. You type *"run an SEO audit on mysite.com"* into Claude and it happens. No interface to learn - and if you forget what's possible, ask *"run seo_audit_help"* and you get the full menu with example prompts.
 
 ---
 
@@ -30,67 +44,179 @@ That last bit matters more than it sounds. Severity is what crawlers sell you. Y
 
 ## What's different about it
 
-- **Merged, not bolted on.** GSC clicks, impressions and position join your crawl on a normalised URL key. So the checks can ask the questions that need *both* datasets at once - cannibalisation, striking-distance queries, ghost pages (Google sends traffic but the crawl can't reach the URL), high-demand pages starved of internal links. A keyword tool can't see those. A crawler can't either.
+- **Merged, not bolted on.** GSC clicks, impressions and position join your crawl on a normalised URL key. So the checks can ask the questions that need *both* datasets at once - cannibalisation, striking-distance queries, ghost pages (Google sends traffic but the crawl can't reach the URL), high-demand pages starved of internal links.
 - **Prioritised by yield.** `Priority = (expected clicks × yield × certainty) / effort-hours`. A 5,000-page template tweak doesn't get to out-rank a single critical canonical bug just because it touches more URLs.
-- **Finding, then fix.** It doesn't only flag things. It writes the remediation: valid JSON-LD built from your own page data, exact-match 301 rules for broken links (using the redirect destination the crawler actually recorded, not a guess), internal-link suggestions from your highest-authority pages. All dry-run - it returns artifacts, it never touches your site.
+- **Finding, then fix.** It doesn't only flag things. It writes the remediation: valid JSON-LD built from your own page data, exact-match 301 rules for broken links, internal-link suggestions from your highest-authority pages. All dry-run - it returns artifacts, it never touches your site.
 - **Honest about confidence.** Every finding is labelled deterministic (here are the bytes) or judgement (gated behind a flag). In my view a wrong finding is worse than no finding at all, so the heuristic stuff has to ask permission.
-- **Built for the AI-search era too.** It doesn't stop at classic technical SEO. It checks whether your copy actually *says* the phrases you rank for, whether any passage on the page answers the query the way AI search extracts answers (a local relevance model, runs on your machine), and whether your site is ready for AI agents at all - `llms.txt`, `agents.md`, MCP server cards, AI-bot rules.
-- **Conversational, and visual.** It runs inside Claude Desktop, so you ask follow-ups, drill in, and pull up a shareable HTML dashboard or a markdown report when you're done.
+- **Built for the AI-search era too.** It checks whether your copy actually *says* the phrases you rank for, whether any passage answers the query the way AI search extracts answers (a local relevance model, runs on your machine), and whether your site is ready for AI agents at all - `llms.txt`, `agents.md`, MCP server cards, AI-bot rules.
+- **Conversational, and visual.** You ask follow-ups, drill in, and pull up a shareable HTML dashboard or a markdown report when you're done.
+
+---
+
+## The crawl, properly explained
+
+The crawl is where audits usually go wrong, so it's worth understanding what this one does differently. I've spent enough of my career cleaning up after crawlers that fooled themselves.
+
+**It discovers pages three ways.** Following links (the obvious one), reading your XML sitemaps, and - this is the important one - starting from every URL Google is already sending traffic to, straight out of your GSC data. That third source means coverage doesn't depend on your sitemap being honest, and it's exactly how ghost pages get caught: if Google sends clicks to a URL your own site structure can't reach, that URL still gets crawled, and the mismatch becomes a finding. On one site this took crawl coverage of GSC-known URLs from 29% to 70%.
+
+**It records *why*, not just *what*.** For every URL that isn't indexable it stores the reason - 404, noindex, X-Robots header, canonicalised elsewhere, robots-blocked, non-HTML. "This page won't rank" is a fact; "this page won't rank because a plugin set an X-Robots header nobody remembers" is a fix.
+
+**It refuses to be fooled.** A redirect that leaves your site (Shopify OAuth flows, I'm looking at you) is recorded as a redirect-out, never stored as a page. It always uses GET rather than HEAD, because a HEAD request can genuinely return a different status than the real request would - but it abandons the response body for images, PDFs and assets, so it records status and size without downloading the bytes.
+
+**And it's polite.** Respects robots.txt properly (a bot-specific group replaces `*`, per the spec, which plenty of commercial crawlers get wrong), backs off when your host starts rate-limiting, skips the junk - internal search results, faceted filter combinations, login flows. This is a crawler for sites you own. Being a good guest is the point.
+
+After the crawl it computes a real link graph: internal PageRank with nav and footer links down-weighted, click depth from the homepage counting body links only, and in-degree per page. That graph is what powers the orphan-page, equity-leak and underlinked-page checks later - and the donor rankings when it suggests internal links.
 
 ---
 
 ## Everything it does
 
-The short version: five capabilities, each a conversation away.
+Five capabilities, each a conversation away.
 
 ### 1. Pull your data
-`refresh_property` runs the whole pipeline in one step: syncs your Search Console history (incrementally - after the first pull, later syncs only fetch the delta, which turned a 33-minute refresh into 19 seconds on one of my properties), crawls your site, checks index coverage via the URL Inspection API, and pulls your rank history. Each part also runs on its own (`sync_gsc`, `start_crawl`, `inspect_urls`, `track_ranks`), and the long ones report progress live (`check_sync_status`, `check_crawl_status`).
 
-The crawler deserves a word. It's polite - respects robots.txt (properly: a bot-specific group replaces `*`, per the spec), backs off when a host rate-limits, and never downloads images or other assets (status and size, not the bytes). It discovers pages three ways - by following links, from your XML sitemaps, and from every URL Google is already sending traffic to - so coverage doesn't depend on your sitemap being honest. On one site that took crawl coverage of GSC-known URLs from 29% to 70%. It also refuses to be fooled: a redirect that leaves your site (Shopify OAuth flows, I'm looking at you) is recorded as a redirect-out, never stored as a page.
+> Refresh sc-domain:mysite.com
+
+`refresh_property` runs the whole pipeline in one step: syncs your Search Console history, crawls your site, checks index coverage via Google's URL Inspection API, and pulls your rank history. The GSC sync is incremental - after the first pull, later syncs fetch only what's new, which turned a 33-minute refresh into 19 seconds on one of my properties. Each part also runs on its own (`sync_gsc`, `start_crawl`, `inspect_urls`, `track_ranks`), and the long ones report progress live so you can watch the page count climb.
 
 ### 2. Audit it
-`run_audit` runs **80+ checks** over the joined data and gives you a prioritised markdown report. `query_audit` re-runs any single check with full evidence; `list_checks` shows the whole catalogue. The families:
+
+> Run an SEO audit on mysite.com
+
+`run_audit` runs **80+ checks** over the joined data and gives you a prioritised markdown report - not a wall of everything, a ranked list with the traffic at stake attached to each finding. `query_audit` re-runs any single check with full evidence; `list_checks` shows the whole catalogue. The families:
 
 | Family | What it catches |
 |---|---|
 | **Crawlability & indexation** | Broken internal links, redirect chains, links through redirects, deep pages, orphans, index bloat, faceted spider-traps, and the *reason* each URL isn't indexable |
 | **Canonicalisation & directives** | Broken/chained canonical targets, pagination canonicalising to page 1, noindex conflicts, robots contradictions, HTTPS→HTTP flips |
 | **On-page** | Duplicate titles and metas, title/H1 mismatches, missing alt text, heading hierarchy, mixed content, image dimensions (CLS), social tags |
-| **Structured data** | A local validator covering ~30 rich-result types (Product, Article, JobPosting, Dataset, Hotel, Restaurant and more) - required fields, value sanity (ISO dates, currency codes, absolute URLs), impossible dates. Required-only by design, so it doesn't nag you about properties Google ignores |
+| **Structured data** | A local validator covering ~30 rich-result types (Product, Article, JobPosting, Dataset, Hotel, Restaurant and more) - required fields, value sanity, impossible dates. Required-only by design, so it doesn't nag about properties Google ignores |
 | **Internationalisation** | Broken hreflang targets, missing return tags (x-default counts, as it should) |
 | **Performance** | Oversized HTML (estimated *transfer* size, not raw bytes), uncompressed responses, and measured Core Web Vitals when you've pulled them |
 | **Trends (GSC over time)** | Pages losing clicks period-over-period, page-one rankings slipping, queries that vanished, rising pages worth doubling down on, stale content decaying year-on-year |
-| **The merged questions** | Cannibalisation (with sensible thresholds - incidental long-tail appearances don't count), striking-distance queries, ghost pages, traffic to dead URLs, internal authority wasted on no-click pages, high-demand pages starved of links, titles and H1s missing the query you already rank for |
+| **The merged questions** | Cannibalisation (with sensible thresholds - incidental long-tail appearances don't count), striking-distance queries, ghost pages, traffic to dead URLs, internal authority wasted on no-click pages, titles and H1s missing the query you already rank for |
 | **AI-search readiness** | Phrases you rank for but never say in the body, multi-term queries your copy never answers in one place, pages with no extractable answer passage, incoherent inbound anchor text, content that doesn't chunk cleanly for retrieval |
 
-Every check is labelled **D** (deterministic) or **N** (judgement, off by default - pass `includeJudgement: true` to see them).
+Every check is labelled **D** (deterministic) or **N** (judgement, off by default - say *"include the judgement findings"* to see them).
 
 ### 3. Fix it
-`fix_finding` turns a finding into an artifact you can ship: a complete JSON-LD block built from your own page data, an exact-match 301 rule in `.htaccess`, nginx or Next.js flavour, or a ranked list of internal-link donor pages (your highest-authority pages that don't yet link to the one that needs it, with sensible anchor text). Redirect fixes use the destination the crawler recorded; fuzzy matching only steps in for genuinely dead URLs, and it tells you when it's guessing.
+
+> Generate the fix for the broken link on /old-page
+> Write the Product structured data for /widgets
+
+`fix_finding` turns a finding into an artifact you can ship: a complete JSON-LD block built from your own page data, an exact-match 301 rule in `.htaccess`, nginx or Next.js flavour, or a ranked list of internal-link donor pages - your highest-authority pages that don't yet link to the one that needs it, with sensible anchor text. Redirect fixes use the destination the crawler actually recorded; fuzzy matching only steps in for genuinely dead URLs, and it tells you when it's guessing.
 
 ### 4. Find the growth
-This is the keyword-research and content-opportunity side, and most of it needs nothing beyond your own GSC data:
+
+This is the keyword-research and content side, and most of it needs nothing beyond your own GSC data:
 
 - `suggest_pages` - new pages grounded in *real* demand: queries you earn impressions for at rank 11+ with no winning page. It de-duplicates ruthlessly (won't suggest a page you've already got, or a topic one URL already dominates) and tells you the nearest existing page to link the new one from.
 - `list_templates` - clusters your site into templates by URL shape and schema type, so one template fix corrects N pages at once. If you've read anything I've written about site architecture, you'll know this is where the long-tail gains tend to hide.
-- `score_passages` - the AI-search piece. A small local relevance model (downloads once, ~25MB, no Python, never leaves your machine) reads each ranking page's content chunks against its top query and scores whether *any* passage actually answers it. It's a classifier, not a generator - it can't hallucinate. Pages that rank on demand they never densely answer are your rewrite list.
-- `draft_content` - the follow-through on a weak passage. It assembles a grounded writing brief from the page itself: the query gap, the page's own paragraphs as voice exemplars, and its most query-relevant passages as the only permitted facts. Claude then drafts the missing answer passage in *your site's* voice, inventing nothing. No bundled LLM, no made-up claims.
+- `score_passages` - the AI-search piece. A small local relevance model (downloads once, ~25MB, no Python, never leaves your machine) reads each ranking page's content against its top query and scores whether *any* passage actually answers it. It's a classifier, not a generator - it can't hallucinate. Pages that rank on demand they never densely answer are your rewrite list.
+- `draft_content` - the follow-through. It assembles a grounded writing brief from the page itself: the query gap, the page's own paragraphs as voice exemplars, and its most query-relevant passages as the only permitted facts. Claude then drafts the missing passage in *your site's* voice, inventing nothing.
 - `resolve_entities` - maps your pages to Wikidata entities and finds internal-link gaps between topically-related pages.
-- `detect_changes` - compares your two most recent crawls and flags what moved, by severity. A page that went noindex, a canonical that flipped, a title that changed. Run a refresh on two different days and this becomes your monitor.
+- `detect_changes` - compares your two most recent crawls and flags what moved, by severity. A page that went noindex, a canonical that flipped, a title that changed. Refresh on two different days and this becomes your monitor.
 - `check_agent_readiness` - scores your site 0-100 for the AI-agent audience: `llms.txt`, `agents.md`, AI-bot rules in robots.txt, MCP server cards, OAuth discovery, markdown content negotiation. With copy-paste fixes. And it's not fooled by a catch-all route that 200s everything.
 
-With a DataForSEO account (optional, pay-as-you-go, only ever called on demand):
-
-- `keyword_volume` · `related_terms` - search volumes and term expansion.
-- `search_intent` - classify query intent, which also feeds the intent-vs-page-type audit check.
-- `competitors_domain` · `page_intersection` - who you actually compete with, and the content gap: queries they rank for where you don't show up.
-- `page_lighthouse` - lab Core Web Vitals per URL, which feeds the high-yield-CWV-fail check.
-- `pull_backlinks` - your backlink profile with live status checks, so backlinks pointing at 404s get caught. (Heads up: the Backlinks API is a separate DataForSEO subscription from SERP/Keywords/Labs. If it isn't activated the tool says so plainly rather than failing quietly.)
-
 ### 5. Share it
+
+> Show me the dashboard for mysite.com
+
 `get_dashboard` opens an interactive dashboard right in the chat - findings treemap, rank trends, the equity-vs-reality scatter (internal PageRank against actual impressions, which is where the structural stories jump out), cannibalisation, keyword movement, CSV export. `export_report` writes the same thing as a single self-contained HTML file you can send to a client. No login, nothing installed.
 
-A few utilities round it out: `normalize_url` (see exactly how a URL joins between datasets), `data_location` (where the SQLite files live), `list_properties`, and `seo_audit_help` - which lists every capability with an example prompt, and is honestly the quickest way in.
+---
+
+## What DataForSEO adds (and what it costs)
+
+Everything above works with just your Search Console data. But GSC can only tell you about searches where you already appear. The moment your question is "how big is this market?" or "what do my competitors rank for that I don't?" - you need third-party data, and that's what [DataForSEO](https://dataforseo.com/?aff=213701) is: a pay-as-you-go API for search volumes, live rankings, competitor data and Lighthouse runs. No subscription, no seat licence. You top up a balance and individual calls cost fractions of a cent to a few cents.
+
+With an account connected you get:
+
+- `keyword_volume` · `related_terms` - real monthly search volumes and term expansion. This is how you size an opportunity before writing a word.
+- `search_intent` - classifies queries as informational, commercial, navigational or transactional. Also feeds an audit check that flags intent-vs-page-type mismatches (a blog post ranking for a "buy" query, say).
+- `competitors_domain` · `page_intersection` - who you actually compete with in search (measured from ranking overlap, not who you *think* your competitors are), and the content gap: queries they rank for where you don't show up at all.
+- `page_lighthouse` - lab Core Web Vitals per URL, feeding the high-yield-CWV-fail check.
+- `pull_backlinks` - your backlink profile with live status checks, so links pointing at 404s get caught. (Heads up: the Backlinks API is a separate DataForSEO subscription from SERP/Keywords/Labs. If it isn't activated the tool says so plainly rather than failing quietly.)
+
+I'm deliberately careful with your balance. The audit only ever calls DataForSEO **on demand** - one call per question you ask, cached for 20 days. It never fires in bulk behind your back. My own usage runs to a few dollars a month.
+
+---
+
+## What you'd actually use it for
+
+Recipes, basically. Each of these is a real workflow, with the prompts to type.
+
+### Your first audit (day one)
+
+> list properties
+> Refresh sc-domain:mysite.com
+> Run an SEO audit on mysite.com
+
+Twenty minutes on a mid-size site, most of it the crawl. What comes back is a ranked list - and the top five findings are usually worth more than the other seventy-five combined. Ask about any of them: *"show me the evidence for the cannibalisation finding"*. Then *"generate the fix"*.
+
+### Sitewide keyword optimisation
+
+The workflow I probably use most. The question isn't "what keywords should I target?" - it's "where does my copy fail to say what I already rank for?"
+
+> Run an SEO audit on mysite.com
+
+Look at the merged findings: titles missing the query the page ranks for, H1 mismatches, phrases you earn impressions on but never say in the body. These are pages Google already half-trusts. You're not chasing new rankings - you're closing the gap between the demand you're getting and the copy you're serving, which is far easier.
+
+> Score the passages on mysite.com
+
+Now the deeper cut: which ranking pages never actually *answer* their top query in any one passage. That's your rewrite list, in priority order.
+
+> Draft the missing content for /sim-racing-wheels
+
+And the follow-through - a grounded brief and a drafted passage in your site's own voice. Work down the list a page at a time. On sites with a few hundred indexed pages this is weeks of traditional keyword-mapping work collapsed into an afternoon, and every line of it grounded in queries you already appear for.
+
+### Fixing cannibalisation
+
+Two of your pages competing for the same query means Google alternates between them and neither settles. The audit finds these with thresholds tuned to ignore incidental long-tail overlap - then you decide: consolidate, differentiate, or canonicalise.
+
+> Show me the cannibalisation findings for mysite.com with evidence
+
+The evidence includes which page you'd keep (the one with better engagement and links, usually) and the internal-link donors to strengthen it.
+
+### The content refresh list
+
+> Run an SEO audit on mysite.com and include the judgement findings
+
+The trends family surfaces decay: pages losing clicks year-on-year, page-one rankings slipping to page two, queries that vanished. Stale content decays quietly - this makes it loud. Cross-reference with `suggest_pages` and you have next quarter's content plan: what to refresh, what to write, what to let die.
+
+### The new-content pipeline
+
+> Suggest new pages for mysite.com
+> What's the search volume for "standing desk converter"?
+> What do my competitors rank for that I don't?
+
+`suggest_pages` works from your own impressions - demand Google has already shown you. Volume sizing and the competitor gap (both DataForSEO) tell you which ideas deserve to be first. Each suggestion comes with the nearest existing page to link from, so nothing launches as an orphan.
+
+### The template play
+
+> List the page templates on mysite.com
+
+Big sites aren't 50,000 pages - they're a dozen templates, repeated. One template fix corrects every page in the cluster. On ecommerce and programmatic sites this is where the big gains hide, and it's the lens I'd start with on anything over a few thousand URLs.
+
+### Monitoring, migrations, and "what changed?"
+
+> Refresh sc-domain:mysite.com
+> Detect changes on mysite.com
+
+Run a refresh on a schedule and `detect_changes` diffs the two most recent crawls by severity: a page that went noindex, a canonical that flipped, titles that changed. During a migration or replatform this is the difference between catching a stray noindex on Tuesday and explaining a traffic graph in a board meeting three weeks later. I've been on the wrong end of that one.
+
+### Client and stakeholder reporting
+
+> Export the report for mysite.com
+
+A single self-contained HTML file - dashboard, findings, trends, the lot. Send it to a client, attach it to a ticket, drop it in Slack. Nothing to install, no login, and every claim in it traces to a datapoint.
+
+### AI-search readiness
+
+> Check agent readiness for mysite.com
+> Score the passages on mysite.com
+
+Two halves. Agent readiness is the infrastructure: `llms.txt`, `agents.md`, AI-bot rules, MCP discovery - scored 0-100 with copy-paste fixes. Passage scoring is the content: AI search doesn't rank your page, it extracts your answer, and pages that rank without densely answering are exposed. In my view this is the audit gap of the next few years, and it's why the local relevance model exists.
 
 ---
 
@@ -99,8 +225,8 @@ A few utilities round it out: `normalize_url` (see exactly how a URL joins betwe
 ### What you need first
 - **Node.js ≥ 20**
 - **Claude Desktop** (or any MCP client)
-- A **Google Search Console** property you own (free)
-- *Optional:* a **DataForSEO** account for keyword volume, SERP data, competitor gaps, lab Core Web Vitals and backlinks
+- A **Google Search Console** property you own (free - if your site isn't verified there yet, do that first; it's ten minutes and you should have it regardless)
+- *Optional:* a **DataForSEO** account for volumes, SERP data, competitor gaps, lab CWV and backlinks
 
 ### 1. Build it
 ```bash
@@ -111,10 +237,12 @@ npm run build
 ```
 
 ### 2. Connect Google Search Console
-The tool reads GSC through a **Google Cloud service account** - no OAuth dance to sit through:
+The tool reads GSC through a **Google Cloud service account** - a robot login you create once, rather than an OAuth dance every session:
 1. In [Google Cloud Console](https://console.cloud.google.com), create a project and **enable the Search Console API**.
 2. Create a **service account** and download its **JSON key**.
 3. In [Search Console](https://search.google.com/search-console), under *Settings → Users and permissions*, add the service account's email as a **user** on each property you want to audit.
+
+That third step is the one people miss. The service account is its own "person" - it sees nothing until you add it to the property, same as any colleague.
 
 ### 3. Configure Claude Desktop
 Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config):
@@ -145,9 +273,7 @@ Only `GOOGLE_APPLICATION_CREDENTIALS` is required. Restart Claude Desktop, then 
 | `DATAFORSEO_CACHE_DAYS` | optional | DataForSEO response cache TTL (default 20 days) |
 
 ### 4. (Optional) DataForSEO
-DataForSEO is what powers the paid-data tools. It's pay-as-you-go, and the audit only ever calls it **on demand** - one call per click, cached for 20 days. I'm deliberately careful with it. It never fires in bulk behind your back.
-
-👉 **[Create a DataForSEO account](https://dataforseo.com/?aff=213701)**
+👉 **[Create a DataForSEO account](https://dataforseo.com/?aff=213701)** - pay-as-you-go, called on demand only, cached for 20 days.
 
 Everything else - the crawl, the merge, most of the checks, the priority model, the fixes, the dashboard - works with **just Search Console**.
 
@@ -183,8 +309,6 @@ Everything else - the crawl, the merge, most of the checks, the priority model, 
 
 - **The join key (`url_key`).** GSC `page` and crawl `url` both normalise down to the same key - force HTTPS, unify www and apex, strip tracking params, and so on. Everything joins on that. It's the whole trick, really.
 - **One SQLite database per property** (WAL, prepared statements). Your data stays on your machine.
-- **A polite, self-contained crawler.** Respects robots.txt. Records *why* a URL isn't indexable (404, noindex, X-Robots, canonicalised, robots-blocked, non-HTML). Always GETs (a HEAD can return a different status than the GET would), but abandons the body for images, PDFs and assets - status and size, never the bytes. Skips the junk - internal search, faceted params, login flows. And it backs off when a host starts rate-limiting, which is what keeps it reliable on the big sites.
-- **A real link graph.** Post-crawl it computes internal PageRank (nav and footer links down-weighted), body-only click depth from the homepage, and in-degree. That's what powers the orphan, equity-leak and underlinked-page checks - and the donor rankings in `fix_finding`.
 - **Scored once, sorted by yield.** `(expected clicks × yield × certainty) / effort`. Covering-indexed, so the audit stays fast even when the GSC table runs to millions of rows.
 - **Careful with your history.** Crawls and syncs never destroy the previous snapshot until the new data has actually started arriving - a site outage mid-crawl doesn't cost you your data.
 - **Owned-site only, dry-run fixes.** It crawls sites you control, and the generators return artifacts. They never write to your site. That's a line I won't cross.
