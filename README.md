@@ -339,4 +339,4 @@ Issues and PRs welcome. The check registry (`src/audit/checks.ts`) is built to b
 
 ## License
 
-**Source-available.** You're welcome to download, build, and run it unmodified for personal, evaluation, and educational use. Commercial use (including agency and client work), modifications, and redistribution need my written permission first - which is usually straightforward to get. Email **hello@houtini.com**. Full terms in [LICENSE](./LICENSE).
+**Source-available, converting to open source.** Free to download, build, and run unmodified for personal, evaluation, and educational use. Commercial use - including agency and client work - needs a [commercial licence](./COMMERCIAL.md), which is a short email away. Modifications and redistribution need written permission. And every released version automatically becomes **Apache 2.0** three years after its release, so nothing stays locked up forever. Full terms in [LICENSE](./LICENSE).

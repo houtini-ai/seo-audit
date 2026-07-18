@@ -24,12 +24,17 @@ Copyright (c) 2026 Richard Baxter / Houtini (houtini.com)
    for non-commercial use. You may read the source. You may link to this
    repository. You may open issues and submit pull requests.
 
-3. What needs written permission first
+3. What needs a commercial licence or written permission
 
-   You need prior written permission from the copyright holder for any
-   of the following:
+   a. Commercial use of the Software, in any form, requires a
+      commercial licence. Terms and how to buy one are published in
+      COMMERCIAL.md in this repository (or contact hello@houtini.com).
+      A valid commercial licence satisfies this section for the uses it
+      covers.
 
-   a. Commercial use of the Software, in any form;
+   The following additionally require prior written permission from the
+   copyright holder, whether or not you hold a commercial licence:
+
    b. Modifying the Software, or creating derivative works from it,
       beyond changes strictly necessary to build and run it locally;
    c. Redistributing the Software or any derivative of it, in source or
@@ -68,7 +73,17 @@ Copyright (c) 2026 Richard Baxter / Houtini (houtini.com)
    CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
    WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-8. Governing law
+8. Change licence (automatic conversion to open source)
+
+   Each released version of the Software automatically converts to the
+   Apache License, Version 2.0, on the third anniversary of that
+   version's first publication (its "Change Date"). From a version's
+   Change Date, that version - and only that version - may be used,
+   modified, and redistributed under the Apache License 2.0, and the
+   restrictions in this licence no longer apply to it. Later versions
+   keep their own Change Dates.
+
+9. Governing law
 
    This licence is governed by the laws of England and Wales.
 
