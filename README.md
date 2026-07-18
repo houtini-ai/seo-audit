@@ -2,7 +2,7 @@
 
 **A technical SEO audit you can hold a conversation with - built from your own Search Console data and a live crawl of your site, run inside Claude.**
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](./LICENSE)
+[![License: Source-Available](https://img.shields.io/badge/License-Source--Available-orange.svg?style=flat-square)](./LICENSE)
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-server-purple?style=flat-square)](https://modelcontextprotocol.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
@@ -335,8 +335,8 @@ Got a weird edge case you wish a tool caught? Tell me - that's exactly how the m
 
 ## Contributing
 
-Issues and PRs welcome. The check registry (`src/audit/checks.ts`) is built to be extended - each check is a pure read over the joined data that returns findings with evidence, so adding one is fairly self-contained. There's an end-to-end smoke test (`npm run smoke`) and per-feature probes (`npm run probe:*`) to keep you honest.
+Issues and PRs welcome. The check registry (`src/audit/checks.ts`) is built to be extended - each check is a pure read over the joined data that returns findings with evidence, so adding one is fairly self-contained. There's an end-to-end smoke test (`npm run smoke`) and per-feature probes (`npm run probe:*`) to keep you honest. By submitting a PR you grant the licence set out in the [LICENSE](./LICENSE) contributions clause.
 
 ## License
 
-[Apache 2.0](./LICENSE) © [Houtini](https://houtini.com)
+**Source-available.** You're welcome to download, build, and run it unmodified for personal, evaluation, and educational use. Commercial use (including agency and client work), modifications, and redistribution need my written permission first - which is usually straightforward to get. Email **hello@houtini.com**. Full terms in [LICENSE](./LICENSE).
