@@ -205,6 +205,7 @@ A few things I'm building next, in rough order:
 - **A per-page content scorecard.** The checks already catch phrases you rank for but never say; a dedicated table of *every* ranking phrase your copy misses is next.
 - **More agent readiness.** A WebMCP advisory (which tool actions your site could expose to agents) and the agent-commerce protocols.
 - **A printable report.** A proper A4 document you can hand a client, not a slide deck.
+- **Source-level parser checks.** The audit spec is written - [~94 checks](docs/DEFINITIVE-TECHNICAL-AUDIT.md) covering the layer most tools never touch: elements that silently break `<head>` parsing, canonical and hreflang directives that get hoisted into the body and ignored, raw-vs-rendered divergence, service workers feeding Google a stale shell. The crawler already fetches everything these checks need.
 
 Got a weird edge case you wish a tool caught? Tell me - that's exactly how the merged GSC×crawl checks got built.
 
