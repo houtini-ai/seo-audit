@@ -71,6 +71,7 @@
     "cheerio": "^1.0.0",
     "echarts": "^6.0.0",
     "googleapis": "^173.0.0",
+    "undici": "^8.7.0",
     "zod": "^3.25.1"
   },
   "devDependencies": {

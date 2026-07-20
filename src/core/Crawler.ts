@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Agent, fetch as ufetch } from 'undici';
 import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
@@ -90,7 +91,14 @@ interface FetchOutcome {
   throttled: boolean; // saw a 429/503 (after retries) — signal for adaptive pacing
 }
 
-async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise<FetchOutcome> {
+// Per-crawl connection pool: HTTP/2 when the origin supports it (one multiplexed connection
+// instead of N TCP handshakes), keep-alive reuse, bounded per-origin connections. Compression
+// is negotiated explicitly (gzip/br/deflate — undici decompresses transparently; the recorded
+// content_encoding header still reflects what the server actually served).
+const makeDispatcher = (connections: number): Agent =>
+  new Agent({ allowH2: true, connections, keepAliveTimeout: 30_000, keepAliveMaxTimeout: 60_000 });
+
+async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, maxHops = 5): Promise<FetchOutcome> {
   const redirects: RedirectHop[] = [];
   let current = url;
   let hops = 0;
@@ -105,18 +113,20 @@ async function fetchWithRedirects(url: string, ua: string, maxHops = 5): Promise
   while (true) {
     let res: Response;
     try {
-      res = await fetch(current, {
+      res = (await ufetch(current, {
         method,
         redirect: 'manual',
+        dispatcher,
         // pages change between crawls — ask upstream caches/CDNs for the current copy
         headers: {
           'user-agent': ua,
           accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'accept-encoding': 'gzip, deflate, br',
           'cache-control': 'no-cache',
           pragma: 'no-cache',
         },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
+      })) as unknown as Response;
     } catch (err) {
       // The server slowed past the timeout or dropped the connection. Don't lose the page to a
       // transient hiccup — wait (10s, 20s, 30s) and retry before giving up, so a slowdown becomes
@@ -205,7 +215,10 @@ export class Crawler {
   ): Promise<CrawlResult> {
     const maxPages = opts.maxPages ?? 4000;
     const maxDepth = opts.maxDepth ?? 10;
-    const concurrency = Math.max(1, Math.min(opts.maxConcurrency ?? 4, 16));
+    // Default 8 parallel fetches (was 4) — with HTTP/2 multiplexing this is one or two
+    // connections, not 8 sockets. Adaptive throttling still ramps the delay on any 429/503,
+    // so a struggling host slows the whole pool down.
+    const concurrency = Math.max(1, Math.min(opts.maxConcurrency ?? 8, 24));
     const delayMs = opts.delayMs ?? 250;
     const ua = opts.userAgent ?? DEFAULT_UA;
     const excludeRes = (opts.excludePatterns ?? []).flatMap(p => { try { return [new RegExp(p, 'i')]; } catch { return []; } });
@@ -215,6 +228,7 @@ export class Crawler {
     const keyOpts: UrlKeyOptions = { hostForm: hostFormForProperty(siteUrl) };
     const origin = new URL(seed).origin;
 
+    const dispatcher = makeDispatcher(Math.min((opts.maxConcurrency ?? 8) * 2, 32));
     const db = new AuditDatabase(dbPathFor(this.dataDir, siteUrl));
     db.upsertProperty(siteUrl, keyOpts.hostForm ?? 'asis');
     const crawlId = randomUUID().slice(0, 8);
@@ -353,7 +367,7 @@ export class Crawler {
         skipped++; return;
       }
       try {
-        const r = await fetchWithRedirects(item.url, ua);
+        const r = await fetchWithRedirects(item.url, ua, dispatcher);
         // Self-tune the delay from the throttle signal.
         if (r.throttled) dynamicDelay = Math.min(Math.round(dynamicDelay * 1.5) + 200, 5000);
         else if (dynamicDelay > delayMs) dynamicDelay = Math.max(delayMs, Math.round(dynamicDelay * 0.9));
@@ -473,7 +487,7 @@ export class Crawler {
         while (idx < sample.length && !signal.aborted) {
           const [url, usedOn] = sample[idx++];
           try {
-            const res = await fetch(url, { headers: { 'user-agent': ua }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+            const res = await ufetch(url, { headers: { 'user-agent': ua }, redirect: 'follow', dispatcher, signal: AbortSignal.timeout(10000) });
             const len = Number(res.headers.get('content-length'));
             try { await res.body?.cancel(); } catch { /* already closed */ }
             rows.push([url, Number.isFinite(len) && len > 0 ? len : null, res.status, (res.headers.get('content-type') ?? '').split(';')[0].trim(), usedOn]);
@@ -505,7 +519,7 @@ export class Crawler {
           const headers: Record<string, string> = { 'user-agent': ua };
           if (p.etag) headers['if-none-match'] = p.etag;
           if (p.lm) headers['if-modified-since'] = p.lm;
-          const res = await fetch(p.url, { headers, redirect: 'manual', signal: AbortSignal.timeout(10000) });
+          const res = await ufetch(p.url, { headers, redirect: 'manual', dispatcher, signal: AbortSignal.timeout(10000) });
           try { await res.body?.cancel(); } catch { /* already closed */ }
           upd.run(res.status === 304 ? 1 : 0, p.url_key);
         } catch { /* leave NULL — unprobed, never counted against the server */ }
@@ -533,6 +547,7 @@ export class Crawler {
       throw err;
     } finally {
       db.close();
+      try { await dispatcher.close(); } catch { /* pool already gone */ }
     }
   }
 }
