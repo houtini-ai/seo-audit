@@ -196,8 +196,8 @@ I'm deliberately careful with your balance. Calls happen **on demand** - one per
 
 ### 1. Build it
 ```bash
-git clone https://github.com/houtini-ai/seo-audit-console.git
-cd seo-audit-console
+git clone https://github.com/houtini-ai/seo-audit.git
+cd seo-audit
 npm install
 npm run build
 ```

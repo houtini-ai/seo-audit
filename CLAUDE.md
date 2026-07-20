@@ -1,6 +1,6 @@
 # seo-audit-console
 
-**Status:** Working MCP server (v0.1), in active build. Local dir `C:\MCP\seo-audit-mcp`; GitHub `houtini-ai/seo-audit-console` (private); npm name `@houtini/seo-audit-console`.
+**Status:** Working MCP server (v0.1), in active build. Local dir `C:\MCP\seo-audit-mcp`; GitHub `houtini-ai/seo-audit` (private); npm name `@houtini/seo-audit-console`.
 
 **Goal:** one MCP that merges Google Search Console history with site-crawl data (+ DataForSEO) into a deterministic, defensible, *prioritised* technical-SEO audit — replacing the commodity technical-audit deliverable. Consolidates `seo-crawler-mcp` + `better-search-console` (+ later parts of `geo-analyzer`).
 
