@@ -683,21 +683,15 @@ function render(data: DashboardData): void {
   // 0e) Site health — Screaming-Frog-style stat bars (plain CSS, deliberately no chart lib)
   {
     const ch = data.crawlHealth;
-    // Tone per label: what colour the bar takes. Counts of PROBLEMS read amber/red; healthy states green.
-    const tone = (label: string): string => {
-      if (/^(200|Indexable|Under 200|Under 30 KB)/.test(label)) return 'ok';
-      if (/^(3xx|200–500|30–60|canonicalised|redirect)/.test(label)) return 'muted';
-      if (/^(5xx|Fetch failed|Over 1 s|Over 100 KB|http-5)/.test(label)) return 'bad';
-      if (/^(4xx|http-4|noindex|Missing|Duplicate|Multiple|Mixed|Over|Under|Images|Heading|robots|Blocked|non-html|500 ms)/.test(label)) return 'warn';
-      return '';
-    };
-    const sfList = (id: string, rows: { label: string; count: number }[] | undefined, base: number): void => {
+    // Tone (bar colour) rides on each data row — assigned in dashboardData where the bucket's
+    // meaning is known, never inferred from label text here.
+    const sfList = (id: string, rows: { label: string; count: number; tone?: string }[] | undefined, base: number): void => {
       const el = $(id);
       if (!rows?.length || base <= 0) { el.innerHTML = '<div class="sf-empty">Nothing to show - run a crawl first.</div>'; return; }
       el.innerHTML = rows.map(r => {
         const pct = Math.min(100, r.count / base * 100);
         return `<div class="sf-row"><div class="sf-label" title="${esc(r.label)}">${esc(r.label)}</div>` +
-          `<div class="sf-track"><div class="sf-fill ${tone(r.label)}" style="width:${Math.max(pct, r.count > 0 ? 1.5 : 0)}%"></div></div>` +
+          `<div class="sf-track"><div class="sf-fill ${esc(r.tone ?? '')}" style="width:${Math.max(pct, r.count > 0 ? 1.5 : 0)}%"></div></div>` +
           `<div class="sf-count">${fmt(r.count)}</div><div class="sf-pct">${pct < 1 && r.count > 0 ? '<1' : Math.round(pct)}%</div></div>`;
       }).join('');
     };

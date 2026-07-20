@@ -3,6 +3,7 @@ import { dbPathFor } from './paths.js';
 import { gscFreshness } from './gscFreshness.js';
 import { expectedCtr } from './ctrModel.js';
 import { brandToken } from './url-key.js';
+import { HTML_CT } from './sql.js';
 
 export interface DashboardData {
   siteUrl: string;
@@ -48,14 +49,14 @@ export interface DashboardData {
   topLinkedPages?: { url: string; inlinks: number; status: number | null; indexable: boolean; reason: string | null }[];
   // Site health — Screaming-Frog-style crawl diagnostics, rendered as plain stat bars (no chart lib).
   crawlHealth?: {
-    responseCodes: { label: string; count: number }[];
-    indexability: { label: string; count: number }[];
-    speed: { label: string; count: number }[];        // response-time buckets (HTML pages)
-    htmlSize: { label: string; count: number }[];     // estimated transfer-size buckets
-    depth: { label: string; count: number }[];        // crawl depth distribution
-    titles: { label: string; count: number }[];
-    metas: { label: string; count: number }[];
-    onPage: { label: string; count: number }[];       // H1s, alt text, CLS dimensions, mixed content
+    responseCodes: { label: string; count: number; tone?: string }[];
+    indexability: { label: string; count: number; tone?: string }[];
+    speed: { label: string; count: number; tone?: string }[];    // response-time buckets (HTML pages)
+    htmlSize: { label: string; count: number; tone?: string }[]; // estimated transfer-size buckets
+    depth: { label: string; count: number; tone?: string }[];    // crawl depth distribution
+    titles: { label: string; count: number; tone?: string }[];
+    metas: { label: string; count: number; tone?: string }[];
+    onPage: { label: string; count: number; tone?: string }[];   // H1s, alt text, CLS dimensions, mixed content
     serverErrors: { url: string; status: number }[];  // 5xx URLs
     slowPages: { url: string; ms: number }[];         // slowest HTML pages
     largeImages: { url: string; kb: number; usedOn: number }[]; // heaviest sampled images
@@ -383,66 +384,104 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const topLinkedPages = (db.db.prepare(`SELECT url_key, COALESCE(inlink_count,0) inl, status_code, indexable, indexable_reason FROM pages WHERE is_internal=1 ORDER BY inlink_count DESC, status_code LIMIT 30`).all() as any[])
       .map(p => ({ url: p.url_key, inlinks: p.inl, status: p.status_code, indexable: !!p.indexable, reason: p.indexable_reason }));
 
-    // Site health — cheap COUNT aggregates over pages/errors/image_assets, Screaming-Frog style.
+    // Site health — Screaming-Frog-style crawl diagnostics. One conditional-aggregation
+    // pass per table region (not a COUNT(*) scan per bucket); tones are assigned HERE, where
+    // the meaning of each bucket is known, so the UI never has to infer colour from label text.
     let crawlHealth: DashboardData['crawlHealth'];
     {
       const one = (sql: string): number => (db.db.prepare(sql).get() as { n: number }).n;
       const totalPages = one(`SELECT COUNT(*) n FROM pages WHERE is_internal=1`);
       if (totalPages > 0) {
-        const HTML = `(LOWER(content_type) LIKE 'text/html%' OR LOWER(content_type) LIKE 'application/xhtml+xml%')`;
-        const bucket = (rows: { label: string; count: number }[]): { label: string; count: number }[] => rows.filter(r => r.count > 0);
-        const responseCodes = bucket([
-          { label: '200 OK', count: one(`SELECT COUNT(*) n FROM pages WHERE status_code=200`) },
-          { label: '3xx redirect', count: one(`SELECT COUNT(*) n FROM pages WHERE status_code BETWEEN 300 AND 399`) },
-          { label: '4xx client error', count: one(`SELECT COUNT(*) n FROM pages WHERE status_code BETWEEN 400 AND 499`) },
-          { label: '5xx server error', count: one(`SELECT COUNT(*) n FROM pages WHERE status_code BETWEEN 500 AND 599`) },
-          { label: 'Blocked by robots', count: one(`SELECT COUNT(*) n FROM pages WHERE indexable_reason='robots-disallowed'`) },
-          { label: 'Fetch failed', count: one(`SELECT COUNT(*) n FROM errors WHERE error_type='fetch'`) },
-        ]);
-        const indexability = bucket((db.db.prepare(
-          `SELECT COALESCE(CASE WHEN indexable=1 THEN 'Indexable' ELSE indexable_reason END,'unknown') label, COUNT(*) count
-           FROM pages WHERE status_code IS NOT NULL GROUP BY label ORDER BY count DESC`).all() as { label: string; count: number }[]));
-        const speed = bucket([
-          { label: 'Under 200 ms', count: one(`SELECT COUNT(*) n FROM pages WHERE ${HTML} AND response_time_ms < 200`) },
-          { label: '200–500 ms', count: one(`SELECT COUNT(*) n FROM pages WHERE ${HTML} AND response_time_ms BETWEEN 200 AND 499`) },
-          { label: '500 ms–1 s', count: one(`SELECT COUNT(*) n FROM pages WHERE ${HTML} AND response_time_ms BETWEEN 500 AND 999`) },
-          { label: 'Over 1 s', count: one(`SELECT COUNT(*) n FROM pages WHERE ${HTML} AND response_time_ms >= 1000`) },
-        ]);
-        // Estimated transfer size: compressed responses ship ~22% of raw HTML.
+        type Stat = { label: string; count: number; tone?: string };
+        const stats = (rows: Stat[]): Stat[] => rows.filter(r => r.count > 0);
+        const num = (v: unknown): number => Number(v) || 0;
+        // Estimated transfer size: pages.bytes is the DECODED HTML size (see Crawler), so
+        // compressed responses ship roughly 22% of it over the wire.
         const EST = `CAST(CASE WHEN content_encoding IS NOT NULL AND content_encoding <> '' THEN bytes*0.22 ELSE bytes END AS INTEGER)`;
-        const htmlSize = bucket([
-          { label: 'Under 30 KB', count: one(`SELECT COUNT(*) n FROM pages WHERE ${HTML} AND status_code=200 AND ${EST} < 30000`) },
-          { label: '30–60 KB', count: one(`SELECT COUNT(*) n FROM pages WHERE ${HTML} AND status_code=200 AND ${EST} BETWEEN 30000 AND 59999`) },
-          { label: '60–100 KB', count: one(`SELECT COUNT(*) n FROM pages WHERE ${HTML} AND status_code=200 AND ${EST} BETWEEN 60000 AND 99999`) },
-          { label: 'Over 100 KB', count: one(`SELECT COUNT(*) n FROM pages WHERE ${HTML} AND status_code=200 AND ${EST} >= 100000`) },
+        const IDX = `status_code=200 AND indexable=1 AND ${HTML_CT}`;
+        const g1 = db.db.prepare(`SELECT
+            SUM(CASE WHEN status_code=200 THEN 1 ELSE 0 END) ok,
+            SUM(CASE WHEN status_code BETWEEN 300 AND 399 THEN 1 ELSE 0 END) r3,
+            SUM(CASE WHEN status_code BETWEEN 400 AND 499 THEN 1 ELSE 0 END) r4,
+            SUM(CASE WHEN status_code BETWEEN 500 AND 599 THEN 1 ELSE 0 END) r5,
+            SUM(CASE WHEN indexable_reason='robots-disallowed' THEN 1 ELSE 0 END) rb,
+            SUM(CASE WHEN ${HTML_CT} AND response_time_ms < 200 THEN 1 ELSE 0 END) s1,
+            SUM(CASE WHEN ${HTML_CT} AND response_time_ms BETWEEN 200 AND 499 THEN 1 ELSE 0 END) s2,
+            SUM(CASE WHEN ${HTML_CT} AND response_time_ms BETWEEN 500 AND 999 THEN 1 ELSE 0 END) s3,
+            SUM(CASE WHEN ${HTML_CT} AND response_time_ms >= 1000 THEN 1 ELSE 0 END) s4,
+            SUM(CASE WHEN ${HTML_CT} AND status_code=200 AND ${EST} < 30000 THEN 1 ELSE 0 END) z1,
+            SUM(CASE WHEN ${HTML_CT} AND status_code=200 AND ${EST} BETWEEN 30000 AND 59999 THEN 1 ELSE 0 END) z2,
+            SUM(CASE WHEN ${HTML_CT} AND status_code=200 AND ${EST} BETWEEN 60000 AND 99999 THEN 1 ELSE 0 END) z3,
+            SUM(CASE WHEN ${HTML_CT} AND status_code=200 AND ${EST} >= 100000 THEN 1 ELSE 0 END) z4
+          FROM pages`).get() as Record<string, unknown>;
+        const g2 = db.db.prepare(`SELECT
+            SUM(CASE WHEN title IS NULL OR TRIM(title)='' THEN 1 ELSE 0 END) tMissing,
+            SUM(CASE WHEN title_length > 60 THEN 1 ELSE 0 END) tLong,
+            SUM(CASE WHEN title_length BETWEEN 1 AND 29 THEN 1 ELSE 0 END) tShort,
+            SUM(CASE WHEN meta_description IS NULL OR TRIM(meta_description)='' THEN 1 ELSE 0 END) mMissing,
+            SUM(CASE WHEN meta_description_length > 155 THEN 1 ELSE 0 END) mLong,
+            SUM(CASE WHEN meta_description_length BETWEEN 1 AND 69 THEN 1 ELSE 0 END) mShort,
+            SUM(CASE WHEN h1 IS NULL OR TRIM(h1)='' THEN 1 ELSE 0 END) h1Missing,
+            SUM(CASE WHEN h1_count > 1 THEN 1 ELSE 0 END) h1Multi,
+            SUM(CASE WHEN images_without_alt > 0 THEN 1 ELSE 0 END) noAlt,
+            SUM(CASE WHEN images_missing_dimensions > 0 THEN 1 ELSE 0 END) noDims,
+            SUM(CASE WHEN mixed_content_count > 0 THEN 1 ELSE 0 END) mixed,
+            SUM(CASE WHEN heading_skips > 0 THEN 1 ELSE 0 END) hSkips
+          FROM pages WHERE ${IDX}`).get() as Record<string, unknown>;
+        // Duplicate title/meta: one GROUP BY pass each (sum of members of every duplicated group).
+        const dupCount = (col: string): number => (db.db.prepare(
+          `SELECT COALESCE(SUM(c),0) n FROM (SELECT COUNT(*) c FROM pages WHERE ${IDX} AND ${col} IS NOT NULL AND TRIM(${col})<>'' GROUP BY LOWER(TRIM(${col})) HAVING COUNT(*)>1)`,
+        ).get() as { n: number }).n;
+        const responseCodes = stats([
+          { label: '200 OK', count: num(g1.ok), tone: 'ok' },
+          { label: '3xx redirect', count: num(g1.r3), tone: 'muted' },
+          { label: '4xx client error', count: num(g1.r4), tone: 'warn' },
+          { label: '5xx server error', count: num(g1.r5), tone: 'bad' },
+          { label: 'Blocked by robots', count: num(g1.rb), tone: 'warn' },
+          { label: 'Fetch failed', count: one(`SELECT COUNT(*) n FROM errors WHERE error_type='fetch'`), tone: 'bad' },
         ]);
-        const depth = bucket((db.db.prepare(
+        const indexability = stats((db.db.prepare(
+          `SELECT COALESCE(CASE WHEN indexable=1 THEN 'Indexable' ELSE indexable_reason END,'unknown') label, COUNT(*) count
+           FROM pages WHERE status_code IS NOT NULL GROUP BY label ORDER BY count DESC`).all() as Stat[])
+          .map(r => ({ ...r, tone: r.label === 'Indexable' ? 'ok' : /canonicalised|redirect/.test(r.label) ? 'muted' : 'warn' })));
+        const speed = stats([
+          { label: 'Under 200 ms', count: num(g1.s1), tone: 'ok' },
+          { label: '200–500 ms', count: num(g1.s2), tone: 'ok' },
+          { label: '500 ms–1 s', count: num(g1.s3), tone: 'warn' },
+          { label: 'Over 1 s', count: num(g1.s4), tone: 'bad' },
+        ]);
+        const htmlSize = stats([
+          { label: 'Under 30 KB', count: num(g1.z1), tone: 'ok' },
+          { label: '30–60 KB', count: num(g1.z2), tone: 'muted' },
+          { label: '60–100 KB', count: num(g1.z3) },
+          { label: 'Over 100 KB', count: num(g1.z4), tone: 'bad' },
+        ]);
+        const depth = stats((db.db.prepare(
           `SELECT CASE WHEN depth >= 6 THEN '6+' ELSE CAST(depth AS TEXT) END label, COUNT(*) count
-           FROM pages WHERE depth IS NOT NULL GROUP BY label ORDER BY MIN(depth)`).all() as { label: string; count: number }[]))
-          .map(r => ({ label: `Depth ${r.label}`, count: r.count }));
-        const IDX = `status_code=200 AND indexable=1 AND ${HTML}`;
-        const titles = bucket([
-          { label: 'Missing', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND (title IS NULL OR TRIM(title)='')`) },
-          { label: 'Duplicate', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND LOWER(TRIM(title)) IN (SELECT LOWER(TRIM(title)) FROM pages WHERE ${IDX} AND title IS NOT NULL AND TRIM(title)<>'' GROUP BY LOWER(TRIM(title)) HAVING COUNT(*)>1)`) },
-          { label: 'Over 60 characters', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND title_length > 60`) },
-          { label: 'Under 30 characters', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND title_length BETWEEN 1 AND 29`) },
+           FROM pages WHERE depth IS NOT NULL GROUP BY label ORDER BY MIN(depth)`).all() as Stat[])
+          .map(r => ({ label: `Depth ${r.label}`, count: r.count })));
+        const titles = stats([
+          { label: 'Missing', count: num(g2.tMissing), tone: 'warn' },
+          { label: 'Duplicate', count: dupCount('title'), tone: 'warn' },
+          { label: 'Over 60 characters', count: num(g2.tLong), tone: 'warn' },
+          { label: 'Under 30 characters', count: num(g2.tShort), tone: 'warn' },
         ]);
-        const metas = bucket([
-          { label: 'Missing', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND (meta_description IS NULL OR TRIM(meta_description)='')`) },
-          { label: 'Duplicate', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND LOWER(TRIM(meta_description)) IN (SELECT LOWER(TRIM(meta_description)) FROM pages WHERE ${IDX} AND meta_description IS NOT NULL AND TRIM(meta_description)<>'' GROUP BY LOWER(TRIM(meta_description)) HAVING COUNT(*)>1)`) },
-          { label: 'Over 155 characters', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND meta_description_length > 155`) },
-          { label: 'Under 70 characters', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND meta_description_length BETWEEN 1 AND 69`) },
+        const metas = stats([
+          { label: 'Missing', count: num(g2.mMissing), tone: 'warn' },
+          { label: 'Duplicate', count: dupCount('meta_description'), tone: 'warn' },
+          { label: 'Over 155 characters', count: num(g2.mLong), tone: 'warn' },
+          { label: 'Under 70 characters', count: num(g2.mShort), tone: 'warn' },
         ]);
-        const onPage = bucket([
-          { label: 'Missing H1', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND (h1 IS NULL OR TRIM(h1)='')`) },
-          { label: 'Multiple H1s', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND h1_count > 1`) },
-          { label: 'Images missing alt text', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND images_without_alt > 0`) },
-          { label: 'Images without dimensions (CLS)', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND images_missing_dimensions > 0`) },
-          { label: 'Mixed content (http on https)', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND mixed_content_count > 0`) },
-          { label: 'Heading order skips', count: one(`SELECT COUNT(*) n FROM pages WHERE ${IDX} AND heading_skips > 0`) },
+        const onPage = stats([
+          { label: 'Missing H1', count: num(g2.h1Missing), tone: 'warn' },
+          { label: 'Multiple H1s', count: num(g2.h1Multi), tone: 'warn' },
+          { label: 'Images missing alt text', count: num(g2.noAlt), tone: 'warn' },
+          { label: 'Images without dimensions (CLS)', count: num(g2.noDims), tone: 'warn' },
+          { label: 'Mixed content (http on https)', count: num(g2.mixed), tone: 'warn' },
+          { label: 'Heading order skips', count: num(g2.hSkips), tone: 'warn' },
         ]);
         const serverErrors = (db.db.prepare(`SELECT url_key url, status_code status FROM pages WHERE status_code BETWEEN 500 AND 599 ORDER BY inlink_count DESC LIMIT 15`).all() as { url: string; status: number }[]);
-        const slowPages = (db.db.prepare(`SELECT url_key url, response_time_ms ms FROM pages WHERE ${HTML} AND status_code=200 AND response_time_ms >= 1000 ORDER BY response_time_ms DESC LIMIT 15`).all() as { url: string; ms: number }[]);
+        const slowPages = (db.db.prepare(`SELECT url_key url, response_time_ms ms FROM pages WHERE ${HTML_CT} AND status_code=200 AND response_time_ms >= 1000 ORDER BY response_time_ms DESC LIMIT 15`).all() as { url: string; ms: number }[]);
         const imgSampled = one(`SELECT COUNT(*) n FROM image_assets WHERE bytes IS NOT NULL`);
         const largeImages = (db.db.prepare(`SELECT url, bytes, used_on FROM image_assets WHERE bytes >= 100000 ORDER BY bytes DESC LIMIT 15`).all() as { url: string; bytes: number; used_on: number }[])
           .map(r => ({ url: r.url, kb: Math.round(r.bytes / 1024), usedOn: r.used_on }));

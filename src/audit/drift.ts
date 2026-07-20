@@ -29,8 +29,21 @@ function schemaTypes(jsonLd: string | null): string {
   return [...set].sort().join(',');
 }
 
+// captured_at arrives in two formats: ISO 'YYYY-MM-DDTHH:MM:SSZ' (crawl finished_at) and
+// SQLite 'YYYY-MM-DD HH:MM:SS' (the killed-crawl fallback). Normalise to the SQLite form at
+// WRITE time so plain ORDER BY works; readers keep a REPLACE() guard for legacy rows.
+const normaliseAt = (at: string): string => at.replace('T', ' ').replace(/Z$/, '').slice(0, 19);
+
+/** The two most recent crawls in page_snapshots (newest first), legacy-format-safe. */
+export function latestTwoCrawls(db: Database.Database): { crawl_id: string; at: string }[] {
+  return db.prepare(
+    `SELECT crawl_id, MAX(REPLACE(REPLACE(captured_at, 'T', ' '), 'Z', '')) at FROM page_snapshots GROUP BY crawl_id ORDER BY at DESC LIMIT 2`,
+  ).all() as { crawl_id: string; at: string }[];
+}
+
 /** Capture the current crawl's pages into page_snapshots. Idempotent per crawl_id. */
 export function snapshotCrawl(db: Database.Database, crawlId: string, capturedAt: string): void {
+  capturedAt = normaliseAt(capturedAt);
   const already = db.prepare('SELECT 1 FROM page_snapshots WHERE crawl_id=? LIMIT 1').get(crawlId);
   if (already) return;
   const pages = db.prepare(
@@ -79,13 +92,7 @@ export function buildDriftMarkdown(d: DriftResult, siteUrl: string, limit = 50):
 
 /** Diff the two most recent snapshots in the DB. */
 export function diffLatest(db: Database.Database): DriftResult {
-  // captured_at arrives in two formats: SQLite's 'YYYY-MM-DD HH:MM:SS' (finished_at) and
-  // ISO 'YYYY-MM-DDTHH:MM:SSZ' (the killed-crawl fallback). Compared raw, 'T' > ' ' makes
-  // any ISO stamp sort "newer" than a same-day SQLite stamp regardless of actual time —
-  // inverting baseline/current and reporting every change backwards. Normalise first.
-  const crawls = db.prepare(
-    `SELECT crawl_id, MAX(REPLACE(REPLACE(captured_at, 'T', ' '), 'Z', '')) at FROM page_snapshots GROUP BY crawl_id ORDER BY at DESC LIMIT 2`,
-  ).all() as { crawl_id: string; at: string }[];
+  const crawls = latestTwoCrawls(db);
   if (crawls.length < 2) {
     return { baselineCrawl: null, currentCrawl: crawls[0]?.crawl_id ?? null, baselineAt: null, currentAt: crawls[0]?.at ?? null, changes: [], summary: {} };
   }

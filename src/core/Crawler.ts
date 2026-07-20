@@ -192,9 +192,10 @@ async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, ma
       body,
       redirects,
       xRobotsTag: h('x-robots-tag'),
-      // content-length when given; else the decoded HTML size; else null (non-HTML w/o
-      // content-length — body isn't read, so 0 would be misleading).
-      bytes: Number(h('content-length')) || (body ? Buffer.byteLength(body) : null),
+      // For HTML (body read) always the DECODED size — content-length on a compressed
+      // response is the wire size, and downstream transfer estimates (×0.22) assume raw.
+      // Non-HTML: content-length when given, else null (body isn't read; 0 would mislead).
+      bytes: body ? Buffer.byteLength(body) : (Number(h('content-length')) || null),
       timeMs: Date.now() - start,
       throttled: transientRetries > 0 || netRetries > 0,
     };
@@ -474,28 +475,49 @@ export class Crawler {
     if (!signal.aborted && wipedPrior) { // wipedPrior = the crawl really wrote pages; keep old sample otherwise
       db.db.exec('DELETE FROM image_assets');
     }
+    // Shared header-only probe for the two post-crawl passes: fetch, read headers, cancel the
+    // body immediately — the bytes are never downloaded. Politeness lives in probePool: 2
+    // workers paced at (at least) the crawl delay, so the aggregate stays at a few rps.
+    const headProbe = async (url: string, extraHeaders: Record<string, string>, redirect: 'follow' | 'manual'): Promise<{ status: number; header: (n: string) => string | null } | null> => {
+      try {
+        const res = await ufetch(url, { headers: { 'user-agent': ua, ...extraHeaders }, redirect, dispatcher, signal: AbortSignal.timeout(10000) });
+        try { await res.body?.cancel(); } catch { /* already closed */ }
+        return { status: res.status, header: (n: string) => res.headers.get(n) };
+      } catch { return null; }
+    };
+    const probePool = async <T>(items: T[], run: (item: T) => Promise<void>): Promise<void> => {
+      let idx = 0;
+      const worker = async (): Promise<void> => {
+        while (idx < items.length && !signal.aborted) {
+          await run(items[idx++]);
+          if (delayMs) await sleep(Math.max(delayMs, 250));
+        }
+      };
+      await Promise.all(Array.from({ length: 2 }, worker));
+    };
+
     if (!signal.aborted && imageRefs.size) {
       const MAX_IMAGES = 500;
-      const sample = [...imageRefs.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_IMAGES);
+      // Same-host images obey the site's robots rules (same gate as the page crawl). Off-host
+      // (CDN) images are kept — the SEO question is what the page loads, not where it's hosted —
+      // but they go through the paced pool like everything else.
+      const sample = [...imageRefs.entries()]
+        .filter(([url]) => {
+          try { const u = new URL(url); return !isInternalHost(u.hostname, baseHost) || robots.isAllowed(u.pathname); } catch { return false; }
+        })
+        .sort((a, b) => b[1] - a[1]).slice(0, MAX_IMAGES);
       const imgInsert = db.db.prepare(
         `INSERT INTO image_assets (url, bytes, status, content_type, used_on, fetched_at)
          VALUES (?,?,?,?,?,datetime('now')) ON CONFLICT(url) DO NOTHING`,
       );
       const rows: [string, number | null, number, string, number][] = [];
-      let idx = 0;
-      const headOne = async (): Promise<void> => {
-        while (idx < sample.length && !signal.aborted) {
-          const [url, usedOn] = sample[idx++];
-          try {
-            const res = await ufetch(url, { headers: { 'user-agent': ua }, redirect: 'follow', dispatcher, signal: AbortSignal.timeout(10000) });
-            const len = Number(res.headers.get('content-length'));
-            try { await res.body?.cancel(); } catch { /* already closed */ }
-            rows.push([url, Number.isFinite(len) && len > 0 ? len : null, res.status, (res.headers.get('content-type') ?? '').split(';')[0].trim(), usedOn]);
-          } catch { rows.push([url, null, 0, '', usedOn]); }
-          if (delayMs) await sleep(Math.min(delayMs, 100));
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(concurrency, 4) }, headOne));
+      await probePool(sample, async ([url, usedOn]) => {
+        const r = await headProbe(url, {}, 'follow');
+        if (r) {
+          const len = Number(r.header('content-length'));
+          rows.push([url, Number.isFinite(len) && len > 0 ? len : null, r.status, (r.header('content-type') ?? '').split(';')[0].trim(), usedOn]);
+        } else rows.push([url, null, 0, '', usedOn]);
+      });
       db.db.transaction(() => { for (const r of rows) imgInsert.run(...r); })();
     }
 
@@ -513,18 +535,13 @@ export class Crawler {
          ORDER BY inlink_count DESC LIMIT 30`,
       ).all() as { url: string; url_key: string; lm: string | null; etag: string | null }[];
       const upd = db.db.prepare('UPDATE pages SET conditional_304=? WHERE url_key=?');
-      for (const p of cands) {
-        if (signal.aborted) break;
-        try {
-          const headers: Record<string, string> = { 'user-agent': ua };
-          if (p.etag) headers['if-none-match'] = p.etag;
-          if (p.lm) headers['if-modified-since'] = p.lm;
-          const res = await ufetch(p.url, { headers, redirect: 'manual', dispatcher, signal: AbortSignal.timeout(10000) });
-          try { await res.body?.cancel(); } catch { /* already closed */ }
-          upd.run(res.status === 304 ? 1 : 0, p.url_key);
-        } catch { /* leave NULL — unprobed, never counted against the server */ }
-        if (delayMs) await sleep(Math.min(delayMs, 150));
-      }
+      await probePool(cands, async (p) => {
+        const headers: Record<string, string> = {};
+        if (p.etag) headers['if-none-match'] = p.etag;
+        if (p.lm) headers['if-modified-since'] = p.lm;
+        const r = await headProbe(p.url, headers, 'manual');
+        if (r) upd.run(r.status === 304 ? 1 : 0, p.url_key); // fetch error → leave NULL, never counted against the server
+      });
     }
 
     // (Sitemap is now fetched + stored + used as crawl seeds at the start of the crawl.)

@@ -4,6 +4,8 @@ import { validateJsonLdColumn, type SchemaIssueKind } from './schema-validate.js
 import { urlKey } from '../core/url-key.js';
 import { parseJsonLdNodes, nodeType } from './templates.js';
 import { expectedCtr } from '../core/ctrModel.js';
+import { latestTwoCrawls } from './drift.js';
+import { HTML_CT } from '../core/sql.js';
 
 /**
  * Check registry. Each check is a pure read over the AuditDatabase (crawl + GSC +
@@ -61,8 +63,6 @@ const spanDays = (c: CheckContext): number => {
   const r = c.db.prepare(`SELECT julianday(?) - julianday(MIN(date)) d FROM search_analytics`).get(c.gscMaxDate ?? null) as { d: number | null };
   return r?.d ?? 0;
 };
-// HTML pages only — match the MIME type before any charset parameter (mirrors isHtmlContentType).
-const HTML_CT = `(LOWER(content_type) LIKE 'text/html%' OR LOWER(content_type) LIKE 'application/xhtml+xml%')`;
 // Newest dateModified/datePublished anywhere in a page's JSON-LD (recurses @graph/arrays) — the
 // effective "last meaningfully updated" date. json_ld is a JSON array of raw block strings.
 const newestSchemaDate = (jl: string | null): string | null => {
@@ -1108,15 +1108,16 @@ export const CHECKS: CheckDef[] = [
       if (future > 0) { tripped = true; ev.futureDates = future; }
       // Tell 3: lastmod claims a change between our two most recent crawls, yet none of the
       // tracked page fields (status, title, meta, H1, word count, schema types) changed.
-      const crawls = c.db.prepare(
-        `SELECT crawl_id, MAX(REPLACE(REPLACE(captured_at,'T',' '),'Z','')) at FROM page_snapshots GROUP BY crawl_id ORDER BY at DESC LIMIT 2`,
-      ).all() as { crawl_id: string; at: string }[];
+      const crawls = latestTwoCrawls(c.db);
       if (crawls.length === 2) {
+        // Compare DATE prefixes on both sides — lastmod is stored verbatim and often a full
+        // timestamp; compared raw against a 10-char date, same-day stamps sort "after" the
+        // boundary and are silently excluded (exactly the stamp-everything-today pattern).
         const phantom = c.db.prepare(
           `SELECT s.url_key FROM sitemap_urls s
            JOIN page_snapshots n ON n.url_key = s.url_key AND n.crawl_id = ?
            JOIN page_snapshots o ON o.url_key = s.url_key AND o.crawl_id = ?
-           WHERE s.lastmod > substr(?,1,10) AND s.lastmod <= substr(?,1,10)
+           WHERE substr(s.lastmod,1,10) > substr(?,1,10) AND substr(s.lastmod,1,10) <= substr(?,1,10)
              AND n.status_code IS o.status_code AND n.title IS o.title AND n.meta_description IS o.meta_description
              AND n.h1 IS o.h1 AND n.word_count IS o.word_count AND n.schema_types IS o.schema_types
            LIMIT 200`,
