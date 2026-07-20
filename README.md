@@ -8,6 +8,24 @@
 
 **Built by [Houtini](https://houtini.com).** We build automation for the grunt work of digital marketing - the data collection, the crawling, the merging, the checking - so your team's time goes on the thinking, the strategy and the client work that actually needs a human. This plugin is that idea applied to the technical SEO audit.
 
+```console
+you  › run an SEO audit on simracingcockpit.gg
+
+     ⣾ search console  1.8M rows synced (19s - incremental)
+     ⣾ crawl           868 pages · HTTP/2 · robots-polite · 8 parallel
+     ⣾ link graph      internal PageRank · click depth · in-degree
+     ✓ 90 checks · 220 findings · ranked by expected clicks per dev-hour
+
+     #1  CTR far below position-expected    /how-to-install-mods      XL
+     #2  Page losing clicks (trend)         site-wide                 XL
+     #3  Keyword cannibalisation            "beamng drive mods"       L
+     #4  Robots-blocked page earning traffic /category/wheels         L
+
+you  › generate the fix for #1 ▍
+```
+
+![The dashboard overview - executive summary, critical issues, recoverable clicks](docs/images/dashboard-overview.png)
+
 I've run a lot of technical SEO audits over the years. The hard part was never *finding* the issues - any crawler will hand you a few thousand of those. The hard part is knowing which five things to fix this week, why they matter, and how to actually ship the fix.
 
 So I built the tool I always wanted. SEO Audit Console is a [Model Context Protocol](https://modelcontextprotocol.io) server that merges your **Google Search Console history** with a **first-party crawl of your site** (and, if you want it, **DataForSEO**) into one thing: a prioritised, evidence-backed audit you can interrogate inside Claude Desktop. It hands you paste-ready fixes. And every finding traces back to a real datapoint, so nothing is a black box.
@@ -65,7 +83,7 @@ The crawl is where audits usually go wrong, so it's worth understanding what thi
 
 **It refuses to be fooled.** A redirect that leaves your site (Shopify OAuth flows, I'm looking at you) is recorded as a redirect-out, never stored as a page. It always uses GET rather than HEAD, because a HEAD request can genuinely return a different status than the real request would - but it abandons the response body for images, PDFs and assets, so it records status and size without downloading the bytes.
 
-**And it's polite.** Respects robots.txt properly (a bot-specific group replaces `*`, per the spec, which plenty of commercial crawlers get wrong), backs off when your host starts rate-limiting, skips the junk - internal search results, faceted filter combinations, login flows. This is a crawler for sites you own. Being a good guest is the point.
+**And it's quick without being rude.** It speaks HTTP/2 where your origin supports it (eight parallel fetches multiplex over one or two connections rather than eight sockets), negotiates gzip/brotli compression, and reuses keep-alive connections - so the speed comes from efficiency, not from hammering your server. Respects robots.txt properly (a bot-specific group replaces `*`, per the spec, which plenty of commercial crawlers get wrong), backs off when your host starts rate-limiting, skips the junk - internal search results, faceted filter combinations, login flows. This is a crawler for sites you own. Being a good guest is the point.
 
 After the crawl it computes a real link graph: internal PageRank with nav and footer links down-weighted, click depth from the homepage counting body links only, and in-degree per page. That graph is what powers the orphan-page, equity-leak and underlinked-page checks later - and the donor rankings when it suggests internal links.
 
@@ -85,7 +103,7 @@ Five capabilities, each a conversation away.
 
 > Run an SEO audit on mysite.com
 
-`run_audit` runs **80+ checks** over the joined data and gives you a prioritised markdown report - not a wall of everything, a ranked list with the traffic at stake attached to each finding. `query_audit` re-runs any single check with full evidence; `list_checks` shows the whole catalogue. The families:
+`run_audit` runs **90 checks** over the joined data and gives you a prioritised markdown report - not a wall of everything, a ranked list with the traffic at stake attached to each finding. `query_audit` re-runs any single check with full evidence; `list_checks` shows the whole catalogue. The families:
 
 | Family | What it catches |
 |---|---|
@@ -100,6 +118,10 @@ Five capabilities, each a conversation away.
 | **AI-search readiness** | Phrases you rank for but never say in the body, multi-term queries your copy never answers in one place, pages with no extractable answer passage, incoherent inbound anchor text, content that doesn't chunk cleanly for retrieval |
 
 Every check is labelled **D** (deterministic) or **N** (judgement, off by default - say *"include the judgement findings"* to see them).
+
+And if you grew up on desktop crawlers, the dashboard's **Site health** tab will feel like home - response codes, indexability reasons, response-time and page-weight buckets, crawl depth, title and meta issues, the heaviest images your pages load (sampled from headers, the bytes never downloaded), and the server errors and slow pages listed out:
+
+![The Site health tab - classic crawl diagnostics as clean stat bars](docs/images/site-health.png)
 
 ### 3. Fix it
 
@@ -125,6 +147,10 @@ This is the keyword-research and content side, and most of it needs nothing beyo
 > Show me the dashboard for mysite.com
 
 `get_dashboard` opens an interactive dashboard right in the chat - findings treemap, rank trends, the equity-vs-reality scatter (internal PageRank against actual impressions, which is where the structural stories jump out), cannibalisation, keyword movement, CSV export. `export_report` writes the same thing as a single self-contained HTML file you can send to a client. No login, nothing installed.
+
+The Search performance tab is the Search Console view you wish Google shipped - and because the history lives in your own database, it isn't capped at 16 months:
+
+![Ranking distribution over time - impressions by position bucket](docs/images/search-performance.png)
 
 ---
 
