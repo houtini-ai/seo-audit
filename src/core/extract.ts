@@ -57,6 +57,8 @@ export interface ExtractedPage {
   twitterTags: string | null;      // JSON of twitter:* meta
   hasMicrodata: boolean;
   hasRdfa: boolean;
+  hasFavicon: boolean;             // any <link rel*=icon> declared
+  hasAnalytics: boolean;           // a client-side analytics/tag-manager snippet detected
   bodyChunks: { heading: string; level: number; text: string }[]; // content segmented by heading (RAG layer)
   links: ExtractedLink[];
   imageSrcs: string[];             // distinct absolute <img> src URLs (capped) — image-weight sampling
@@ -197,6 +199,13 @@ export function extractPage(
   const hasMicrodata = $('[itemscope]').length > 0;
   const hasRdfa = $('[typeof], [vocab]').length > 0;
 
+  // Favicon: any icon link relation (icon / shortcut icon / apple-touch-icon).
+  const hasFavicon = $('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]').length > 0;
+  // Client-side analytics: a known snippet/host anywhere in the raw HTML. Deliberately a tight
+  // allow-list of real analytics products — absence means "no CLIENT-SIDE analytics detected",
+  // not "no analytics" (server-side measurement is invisible to a crawl).
+  const hasAnalytics = /googletagmanager\.com|google-analytics\.com|gtag\(|plausible\.io|matomo|_paq\b|usefathom\.com|clarity\.ms|cloudflareinsights\.com|mixpanel|heap-\d|segment\.com\/analytics/i.test(html);
+
   // Images: count those lacking a non-empty alt (decorative alt="" is intentional, not flagged),
   // and those lacking both width & height attributes (a deterministic CLS signal).
   const imgEls = $('img');
@@ -286,6 +295,8 @@ export function extractPage(
     twitterTags: Object.keys(tw).length ? JSON.stringify(tw) : null,
     hasMicrodata,
     hasRdfa,
+    hasFavicon,
+    hasAnalytics,
     bodyChunks,
     links,
     imageSrcs: [...imageSrcSet],

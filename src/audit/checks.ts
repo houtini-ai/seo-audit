@@ -1042,6 +1042,59 @@ export const CHECKS: CheckDef[] = [
     run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND ${HTML_CT} AND (content_encoding IS NULL OR content_encoding='')`)
       .map(r => ({ urlKey: r.urlKey, evidence: {} })),
   },
+  // ── Moz-checklist coverage additions (2026-07-20 — see plan/moz-checklist-coverage.md) ──
+  {
+    id: 'robots-blocked-with-traffic', category: 'crawlability', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Robots-blocked page still earning search traffic', fix: 'This URL is disallowed in robots.txt yet Google still shows it (usually as a bare "no information" result) and users still land on it. Either unblock it so it can be crawled and ranked properly, or — if it genuinely shouldn\'t be found — unblock it AND add noindex (a robots-blocked page can never see the noindex).',
+    run: (c) => !c.gscMaxDate ? [] : rows(c, `SELECT p.url_key urlKey, SUM(sa.clicks) clicks, SUM(sa.impressions) impressions
+      FROM pages p JOIN search_analytics sa ON sa.page_key = p.url_key
+      WHERE p.indexable_reason='robots-disallowed' AND ${win(c.gscMaxDate)}
+      GROUP BY p.url_key HAVING SUM(sa.impressions) >= 10
+      ORDER BY SUM(sa.impressions) DESC LIMIT 50`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { clicks: r.clicks, impressions: r.impressions, note: 'disallowed in robots.txt yet earning impressions' } })),
+  },
+  {
+    id: 'missing-lang', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
+    title: 'Pages missing an html lang attribute', fix: 'Declare the page language on the <html> element (e.g. lang="en-GB") — it helps search engines, screen readers and translation systems know what language they\'re reading. Usually one template edit.',
+    run: (c) => {
+      const n = (c.db.prepare(`SELECT COUNT(*) n FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND (lang IS NULL OR TRIM(lang)='')`).get() as { n: number }).n;
+      return n > 0 ? [{ urlKey: null, evidence: { pages: n, note: 'indexable pages with no lang attribute' } }] : [];
+    },
+  },
+  {
+    id: 'image-preview-restricted', category: 'indexation', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'max-image-preview restricted below large', fix: 'The robots meta tag caps image previews at none/standard. Google Discover strongly favours large image previews — set max-image-preview:large (or remove the restriction) unless there\'s a licensing reason not to.',
+    run: (c) => rows(c, `SELECT url_key urlKey, robots FROM pages WHERE status_code=200 AND indexable=1
+        AND (LOWER(REPLACE(robots,' ','')) LIKE '%max-image-preview:none%' OR LOWER(REPLACE(robots,' ','')) LIKE '%max-image-preview:standard%') LIMIT 50`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { robots: r.robots } })),
+  },
+  {
+    id: 'excessive-links', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Excessive number of links on the page', fix: 'Hundreds of links on one page dilute the equity each one passes and drown the ones that matter. Trim boilerplate link blocks (mega-menus, tag clouds, footer sprawl) so the important links stand out.',
+    run: (c) => rows(c, `SELECT url_key urlKey, internal_links il, external_links el FROM pages
+        WHERE status_code=200 AND indexable=1 AND (internal_links + external_links) > 300
+        ORDER BY (internal_links + external_links) DESC LIMIT 30`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { internalLinks: r.il, externalLinks: r.el, total: r.il + r.el } })),
+  },
+  {
+    id: 'favicon-missing', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
+    title: 'No favicon declared', fix: 'Add a favicon (<link rel="icon" …>) — Google shows it next to your result on mobile, and a missing one costs a little trust/recognition on every SERP appearance. One line in the template.',
+    // Gated on the column being populated (has_favicon is NULL on crawls from before this
+    // was captured) — never flag from a pre-feature crawl.
+    run: (c) => {
+      const hp = c.db.prepare(`SELECT url_key, has_favicon hf FROM pages WHERE status_code=200 AND has_favicon IS NOT NULL ORDER BY (click_depth=0) DESC, inlink_count DESC LIMIT 1`).get() as { url_key: string; hf: number } | undefined;
+      return hp && hp.hf === 0 ? [{ urlKey: hp.url_key, evidence: { note: 'no <link rel="icon"> on the homepage' } }] : [];
+    },
+  },
+  {
+    id: 'analytics-missing', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
+    title: 'No client-side analytics detected', fix: 'No analytics or tag-manager snippet was found on any crawled page (GA4, GTM, Plausible, Matomo, Fathom, Clarity…). If you measure server-side, ignore this; otherwise you\'re flying blind — install an analytics package before making SEO decisions.',
+    // Fires only when EVERY populated page lacks a snippet — one page with analytics = installed.
+    run: (c) => {
+      const r = c.db.prepare(`SELECT COUNT(*) total, COALESCE(SUM(has_analytics),0) withA FROM pages WHERE status_code=200 AND ${HTML_CT} AND has_analytics IS NOT NULL`).get() as { total: number; withA: number };
+      return r.total >= 3 && r.withA === 0 ? [{ urlKey: null, evidence: { pagesChecked: r.total, note: 'no known analytics snippet on any crawled page (server-side measurement is invisible to a crawl)' } }] : [];
+    },
+  },
 ];
 
 const sitemapHasRows = (c: CheckContext): boolean =>

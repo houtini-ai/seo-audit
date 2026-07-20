@@ -169,6 +169,8 @@ export class AuditDatabase {
         twitter_tags TEXT,                     -- JSON of twitter:* meta
         has_microdata INTEGER DEFAULT 0,
         has_rdfa INTEGER DEFAULT 0,
+        has_favicon INTEGER,             -- link rel icon present (NULL = crawled before this was captured)
+        has_analytics INTEGER,           -- client-side analytics/tag-manager snippet detected (NULL = pre-feature crawl)
         body_chunks TEXT,                -- JSON [{heading,level,text}] — content segmented by heading (RAG layer)
         max_passage_score REAL,          -- cross-encoder best-passage relevance vs top GSC query (score_passages)
         max_passage_query TEXT,          -- the query that best-passage score was computed against
@@ -438,6 +440,8 @@ export class AuditDatabase {
     ensure('pages', 'has_microdata', 'has_microdata INTEGER DEFAULT 0');
     ensure('pages', 'has_rdfa', 'has_rdfa INTEGER DEFAULT 0');
     ensure('pages', 'body_chunks', 'body_chunks TEXT');
+    ensure('pages', 'has_favicon', 'has_favicon INTEGER');
+    ensure('pages', 'has_analytics', 'has_analytics INTEGER');
     ensure('pages', 'max_passage_score', 'max_passage_score REAL');
     ensure('pages', 'max_passage_query', 'max_passage_query TEXT');
     ensure('pages', 'max_passage_impr', 'max_passage_impr INTEGER');
