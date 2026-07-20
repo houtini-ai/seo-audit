@@ -357,6 +357,18 @@ export class AuditDatabase {
       );
     `);
 
+    // ── Image weights (post-crawl sample: distinct <img> srcs + content-length) ─
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS image_assets (
+        url TEXT PRIMARY KEY,
+        bytes INTEGER,                   -- content-length (body never downloaded)
+        status INTEGER,
+        content_type TEXT,
+        used_on INTEGER DEFAULT 1,       -- how many crawled pages reference this image
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
     // ── DataForSEO on-demand enrichments persisted for the audit (6a) ────────
     // Keyword intent (Labs search_intent) → powers intent-vs-pagetype-mismatch.
     this.db.exec(`

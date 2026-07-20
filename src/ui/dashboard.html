@@ -17,6 +17,7 @@
       <nav class="tabs" id="tabs" role="tablist">
         <button class="tab-btn active" data-panel="overview" role="tab">Overview</button>
         <button class="tab-btn" data-panel="issues" role="tab">Issues &amp; fixes</button>
+        <button class="tab-btn" data-panel="health" role="tab">Site health</button>
         <button class="tab-btn" data-panel="opportunities" role="tab">Opportunities</button>
         <button class="tab-btn" data-panel="search" role="tab">Search performance</button>
         <button class="tab-btn" data-panel="architecture" role="tab">Architecture</button>
@@ -48,6 +49,38 @@
             <div class="recs-controls" id="recsControls"></div>
             <div id="recs"></div>
           </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="health" role="tabpanel">
+        <div class="chart-card">
+          <h3>Crawl overview</h3>
+          <div class="hint">The classic crawl diagnostics, from the latest crawl of your site. Counts are internal URLs; bars are the share of crawled pages.</div>
+          <div class="sf-grid">
+            <div><h4>Response codes</h4><div id="sfCodes"></div></div>
+            <div><h4>Indexability</h4><div id="sfIndexability"></div></div>
+            <div><h4>Response time</h4><div id="sfSpeed"></div></div>
+            <div><h4>HTML size (est. transfer)</h4><div id="sfSize"></div></div>
+            <div><h4>Crawl depth</h4><div id="sfDepth"></div></div>
+            <div><h4>On-page</h4><div id="sfOnPage"></div></div>
+            <div><h4>Page titles</h4><div id="sfTitles"></div></div>
+            <div><h4>Meta descriptions</h4><div id="sfMetas"></div></div>
+          </div>
+        </div>
+        <div class="chart-card" id="sfServerErrorsCard">
+          <h3>Server errors (5xx)</h3>
+          <div class="hint">URLs answering with a server error, most-linked first. These waste crawl budget and drop straight out of the index if they persist.</div>
+          <div id="sfServerErrors" class="findings-table"></div>
+        </div>
+        <div class="chart-card" id="sfSlowCard">
+          <h3>Slow pages (over 1 s)</h3>
+          <div class="hint">HTML responses that took over a second to arrive during the crawl. A rough TTFB proxy - slow here usually means slow for Googlebot too.</div>
+          <div id="sfSlow" class="findings-table"></div>
+        </div>
+        <div class="chart-card" id="sfImagesCard">
+          <h3>Heavy images</h3>
+          <div class="hint" id="sfImagesHint">The heaviest images your pages load, from a header-only sample (sizes read from content-length - the bytes are never downloaded). Over 100 KB is worth a compress; over 300 KB is costing you Core Web Vitals.</div>
+          <div id="sfImages" class="findings-table"></div>
         </div>
       </section>
 

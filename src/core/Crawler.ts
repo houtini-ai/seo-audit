@@ -283,6 +283,7 @@ export class Crawler {
     const linkBuf: Record<string, unknown>[] = [];
     const visited = new Set<string>();
     const emitted = new Set<string>(); // final url_keys already extracted+written
+    const imageRefs = new Map<string, number>(); // distinct <img> src → pages using it
     const frontier: { url: string; depth: number }[] = [];
     let crawled = 0, failed = 0, skipped = 0, discovered = 0;
 
@@ -404,6 +405,7 @@ export class Crawler {
         });
 
         if (ex) {
+          for (const src of ex.imageSrcs) imageRefs.set(src, (imageRefs.get(src) ?? 0) + 1);
           for (const l of ex.links) {
             linkBuf.push({
               crawl_id: crawlId, source_url: r.finalUrl, source_key: finalKey,
@@ -449,6 +451,38 @@ export class Crawler {
     });
 
     flush(true);
+
+    // Post-crawl: sample image weights. One request per distinct <img> src, most-used first,
+    // reading ONLY the response headers (content-length + content-type) — the body is cancelled
+    // immediately, so no image bytes are ever downloaded. Bounded so a huge site can't stall
+    // the crawl; feeds the Site health image-weight report.
+    if (!signal.aborted && wipedPrior) { // wipedPrior = the crawl really wrote pages; keep old sample otherwise
+      db.db.exec('DELETE FROM image_assets');
+    }
+    if (!signal.aborted && imageRefs.size) {
+      const MAX_IMAGES = 500;
+      const sample = [...imageRefs.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_IMAGES);
+      const imgInsert = db.db.prepare(
+        `INSERT INTO image_assets (url, bytes, status, content_type, used_on, fetched_at)
+         VALUES (?,?,?,?,?,datetime('now')) ON CONFLICT(url) DO NOTHING`,
+      );
+      const rows: [string, number | null, number, string, number][] = [];
+      let idx = 0;
+      const headOne = async (): Promise<void> => {
+        while (idx < sample.length && !signal.aborted) {
+          const [url, usedOn] = sample[idx++];
+          try {
+            const res = await fetch(url, { headers: { 'user-agent': ua }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+            const len = Number(res.headers.get('content-length'));
+            try { await res.body?.cancel(); } catch { /* already closed */ }
+            rows.push([url, Number.isFinite(len) && len > 0 ? len : null, res.status, (res.headers.get('content-type') ?? '').split(';')[0].trim(), usedOn]);
+          } catch { rows.push([url, null, 0, '', usedOn]); }
+          if (delayMs) await sleep(Math.min(delayMs, 100));
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, 4) }, headOne));
+      db.db.transaction(() => { for (const r of rows) imgInsert.run(...r); })();
+    }
 
     // Post-crawl: in-degree (orphans), internal PageRank (iPR) + body-only click depth.
     finalizeLinkGraph(db.db, crawlId, urlKey(seed, keyOpts));

@@ -59,6 +59,7 @@ export interface ExtractedPage {
   hasRdfa: boolean;
   bodyChunks: { heading: string; level: number; text: string }[]; // content segmented by heading (RAG layer)
   links: ExtractedLink[];
+  imageSrcs: string[];             // distinct absolute <img> src URLs (capped) — image-weight sampling
 }
 
 function placementOf($: cheerio.CheerioAPI, el: any): 'navigation' | 'footer' | 'body' {
@@ -201,10 +202,21 @@ export function extractPage(
   const imgEls = $('img');
   let imagesWithoutAlt = 0;
   let imagesMissingDimensions = 0;
+  // Distinct absolute image URLs, capped per page — the crawler samples their content-length
+  // after the crawl for the image-weight report (CDN-hosted images count; SEO cares about
+  // what the page loads, not where it's hosted).
+  const imageSrcSet = new Set<string>();
   imgEls.each((_, el) => {
     const $e = $(el);
     if ($e.attr('alt') === undefined) imagesWithoutAlt++;
     if ($e.attr('width') === undefined && $e.attr('height') === undefined) imagesMissingDimensions++;
+    const src = ($e.attr('src') ?? '').trim();
+    if (src && !src.startsWith('data:') && imageSrcSet.size < 15) {
+      try {
+        const u = new URL(src, pageUrl);
+        if (u.protocol === 'http:' || u.protocol === 'https:') imageSrcSet.add(u.toString());
+      } catch { /* skip bad src */ }
+    }
   });
 
   const links: ExtractedLink[] = [];
@@ -276,5 +288,6 @@ export function extractPage(
     hasRdfa,
     bodyChunks,
     links,
+    imageSrcs: [...imageSrcSet],
   };
 }

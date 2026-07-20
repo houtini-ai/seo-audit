@@ -319,3 +319,19 @@ body {
 /* Table row hover — scannability */
 .findings-table tbody tr { transition: background .12s ease; }
 .findings-table tbody tr:hover { background: var(--bg-input); }
+
+/* Site health — Screaming-Frog-style stat bars (plain CSS, no chart lib) */
+.sf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 34px; margin-top: 14px; }
+@media (max-width: 720px) { .sf-grid { grid-template-columns: 1fr; } }
+.sf-grid h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+.sf-row { display: grid; grid-template-columns: minmax(120px, 1.1fr) 2fr 54px 44px; gap: 10px; align-items: center; padding: 4px 0; font-size: 12.5px; }
+.sf-label { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-track { height: 8px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
+.sf-fill { height: 100%; border-radius: 4px; background: var(--accent); }
+.sf-fill.ok { background: var(--color-status-live, #16a34a); }
+.sf-fill.warn { background: var(--color-status-warning, #f59e0b); }
+.sf-fill.bad { background: var(--color-status-error, #ef4444); }
+.sf-fill.muted { background: var(--text-muted); opacity: .55; }
+.sf-count { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--text-primary); }
+.sf-pct { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--text-muted); font-size: 11.5px; }
+.sf-empty { color: var(--text-muted); font-size: 12.5px; padding: 4px 0; }

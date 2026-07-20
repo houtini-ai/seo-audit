@@ -23,6 +23,22 @@ interface DashboardData {
   pagePerformance?: { urlKey: string; clicks: number; prevClicks: number; clicksChangePct: number; impressions: number; position: number; category: string }[];
   keywordMovement?: { query: string; firstPos: number; lastPos: number; delta: number; firstDate: string; lastDate: string; category: string }[];
   findings?: { runId: string; total: number; finishedAt: string | null; byCheck: any[]; top: any[]; recommendations?: any[] } | null;
+  topLinkedPages?: { url: string; inlinks: number; status: number | null; indexable: boolean; reason: string | null }[];
+  crawlHealth?: {
+    responseCodes: { label: string; count: number }[];
+    indexability: { label: string; count: number }[];
+    speed: { label: string; count: number }[];
+    htmlSize: { label: string; count: number }[];
+    depth: { label: string; count: number }[];
+    titles: { label: string; count: number }[];
+    metas: { label: string; count: number }[];
+    onPage: { label: string; count: number }[];
+    serverErrors: { url: string; status: number }[];
+    slowPages: { url: string; ms: number }[];
+    largeImages: { url: string; kb: number; usedOn: number }[];
+    imageStats: { sampled: number; over100kb: number; over300kb: number } | null;
+    totalPages: number;
+  };
 }
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
@@ -663,6 +679,53 @@ function render(data: DashboardData): void {
     : '<p class="muted">Run a crawl (refresh_property) to see the internal-link hierarchy.</p>';
   const tlpBroken = tlp.filter(p => p.status !== 200).length;
   $('topLinkedSummary').textContent = `Top ${tlp.length} internally-linked pages by inlink count; ${tlpBroken} return a non-200 status.`;
+
+  // 0e) Site health — Screaming-Frog-style stat bars (plain CSS, deliberately no chart lib)
+  {
+    const ch = data.crawlHealth;
+    // Tone per label: what colour the bar takes. Counts of PROBLEMS read amber/red; healthy states green.
+    const tone = (label: string): string => {
+      if (/^(200|Indexable|Under 200|Under 30 KB)/.test(label)) return 'ok';
+      if (/^(3xx|200–500|30–60|canonicalised|redirect)/.test(label)) return 'muted';
+      if (/^(5xx|Fetch failed|Over 1 s|Over 100 KB|http-5)/.test(label)) return 'bad';
+      if (/^(4xx|http-4|noindex|Missing|Duplicate|Multiple|Mixed|Over|Under|Images|Heading|robots|Blocked|non-html|500 ms)/.test(label)) return 'warn';
+      return '';
+    };
+    const sfList = (id: string, rows: { label: string; count: number }[] | undefined, base: number): void => {
+      const el = $(id);
+      if (!rows?.length || base <= 0) { el.innerHTML = '<div class="sf-empty">Nothing to show - run a crawl first.</div>'; return; }
+      el.innerHTML = rows.map(r => {
+        const pct = Math.min(100, r.count / base * 100);
+        return `<div class="sf-row"><div class="sf-label" title="${esc(r.label)}">${esc(r.label)}</div>` +
+          `<div class="sf-track"><div class="sf-fill ${tone(r.label)}" style="width:${Math.max(pct, r.count > 0 ? 1.5 : 0)}%"></div></div>` +
+          `<div class="sf-count">${fmt(r.count)}</div><div class="sf-pct">${pct < 1 && r.count > 0 ? '<1' : Math.round(pct)}%</div></div>`;
+      }).join('');
+    };
+    const total = ch?.totalPages ?? 0;
+    sfList('sfCodes', ch?.responseCodes, total);
+    sfList('sfIndexability', ch?.indexability, total);
+    sfList('sfSpeed', ch?.speed, total);
+    sfList('sfSize', ch?.htmlSize, total);
+    sfList('sfDepth', ch?.depth, total);
+    sfList('sfOnPage', ch?.onPage, total);
+    sfList('sfTitles', ch?.titles, total);
+    sfList('sfMetas', ch?.metas, total);
+    const card = (id: string, show: boolean): HTMLElement => { const c = $(id); c.style.display = show ? '' : 'none'; return c; };
+    card('sfServerErrorsCard', !!ch?.serverErrors?.length);
+    if (ch?.serverErrors?.length) $('sfServerErrors').innerHTML = tableHtml(['URL', 'Status'],
+      ch.serverErrors.map(e => `<tr><td class="url" title="${esc(e.url)}">${esc(shortPath(e.url))}</td><td class="num">${e.status}</td></tr>`));
+    card('sfSlowCard', !!ch?.slowPages?.length);
+    if (ch?.slowPages?.length) $('sfSlow').innerHTML = tableHtml(['URL', 'Response time'],
+      ch.slowPages.map(s => `<tr><td class="url" title="${esc(s.url)}">${esc(shortPath(s.url))}</td><td class="num">${fmt(s.ms)} ms</td></tr>`));
+    card('sfImagesCard', !!ch?.imageStats);
+    if (ch?.imageStats) {
+      $('sfImagesHint').textContent = `Sampled ${fmt(ch.imageStats.sampled)} distinct images (header-only - the bytes are never downloaded): ${fmt(ch.imageStats.over100kb)} over 100 KB, ${fmt(ch.imageStats.over300kb)} over 300 KB. Heaviest first; "pages" is how many crawled pages load it.`;
+      $('sfImages').innerHTML = ch.largeImages.length
+        ? tableHtml(['Image', 'Size', 'Pages'], ch.largeImages.map(i =>
+          `<tr><td class="url" title="${esc(i.url)}">${esc(shortPath(i.url))}</td><td class="num">${fmt(i.kb)} KB</td><td class="num">${i.usedOn}</td></tr>`))
+        : '<p class="muted">No sampled image over 100 KB. Tidy.</p>';
+    }
+  }
 
   // 1) Ranking distribution over time (stacked area) — flagship #1
   const dist = data.rankingDistribution ?? [];
