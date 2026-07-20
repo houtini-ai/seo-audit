@@ -46,6 +46,8 @@ A flat crawler tells you a page 404s. Useful, but only just. This tells you the 
 
 The SEO consultant who wants the collection and checking automated so the thinking time survives. The in-house marketer who's been quoted four figures for a commodity audit. And honestly, anyone newer to this who wants to learn what a good audit actually looks at - because every finding shows its evidence, the tool doubles as a teacher.
 
+A note on where to run it. Claude Desktop is the easy start, but in my view **Claude Code is the best home for this tool** - because it closes the loop. In a chat client the audit hands you a 301 rule to paste somewhere. In Claude Code, the same session has your site's repo, a terminal and git: the audit finds the issue, writes the fix, applies it to the codebase, commits it, and re-crawls to verify. Finding to deployed fix, one conversation.
+
 You don't need to learn an interface. You type *"run an SEO audit on mysite.com"* into Claude and it happens. Forget what's possible? Ask *"run seo_audit_help"* and you get the full menu with example prompts.
 
 ### Does the approach work?

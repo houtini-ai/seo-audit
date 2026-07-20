@@ -34,6 +34,10 @@ An article skeleton already exists at [plan/audit-workflow-article.md](../plan/a
 11. **Monitor** — `Detect changes on yoursite.com` (the migration-insurance story).
 12. **Share** — `Export the report` (self-contained HTML for clients).
 
+## Where to run it (make this point prominently)
+
+Claude Desktop works, but **Claude Code (claude.ai/code, the CLI, or the desktop app) is easily the best home for this MCP** - and the guide should say so plainly. The reason is the loop it closes: in a chat client the audit hands you a fix to paste somewhere; in Claude Code the same session has your website's repo, a terminal and git. The audit finds the broken canonical, writes the 301, **applies it to the codebase, commits it, and re-crawls to verify** - finding to deployed fix without leaving the conversation. Add scheduled runs and it becomes a standing monitor. For agencies: one Claude Code session per client repo is the whole workflow. Frame Desktop as the easy start, Claude Code as where the tool earns its keep.
+
 ## DataForSEO section (affiliate)
 
 Use the affiliate link **https://dataforseo.com/?aff=213701** everywhere DataForSEO is linked (it's the link used elsewhere on the site). Positioning: GSC only describes searches where you already appear; DataForSEO answers "how big is the market" and "what do competitors rank for that I don't". Pay-as-you-go, fractions of a cent per call, cached 20 days, only ever called on demand — "a few dollars a month" is the honest cost line. Gotcha worth a call-out box: the Backlinks API is a separate DataForSEO subscription from SERP/Keywords/Labs.
