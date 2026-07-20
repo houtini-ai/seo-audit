@@ -355,6 +355,7 @@ export class AuditDatabase {
       CREATE TABLE IF NOT EXISTS sitemap_urls (
         url_key TEXT PRIMARY KEY,        -- normalised join key of a URL listed in the XML sitemap(s)
         url TEXT NOT NULL,
+        lastmod TEXT,                    -- the sitemap's <lastmod> claim (freshness-honesty check)
         fetched_at TEXT DEFAULT (datetime('now'))
       );
     `);
@@ -442,6 +443,8 @@ export class AuditDatabase {
     ensure('pages', 'body_chunks', 'body_chunks TEXT');
     ensure('pages', 'has_favicon', 'has_favicon INTEGER');
     ensure('pages', 'has_analytics', 'has_analytics INTEGER');
+    ensure('pages', 'conditional_304', 'conditional_304 INTEGER'); // 1 = honoured If-Modified-Since/If-None-Match with a 304; 0 = returned 200 anyway; NULL = not probed
+    ensure('sitemap_urls', 'lastmod', 'lastmod TEXT');
     ensure('pages', 'max_passage_score', 'max_passage_score REAL');
     ensure('pages', 'max_passage_query', 'max_passage_query TEXT');
     ensure('pages', 'max_passage_impr', 'max_passage_impr INTEGER');

@@ -303,8 +303,8 @@ export class Crawler {
     if (!signal.aborted) {
       try {
         const sm = await fetchSitemapUrls(origin, ua, keyOpts);
-        const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, fetched_at) VALUES (?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
-        db.db.transaction(() => { db.db.exec('DELETE FROM sitemap_urls'); for (const u of sm.urls) smInsert.run(u.urlKey, u.url); })();
+        const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, lastmod, fetched_at) VALUES (?,?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
+        db.db.transaction(() => { db.db.exec('DELETE FROM sitemap_urls'); for (const u of sm.urls) smInsert.run(u.urlKey, u.url, u.lastmod); })();
         for (const u of sm.urls) {
           if (discovered >= maxPages) break;
           let host: string; try { host = new URL(u.url).hostname; } catch { continue; }
@@ -487,6 +487,31 @@ export class Crawler {
 
     // Post-crawl: in-degree (orphans), internal PageRank (iPR) + body-only click depth.
     finalizeLinkGraph(db.db, crawlId, urlKey(seed, keyOpts));
+
+    // Post-crawl: conditional-revalidation probe. Pages that advertised validators
+    // (Last-Modified / ETag) get ONE conditional re-request — a properly configured server
+    // answers 304 Not Modified; a 200 means it re-serves the full body to every revalidating
+    // crawler and cache, wasting crawl budget. Bounded sample, most-linked pages first.
+    if (!signal.aborted) {
+      const cands = db.db.prepare(
+        `SELECT url, url_key, last_modified lm, etag FROM pages
+         WHERE status_code=200 AND is_internal=1 AND (last_modified IS NOT NULL OR etag IS NOT NULL)
+         ORDER BY inlink_count DESC LIMIT 30`,
+      ).all() as { url: string; url_key: string; lm: string | null; etag: string | null }[];
+      const upd = db.db.prepare('UPDATE pages SET conditional_304=? WHERE url_key=?');
+      for (const p of cands) {
+        if (signal.aborted) break;
+        try {
+          const headers: Record<string, string> = { 'user-agent': ua };
+          if (p.etag) headers['if-none-match'] = p.etag;
+          if (p.lm) headers['if-modified-since'] = p.lm;
+          const res = await fetch(p.url, { headers, redirect: 'manual', signal: AbortSignal.timeout(10000) });
+          try { await res.body?.cancel(); } catch { /* already closed */ }
+          upd.run(res.status === 304 ? 1 : 0, p.url_key);
+        } catch { /* leave NULL — unprobed, never counted against the server */ }
+        if (delayMs) await sleep(Math.min(delayMs, 150));
+      }
+    }
 
     // (Sitemap is now fetched + stored + used as crawl seeds at the start of the crawl.)
 

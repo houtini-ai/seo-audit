@@ -32,7 +32,7 @@ async function fetchText(url: string, ua: string): Promise<string | null> {
   } catch { return null; }
 }
 
-export interface SitemapResult { urls: { urlKey: string; url: string }[]; sitemapsFetched: number; sources: string[] }
+export interface SitemapResult { urls: { urlKey: string; url: string; lastmod: string | null }[]; sitemapsFetched: number; sources: string[] }
 
 export async function fetchSitemapUrls(
   origin: string, ua: string, keyOpts: UrlKeyOptions, opts: { maxSitemaps?: number; maxUrls?: number } = {},
@@ -46,24 +46,42 @@ export async function fetchSitemapUrls(
   if (robots) for (const m of robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)) sources.push(m[1].trim());
   if (!sources.length) sources.push(new URL('/sitemap.xml', origin).toString());
 
-  const out = new Map<string, string>(); // urlKey → url (dedup)
+  const out = new Map<string, { url: string; lastmod: string | null }>(); // urlKey → entry (dedup)
   const queue = [...new Set(sources)];
   let fetched = 0;
+  const URL_BLOCK = /<url>([\s\S]*?)<\/url>/gi;
+  const LOC_ONE = /<loc>\s*([^<\s]+?)\s*<\/loc>/i;
+  const LASTMOD_ONE = /<lastmod>\s*([^<\s]+?)\s*<\/lastmod>/i;
+  const add = (loc: string, lastmod: string | null): void => {
+    try { const k = urlKey(loc, keyOpts); if (!out.has(k)) out.set(k, { url: loc, lastmod }); } catch { /* skip bad loc */ }
+  };
   while (queue.length && fetched < maxSitemaps && out.size < maxUrls) {
     const sm = queue.shift()!;
     const txt = await fetchText(sm, ua);
     fetched++;
     if (!txt) continue;
-    const isIndex = /<sitemapindex[\s>]/i.test(txt);
-    for (const m of txt.matchAll(LOC)) {
-      const loc = decodeXmlEntities(m[1]);
-      if (isIndex) {
-        if (queue.length + fetched < maxSitemaps) queue.push(loc); // child sitemap
-      } else {
-        try { const k = urlKey(loc, keyOpts); if (!out.has(k)) out.set(k, loc); } catch { /* skip bad loc */ }
+    if (/<sitemapindex[\s>]/i.test(txt)) {
+      for (const m of txt.matchAll(LOC)) {
+        if (queue.length + fetched < maxSitemaps) queue.push(decodeXmlEntities(m[1])); // child sitemap
+      }
+      continue;
+    }
+    // Parse per-<url> block so each <lastmod> claim stays paired with its <loc>.
+    let sawBlock = false;
+    for (const b of txt.matchAll(URL_BLOCK)) {
+      sawBlock = true;
+      const loc = b[1].match(LOC_ONE)?.[1];
+      if (!loc) continue;
+      add(decodeXmlEntities(loc), b[1].match(LASTMOD_ONE)?.[1] ?? null);
+      if (out.size >= maxUrls) break;
+    }
+    // Defensive fallback for malformed sitemaps that list bare <loc>s without <url> wrappers.
+    if (!sawBlock) {
+      for (const m of txt.matchAll(LOC)) {
+        add(decodeXmlEntities(m[1]), null);
         if (out.size >= maxUrls) break;
       }
     }
   }
-  return { urls: [...out].map(([urlKey, url]) => ({ urlKey, url })), sitemapsFetched: fetched, sources };
+  return { urls: [...out].map(([k, v]) => ({ urlKey: k, url: v.url, lastmod: v.lastmod })), sitemapsFetched: fetched, sources };
 }

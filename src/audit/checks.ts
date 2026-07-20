@@ -1087,6 +1087,62 @@ export const CHECKS: CheckDef[] = [
     },
   },
   {
+    id: 'sitemap-lastmod-untrustworthy', category: 'indexation', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
+    title: 'Sitemap lastmod dates are not trustworthy', fix: 'Google uses <lastmod> to prioritise recrawling — but only while it stays honest; a sitemap that stamps everything with the generation date (or future dates) teaches Google to ignore yours. Make lastmod reflect the last genuine content change, or drop it entirely.',
+    run: (c) => {
+      const all = c.db.prepare(`SELECT url_key, lastmod FROM sitemap_urls WHERE lastmod IS NOT NULL AND lastmod <> ''`).all() as { url_key: string; lastmod: string }[];
+      if (all.length < 20) return []; // too few dated URLs to judge the pattern
+      const ev: Record<string, unknown> = { urlsWithLastmod: all.length };
+      let tripped = false;
+      // Tell 1: a generator stamping every URL with "now" — >90% share one date, and that date is recent.
+      const byDay = new Map<string, number>();
+      for (const r of all) byDay.set(r.lastmod.slice(0, 10), (byDay.get(r.lastmod.slice(0, 10)) ?? 0) + 1);
+      const [topDay, topN] = [...byDay.entries()].sort((a, b) => b[1] - a[1])[0];
+      const ageDays = (Date.now() - Date.parse(topDay)) / 86400000;
+      if (topN / all.length > 0.9 && Number.isFinite(ageDays) && ageDays < 35) {
+        tripped = true;
+        ev.sharedStamp = `${Math.round(topN / all.length * 100)}% of URLs claim ${topDay} — a generation timestamp, not a change date`;
+      }
+      // Tell 2: dates in the future.
+      const future = all.filter(r => Date.parse(r.lastmod) > Date.now() + 86400000).length;
+      if (future > 0) { tripped = true; ev.futureDates = future; }
+      // Tell 3: lastmod claims a change between our two most recent crawls, yet none of the
+      // tracked page fields (status, title, meta, H1, word count, schema types) changed.
+      const crawls = c.db.prepare(
+        `SELECT crawl_id, MAX(REPLACE(REPLACE(captured_at,'T',' '),'Z','')) at FROM page_snapshots GROUP BY crawl_id ORDER BY at DESC LIMIT 2`,
+      ).all() as { crawl_id: string; at: string }[];
+      if (crawls.length === 2) {
+        const phantom = c.db.prepare(
+          `SELECT s.url_key FROM sitemap_urls s
+           JOIN page_snapshots n ON n.url_key = s.url_key AND n.crawl_id = ?
+           JOIN page_snapshots o ON o.url_key = s.url_key AND o.crawl_id = ?
+           WHERE s.lastmod > substr(?,1,10) AND s.lastmod <= substr(?,1,10)
+             AND n.status_code IS o.status_code AND n.title IS o.title AND n.meta_description IS o.meta_description
+             AND n.h1 IS o.h1 AND n.word_count IS o.word_count AND n.schema_types IS o.schema_types
+           LIMIT 200`,
+        ).all(crawls[0].crawl_id, crawls[1].crawl_id, crawls[1].at, crawls[0].at) as { url_key: string }[];
+        if (phantom.length >= 5) {
+          tripped = true;
+          ev.phantomChanges = phantom.length;
+          ev.phantomExamples = phantom.slice(0, 5).map(p => p.url_key);
+        }
+      }
+      return tripped ? [{ urlKey: null, evidence: ev }] : [];
+    },
+  },
+  {
+    id: 'no-304-revalidation', category: 'performance', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
+    title: 'Server ignores conditional requests (no 304)', fix: 'Pages advertise Last-Modified/ETag but the server re-serves a full 200 when asked "has this changed?" (If-Modified-Since / If-None-Match). A properly configured server answers 304 Not Modified — it saves bandwidth on every revalidating crawler and cache, and signals stability to Googlebot. Usually a server/CDN setting.',
+    // Populated by the crawler's post-crawl probe (pages.conditional_304); NULL-gated so
+    // pre-feature crawls never flag. Fires only when NO probed page honoured the request.
+    run: (c) => {
+      const r = c.db.prepare(`SELECT COUNT(*) probed, COALESCE(SUM(conditional_304),0) ok FROM pages WHERE conditional_304 IS NOT NULL`).get() as { probed: number; ok: number };
+      if (r.probed < 5 || r.ok > 0) return [];
+      const noValidators = (c.db.prepare(`SELECT COUNT(*) n FROM pages WHERE status_code=200 AND ${HTML_CT} AND last_modified IS NULL AND etag IS NULL`).get() as { n: number }).n;
+      return [{ urlKey: null, evidence: { probed: r.probed, honoured304: 0, pagesWithoutValidators: noValidators, note: 'every conditional re-request returned a full 200' } }];
+    },
+  },
+  {
     id: 'analytics-missing', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
     title: 'No client-side analytics detected', fix: 'No analytics or tag-manager snippet was found on any crawled page (GA4, GTM, Plausible, Matomo, Fathom, Clarity…). If you measure server-side, ignore this; otherwise you\'re flying blind — install an analytics package before making SEO decisions.',
     // Fires only when EVERY populated page lacks a snippet — one page with analytics = installed.
