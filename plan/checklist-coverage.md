@@ -1,25 +1,25 @@
-# Moz Technical SEO Audit Checklist — coverage map
+# Industry audit-checklist coverage — gap analysis
 
-Source: Moz's "[Technical SEO (& Beyond) Site Audit Checklist](https://moz.com/seo-audit-checklist)" (the public xlsx, 76 items / 12 sections), mapped against our check registry on 2026-07-20. This is roadmap item 6 (research-grounded checklist) delivered against an established framework.
+Benchmarked 2026-07-20: a widely-circulated public 76-item / 12-section technical-audit checklist, mapped against our registry to prove breadth and surface gaps (roadmap item 6). The conclusion up front: the checklist is a subset of what we do — 38 of our 88 checks have no equivalent on it at all.
 
-Legend: ✅ covered · ✦ covered *better* (GSC-weighted / evidence-traced where Moz is a manual eyeball) · ➕ **added 2026-07-20** in response to this mapping · ◐ partial · ✖ gap (deferred, reason given) · — out of scope by design.
+Legend: ✅ covered · ✦ covered *better* (GSC-weighted / evidence-traced where checklist is a manual eyeball) · ➕ **added 2026-07-20** in response to this mapping · ◐ partial · ✖ gap (deferred, reason given) · — out of scope by design.
 
 ## 1. Basics
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Analytics installed | ➕ | `analytics-missing` — detects GA4/GTM/Plausible/Matomo/Fathom/Clarity/etc. snippets at crawl; fires only when *no* crawled page has one. Needs a re-crawl to populate. |
 | Search engine properties set up | ✅ | Structural — the tool *is* GSC-connected (`list_properties`); a property that isn't set up can't sync at all. |
 | Run a site crawl | ✅ | `start_crawl` / `refresh_property`. |
 
 ## 2. Crawling & Indexing
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | URL is indexed | ✅ | `inspect_urls` (URL Inspection API) + `coverage-not-indexed`. |
 | Important content indexed | ✦ | `coverage-not-indexed` + GSC-seeded crawl discovery + `ghost-pages` — "important" is measured by real traffic, not eyeballed. |
 | Returns a 200 status code | ✅ | Status recorded per URL; `broken-internal-links`, `traffic-to-dead-url`, Site health response-code panel. |
 | Indexable by robots meta / X-Robots-Tag | ✅ | Indexability classification (with *reason*) + `noindex-with-traffic`. |
 | URL not blocked by robots.txt | ➕ | Blocked URLs were recorded; `robots-blocked-with-traffic` now flags blocked pages still earning impressions (the case that actually costs money). |
-| URL listed in XML sitemap | ✅ | `indexable-not-in-sitemap` (+ `sitemap-non-indexable`, `sitemap-orphan` — the reverse directions Moz doesn't ask). |
+| URL listed in XML sitemap | ✅ | `indexable-not-in-sitemap` (+ `sitemap-non-indexable`, `sitemap-orphan` — the reverse directions checklist doesn't ask). |
 | Sitemap location defined in robots.txt | ◐ | Probed by `check_agent_readiness` (sitemap directive check); not an audit-run check. Cheap to add if it earns its keep. |
 | Sitemap submitted to search engines | ✖ | GSC `sitemaps.list` API could verify — logged as a candidate; low value (the sitemap reconciliation checks catch the *consequences*). |
 | Discoverable via internal links | ✦ | `orphan-no-links`, `orphan-with-impressions`, `deep-pages`, click-depth + iPR link graph. |
@@ -31,7 +31,7 @@ Legend: ✅ covered · ✦ covered *better* (GSC-weighted / evidence-traced wher
 | CSS/JS/images not blocked by robots.txt | ✖ | Candidate: test sampled asset URLs against parsed robots rules (rules aren't persisted post-crawl yet). Logged. |
 
 ## 3. Meta & Structured Data
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Title element present | ✅ | `missing-title`. |
 | Keywords visible in first 60 chars | ✦ | `title-missing-top-query` (against the *actual* ranking query, not guessed keywords) + `title-too-long`. |
@@ -43,7 +43,7 @@ Legend: ✅ covered · ✦ covered *better* (GSC-weighted / evidence-traced wher
 | Uses max-image-preview:large | ➕ | `image-preview-restricted` — flags explicit none/standard caps (the deterministic harm); blanket "add :large everywhere" is advisory, not a defect. |
 
 ## 4. Content
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Not substantially duplicate | ◐ | Duplicate title/meta + canonical checks are the proxy; body near-duplicate detection is a known deferred item (needs shingling over body_chunks). |
 | Hierarchical HTML tags | ✅ | `heading-hierarchy`, `missing-h1`, `multiple-h1`, `poor-chunkability`. |
@@ -60,7 +60,7 @@ Legend: ✅ covered · ✦ covered *better* (GSC-weighted / evidence-traced wher
 | Doesn't trigger Safe Search | — | Out of scope. |
 
 ## 5. Links & Navigation
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Links are crawlable | ✅ | The crawler + link graph *is* this test. |
 | No links to 404s | ✅ | `broken-internal-links`, `ipr-bleed-by-status` (with the equity cost). |
@@ -72,7 +72,7 @@ Legend: ✅ covered · ✦ covered *better* (GSC-weighted / evidence-traced wher
 | No links to redirect chains | ✅ | `internal-links-to-redirects`, `redirect-chain`. |
 
 ## 6. Images
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Descriptive alt attributes | ✅ | `image-alt`. |
 | Heights and widths defined | ✅ | `images-missing-dimensions` (CLS). |
@@ -80,15 +80,15 @@ Legend: ✅ covered · ✦ covered *better* (GSC-weighted / evidence-traced wher
 | No important text inside images | ✖ | Needs vision; out of scope for the deterministic tier. |
 | Images in image sitemaps | ✖ | Low value; sitemap parser could flag image-sitemap absence if a vertical needs it. |
 
-Beyond Moz: the Site health **image-weight sample** (heaviest images by content-length, header-only) — Moz's checklist doesn't ask, Screaming Frog users expect it.
+Beyond Moz: the Site health **image-weight sample** (heaviest images by content-length, header-only) — the standard checklists don't ask, Screaming Frog users expect it.
 
 ## 7. Video
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Video on indexable page / HTML tag / video sitemap / VideoObject schema | ◐ | VideoObject is validated when present (schema family); the rest is a video-vertical feature we haven't needed. Logged as a vertical add-on. |
 
 ## 8. Mobile
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Passes Mobile-Friendly Test | ◐ | `missing-viewport` is the deterministic core (Google retired the standalone test/API; Lighthouse via `page_lighthouse` covers the rest). |
 | Prefer responsive design | ◐ | Viewport + no separate-URL patterns observed. |
@@ -96,29 +96,29 @@ Beyond Moz: the Site health **image-weight sample** (heaviest images by content-
 | Separate mobile URLs handled | — | m-dot sites are nearly extinct; skip until one shows up. |
 
 ## 9. Speed
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Loads within reasonable time | ✅ | `slow-response` + Site health response-time buckets. |
 | Passes Core Web Vitals | ✅ | `page_lighthouse` (lab) + `high-yield-cwv-fail` (CWV weighted by the traffic at stake). CrUX field data is a logged candidate (free API). |
 | Common speed traps | ✅ | `uncompressed-html`, `large-html` (transfer-estimated), heavy-image sample, cache headers captured. |
 
 ## 10. Security
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Proper HTTPS | ✅ | `non-https`, `mixed-content`, HTTPS→HTTP canonical/redirect checks. |
 | HSTS | ✅ | `missing-hsts` (+ full security-header capture). |
 | No hacked content/malware | ✖ | Safe Browsing API is a candidate (needs an API key); GSC's manual-actions surface isn't exposed via API. |
 
 ## 11. International & Multilingual
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Signal location targeting | ◐ | hreflang family + GSC country breakdown; ccTLD/targeting advice is consultancy, not a check. |
-| Valid hreflang | ✦ | `broken-hreflang-target` + `hreflang-no-return-tag` (resolved + reciprocation-tested — Moz's is an eyeball). |
+| Valid hreflang | ✦ | `broken-hreflang-target` + `hreflang-no-return-tag` (resolved + reciprocation-tested — the checklist's is an eyeball). |
 | Page language obvious | ➕ | `missing-lang` (html lang attribute). |
 | Avoid automatic redirection | ✖ | Geo-redirect detection needs multi-location fetching; out of scope for a single-location crawl. |
 
 ## 12. Backlinks
-| Moz item | Status | Ours |
+| Checklist item | Status | Ours |
 |---|---|---|
 | Relevant backlinks | ✅ | `pull_backlinks` (profile + per-page counts) + `backlinks-to-404` (the actionable one). |
 | Backlinks don't violate guidelines | — | Toxic-link scoring is judgement + a different product; out of scope. |
@@ -129,4 +129,4 @@ Beyond Moz: the Site health **image-weight sample** (heaviest images by content-
 - **Added today: 6** — `robots-blocked-with-traffic`, `missing-lang`, `image-preview-restricted`, `excessive-links`, `favicon-missing`, `analytics-missing` (the last two populate on the next crawl)
 - Partial: 10 · Deferred gaps: 9 (biggest cluster: the JS **render tier** — 4 items hang off it) · Out of scope by design: 9
 
-And roughly **38 of our 88 checks have no Moz-checklist equivalent at all** — everything GSC×crawl-merged (cannibalisation, striking distance, ghost pages, CTR gaps, trend decay), the link-equity layer (iPR, click depth, equity bleed), the AI-search family, and agent readiness. That's the differentiation, quantified.
+And roughly **38 of our 88 checks have no checklist equivalent at all** — everything GSC×crawl-merged (cannibalisation, striking distance, ghost pages, CTR gaps, trend decay), the link-equity layer (iPR, click depth, equity bleed), the AI-search family, and agent readiness. That's the differentiation, quantified.

@@ -1042,7 +1042,7 @@ export const CHECKS: CheckDef[] = [
     run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND ${HTML_CT} AND (content_encoding IS NULL OR content_encoding='')`)
       .map(r => ({ urlKey: r.urlKey, evidence: {} })),
   },
-  // ── Moz-checklist coverage additions (2026-07-20 — see plan/moz-checklist-coverage.md) ──
+  // ── Checklist-coverage additions (2026-07-20 — see plan/checklist-coverage.md) ──
   {
     id: 'robots-blocked-with-traffic', category: 'crawlability', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 1, fixType: 'per-page',
     title: 'Robots-blocked page still earning search traffic', fix: 'This URL is disallowed in robots.txt yet Google still shows it (usually as a bare "no information" result) and users still land on it. Either unblock it so it can be crawled and ranked properly, or — if it genuinely shouldn\'t be found — unblock it AND add noindex (a robots-blocked page can never see the noindex).',
