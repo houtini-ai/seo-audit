@@ -36,6 +36,13 @@ crawl-tests/**/raw/
 Thumbs.db
 .preview/
 
-# Large competitor xlsx datasets (the tracked research/*.md reference docs predate this
-# rule and stay in git; anything NEW under research/ is ignored)
+# Internal research workspace (kept locally, not part of the public repo)
 research/
+
+# Internal working docs — not part of the public repo (kept locally)
+CLAUDE.md
+plan/
+findings/
+audit/
+crawl-tests/
+docs/writer-brief.md
