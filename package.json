@@ -2,7 +2,7 @@
   "name": "@houtini/seo-audit-console",
   "version": "0.1.0",
   "mcpName": "io.github.houtini-ai/seo-audit-console",
-  "description": "MCP server that merges Google Search Console history with site-crawl data for technical SEO audits, joined on a normalised URL key.",
+  "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 90 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -21,13 +21,23 @@
     "url": "https://github.com/houtini-ai/seo-audit-console.git"
   },
   "keywords": [
-    "mcp",
     "seo",
     "technical-seo",
+    "seo-audit",
+    "search-console",
     "google-search-console",
     "crawler",
-    "sqlite",
-    "model-context-protocol"
+    "site-audit",
+    "dataforseo",
+    "keyword-research",
+    "content-gap",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude",
+    "ai-search",
+    "structured-data",
+    "core-web-vitals"
   ],
   "scripts": {
     "build:server": "tsc -p tsconfig.server.json",
