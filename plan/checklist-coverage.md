@@ -80,7 +80,7 @@ Legend: ✅ covered · ✦ covered *better* (GSC-weighted / evidence-traced wher
 | No important text inside images | ✖ | Needs vision; out of scope for the deterministic tier. |
 | Images in image sitemaps | ✖ | Low value; sitemap parser could flag image-sitemap absence if a vertical needs it. |
 
-Beyond Moz: the Site health **image-weight sample** (heaviest images by content-length, header-only) — the standard checklists don't ask, Screaming Frog users expect it.
+Beyond the checklist: the Site health **image-weight sample** (heaviest images by content-length, header-only) — the standard checklists don't ask, Screaming Frog users expect it.
 
 ## 7. Video
 | Checklist item | Status | Ours |

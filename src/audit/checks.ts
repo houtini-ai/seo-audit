@@ -261,7 +261,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Striking-distance query (page 2)', fix: 'Small on-page + internal-link push could reach page 1.',
     run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position, SUM(impressions) impressions FROM search_analytics WHERE query IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query, page_key HAVING SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0)>10 AND SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0)<=20 AND SUM(impressions)>=20 ORDER BY impressions DESC LIMIT 50`).map(r => ({ urlKey: r.urlKey, evidence: { query: r.query, position: Math.round(r.position * 10) / 10, impressions: r.impressions } })) : [],
   },
-  // ── Additions from Moz / MarketMuse / Whitehat checklists (buildable on current data) ──
+  // ── Additions from industry checklist review (buildable on current data) ──
   {
     id: 'title-too-long', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
     title: 'Title over ~60 chars', fix: 'Trim the title so the primary keyword sits within ~60 chars.',
