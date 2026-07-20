@@ -46,3 +46,6 @@ findings/
 audit/
 crawl-tests/
 docs/writer-brief.md
+
+# Docs are maintained outside the public repo
+docs/

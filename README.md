@@ -26,7 +26,7 @@ you  › run an SEO audit on simracingcockpit.gg
 you  › generate the fix for #1 ▍
 ```
 
-![The dashboard overview - executive summary, critical issues, recoverable clicks](docs/images/dashboard-overview.png)
+![The dashboard overview - executive summary, critical issues, recoverable clicks](assets/dashboard-overview.png)
 
 ## Surprisingly little has changed in twenty years
 
@@ -77,7 +77,7 @@ Every check is labelled **D** (deterministic - here are the bytes) or **N** (jud
 
 And if you grew up on desktop crawlers, the dashboard's **Site health** tab will feel like home - response codes, indexability reasons, response-time and page-weight buckets, crawl depth, title and meta issues, the heaviest images your pages load (sampled from response headers; the bytes are never downloaded), plus the server errors and slow pages listed out:
 
-![The Site health tab - classic crawl diagnostics as clean stat bars](docs/images/site-health.png)
+![The Site health tab - classic crawl diagnostics as clean stat bars](assets/site-health.png)
 
 ---
 
@@ -172,7 +172,7 @@ The dashboard runs right in the chat: findings treemap, rank trends, the equity-
 
 The Search performance tab is the Search Console view you wish Google shipped - and because the history lives in your own database, it isn't capped at 16 months:
 
-![Ranking distribution over time - impressions by position bucket](docs/images/search-performance.png)
+![Ranking distribution over time - impressions by position bucket](assets/search-performance.png)
 
 ---
 
@@ -293,7 +293,7 @@ A few things I'm building next, in rough order:
 - **A per-page content scorecard.** A dedicated table of *every* ranking phrase your copy misses, not just the top query.
 - **More agent readiness.** A WebMCP advisory (which tool actions your site could expose to agents) and the agent-commerce protocols.
 - **A printable report.** A proper A4 document you can hand a client, not a slide deck.
-- **Source-level parser checks.** The audit spec is written - [~94 checks](docs/DEFINITIVE-TECHNICAL-AUDIT.md) covering the layer most tools never touch: elements that silently break `<head>` parsing, directives hoisted into the body and ignored, raw-vs-rendered divergence.
+- **Source-level parser checks.** The audit spec is written - ~94 checks covering the layer most tools never touch: elements that silently break `<head>` parsing, directives hoisted into the body and ignored, raw-vs-rendered divergence.
 
 Got a weird edge case you wish a tool caught? Tell me - that's exactly how the merged GSC×crawl checks got built.
 
