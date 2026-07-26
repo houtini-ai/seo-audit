@@ -49,3 +49,26 @@ docs/writer-brief.md
 
 # Docs are maintained outside the public repo
 docs/
+
+# scripts/ — only the public smoke test + documented probes are tracked; internal
+# one-off diagnostics and property-specific QA harnesses stay local
+scripts/*
+!scripts/smoke.mjs
+!scripts/qa-crawl.mjs
+!scripts/probe-crawl.mjs
+!scripts/probe-gsc.mjs
+!scripts/probe-fixfinding.mjs
+!scripts/probe-schema.mjs
+!scripts/probe-schema-rules.mjs
+!scripts/probe-extract.mjs
+!scripts/probe-extract2.mjs
+!scripts/probe-backlinks.mjs
+!scripts/probe-dfs-labs.mjs
+!scripts/probe-6a.mjs
+!scripts/probe-6b.mjs
+!scripts/probe-6c.mjs
+!scripts/probe-6d.mjs
+!scripts/probe-priority.mjs
+!scripts/probe-templates.mjs
+!scripts/probe-migrate.mjs
+!scripts/probe-boot.mjs
