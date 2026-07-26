@@ -201,7 +201,7 @@ app.ontoolresult = (result) => {
   if (sc?.siteUrl) loadDashboard(sc.siteUrl);
 };
 
-window.addEventListener('resize', () => { distChart?.resize(); rankHistChart?.resize(); rankChart?.resize(); kwChart?.resize(); });
+window.addEventListener('resize', () => { for (const c of [distChart, rankHistChart, rankChart, kwChart, mismatchChart, scatterChart, cannChart, quickWinsChart]) c?.resize(); });
 
 const SEV_ORDER = ['crit', 'high', 'med', 'low', 'info'] as const;
 const SEV_LABEL: Record<string, string> = { crit: 'Critical', high: 'High', med: 'Medium', low: 'Low', info: 'Info' };
@@ -892,7 +892,7 @@ function render(data: DashboardData): void {
   kwChart.setOption({
     ...ARIA,
     grid: { left: 8, right: 44, top: 10, bottom: 24, containLabel: true },
-    tooltip: { trigger: 'item', formatter: (pa: any) => `${pa.name}<br/>Δ clicks: ${pa.value >= 0 ? '+' : ''}${pa.value} (now ${kw[pa.dataIndex].clicks})` },
+    tooltip: { trigger: 'item', formatter: (pa: any) => `${esc(String(pa.name))}<br/>Δ clicks: ${pa.value >= 0 ? '+' : ''}${pa.value} (now ${kw[pa.dataIndex].clicks})` },
     xAxis: { type: 'value', ...axis },
     yAxis: { type: 'category', data: kw.map(k => k.query), axisLabel: { color: col.axisText, width: 180, overflow: 'truncate' }, axisLine: { lineStyle: { color: col.border } } },
     series: [{
@@ -1050,7 +1050,7 @@ function buildExportBar(data: DashboardData): void {
 // a site can have a million keywords; we enrich what's on screen / clicked).
 async function loadRelated(keyword: string): Promise<void> {
   const el = $('related');
-  el.innerHTML = `<div class="group-label">Looking up “${keyword}”…</div>`;
+  el.innerHTML = `<div class="group-label">Looking up “${esc(keyword)}”…</div>`;
   try {
     const [relRes, volRes] = await Promise.all([
       app.callServerTool({ name: 'related_terms', arguments: { keyword } }) as Promise<any>,
@@ -1060,12 +1060,12 @@ async function loadRelated(keyword: string): Promise<void> {
     const paa: string[] = sc.peopleAlsoAsk ?? [];
     const rel: string[] = sc.relatedSearches ?? [];
     const vol = volRes?.structuredContent?.keywords?.[0];
-    const tags = (xs: string[]): string => xs.map(x => `<span class="tag">${x}</span>`).join('');
+    const tags = (xs: string[]): string => xs.map(x => `<span class="tag">${esc(String(x))}</span>`).join('');
     el.innerHTML =
-      (vol ? `<div class="group-label">“${keyword}” — search volume</div><span class="tag">${vol.searchVolume ?? 'n/a'}/mo</span><span class="tag">CPC ${vol.cpc ?? 'n/a'}</span>` : '') +
+      (vol ? `<div class="group-label">“${esc(keyword)}” — search volume</div><span class="tag">${esc(String(vol.searchVolume ?? 'n/a'))}/mo</span><span class="tag">CPC ${esc(String(vol.cpc ?? 'n/a'))}</span>` : '') +
       (paa.length ? `<div class="group-label">People also ask</div>${tags(paa)}` : '') +
       (rel.length ? `<div class="group-label">Related searches</div>${tags(rel)}` : '') +
-      (!paa.length && !rel.length && !vol ? `<div class="group-label">No DataForSEO data for “${keyword}”.</div>` : '');
+      (!paa.length && !rel.length && !vol ? `<div class="group-label">No DataForSEO data for “${esc(keyword)}”.</div>` : '');
   } catch {
     el.innerHTML = `<div class="group-label">DataForSEO credentials needed for keyword lookups.</div>`;
   }

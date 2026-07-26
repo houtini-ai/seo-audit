@@ -42,6 +42,7 @@ export async function scoreSitePassages(
         .filter(t => t.length > 20);
       if (!passages.length) continue;
       const { max } = await maxPassageScore(pg.query, passages);
+      if (!Number.isFinite(max)) continue; // empty/whitespace query → no scores; don't persist -Infinity
       const score = Math.round(max * 100) / 100;
       upd.run({ s: score, q: pg.query, i: pg.impressions, u: pg.urlKey });
       scored++;
