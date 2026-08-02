@@ -1152,6 +1152,136 @@ export const CHECKS: CheckDef[] = [
       return r.total >= 3 && r.withA === 0 ? [{ urlKey: null, evidence: { pagesChecked: r.total, note: 'no known analytics snippet on any crawled page (server-side measurement is invisible to a crawl)' } }] : [];
     },
   },
+
+  // ── Google "AI features / succeeding in AI search" guide (developers.google.com/search/docs/
+  // fundamentals/ai-optimization-guide, read 2026-08-02) — principle → check mapping:
+  //   • Unique/compelling/non-commodity, people-first content .... thin-content, content-bloat,
+  //     ai-slop-signals (NEW below — mechanical/templated prose is the anti-signal of "unique take")
+  //   • Unique point of view / first-hand experience .............. article-no-author (NEW below —
+  //     unattributed articles are the deterministically checkable slice), stale-content
+  //   • Clear organisation (paragraphs/sections/headings) ......... poor-chunkability, content-bloat,
+  //     heading-hierarchy; answer coverage: body-missing-top-query, rag-answer-gap,
+  //     answer-not-front-loaded, weak-passage-answer, low-extractability
+  //   • Indexed + snippet-eligible / technical requirements ....... indexation family (noindex,
+  //     canonical, robots-blocked-with-traffic), soft-404-shell, sitemap reconciliation
+  //   • Crawlable public content .................................. crawlability family, broken links,
+  //     redirect chains; freshness-honesty (sitemap-lastmod-untrustworthy, no-304-revalidation)
+  //   • Semantic HTML / parseable ................................. heading-hierarchy, missing-h1,
+  //     multiple-h1, missing-lang
+  //   • Reduce duplicate content .................................. duplicate-title/meta, canonical
+  //     family, faceted-spider-trap, keyword-cannibalisation
+  //   • Images/video supporting text .............................. image-alt, images-missing-dimensions
+  //   • Page experience / latency ................................. performance proxies, high-yield-cwv-fail
+  //   • Structured data honesty (not required, but keep it valid) . schema-validate family,
+  //     article-date-illogical
+  //   • Don't chunk artificially / rewrite for AI ................. covered by NOT having such checks;
+  //     our chunk checks reward structure for humans, not tiny AI fragments
+  //   • "Don't create llms.txt" ................................... tension with agent-readiness probes,
+  //     which score llms.txt for *agent* (not Google AI-search) consumption — left as-is, different audience
+  //   • Merchant Center / Business Profile / GenAI report ......... out of scope (not crawl/GSC data)
+  {
+    // Anti-signal of the guide's "unique, non-commodity, people-first content": prose that reads
+    // machine-generated. Three heuristics over body_chunks — slop-lexicon density, sentence-length
+    // uniformity (low variance = mechanical), repeated chunk openers (page-internal boilerplate).
+    // Precision over recall: absolute floors on every signal, ≥2 signals required, AND the composite
+    // score must sit in the top decile of pages showing any signal. Judgement-gated — a human wrote
+    // "delve" long before LLMs did.
+    id: 'ai-slop-signals', category: 'content', severity: 'low', labels: ['N'], certainty: 0.5, effortBase: 5, fixType: 'per-page',
+    title: 'Prose shows machine-generated (slop) signals', fix: 'This page’s copy trips several statistical tells of generic AI-generated text: stock filler phrases, unusually uniform sentence lengths, and/or sections that all open the same way. Google’s AI-search guidance rewards unique, people-first content with a first-hand point of view — rewrite the flagged sections with specifics only you can supply (real experience, real numbers, real opinions) and cut the filler. (Heuristic — verify by reading the page; competent human writing can trip these tells.)',
+    run: (c) => {
+      const PHRASES = [
+        'in today’s fast-paced world', "in today's fast-paced world", 'in today’s digital age', "in today's digital age",
+        'it’s important to note', "it's important to note", 'it is important to note', 'in conclusion',
+        'harness the power', 'unlock the potential', 'look no further', 'in the realm of', 'navigate the complexities',
+        'a testament to', 'plays a crucial role', 'a wide range of', 'when it comes to', 'at the end of the day',
+        'whether you’re a', "whether you're a", 'let’s dive', "let's dive", 'dive into the world of',
+        'elevate your', 'take your * to the next level', 'game-changer', 'game changer', 'cutting-edge', 'ever-evolving',
+        'treasure trove', 'rich tapestry', 'delve', 'delving', 'seamlessly', 'revolutionize', 'revolutionise', 'unleash',
+      ].filter(p => !p.includes('*'));
+      type M = { urlKey: string; score: number; signals: number; hits: Map<string, number>; density: number; cv: number | null; opener: { text: string; n: number } | null; sentences: number };
+      const metrics: M[] = [];
+      for (const x of iterRows(c, `SELECT url_key urlKey, word_count wc, body_chunks bc FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND word_count >= 300 AND body_chunks IS NOT NULL`)) {
+        let chunks: any[]; try { chunks = JSON.parse(x.bc); } catch { continue; }
+        const texts = chunks.map((k: any) => String(k.text || '')).filter(t => t.length > 0);
+        if (!texts.length) continue;
+        const body = texts.join(' ').toLowerCase();
+        const bodyWords = body.split(/\s+/).filter(Boolean).length;
+        if (bodyWords < 250) continue;
+        // (i) slop-lexicon density (hits per 1000 words, ≥3 distinct terms required)
+        const hits = new Map<string, number>();
+        for (const p of PHRASES) {
+          let n = 0, i = -1;
+          while ((i = body.indexOf(p, i + 1)) !== -1) n++;
+          if (n) hits.set(p, n);
+        }
+        const totalHits = [...hits.values()].reduce((a, b) => a + b, 0);
+        const density = totalHits / bodyWords * 1000;
+        const lexSignal = hits.size >= 3 && density >= 2.5;
+        // (ii) sentence-length uniformity — coefficient of variation over sentence word-counts
+        const sentences = body.split(/[.!?]+\s/).map(s => s.split(/\s+/).filter(Boolean).length).filter(n => n >= 5 && n <= 60);
+        let cv: number | null = null;
+        if (sentences.length >= 12) {
+          const mean = sentences.reduce((a, b) => a + b, 0) / sentences.length;
+          cv = Math.sqrt(sentences.reduce((a, b) => a + (b - mean) ** 2, 0) / sentences.length) / mean;
+        }
+        const uniformSignal = cv !== null && cv < 0.28;
+        // (iii) repeated openers across the page's own chunks (first 3 words, ≥3 chunks sharing one)
+        const openers = new Map<string, number>();
+        if (texts.length >= 5) for (const t of texts) {
+          // Letters only — numeric/UI-chrome openers ("Show 10 20…") are widget text, not prose.
+          const o = t.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2).slice(0, 3).join(' ');
+          if (o.split(' ').length === 3) openers.set(o, (openers.get(o) ?? 0) + 1);
+        }
+        const topOpener = [...openers.entries()].sort((a, b) => b[1] - a[1])[0];
+        const boilerSignal = !!topOpener && topOpener[1] >= 3;
+        const signals = (lexSignal ? 1 : 0) + (uniformSignal ? 1 : 0) + (boilerSignal ? 1 : 0);
+        if (signals === 0) continue;
+        const score = density + (uniformSignal ? 3 : 0) + (boilerSignal ? 2 : 0);
+        metrics.push({ urlKey: x.urlKey, score, signals, hits, density, cv, opener: boilerSignal ? { text: topOpener![0], n: topOpener![1] } : null, sentences: sentences.length });
+      }
+      if (!metrics.length) return [];
+      // Outliers only: the LEXICON signal is mandatory (uniform sentences + repeated openers
+      // without a single slop phrase is template chrome, not slop — live-verified on simracing),
+      // plus ≥1 corroborating signal, AND composite score in the top decile of pages that showed
+      // any signal at all.
+      const sorted = metrics.map(m => m.score).sort((a, b) => a - b);
+      const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+      return metrics
+        .filter(m => m.signals >= 2 && m.hits.size >= 3 && m.density >= 2.5 && m.score >= p90)
+        .sort((a, b) => b.score - a.score).slice(0, 30)
+        .map(m => ({ urlKey: m.urlKey, evidence: {
+          slopPhrases: [...m.hits.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([p, n]) => `${p} ×${n}`),
+          lexDensityPer1000: Math.round(m.density * 10) / 10,
+          sentenceLengthCV: m.cv !== null ? Math.round(m.cv * 100) / 100 : null,
+          repeatedOpener: m.opener ? `"${m.opener.text}…" opens ${m.opener.n} sections` : null,
+          sentencesMeasured: m.sentences,
+          note: 'multiple statistical slop signals — verify by reading before rewriting',
+        } }));
+    },
+  },
+  {
+    // The guide's "unique point of view based on personal experience or expertise", cut down to its
+    // deterministically checkable slice: an Article/BlogPosting that carries schema yet names no
+    // author. Attribution is the machine-readable experience/expertise signal; a byline-less article
+    // is the commodity-content default. Only fires where Article schema EXISTS (no schema at all is
+    // schema-opportunity territory, not this check).
+    id: 'article-no-author', category: 'schema', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Article schema with no author attribution', fix: 'This page marks itself up as an Article/BlogPosting but declares no author. Google’s AI-search guidance rewards content with a demonstrable first-hand point of view — add `author` (a Person with a real name, ideally linking to an author page) to the Article schema and a visible byline to match.',
+    run: (c) => {
+      const out: RawFinding[] = [];
+      for (const r of rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND indexable=1 AND json_ld LIKE '%Article%'`)) {
+        for (const n of parseJsonLdNodes(r.jsonLd)) {
+          const t = nodeType(n);
+          if (!t || !/^(article|blogposting|newsarticle|techarticle|scholarlyarticle)$/i.test(t)) continue;
+          const a = (n as any).author;
+          const named = (v: any): boolean => !!v && (typeof v === 'string' ? v.trim().length > 0
+            : Array.isArray(v) ? v.some(named) : typeof v === 'object' && typeof v.name === 'string' && v.name.trim().length > 0);
+          if (!named(a)) { out.push({ urlKey: r.urlKey, evidence: { schemaType: t, author: a ?? null, note: 'Article markup present, author absent or unnamed' } }); break; }
+        }
+      }
+      return out;
+    },
+  },
 ];
 
 const sitemapHasRows = (c: CheckContext): boolean =>
