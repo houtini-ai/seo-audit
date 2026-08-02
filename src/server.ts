@@ -871,8 +871,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   );
 
   // Strip any scheme/sc-domain:/path down to a bare host for Labs domain targets.
+  // Always strips leading www. — Labs treats www.example.com as a subdomain, not the domain.
   const dfsHost = (t: string): string =>
-    t.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim();
+    t.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '').trim();
   // Cap a markdown table well under the ~40k model-facing ceiling: keep whole rows, note the rest.
   const capMdRows = (header: string, rows: string[], footer = '', maxChars = 30000): string => {
     let out = header;
@@ -961,13 +962,14 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme'),
         location: z.union([z.string(), z.number()]).optional(),
+        languageCode: z.string().optional(),
         limit: z.number().int().min(1).max(100).optional(),
       },
     },
-    async ({ target, location, limit }) => {
+    async ({ target, location, languageCode, limit }) => {
       const client = requireDfs(dfs);
       const cleaned = dfsHost(target);
-      const r = await client.relevantPages(cleaned, location, 'en', limit ?? 25);
+      const r = await client.relevantPages(cleaned, location, languageCode ?? 'en', limit ?? 25);
       const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
       const n = (v: unknown): number => Number(v) || 0;
       const pages = items
@@ -1000,7 +1002,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const md = capMdRows(header, rows, `\n\n${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
       return {
         content: [{ type: 'text', text: md }],
-        structuredContent: { target: cleaned, pages, cached: r.cached, cost: r.cost },
+        structuredContent: { target: cleaned, rowsTotal: pages.length, pages: pages.slice(0, 100), cached: r.cached, cost: r.cost },
       };
     },
   );
@@ -1015,11 +1017,12 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         scope: z.enum(['domain', 'subdomain', 'url', 'folder']).optional(),
         folder: z.string().optional().describe('Required when scope is folder, e.g. "/blog/"'),
         location: z.union([z.string(), z.number()]).optional(),
+        languageCode: z.string().optional(),
         limit: z.number().int().min(1).max(200).optional(),
         orderBy: z.enum(['etv', 'volume', 'position']).optional(),
       },
     },
-    async ({ target, scope, folder, location, limit, orderBy }) => {
+    async ({ target, scope, folder, location, languageCode, limit, orderBy }) => {
       const client = requireDfs(dfs);
       const mode = scope ?? 'domain';
       if (mode === 'folder' && !folder?.trim()) throw new Error('scope:"folder" requires the `folder` input (e.g. "/blog/").');
@@ -1031,10 +1034,13 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         : orderBy === 'position'
           ? 'ranked_serp_element.serp_item.rank_absolute,asc'
           : 'ranked_serp_element.serp_item.etv,desc';
-      const filters = mode === 'folder'
-        ? [['ranked_serp_element.serp_item.relative_url', 'like', `${folder!.trim()}%`]]
+      const folderPath = mode === 'folder'
+        ? (folder!.trim().startsWith('/') ? folder!.trim() : '/' + folder!.trim())
+        : null;
+      const filters = folderPath
+        ? [['ranked_serp_element.serp_item.relative_url', 'like', `${folderPath}%`]]
         : undefined;
-      const r = await client.rankedKeywords(dfsTarget, location, 'en', limit ?? 50, order, filters as unknown[] | undefined);
+      const r = await client.rankedKeywords(dfsTarget, location, languageCode ?? 'en', limit ?? 50, order, filters as unknown[] | undefined);
       const result = r.tasks[0]?.result?.[0] ?? {};
       const items: any[] = result.items ?? [];
       const kws = items
@@ -1051,7 +1057,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           };
         })
         .filter((k): k is NonNullable<typeof k> => k != null);
-      const scopeLabel = mode === 'folder' ? `${dfsTarget}${folder!.trim()}*` : dfsTarget;
+      const scopeLabel = folderPath ? `${dfsTarget}${folderPath}*` : dfsTarget;
       if (!kws.length) {
         return {
           content: [{ type: 'text', text: `No ranked keywords found for ${scopeLabel} (scope: ${mode}) — check the target, scope and location.` }],
@@ -1069,7 +1075,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         `\n\nTotals: ${fmtNum(totalCount)} keywords ranked, listed rows sum ${fmtNum(sumEtv)} ETV. ${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
       return {
         content: [{ type: 'text', text: md }],
-        structuredContent: { target: dfsTarget, scope: mode, totalCount, keywords: kws, cached: r.cached, cost: r.cost },
+        structuredContent: { target: dfsTarget, scope: mode, totalCount, rowsTotal: kws.length, keywords: kws.slice(0, 100), cached: r.cached, cost: r.cost },
       };
     },
   );
