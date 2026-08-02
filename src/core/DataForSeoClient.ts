@@ -164,10 +164,49 @@ export class DataForSeoClient {
   }
 
   /** Labs — domain ranking distribution over time (monthly). The over-time sequence. */
-  async historicalRankOverview(target: string, location?: string | number, languageCode = 'en'): Promise<DfsResponse> {
+  async historicalRankOverview(target: string, location?: string | number, languageCode = 'en', languageName?: string): Promise<DfsResponse> {
     return this.call('/v3/dataforseo_labs/google/historical_rank_overview/live', [
-      { target, ...this.loc(location), language_code: languageCode },
+      { target, ...this.loc(location), ...(languageName ? { language_name: languageName } : { language_code: languageCode }) },
     ]);
+  }
+
+  /** Labs — a domain's top ranking pages by estimated organic traffic (relevant_pages). */
+  async relevantPages(target: string, location?: string | number, languageCode = 'en', limit = 25): Promise<DfsResponse> {
+    return this.call('/v3/dataforseo_labs/google/relevant_pages/live', [
+      {
+        target,
+        ...this.loc(location),
+        language_code: languageCode,
+        limit: Math.min(limit, 1000),
+        order_by: ['metrics.organic.etv,desc'],
+        item_types: ['organic'],
+      },
+    ]);
+  }
+
+  /**
+   * Labs — every keyword a target ranks for. `target` may be a domain, a subdomain,
+   * or a full URL (DataForSEO switches mode on the shape). Optional `filters` narrows
+   * to e.g. a subfolder via ranked_serp_element.serp_item.relative_url LIKE.
+   */
+  async rankedKeywords(
+    target: string,
+    location?: string | number,
+    languageCode = 'en',
+    limit = 50,
+    orderBy = 'ranked_serp_element.serp_item.etv,desc',
+    filters?: unknown[],
+  ): Promise<DfsResponse> {
+    const body: Record<string, unknown> = {
+      target,
+      ...this.loc(location),
+      language_code: languageCode,
+      limit: Math.min(limit, 1000),
+      order_by: [orderBy],
+      item_types: ['organic'],
+    };
+    if (filters && filters.length) body.filters = filters;
+    return this.call('/v3/dataforseo_labs/google/ranked_keywords/live', [body]);
   }
 
   /** Backlinks — overall profile for a domain (total backlinks, referring domains, spam). Cheap. */

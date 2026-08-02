@@ -98,6 +98,9 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **page_lighthouse** — lab Core Web Vitals + opportunities for one URL (~20–120s). _"Run Lighthouse on https://example.com/slow-page"_
 - **competitors_domain** — domains competing for your organic keywords. _"Find competitors for example.com in the UK"_
 - **page_intersection** — keywords competitor pages rank for but yours doesn’t (content gap). _"Content gap: competitorUrls [\\"https://rival.com/guide\\"], excludePages [\\"https://example.com/guide\\"]"_
+- **domain_visibility** — monthly ranking-keyword distribution + ETV trend for ANY domain/subdomain (Semrush-style organic overview). _"Show visibility over time for competitor.com"_
+- **top_pages** — a domain's top organic pages by estimated traffic. _"Top pages on competitor.com"_
+- **ranked_keywords** — keywords a domain / subdomain / URL / subfolder ranks for. _"What does competitor.com/blog/ rank for?"_ · \`scope:url|folder\`
 
 ## 5. Templates & opportunities
 - **list_templates** — cluster pages into templates (one fix → N pages) with a representative exemplar. _"List page templates for example.com"_
@@ -863,6 +866,210 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: `${items.length} gap keywords${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}` }],
         structuredContent: { gaps: items, cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  // Strip any scheme/sc-domain:/path down to a bare host for Labs domain targets.
+  const dfsHost = (t: string): string =>
+    t.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim();
+  // Cap a markdown table well under the ~40k model-facing ceiling: keep whole rows, note the rest.
+  const capMdRows = (header: string, rows: string[], footer = '', maxChars = 30000): string => {
+    let out = header;
+    let used = 0;
+    for (; used < rows.length; used++) {
+      if (out.length + rows[used].length + 1 + footer.length > maxChars) break;
+      out += '\n' + rows[used];
+    }
+    if (used < rows.length) out += `\n\n_+${rows.length - used} more rows (truncated for length — lower the limit or use structuredContent)._`;
+    return out + footer;
+  };
+  const fmtNum = (v: unknown): string => {
+    const x = Number(v);
+    return Number.isFinite(x) ? Math.round(x).toLocaleString('en-US') : '—';
+  };
+
+  server.registerTool(
+    'domain_visibility',
+    {
+      title: 'Domain visibility over time (DataForSEO Labs)',
+      description: 'Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic value (ETV) per month, plus a trend verdict. The Semrush-style "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market.',
+      inputSchema: {
+        target: z.string().describe('Domain or subdomain, no scheme (e.g. example.com or blog.example.com)'),
+        location: z.union([z.string(), z.number()]).optional(),
+        languageName: z.string().optional(),
+        months: z.number().int().min(1).max(24).optional(),
+      },
+    },
+    async ({ target, location, languageName, months }) => {
+      const client = requireDfs(dfs);
+      const cleaned = dfsHost(target);
+      const r = await client.historicalRankOverview(cleaned, location, 'en', languageName);
+      const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
+      const n = (v: unknown): number => Number(v) || 0;
+      // Guard year/month — a malformed item would emit an "undefined-NaN" period row.
+      const series = items
+        .filter((it: any) => Number.isInteger(it?.year) && Number.isInteger(it?.month))
+        .map((it: any) => {
+          const o = it.metrics?.organic ?? {};
+          const pos_1_3 = n(o.pos_1) + n(o.pos_2_3);
+          const pos_4_10 = n(o.pos_4_10);
+          const pos_11_20 = n(o.pos_11_20);
+          const pos_21_100 =
+            n(o.pos_21_30) + n(o.pos_31_40) + n(o.pos_41_50) + n(o.pos_51_60) +
+            n(o.pos_61_70) + n(o.pos_71_80) + n(o.pos_81_90) + n(o.pos_91_100);
+          return {
+            period: `${it.year}-${String(it.month).padStart(2, '0')}`,
+            keywords: n(o.count) || (pos_1_3 + pos_4_10 + pos_11_20 + pos_21_100),
+            pos_1_3, pos_4_10, pos_11_20, pos_21_100,
+            etv: Math.round(n(o.etv) * 100) / 100,
+          };
+        })
+        .sort((a, b) => (a.period < b.period ? -1 : 1))
+        .slice(-(months ?? 12));
+      if (!series.length) {
+        return {
+          content: [{ type: 'text', text: `No historical rank data for ${cleaned} — check the target (bare domain/subdomain) and location.` }],
+          structuredContent: { target: cleaned, series: [], cached: r.cached, cost: r.cost },
+        };
+      }
+      const first = series[0];
+      const last = series[series.length - 1];
+      const delta = first.etv > 0 ? ((last.etv - first.etv) / first.etv) * 100 : (last.etv > 0 ? 100 : 0);
+      const verdict =
+        Math.abs(delta) < 10
+          ? `flat (ETV ${fmtNum(first.etv)} → ${fmtNum(last.etv)}, ${delta >= 0 ? '+' : ''}${delta.toFixed(0)}% ${first.period} → ${last.period})`
+          : `${delta > 0 ? 'rising' : 'declining'} (ETV ${fmtNum(first.etv)} → ${fmtNum(last.etv)}, ${delta > 0 ? '+' : ''}${delta.toFixed(0)}% ${first.period} → ${last.period})`;
+      const header = `**${cleaned}** — organic visibility, last ${series.length} months. Trend: ${verdict}\n\n` +
+        `| Period | Keywords | Pos 1–3 | Pos 4–10 | Pos 11–20 | Pos 21–100 | ETV |\n|---|---|---|---|---|---|---|`;
+      const rows = series.map(s =>
+        `| ${s.period} | ${fmtNum(s.keywords)} | ${fmtNum(s.pos_1_3)} | ${fmtNum(s.pos_4_10)} | ${fmtNum(s.pos_11_20)} | ${fmtNum(s.pos_21_100)} | ${fmtNum(s.etv)} |`,
+      );
+      const md = capMdRows(header, rows, `\n\n${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
+      return {
+        content: [{ type: 'text', text: md }],
+        structuredContent: { target: cleaned, months: series.length, verdict, series, cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  server.registerTool(
+    'top_pages',
+    {
+      title: 'Top ranking pages on a domain (DataForSEO Labs)',
+      description: 'The top organic pages of ANY domain or subdomain, ranked by estimated traffic value (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The Semrush-style "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market.',
+      inputSchema: {
+        target: z.string().describe('Domain or subdomain, no scheme'),
+        location: z.union([z.string(), z.number()]).optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    async ({ target, location, limit }) => {
+      const client = requireDfs(dfs);
+      const cleaned = dfsHost(target);
+      const r = await client.relevantPages(cleaned, location, 'en', limit ?? 25);
+      const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
+      const n = (v: unknown): number => Number(v) || 0;
+      const pages = items
+        .map((it: any) => {
+          const page = it.page_address ?? it.relative_url ?? null;
+          if (!page) return null; // skip malformed rows
+          const o = it.metrics?.organic ?? {};
+          const top3 = n(o.pos_1) + n(o.pos_2_3);
+          return {
+            page,
+            keywords: n(o.count),
+            etv: Math.round(n(o.etv) * 100) / 100,
+            top3,
+            top10: top3 + n(o.pos_4_10),
+          };
+        })
+        .filter((p): p is NonNullable<typeof p> => p != null)
+        .sort((a, b) => b.etv - a.etv);
+      if (!pages.length) {
+        return {
+          content: [{ type: 'text', text: `No ranking pages found for ${cleaned} — check the target and location.` }],
+          structuredContent: { target: cleaned, pages: [], cached: r.cached, cost: r.cost },
+        };
+      }
+      const header = `**${cleaned}** — top ${pages.length} pages by estimated organic traffic\n\n` +
+        `| # | Page | Keywords | ETV | Top 3 | Top 10 |\n|---|---|---|---|---|---|`;
+      const rows = pages.map((p, i) =>
+        `| ${i + 1} | ${String(p.page).replace(/\|/g, '\\|')} | ${fmtNum(p.keywords)} | ${fmtNum(p.etv)} | ${fmtNum(p.top3)} | ${fmtNum(p.top10)} |`,
+      );
+      const md = capMdRows(header, rows, `\n\n${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
+      return {
+        content: [{ type: 'text', text: md }],
+        structuredContent: { target: cleaned, pages, cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  server.registerTool(
+    'ranked_keywords',
+    {
+      title: 'Ranked keywords for a domain / URL / folder (DataForSEO Labs)',
+      description: 'Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV and the ranking URL, ordered by ETV / volume / position. The Semrush-style "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market.',
+      inputSchema: {
+        target: z.string().describe('Domain, subdomain, or full URL (full URL required for scope:url)'),
+        scope: z.enum(['domain', 'subdomain', 'url', 'folder']).optional(),
+        folder: z.string().optional().describe('Required when scope is folder, e.g. "/blog/"'),
+        location: z.union([z.string(), z.number()]).optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+        orderBy: z.enum(['etv', 'volume', 'position']).optional(),
+      },
+    },
+    async ({ target, scope, folder, location, limit, orderBy }) => {
+      const client = requireDfs(dfs);
+      const mode = scope ?? 'domain';
+      if (mode === 'folder' && !folder?.trim()) throw new Error('scope:"folder" requires the `folder` input (e.g. "/blog/").');
+      const dfsTarget = mode === 'url'
+        ? (/^https?:\/\//i.test(target) ? target : `https://${target}`)
+        : dfsHost(target);
+      const order = orderBy === 'volume'
+        ? 'keyword_data.keyword_info.search_volume,desc'
+        : orderBy === 'position'
+          ? 'ranked_serp_element.serp_item.rank_absolute,asc'
+          : 'ranked_serp_element.serp_item.etv,desc';
+      const filters = mode === 'folder'
+        ? [['ranked_serp_element.serp_item.relative_url', 'like', `${folder!.trim()}%`]]
+        : undefined;
+      const r = await client.rankedKeywords(dfsTarget, location, 'en', limit ?? 50, order, filters as unknown[] | undefined);
+      const result = r.tasks[0]?.result?.[0] ?? {};
+      const items: any[] = result.items ?? [];
+      const kws = items
+        .map((it: any) => {
+          const kd = it.keyword_data ?? {};
+          const serp = it.ranked_serp_element?.serp_item ?? {};
+          if (!kd.keyword) return null; // skip malformed rows
+          return {
+            keyword: kd.keyword as string,
+            position: Number(serp.rank_absolute) || null,
+            searchVolume: kd.keyword_info?.search_volume ?? null,
+            etv: serp.etv != null ? Math.round(Number(serp.etv) * 100) / 100 : null,
+            url: serp.relative_url ?? serp.url ?? null,
+          };
+        })
+        .filter((k): k is NonNullable<typeof k> => k != null);
+      const scopeLabel = mode === 'folder' ? `${dfsTarget}${folder!.trim()}*` : dfsTarget;
+      if (!kws.length) {
+        return {
+          content: [{ type: 'text', text: `No ranked keywords found for ${scopeLabel} (scope: ${mode}) — check the target, scope and location.` }],
+          structuredContent: { target: dfsTarget, scope: mode, keywords: [], cached: r.cached, cost: r.cost },
+        };
+      }
+      const totalCount = Number(result.total_count) || kws.length;
+      const sumEtv = kws.reduce((s, k) => s + (k.etv ?? 0), 0);
+      const header = `**${scopeLabel}** (scope: ${mode}) — ${kws.length} of ${fmtNum(totalCount)} ranked keywords, ordered by ${orderBy ?? 'etv'}\n\n` +
+        `| Keyword | Pos | Volume | ETV | URL |\n|---|---|---|---|---|`;
+      const rows = kws.map(k =>
+        `| ${k.keyword.replace(/\|/g, '\\|')} | ${k.position ?? '—'} | ${fmtNum(k.searchVolume)} | ${fmtNum(k.etv)} | ${k.url ? String(k.url).replace(/\|/g, '\\|') : '—'} |`,
+      );
+      const md = capMdRows(header, rows,
+        `\n\nTotals: ${fmtNum(totalCount)} keywords ranked, listed rows sum ${fmtNum(sumEtv)} ETV. ${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
+      return {
+        content: [{ type: 'text', text: md }],
+        structuredContent: { target: dfsTarget, scope: mode, totalCount, keywords: kws, cached: r.cached, cost: r.cost },
       };
     },
   );
