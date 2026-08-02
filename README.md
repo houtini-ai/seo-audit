@@ -145,6 +145,10 @@ The trends family surfaces decay: pages losing clicks year-on-year, page-one ran
 
 `suggest_pages` works from your own impressions - demand Google has already shown you, at rank 11+, with no winning page. It de-duplicates ruthlessly (it won't suggest a page you've already got, or a topic one URL already dominates) and names the nearest existing page to link each new one from, so nothing launches as an orphan. With DataForSEO connected, size each idea with real volumes and add the competitor gap: queries they rank for where you don't appear at all.
 
+> What topics should mysite.com cover? Compare against rival.com
+
+`topic_gaps` answers the bigger question: what should we cover to be seen as expert in this space? It pulls what your competitors rank for (a handful of bounded, cached DataForSEO calls), subtracts every query you already appear for and every topic your pages already cover, then clusters what survives into ranked topics - each with real volumes, the competitor that owns it, an example of their winning page, and the nearest page of yours to build from. Name the competitors yourself or let it derive them from ranking overlap. Where `suggest_pages` mines demand Google has already shown you, this maps the demand it hasn't.
+
 ### 6. The template play
 
 > List the page templates on mysite.com
@@ -267,6 +271,8 @@ Only `GOOGLE_APPLICATION_CREDENTIALS` is required. Restart Claude Desktop, then 
 | `domain_visibility` | Monthly ranking distribution + ETV trend for any domain (Semrush-style overview) |
 | `top_pages` | Any domain's top organic pages by estimated traffic |
 | `ranked_keywords` | Keywords a domain / subdomain / URL / subfolder ranks for (+ difficulty, intent, SERP features; `aioOnly:true` = keywords citing the target in AI Overviews) |
+| `topic_gaps` | Topics competitors own that you don't cover at all, clustered and ranked by volume, with your nearest page to build from |
+| `composition_cookbook` | The data-surface map (grain + join keys per source) and worked multi-source recipes, for composing bespoke analyses |
 | `page_lighthouse` · `pull_backlinks` | Lab CWV · backlink profile with live status |
 | `normalize_url` · `data_location` · `list_properties` | Utilities |
 | `seo_audit_help` | Every feature, with an example prompt |
