@@ -37,10 +37,10 @@ export class GscSync {
 
       const insert = db.db.prepare(
         `INSERT INTO search_analytics
-           (date, query, page, page_key, device, country, clicks, impressions, ctr, position)
-         VALUES (@date, @query, @page, @page_key, @device, @country, @clicks, @impressions, @ctr, @position)
+           (date, query, page, page_key, device, country, search_type, clicks, impressions, ctr, position)
+         VALUES (@date, @query, @page, @page_key, @device, @country, @search_type, @clicks, @impressions, @ctr, @position)
          ON CONFLICT(date, query, page, device, country) DO UPDATE SET
-           clicks = excluded.clicks, impressions = excluded.impressions,
+           clicks = excluded.clicks, impressions = excluded.impressions, search_type = excluded.search_type,
            ctr = excluded.ctr, position = excluded.position, page_key = excluded.page_key`,
       );
       const insertMany = db.db.transaction((records: Record<string, unknown>[]) => {
@@ -69,6 +69,17 @@ export class GscSync {
       // API call fails or the job is aborted before any rows arrive, months of history are
       // NOT destroyed and replaced by nothing.
       let mustWipe = (wantsSegments && hasLite) || (!wantsSegments && hasSegmented);
+      // Search-type guard (mirrors the lite/segmented shape-guard): the unique index
+      // (date,query,page,device,country) does NOT include search_type — rebuilding it on existing
+      // rows would rewrite months of history — so the table holds ONE search type at a time.
+      // Syncing a different type (e.g. discover over web history) would silently mix/overwrite
+      // rows; treat it as a shape conflict instead, and let the wipe ride the first batch's
+      // transaction exactly like the lite/segmented wipe (a failed fetch destroys nothing).
+      const wantType = options.searchType ?? 'web';
+      const storedTypes = (db.db
+        .prepare(`SELECT DISTINCT COALESCE(search_type, 'web') t FROM search_analytics`)
+        .all() as { t: string }[]).map(r => r.t);
+      if (storedTypes.length && (storedTypes.length > 1 || storedTypes[0] !== wantType)) mustWipe = true;
       const wipeAndInsert = db.db.transaction((records: Record<string, unknown>[]) => {
         db.db.exec('DELETE FROM search_analytics');
         for (const r of records) insert.run(r);
@@ -109,6 +120,7 @@ export class GscSync {
             page_key: page ? urlKey(page, { hostForm }) : null,
             device: rec.device ?? '', // '' = not segmented (lite); keeps the unique index dedup working
             country: rec.country ?? '',
+            search_type: wantType,
             clicks: row.clicks,
             impressions: row.impressions,
             ctr: row.ctr,

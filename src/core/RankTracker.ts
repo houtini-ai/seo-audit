@@ -40,11 +40,15 @@ export class RankTracker {
       const r = await this.dfs.historicalRankOverview(target, location);
       const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
       const upsert = db.db.prepare(
-        `INSERT INTO rank_history (period, pos_1_3, pos_4_10, pos_11_20, pos_21_100, etv, keyword_count, source, fetched_at)
-         VALUES (@period,@pos_1_3,@pos_4_10,@pos_11_20,@pos_21_100,@etv,@keyword_count,'dataforseo:historical_rank_overview',datetime('now'))
+        `INSERT INTO rank_history (period, pos_1_3, pos_4_10, pos_11_20, pos_21_100, etv, keyword_count,
+           is_new, is_up, is_down, is_lost, estimated_paid_traffic_cost, source, fetched_at)
+         VALUES (@period,@pos_1_3,@pos_4_10,@pos_11_20,@pos_21_100,@etv,@keyword_count,
+           @is_new,@is_up,@is_down,@is_lost,@estimated_paid_traffic_cost,'dataforseo:historical_rank_overview',datetime('now'))
          ON CONFLICT(period) DO UPDATE SET pos_1_3=excluded.pos_1_3, pos_4_10=excluded.pos_4_10,
            pos_11_20=excluded.pos_11_20, pos_21_100=excluded.pos_21_100, etv=excluded.etv,
-           keyword_count=excluded.keyword_count, fetched_at=datetime('now')`,
+           keyword_count=excluded.keyword_count, is_new=excluded.is_new, is_up=excluded.is_up,
+           is_down=excluded.is_down, is_lost=excluded.is_lost,
+           estimated_paid_traffic_cost=excluded.estimated_paid_traffic_cost, fetched_at=datetime('now')`,
       );
       const rows = items.filter(it => Number.isInteger(it?.year) && Number.isInteger(it?.month)).map(it => {
         const o = it.metrics?.organic ?? {};
@@ -63,6 +67,9 @@ export class RankTracker {
           period, pos_1_3, pos_4_10, pos_11_20, pos_21_100,
           etv: n(o.etv),
           keyword_count: n(o.count) || (pos_1_3 + pos_4_10 + pos_11_20 + pos_21_100),
+          // Keyword-movement counts + paid-value equivalent — same response, previously dropped.
+          is_new: n(o.is_new), is_up: n(o.is_up), is_down: n(o.is_down), is_lost: n(o.is_lost),
+          estimated_paid_traffic_cost: o.estimated_paid_traffic_cost != null ? n(o.estimated_paid_traffic_cost) : null,
         };
       });
       const tx = db.db.transaction((rs: Record<string, unknown>[]) => { for (const row of rs) upsert.run(row); });

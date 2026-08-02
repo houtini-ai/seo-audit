@@ -21,7 +21,11 @@ async function statusOf(url: string, ua: string): Promise<number | null> {
 
 export interface BacklinksResult {
   siteUrl: string; target: string; pages: number; statusChecked: number;
-  totalBacklinks: number; referringDomains: number; cached: boolean; cost: number;
+  totalBacklinks: number; referringDomains: number;
+  domainRank: number | null;          // DataForSEO Domain Rank (0–1000)
+  brokenBacklinks: number; brokenPages: number;
+  nofollowPct: number | null;         // share of referring links marked nofollow (0–1)
+  cached: boolean; cost: number;
 }
 
 /**
@@ -60,10 +64,19 @@ export class Backlinks {
         );
       }
       const s = task.result?.[0] ?? {};
+      // Summary extras previously dropped from the same paid response: Domain Rank (the authority
+      // number), broken backlinks/pages (equity leaks Google's link graph sees), nofollow share.
+      const nofollowPct = n(s.backlinks) > 0 ? n(s.referring_links_attributes?.nofollow) / n(s.backlinks) : null;
       db.db.prepare(
-        `UPDATE property_meta SET total_backlinks=?, referring_domains=?, backlinks_spam_score=?, backlinks_fetched_at=datetime('now') WHERE site_url=?`,
-      ).run(n(s.backlinks), n(s.referring_domains), s.backlinks_spam_score ?? null, siteUrl);
-      update({ phase: 'summary', backlinks: n(s.backlinks), referringDomains: n(s.referring_domains) });
+        `UPDATE property_meta SET total_backlinks=?, referring_domains=?, backlinks_spam_score=?,
+           backlinks_rank=?, broken_backlinks=?, broken_pages=?, backlinks_nofollow_pct=?,
+           backlinks_fetched_at=datetime('now') WHERE site_url=?`,
+      ).run(
+        n(s.backlinks), n(s.referring_domains), s.backlinks_spam_score ?? null,
+        s.rank != null ? n(s.rank) : null, n(s.broken_backlinks), n(s.broken_pages), nofollowPct,
+        siteUrl,
+      );
+      update({ phase: 'summary', backlinks: n(s.backlinks), referringDomains: n(s.referring_domains), rank: s.rank ?? null });
 
       // 2. Per-page backlink counts → page_backlinks
       const res = await this.dfs.domainPagesSummary(target, opts.limit ?? 1000);
@@ -111,6 +124,9 @@ export class Backlinks {
       return {
         siteUrl, target, pages: rows.length, statusChecked: fetched.size,
         totalBacklinks: n(s.backlinks), referringDomains: n(s.referring_domains),
+        domainRank: s.rank != null ? n(s.rank) : null,
+        brokenBacklinks: n(s.broken_backlinks), brokenPages: n(s.broken_pages),
+        nofollowPct: nofollowPct != null ? Math.round(nofollowPct * 1000) / 1000 : null,
         cached: sum.cached && res.cached, cost: sum.cost + res.cost,
       };
     } finally {

@@ -456,6 +456,24 @@ export class AuditDatabase {
     ensure('property_meta', 'referring_domains', 'referring_domains INTEGER');
     ensure('property_meta', 'backlinks_spam_score', 'backlinks_spam_score REAL');
     ensure('property_meta', 'backlinks_fetched_at', 'backlinks_fetched_at TEXT');
+    // backlinks/summary extras (same paid response): Domain Rank, equity leaks, nofollow share
+    ensure('property_meta', 'backlinks_rank', 'backlinks_rank INTEGER');           // DataForSEO Domain Rank (0–1000)
+    ensure('property_meta', 'broken_backlinks', 'broken_backlinks INTEGER');
+    ensure('property_meta', 'broken_pages', 'broken_pages INTEGER');
+    ensure('property_meta', 'backlinks_nofollow_pct', 'backlinks_nofollow_pct REAL'); // share of referring links marked nofollow (0–1)
+    // rank_history keyword-movement counts + paid-value — same historical_rank_overview response we already pay for
+    ensure('rank_history', 'is_new', 'is_new INTEGER');
+    ensure('rank_history', 'is_up', 'is_up INTEGER');
+    ensure('rank_history', 'is_down', 'is_down INTEGER');
+    ensure('rank_history', 'is_lost', 'is_lost INTEGER');
+    ensure('rank_history', 'estimated_paid_traffic_cost', 'estimated_paid_traffic_cost REAL');
+    // url_inspection: sample of referring pages Google reports for the URL (JSON array of URLs)
+    ensure('url_inspection', 'referring_urls', 'referring_urls TEXT');
+    // GSC search type ('web' | 'discover' | 'googleNews' | 'image' | 'video'). NOTE: the unique
+    // index idx_sa_unique deliberately does NOT include this column (rebuilding it on existing
+    // rows would rewrite months of history) — the table therefore holds ONE search type at a
+    // time, enforced by the mode-guard in GscSync (a type switch wipes, riding the first batch).
+    ensure('search_analytics', 'search_type', "search_type TEXT DEFAULT 'web'");
   }
 
   // ── Minimal property accessors (full CRUD added as modules are wired) ─────

@@ -100,7 +100,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **page_intersection** — keywords competitor pages rank for but yours doesn’t (content gap). _"Content gap: competitorUrls [\\"https://rival.com/guide\\"], excludePages [\\"https://example.com/guide\\"]"_
 - **domain_visibility** — monthly ranking-keyword distribution + ETV trend for ANY domain/subdomain (Semrush-style organic overview). _"Show visibility over time for competitor.com"_
 - **top_pages** — a domain's top organic pages by estimated traffic. _"Top pages on competitor.com"_
-- **ranked_keywords** — keywords a domain / subdomain / URL / subfolder ranks for. _"What does competitor.com/blog/ rank for?"_ · \`scope:url|folder\`
+- **ranked_keywords** — keywords a domain / subdomain / URL / subfolder ranks for (+ difficulty, intent, SERP features). _"What does competitor.com/blog/ rank for?"_ · \`scope:url|folder\` · \`aioOnly:true\` = keywords where the target is cited in AI Overviews
 
 ## 5. Templates & opportunities
 - **list_templates** — cluster pages into templates (one fix → N pages) with a representative exemplar. _"List page templates for example.com"_
@@ -924,6 +924,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             keywords: n(o.count) || (pos_1_3 + pos_4_10 + pos_11_20 + pos_21_100),
             pos_1_3, pos_4_10, pos_11_20, pos_21_100,
             etv: Math.round(n(o.etv) * 100) / 100,
+            isNew: n(o.is_new), isLost: n(o.is_lost), isUp: n(o.is_up), isDown: n(o.is_down),
           };
         })
         .sort((a, b) => (a.period < b.period ? -1 : 1))
@@ -942,9 +943,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           ? `flat (ETV ${fmtNum(first.etv)} → ${fmtNum(last.etv)}, ${delta >= 0 ? '+' : ''}${delta.toFixed(0)}% ${first.period} → ${last.period})`
           : `${delta > 0 ? 'rising' : 'declining'} (ETV ${fmtNum(first.etv)} → ${fmtNum(last.etv)}, ${delta > 0 ? '+' : ''}${delta.toFixed(0)}% ${first.period} → ${last.period})`;
       const header = `**${cleaned}** — organic visibility, last ${series.length} months. Trend: ${verdict}\n\n` +
-        `| Period | Keywords | Pos 1–3 | Pos 4–10 | Pos 11–20 | Pos 21–100 | ETV |\n|---|---|---|---|---|---|---|`;
+        `| Period | Keywords | Pos 1–3 | Pos 4–10 | Pos 11–20 | Pos 21–100 | New | Lost | ETV |\n|---|---|---|---|---|---|---|---|---|`;
       const rows = series.map(s =>
-        `| ${s.period} | ${fmtNum(s.keywords)} | ${fmtNum(s.pos_1_3)} | ${fmtNum(s.pos_4_10)} | ${fmtNum(s.pos_11_20)} | ${fmtNum(s.pos_21_100)} | ${fmtNum(s.etv)} |`,
+        `| ${s.period} | ${fmtNum(s.keywords)} | ${fmtNum(s.pos_1_3)} | ${fmtNum(s.pos_4_10)} | ${fmtNum(s.pos_11_20)} | ${fmtNum(s.pos_21_100)} | ${fmtNum(s.isNew)} | ${fmtNum(s.isLost)} | ${fmtNum(s.etv)} |`,
       );
       const md = capMdRows(header, rows, `\n\n${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
       return {
@@ -1011,7 +1012,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'ranked_keywords',
     {
       title: 'Ranked keywords for a domain / URL / folder (DataForSEO Labs)',
-      description: 'Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV and the ranking URL, ordered by ETV / volume / position. The Semrush-style "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market.',
+      description: 'Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV, the ranking URL, plus keyword difficulty, search intent and SERP features where the response carries them. Set aioOnly:true to list only keywords where the target is CITED as a source in Google AI Overviews (the "which keywords cite us in AIO" view). The Semrush-style "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market.',
       inputSchema: {
         target: z.string().describe('Domain, subdomain, or full URL (full URL required for scope:url)'),
         scope: z.enum(['domain', 'subdomain', 'url', 'folder']).optional(),
@@ -1020,9 +1021,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         languageCode: z.string().optional(),
         limit: z.number().int().min(1).max(200).optional(),
         orderBy: z.enum(['etv', 'volume', 'position']).optional(),
+        aioOnly: z.boolean().optional().describe('Only keywords where the target is cited as an AI Overview source (Labs item_types:["ai_overview"])'),
       },
     },
-    async ({ target, scope, folder, location, languageCode, limit, orderBy }) => {
+    async ({ target, scope, folder, location, languageCode, limit, orderBy, aioOnly }) => {
       const client = requireDfs(dfs);
       const mode = scope ?? 'domain';
       if (mode === 'folder' && !folder?.trim()) throw new Error('scope:"folder" requires the `folder` input (e.g. "/blog/").');
@@ -1040,7 +1042,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const filters = folderPath
         ? [['ranked_serp_element.serp_item.relative_url', 'like', `${folderPath}%`]]
         : undefined;
-      const r = await client.rankedKeywords(dfsTarget, location, languageCode ?? 'en', limit ?? 50, order, filters as unknown[] | undefined);
+      // aioOnly: Labs returns only rows where the target appears as an ai_overview_reference —
+      // i.e. keywords where the domain is CITED as a source in the AI Overview (plan/data-utilisation.md 1a route 2).
+      const itemTypes = aioOnly ? ['ai_overview'] : undefined;
+      const r = await client.rankedKeywords(dfsTarget, location, languageCode ?? 'en', limit ?? 50, order, filters as unknown[] | undefined, itemTypes);
       const result = r.tasks[0]?.result?.[0] ?? {};
       const items: any[] = result.items ?? [];
       const kws = items
@@ -1048,34 +1053,55 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           const kd = it.keyword_data ?? {};
           const serp = it.ranked_serp_element?.serp_item ?? {};
           if (!kd.keyword) return null; // skip malformed rows
+          const serpFeatures: string[] | null = Array.isArray(kd.serp_info?.serp_item_types) ? kd.serp_info.serp_item_types : null;
           return {
             keyword: kd.keyword as string,
             position: Number(serp.rank_absolute) || null,
             searchVolume: kd.keyword_info?.search_volume ?? null,
             etv: serp.etv != null ? Math.round(Number(serp.etv) * 100) / 100 : null,
             url: serp.relative_url ?? serp.url ?? null,
+            // Fields we already pay for but previously dropped (plan/data-utilisation.md Part 2 §4):
+            keywordDifficulty: kd.keyword_properties?.keyword_difficulty ?? null,
+            intent: kd.search_intent_info?.main_intent ?? null,
+            serpFeatures,
+            isFeaturedSnippet: serp.is_featured_snippet === true ? true : null,
           };
         })
         .filter((k): k is NonNullable<typeof k> => k != null);
       const scopeLabel = folderPath ? `${dfsTarget}${folderPath}*` : dfsTarget;
       if (!kws.length) {
         return {
-          content: [{ type: 'text', text: `No ranked keywords found for ${scopeLabel} (scope: ${mode}) — check the target, scope and location.` }],
-          structuredContent: { target: dfsTarget, scope: mode, keywords: [], cached: r.cached, cost: r.cost },
+          content: [{ type: 'text', text: aioOnly
+            ? `No AI Overview citations found for ${scopeLabel} (scope: ${mode}) — the target isn't cited as an AIO source for any tracked keyword in this market.`
+            : `No ranked keywords found for ${scopeLabel} (scope: ${mode}) — check the target, scope and location.` }],
+          structuredContent: { target: dfsTarget, scope: mode, aioOnly: aioOnly ?? false, keywords: [], cached: r.cached, cost: r.cost },
         };
       }
       const totalCount = Number(result.total_count) || kws.length;
       const sumEtv = kws.reduce((s, k) => s + (k.etv ?? 0), 0);
-      const header = `**${scopeLabel}** (scope: ${mode}) — ${kws.length} of ${fmtNum(totalCount)} ranked keywords, ordered by ${orderBy ?? 'etv'}\n\n` +
-        `| Keyword | Pos | Volume | ETV | URL |\n|---|---|---|---|---|`;
+      // Optional columns — only where the response actually carries the field (older cache entries won't).
+      const hasKd = kws.some(k => k.keywordDifficulty != null);
+      const hasIntent = kws.some(k => k.intent != null);
+      const hasFeatures = kws.some(k => (k.serpFeatures && k.serpFeatures.length) || k.isFeaturedSnippet);
+      const optHead = `${hasKd ? ' KD |' : ''}${hasIntent ? ' Intent |' : ''}${hasFeatures ? ' SERP features |' : ''}`;
+      const optSep = `${hasKd ? '---|' : ''}${hasIntent ? '---|' : ''}${hasFeatures ? '---|' : ''}`;
+      const header = `**${scopeLabel}** (scope: ${mode})${aioOnly ? ' — AI Overview citations only' : ''} — ${kws.length} of ${fmtNum(totalCount)} ${aioOnly ? 'citing keywords' : 'ranked keywords'}, ordered by ${orderBy ?? 'etv'}\n\n` +
+        `| Keyword | Pos | Volume | ETV |${optHead} URL |\n|---|---|---|---|${optSep}---|`;
+      const featCell = (k: typeof kws[number]): string => {
+        const f = (k.serpFeatures ?? []).map(t => (t === 'featured_snippet' && k.isFeaturedSnippet ? 'featured_snippet (owned)' : t));
+        if (k.isFeaturedSnippet && !f.some(t => t.startsWith('featured_snippet'))) f.unshift('featured_snippet (owned)');
+        return f.length ? f.join(', ') : '—';
+      };
       const rows = kws.map(k =>
-        `| ${k.keyword.replace(/\|/g, '\\|')} | ${k.position ?? '—'} | ${fmtNum(k.searchVolume)} | ${fmtNum(k.etv)} | ${k.url ? String(k.url).replace(/\|/g, '\\|') : '—'} |`,
+        `| ${k.keyword.replace(/\|/g, '\\|')} | ${k.position ?? '—'} | ${fmtNum(k.searchVolume)} | ${fmtNum(k.etv)} |` +
+        `${hasKd ? ` ${k.keywordDifficulty ?? '—'} |` : ''}${hasIntent ? ` ${k.intent ?? '—'} |` : ''}${hasFeatures ? ` ${featCell(k).replace(/\|/g, '\\|')} |` : ''}` +
+        ` ${k.url ? String(k.url).replace(/\|/g, '\\|') : '—'} |`,
       );
       const md = capMdRows(header, rows,
-        `\n\nTotals: ${fmtNum(totalCount)} keywords ranked, listed rows sum ${fmtNum(sumEtv)} ETV. ${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
+        `\n\nTotals: ${fmtNum(totalCount)} keywords ${aioOnly ? 'citing the target in AI Overviews' : 'ranked'}, listed rows sum ${fmtNum(sumEtv)} ETV. ${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
       return {
         content: [{ type: 'text', text: md }],
-        structuredContent: { target: dfsTarget, scope: mode, totalCount, rowsTotal: kws.length, keywords: kws.slice(0, 100), cached: r.cached, cost: r.cost },
+        structuredContent: { target: dfsTarget, scope: mode, aioOnly: aioOnly ?? false, totalCount, rowsTotal: kws.length, keywords: kws.slice(0, 100), cached: r.cached, cost: r.cost },
       };
     },
   );
@@ -1159,7 +1185,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'pull_backlinks',
     {
       title: 'Pull backlink profile (DataForSEO)',
-      description: 'Fetch the property’s backlink profile (overall summary + per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Paid DataForSEO call, 20-day cached, on-demand only. Async job — poll check_sync_status.',
+      description: 'Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Paid DataForSEO call, 20-day cached, on-demand only. Async job — poll check_sync_status.',
       inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(1000).optional(), statusLimit: z.number().int().min(0).max(1000).optional() },
     },
     async ({ siteUrl, limit, statusLimit }) => {

@@ -196,6 +196,7 @@ export class DataForSeoClient {
     limit = 50,
     orderBy = 'ranked_serp_element.serp_item.etv,desc',
     filters?: unknown[],
+    itemTypes: string[] = ['organic'],
   ): Promise<DfsResponse> {
     const body: Record<string, unknown> = {
       target,
@@ -203,7 +204,7 @@ export class DataForSeoClient {
       language_code: languageCode,
       limit: Math.min(limit, 1000),
       order_by: [orderBy],
-      item_types: ['organic'],
+      item_types: itemTypes,
     };
     if (filters && filters.length) body.filters = filters;
     return this.call('/v3/dataforseo_labs/google/ranked_keywords/live', [body]);

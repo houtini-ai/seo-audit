@@ -890,6 +890,36 @@ export const CHECKS: CheckDef[] = [
       WHERE LOWER(i.page_fetch_state) LIKE '%soft%' AND p.status_code = 200`).map(r => ({ urlKey: r.urlKey, evidence: { pageFetchState: 'soft 404', wordCount: r.wc, bytes: r.bytes } })),
   },
   {
+    id: 'rich-result-issues', category: 'schema', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Google-verified rich result issues (URL Inspection)', fix: 'Fix the structured-data issues Google itself reports for this page — these come from the URL Inspection API (Google’s own validation), not our local validator, so they are authoritative. Address the listed issue messages per rich-result type.',
+    // Parses the stored richResultsResult JSON (url_inspection.rich_results) that inspect_urls
+    // already captures: detectedItems[].items[].issues[] carries Google's severity + message.
+    // Needs URL Inspection populated (run inspect_urls). Zero API cost — data is already in the DB.
+    run: (c) => {
+      const out: RawFinding[] = [];
+      for (const r of iterRows(c, `SELECT url_key urlKey, rich_results rr FROM url_inspection WHERE rich_results IS NOT NULL AND rich_results != ''`)) {
+        let parsed: any;
+        try { parsed = JSON.parse(r.rr); } catch { continue; }
+        // Dedup per (type, severity, message) with a count — a listicle repeats the same
+        // "Missing field review" warning per product item; keep one sample item per group.
+        const groups = new Map<string, { richResultType: string; severity: string | null; message: string; count: number; sampleItem: string | null }>();
+        for (const det of parsed?.detectedItems ?? []) {
+          for (const item of det?.items ?? []) {
+            for (const iss of item?.issues ?? []) {
+              if (!iss?.issueMessage) continue;
+              const key = `${det.richResultType ?? 'unknown'}|${iss.severity ?? ''}|${iss.issueMessage}`;
+              const g = groups.get(key);
+              if (g) g.count++;
+              else groups.set(key, { richResultType: det.richResultType ?? 'unknown', severity: iss.severity ?? null, message: iss.issueMessage, count: 1, sampleItem: item.name ?? null });
+            }
+          }
+        }
+        if (groups.size) out.push({ urlKey: r.urlKey, evidence: { verdict: parsed?.verdict ?? null, issues: [...groups.values()] } });
+      }
+      return out;
+    },
+  },
+  {
     id: 'broken-hreflang-target', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'hreflang points to a broken/non-indexable URL', fix: 'Point each hreflang alternate at a live, indexable URL — Google drops the whole cluster if an alternate is 4xx/5xx/redirect/noindex.',
     run: (c) => hreflangFindings(c).broken,

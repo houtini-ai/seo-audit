@@ -266,7 +266,7 @@ Only `GOOGLE_APPLICATION_CREDENTIALS` is required. Restart Claude Desktop, then 
 | `competitors_domain` · `page_intersection` | DataForSEO competitive / content-gap |
 | `domain_visibility` | Monthly ranking distribution + ETV trend for any domain (Semrush-style overview) |
 | `top_pages` | Any domain's top organic pages by estimated traffic |
-| `ranked_keywords` | Keywords a domain / subdomain / URL / subfolder ranks for |
+| `ranked_keywords` | Keywords a domain / subdomain / URL / subfolder ranks for (+ difficulty, intent, SERP features; `aioOnly:true` = keywords citing the target in AI Overviews) |
 | `page_lighthouse` · `pull_backlinks` | Lab CWV · backlink profile with live status |
 | `normalize_url` · `data_location` · `list_properties` | Utilities |
 | `seo_audit_help` | Every feature, with an example prompt |

@@ -48,16 +48,16 @@ export class UrlInspector {
       const upsert = db.db.prepare(
         `INSERT INTO url_inspection
            (url_key, url, verdict, coverage_state, indexing_state, robots_txt_state, page_fetch_state,
-            last_crawl_time, google_canonical, user_canonical, crawled_as, mobile_usability, rich_results, inspected_at)
+            last_crawl_time, google_canonical, user_canonical, crawled_as, mobile_usability, rich_results, referring_urls, inspected_at)
          VALUES (@url_key,@url,@verdict,@coverage_state,@indexing_state,@robots_txt_state,@page_fetch_state,
-            @last_crawl_time,@google_canonical,@user_canonical,@crawled_as,@mobile_usability,@rich_results,datetime('now'))
+            @last_crawl_time,@google_canonical,@user_canonical,@crawled_as,@mobile_usability,@rich_results,@referring_urls,datetime('now'))
          ON CONFLICT(url_key) DO UPDATE SET
            verdict=excluded.verdict, coverage_state=excluded.coverage_state, indexing_state=excluded.indexing_state,
            robots_txt_state=excluded.robots_txt_state, page_fetch_state=excluded.page_fetch_state,
            last_crawl_time=excluded.last_crawl_time, google_canonical=excluded.google_canonical,
            user_canonical=excluded.user_canonical, crawled_as=excluded.crawled_as,
            mobile_usability=excluded.mobile_usability, rich_results=excluded.rich_results,
-           inspected_at=datetime('now')`,
+           referring_urls=excluded.referring_urls, inspected_at=datetime('now')`,
       );
 
       let inspected = 0;
@@ -81,6 +81,8 @@ export class UrlInspector {
             crawled_as: idx.crawledAs ?? null,
             mobile_usability: r.mobileUsabilityResult?.verdict ?? null,
             rich_results: r.richResultsResult ? JSON.stringify(r.richResultsResult) : null,
+            // Sample of pages Google found linking here — external corroboration for orphan checks.
+            referring_urls: Array.isArray(idx.referringUrls) && idx.referringUrls.length ? JSON.stringify(idx.referringUrls) : null,
           });
           inspected++;
         } catch (err: unknown) {
