@@ -10,6 +10,26 @@ This page takes you from nothing to your first audit: install, connect Google Se
 - A **Google Search Console property you own**. If your site isn't verified there yet, do that first - it's free, takes ten minutes, and you should have it regardless of this tool.
 - *Optional:* a **DataForSEO** account, for keyword volumes, competitor data and backlinks. Everything else works without it. See [competitive.md](competitive.md) for what it adds and what it costs.
 
+## The quick route: npx (no clone, no build)
+
+If the tool is on npm by the time you read this (check: `npm view @houtini/seo-audit-console version`), you can skip Git and the build entirely - you still need Node.js from step 0, but nothing else. Point your MCP config straight at the package:
+
+```json
+{
+  "mcpServers": {
+    "seo-audit-console": {
+      "command": "npx",
+      "args": ["-y", "@houtini/seo-audit-console"],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "C:/path/to/service-account.json"
+      }
+    }
+  }
+}
+```
+
+npx downloads and runs the published build on first launch, and you pick up new versions without ever touching a terminal again. The clone-and-build route below is for anyone who wants the source - to read it, extend it, or run ahead of releases. Everything from step 2 (Search Console) onwards is identical for both routes.
+
 ## 0. Install the tools this tool is built with
 
 If you're an SEO rather than a developer, your machine probably doesn't have Node.js or Git yet. Both are free, both install in a couple of minutes, and neither will bother you again afterwards.

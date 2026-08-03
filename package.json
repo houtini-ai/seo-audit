@@ -18,7 +18,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
-    "url": "https://github.com/houtini-ai/seo-audit-console.git"
+    "url": "git+https://github.com/houtini-ai/seo-audit.git"
   },
   "keywords": [
     "seo",
@@ -93,5 +93,9 @@
     "typescript": "^5.9.3",
     "vite": "^6.4.1",
     "vite-plugin-singlefile": "^2.3.3"
+  },
+  "homepage": "https://github.com/houtini-ai/seo-audit#readme",
+  "bugs": {
+    "url": "https://github.com/houtini-ai/seo-audit/issues"
   }
 }

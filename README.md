@@ -133,7 +133,7 @@ It unlocks the Semrush-replacement layer: the organic visibility overview for an
 
 Three steps - the full walkthrough with the gotchas is [getting-started.md](manual/getting-started.md):
 
-1. **Build it:** clone this repo, `npm install`, `npm run build` (Node ≥ 20).
+1. **Get it:** the quick route is npx - point your MCP config at `npx -y @houtini/seo-audit-console` and there's nothing to build. Or clone this repo, `npm install`, `npm run build` if you want the source. Either way, Node ≥ 20.
 2. **Connect Search Console:** create a Google Cloud service account, download its JSON key, and - the step everyone misses - **add the service account's email as a user on your property** in Search Console.
 3. **Point your MCP client at `dist/index.js`** with `GOOGLE_APPLICATION_CREDENTIALS` set. Works in Claude Desktop and Claude Code; only the one env var is required.
 

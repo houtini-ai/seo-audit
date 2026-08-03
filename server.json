@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.houtini-ai/seo-audit-console",
-  "description": "Merge Google Search Console history with site-crawl data for technical SEO audits, joined on a normalised URL key.",
+  "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit - 93 checks ranked by recoverable clicks, paste-ready fixes, keyword and content-gap research, AI-search readiness.",
   "repository": {
-    "url": "https://github.com/houtini-ai/seo-audit-console",
+    "url": "https://github.com/houtini-ai/seo-audit",
     "source": "github"
   },
   "version": "0.2.0",
@@ -25,7 +25,7 @@
         },
         {
           "name": "SAC_DATA_DIR",
-          "description": "Directory for per-property SQLite databases. Defaults to ~/seo-audits/seo-audit-console.",
+          "description": "Directory for per-property SQLite databases and reports. Defaults to ~/Documents/seo-audit-console.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -43,13 +43,6 @@
           "isRequired": false,
           "format": "string",
           "isSecret": true
-        },
-        {
-          "name": "ENABLED_MODULES",
-          "description": "DataForSEO product groups this server may call (the account must have access; DataForSEO is account-level, billed per call). Recommended wider scope: SERP,KEYWORDS_DATA,DOMAIN_ANALYTICS,DATAFORSEO_LABS — Labs powers rank history / over-time sequence data (historical_rank_overview, historical_serps).",
-          "isRequired": false,
-          "format": "string",
-          "isSecret": false
         },
         {
           "name": "DATAFORSEO_CACHE_DAYS",
