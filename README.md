@@ -2,6 +2,7 @@
 
 **A technical SEO audit you can hold a conversation with - built from your own Search Console data and a live crawl of your site, run inside Claude.**
 
+[![npm version](https://img.shields.io/npm/v/@houtini/seo-audit-console.svg?style=flat-square)](https://www.npmjs.com/package/@houtini/seo-audit-console)
 [![License: Source-Available](https://img.shields.io/badge/License-Source--Available-orange.svg?style=flat-square)](./LICENSE)
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-server-purple?style=flat-square)](https://modelcontextprotocol.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)

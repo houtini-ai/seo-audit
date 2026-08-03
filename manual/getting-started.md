@@ -12,7 +12,7 @@ This page takes you from nothing to your first audit: install, connect Google Se
 
 ## The quick route: npx (no clone, no build)
 
-If the tool is on npm by the time you read this (check: `npm view @houtini/seo-audit-console version`), you can skip Git and the build entirely - you still need Node.js from step 0, but nothing else. Point your MCP config straight at the package:
+The tool is on npm, so you can skip Git and the build entirely - you still need Node.js from step 0, but nothing else. Point your MCP config straight at the package:
 
 ```json
 {
