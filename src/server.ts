@@ -18,6 +18,8 @@ import { suggestPages } from './audit/opportunities.js';
 import { computeTopicGaps, type GapKeywordRow } from './audit/topicGaps.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
 import { dbPathFor, sanitizeProperty } from './core/paths.js';
+import { runQueryData, QUERYABLE_TABLES, FILTER_OPS, METRIC_FNS, truncateCell } from './core/queryData.js';
+import { storageSummary, pruneProperty, fmtBytes } from './core/dataStorage.js';
 import { scoreSitePassages } from './core/passageScore.js';
 import { buildDraftBrief } from './core/draftBrief.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks, collapseChainRules } from './generators/index.js';
@@ -141,6 +143,23 @@ Raw access: query_audit runs any single check with full evidence; every table ab
 
 Plan the join first (url_key / query / domain), state the grain of each side, then run the fewest paid calls that answer it.`;
 
+// The check catalogue rendered as markdown — single source of truth is listChecks();
+// shared by the seo-audit://checks-reference resource (and buildable for any category subset).
+function buildChecksMarkdown(checks: ReturnType<typeof listChecks>): string {
+  const byCategory = new Map<string, typeof checks>();
+  for (const c of checks) {
+    const cat = String(c.category);
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(c);
+  }
+  const esc = (s: string): string => s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  const sections = [...byCategory.entries()].map(([cat, list]) =>
+    `## ${cat} (${list.length})\n\n| Check | Severity | Labels | Certainty | Fix type | What it catches | Fix |\n|---|---|---|---|---|---|---|\n` +
+    list.map(c => `| \`${c.id}\` | ${c.severity} | ${c.labels.join(',')} | ${c.certainty} | ${c.fixType} | ${esc(c.title)} | ${esc(c.fix)} |`).join('\n'),
+  );
+  return `# Check registry — ${checks.length} checks\n\nLabels: D = deterministic (cites bytes), G = evidence from Google's own data (Search Console / URL Inspection), N = judgement (heuristic, gated behind includeJudgement). Certainty < 1 discounts a finding's priority.\n\n${sections.join('\n\n')}\n`;
+}
+
 const HELP_TEXT = `# SEO Audit Console — what it can do
 A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**, joined on a normalised URL, with evidence on every finding. Typical flow: **refresh → audit → fix → report**.
 
@@ -152,7 +171,8 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 
 ## 2. Audit
 - **run_audit** — score all checks; returns a prioritised markdown report. _"Run an SEO audit on sc-domain:example.com"_ · \`scope:full\`, \`categories\`, \`includeJudgement:true\`.
-- **query_audit** — one named check with evidence. _"Show striking-distance for example.com"_
+- **query_audit** — one named check with evidence (\`columns\`/\`offset\` for big sets). _"Show striking-distance for example.com"_
+- **query_data** — read-only queries over the raw tables; aggregates in the database (counts/percentages/sums), answers not rows. _"How do status codes break down on example.com?"_
 - **list_checks** — _"What does the audit check for?"_
 
 ## 3. Fix (the moat)
@@ -183,6 +203,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 
 ## 7. Utilities
 - **data_location** — where DBs are stored (set with a path). · **normalize_url** — the join key for a URL.
+- **data_storage** — per-property disk usage + row counts; prune (vacuum / clear-crawl-history / delete-property, destructive ones need \`confirm:true\`). _"How much disk is my audit data using?"_
 
 _Tip: first time on a property → \`refresh_property\` then \`run_audit\`._
 _Composing your own analysis? Call \`composition_cookbook\` first — the data-surface map (grain + join keys per source) and worked multi-source recipes._`;
@@ -297,6 +318,52 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
   );
 
+  server.registerTool(
+    'data_storage',
+    {
+      title: 'Data storage summary + pruning',
+      description: 'Data hygiene. No args: list every per-property database in the data dir — size (incl. WAL), key row counts (search_analytics, pages, links, page_snapshots, findings), last sync and last crawl — plus the DataForSEO cache and reports folder sizes. Optional siteUrl narrows to one property. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (delete page_snapshots + audit runs/findings older than the 5 most recent, then vacuum), "delete-property" (remove the DB files entirely). Destructive actions (clear-crawl-history, delete-property) REQUIRE confirm:true and refuse loudly without it, naming what would be deleted. Refuses to prune while any job is running.',
+      inputSchema: {
+        siteUrl: z.string().optional(),
+        prune: z.object({
+          siteUrl: z.string(),
+          action: z.enum(['vacuum', 'clear-crawl-history', 'delete-property']),
+        }).optional(),
+        confirm: z.boolean().optional(),
+      },
+    },
+    async ({ siteUrl, prune, confirm }) => {
+      if (prune) {
+        const running = jobs.list().filter(j => j.state === 'running').map(j => ({ id: j.id, type: j.type }));
+        const r = pruneProperty(dataDir(), prune.siteUrl, prune.action, confirm === true, running);
+        if (!r.ok) {
+          return { content: [{ type: 'text', text: r.refused ?? `Could not ${prune.action}.` }], structuredContent: r as unknown as Record<string, unknown> };
+        }
+        const d = r.detail;
+        const line = prune.action === 'delete-property'
+          ? `Deleted ${prune.siteUrl}'s database (${fmtBytes(Number(d.bytesFreed) || 0)} freed).`
+          : prune.action === 'vacuum'
+            ? `Vacuumed ${prune.siteUrl}: ${fmtBytes(Number(d.bytesBefore) || 0)} → ${fmtBytes(Number(d.bytesAfter) || 0)} (${fmtBytes(Number(d.bytesReclaimed) || 0)} reclaimed).`
+            : `Cleared crawl/audit history for ${prune.siteUrl} beyond the 5 most recent runs: ${fmtBytes(Number(d.bytesBefore) || 0)} → ${fmtBytes(Number(d.bytesAfter) || 0)} (${fmtBytes(Number(d.bytesReclaimed) || 0)} reclaimed).`;
+        return { content: [{ type: 'text', text: line }], structuredContent: r as unknown as Record<string, unknown> };
+      }
+      const s = storageSummary(dataDir(), siteUrl);
+      if (!s.properties.length && !s.caches.length) {
+        return { content: [{ type: 'text', text: `No databases in ${s.dataDir}${siteUrl ? ` matching ${siteUrl}` : ''} — run refresh_property first.` }], structuredContent: s as unknown as Record<string, unknown> };
+      }
+      const rows = s.properties.map(p =>
+        `| ${p.siteUrl ?? p.file} | ${fmtBytes(p.bytes)} | ${p.searchAnalytics.toLocaleString('en-US')} | ${p.pages.toLocaleString('en-US')} | ${p.links.toLocaleString('en-US')} | ${p.pageSnapshots.toLocaleString('en-US')} | ${p.findings.toLocaleString('en-US')} | ${p.lastSynced?.slice(0, 10) ?? '—'} | ${p.lastCrawl?.slice(0, 10) ?? '—'} |`,
+      ).join('\n');
+      const cacheLines = s.caches.map(c => `- ${c.file}: ${fmtBytes(c.bytes)}`).join('\n');
+      const md = `**Data dir:** ${s.dataDir} — total ${fmtBytes(s.totalBytes)}\n\n` +
+        `| Property | Size | GSC rows | Pages | Links | Snapshots | Findings | Last sync | Last crawl |\n|---|---|---|---|---|---|---|---|---|\n${rows}\n\n` +
+        `${cacheLines ? `Caches:\n${cacheLines}\n` : ''}Reports folder: ${fmtBytes(s.reportsBytes)}` +
+        `${s.other.length ? `\nOther .db files: ${s.other.map(o => `${o.file} (${fmtBytes(o.bytes)})`).join(', ')}` : ''}\n\n` +
+        `Prune with data_storage prune:{siteUrl, action:"vacuum" | "clear-crawl-history" | "delete-property"} (destructive actions need confirm:true).`;
+      return { content: [{ type: 'text', text: md }], structuredContent: s as unknown as Record<string, unknown> };
+    },
+  );
+
   // ── Audit engine ────────────────────────────────────────────────────────
   server.registerTool(
     'run_audit',
@@ -323,24 +390,73 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'query_audit',
     {
       title: 'Run one audit check',
-      description: 'Run a single named check (see list_checks) and return its affected URLs + evidence. Grain: finding per URL with evidence JSON. Joins: url_key across all sources.',
-      inputSchema: { siteUrl: z.string(), check: z.string(), limit: z.number().int().min(1).max(1000).optional() },
+      description: 'Run a single named check (see list_checks) and return its affected URLs + evidence. Token discipline: `columns` narrows evidence to the named keys, string evidence values are truncated at 120 chars (trailing …), `offset` + `limit` page through large result sets (the footer states showing X–Y of TOTAL). Grain: finding per URL with evidence JSON. Joins: url_key across all sources.',
+      inputSchema: {
+        siteUrl: z.string(),
+        check: z.string(),
+        limit: z.number().int().min(1).max(1000).optional(),
+        offset: z.number().int().min(0).optional(),
+        columns: z.array(z.string()).max(20).optional().describe('Evidence keys to keep (default: all)'),
+      },
     },
-    async ({ siteUrl, check, limit }) => {
-      const r = runSingleCheck(dataDir(), siteUrl, check, limit);
+    async ({ siteUrl, check, limit, offset, columns }) => {
+      const r = runSingleCheck(dataDir(), siteUrl, check, limit, offset ?? 0);
+      // Token discipline (mirrors query_data): optional evidence-column selection + loud
+      // 120-char cell truncation, and an explicit offset/total footer.
+      const shape = (f: any): any => {
+        const src = (f.evidence ?? {}) as Record<string, unknown>;
+        const keys = columns?.length ? columns.filter(k => k in src) : Object.keys(src);
+        const evidence: Record<string, unknown> = {};
+        for (const k of keys) evidence[k] = truncateCell(src[k]);
+        return { ...f, evidence };
+      };
+      let sc: Record<string, unknown> = { ...r, findingsTotal: r.total };
+      let findings = r.findings.map(shape);
       // Hosts cap the model-facing result (~60k chars). On evidence-heavy checks a large
       // `limit` can blow that ceiling and error the whole call — trim findings (keeping the
       // true total) instead of failing. Same guard pattern as detect_changes.
-      let sc: Record<string, unknown> = { ...r, findingsTotal: r.findings.length };
-      let findings = r.findings;
       while (findings.length > 25 && JSON.stringify({ ...sc, findings }).length > 45000) {
         findings = findings.slice(0, Math.floor(findings.length / 2));
       }
-      sc = { ...sc, findings, findingsReturned: findings.length };
+      const start = (offset ?? 0) + (findings.length ? 1 : 0);
+      const end = (offset ?? 0) + findings.length;
+      const nextOffset = end < r.total ? end : null;
+      sc = { ...sc, findings, findingsReturned: findings.length, offset: offset ?? 0, nextOffset };
       return {
-        content: [{ type: 'text', text: `${check}: ${r.findings.length} findings${findings.length < r.findings.length ? ` (${findings.length} returned — result trimmed to fit the token cap; use a smaller limit for paging)` : ''}` }],
+        content: [{ type: 'text', text: `${check}: showing ${start}–${end} of ${r.total} findings${nextOffset != null ? `; next offset ${nextOffset}` : ''}${findings.length < r.findings.length ? ` (trimmed to fit the token cap — use a smaller limit)` : ''}` }],
         structuredContent: sc,
       };
+    },
+  );
+
+  server.registerTool(
+    'query_data',
+    {
+      title: 'Query the raw data (aggregate first)',
+      description: 'Direct read-only access to the property database — the composition layer\'s escape hatch. AGGREGATE IN THE DATABASE and return answers, not rows: default mode groups by the columns you name and returns counts, percentages and sum/avg/min/max metrics (Screaming Frog-style distributions in one call — "status codes by folder", "clicks by page_key"). mode:rows returns raw rows with strict token discipline (curated default columns, 120-char cells, loud paging footer). Filters are exact/range/like/in and always parameterised; column names are validated against the live table schema. Grain: per table — search_analytics = date × query × page; pages/links = latest crawl per url_key; url_inspection / sitemap_urls / page_backlinks = one row per URL; findings = check × URL per audit run. Joins: url_key across pages/links/search_analytics.page_key/url_inspection/sitemap_urls/page_backlinks; query → keyword tools; run_id → audit runs.',
+      inputSchema: {
+        siteUrl: z.string(),
+        table: z.enum(QUERYABLE_TABLES),
+        mode: z.enum(['aggregate', 'rows']).optional().describe('Default aggregate — return grouped answers, not rows'),
+        groupBy: z.array(z.string()).max(4).optional().describe('Columns to group by (aggregate mode)'),
+        metrics: z.array(z.object({ fn: z.enum(METRIC_FNS), column: z.string() })).max(6).optional().describe('count is always included; add sum/avg/min/max over numeric columns'),
+        filters: z.array(z.object({
+          column: z.string(),
+          op: z.enum(FILTER_OPS),
+          value: z.union([z.string(), z.number(), z.null(), z.array(z.union([z.string(), z.number()])).max(100)]),
+        })).max(8).optional(),
+        orderBy: z.string().optional().describe('Aggregate: a groupBy column, "count", or a metric alias like sum_clicks. Rows: any column'),
+        orderDir: z.enum(['asc', 'desc']).optional(),
+        limit: z.number().int().min(1).max(500).optional().describe('Default 25 (aggregate) / 50 (rows)'),
+        offset: z.number().int().min(0).optional().describe('Rows mode paging'),
+        columns: z.array(z.string()).max(20).optional().describe('Rows mode: columns to return (default: a curated per-table set)'),
+      },
+    },
+    async ({ siteUrl, table, mode, groupBy, metrics, filters, orderBy, orderDir, limit, offset, columns }) => {
+      const r = runQueryData(dbPathFor(dataDir(), siteUrl), {
+        table, mode, groupBy, metrics, filters, orderBy, orderDir, limit, offset, columns,
+      } as Parameters<typeof runQueryData>[1]);
+      return { content: [{ type: 'text', text: r.markdown }], structuredContent: r.structured };
     },
   );
 
@@ -1418,6 +1534,33 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         structuredContent: { jobId, status: 'running', siteUrl },
       };
     },
+  );
+
+  // ── Static reference resources (same content the tools return — one source of truth) ──
+  server.registerResource(
+    'checks-reference',
+    'seo-audit://checks-reference',
+    {
+      title: 'Check registry reference',
+      description: 'The full audit check catalogue (the list_checks data) rendered as markdown: every check with category, severity, labels, certainty, fix type and its one-line fix.',
+      mimeType: 'text/markdown',
+    },
+    async () => ({
+      contents: [{ uri: 'seo-audit://checks-reference', mimeType: 'text/markdown', text: buildChecksMarkdown(listChecks()) }],
+    }),
+  );
+
+  server.registerResource(
+    'cookbook',
+    'seo-audit://cookbook',
+    {
+      title: 'Composition cookbook',
+      description: 'The data-surface map (grain, join keys, freshness, cost per source) and worked multi-source recipes — identical to the composition_cookbook tool output.',
+      mimeType: 'text/markdown',
+    },
+    async () => ({
+      contents: [{ uri: 'seo-audit://cookbook', mimeType: 'text/markdown', text: COOKBOOK_TEXT }],
+    }),
   );
 
   registerAppResource(

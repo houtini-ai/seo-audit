@@ -46,7 +46,7 @@ Runs the full check registry over the joined data and returns scored findings ra
 > Run an SEO audit on mysite.com, indexation and schema only, with judgement findings
 
 ### `query_audit`
-One named check, with every affected URL and its full evidence. The drill-down after `run_audit` shows you a headline.
+One named check, with every affected URL and its full evidence. The drill-down after `run_audit` shows you a headline. For big result sets: `columns` narrows the evidence to just the keys you name, long values are truncated at 120 characters (with a visible ellipsis), and `offset` + `limit` page through the rest - the response always states *showing X-Y of TOTAL* so nothing is silently dropped.
 > Show me striking-distance for mysite.com
 > Run the keyword-cannibalisation check on mysite.com with evidence
 
@@ -57,6 +57,14 @@ The whole check catalogue - all 93, with categories and labels. The same list, a
 ### `list_templates`
 Clusters crawled pages into templates by URL shape and schema type, each with a page count and a representative example. Most technical issues live at the template level - one fix corrects every page in the cluster - so this is the map for working on anything bigger than a few hundred URLs.
 > List the page templates on mysite.com
+
+## Raw data
+
+### `query_data`
+Direct, read-only access to the property database, built around one principle: **aggregate in the database and return answers, not rows**. The default mode groups by the columns you name and returns counts, percentages and sum/avg/min/max metrics - "status codes by folder", "clicks by page", "coverage states by verdict" - each as one small table with an honest total line, however many rows sit underneath. Tables: `pages`, `links`, `search_analytics`, `url_inspection`, `sitemap_urls`, `findings`, `image_assets`, `page_backlinks`. Filters (equals, ranges, like, in) are always parameterised, and every column name is validated against the live schema - there's no way to smuggle SQL in. `mode:rows` returns raw rows when you genuinely need them, with a curated default column set, 120-character cells and a *showing X-Y of TOTAL; next offset N* footer.
+> How do status codes break down on mysite.com?
+> Top 10 pages by total clicks from the raw GSC data
+> Show me the 404 rows with their inlink counts
 
 ## Fixes
 
@@ -176,3 +184,9 @@ Returns the `url_key` for any URL - the normalised join key everything matches o
 ### `data_location`
 Reports where the per-property databases live, or sets a new location (persisted; restart the client to apply).
 > Where is my audit data stored?
+
+### `data_storage`
+The data-hygiene view: every property database with its size, key row counts (GSC rows, pages, links, snapshots, findings) and last sync/crawl dates, plus the DataForSEO cache and reports folder. When something's grown too big, `prune` offers three actions per property: `vacuum` (compact the file, reports bytes reclaimed), `clear-crawl-history` (drop snapshots and audit runs older than the five most recent, then vacuum), and `delete-property` (remove the database entirely). The destructive two require `confirm:true` and refuse loudly without it, naming exactly what would go; nothing runs while a sync or crawl job is in flight.
+> How much disk is my audit data using?
+> Vacuum the mysite.com database
+> Clear the old crawl history for mysite.com

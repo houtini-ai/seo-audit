@@ -32,6 +32,16 @@ Grain is the thing that trips people up when composing - what one row means, per
 | Labs tools | keyword × target, or month × target | Cached 20 days; each live call costs money, so plan the fewest calls that answer the question. |
 | `findings` | one finding per check × URL | With priority and evidence JSON, per audit run. |
 
+## Aggregate first
+
+Distribution questions - "how do my status codes break down?", "which pages get the most clicks?", "how many URLs sit at each click depth?" - don't need rows at all, and `query_data` exists so they never produce them. It aggregates **in the database** and returns the answer: group counts, percentages and sum/avg/min/max metrics as one small table with an honest total line, whether the table underneath holds eight hundred rows or two and a half million. Reach for it before any prompt that would otherwise dump rows into the conversation; switch to `mode:rows` only when you genuinely need to see individual URLs, and even then it pages loudly (*showing X-Y of TOTAL; next offset N*) with 120-character cells.
+
+A worked example - status codes by template folder:
+
+> Using query_data on mysite.com, group pages by status_code where url is like https://mysite.com/blog/%, then do the same for /product/ - which template is carrying the dead URLs?
+
+Each call is one aggregate: `table:pages`, `groupBy:["status_code"]`, `filters:[{column:"url", op:"like", value:"https://mysite.com/blog/%"}]`. Two small tables back, zero row dumps, and the comparison falls straight out of the percentages. (For proper template clusters rather than folder prefixes, get the shapes from `list_templates` first and filter on each exemplar's path.)
+
 ## Three archetype chains
 
 Most composition questions are one of three shapes:

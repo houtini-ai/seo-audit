@@ -151,6 +151,7 @@ The one-line version - full descriptions, inputs and example prompts for every t
 | `sync_gsc` · `start_crawl` · `inspect_urls` · `track_ranks` | Run a single part on its own |
 | `check_sync_status` · `check_crawl_status` | Watch a long job's progress |
 | `run_audit` · `query_audit` · `list_checks` | The scored audit · one check with evidence · the catalogue |
+| `query_data` | Read-only queries over the raw tables - aggregates in the database, answers not rows |
 | `fix_finding` | Paste-ready remediation (JSON-LD / 301 / internal links) |
 | `detect_changes` | What changed between the two most recent crawls |
 | `check_agent_readiness` | 0-100 AI-agent readiness score with copy-paste fixes |
@@ -163,6 +164,7 @@ The one-line version - full descriptions, inputs and example prompts for every t
 | `page_lighthouse` · `pull_backlinks` | Lab CWV · backlink profile with live status |
 | `get_dashboard` · `export_report` | In-chat dashboard · shareable HTML |
 | `composition_cookbook` | The data-surface map and recipes for bespoke analyses |
+| `data_storage` | Per-property disk usage and row counts, with confirm-gated pruning |
 | `normalize_url` · `data_location` · `list_properties` · `seo_audit_help` | Utilities and the help menu |
 
 ---
