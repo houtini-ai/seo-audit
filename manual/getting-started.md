@@ -4,12 +4,39 @@ This page takes you from nothing to your first audit: install, connect Google Se
 
 ## What you need
 
-- **Node.js 20 or newer**
+- **Node.js 20 or newer** (never installed it? Step 0 below walks you through it)
+- **Git** - or not; you can skip it entirely with the ZIP download in step 1
 - **Claude Desktop** or **Claude Code** (any MCP client works; these are the two I test on)
 - A **Google Search Console property you own**. If your site isn't verified there yet, do that first - it's free, takes ten minutes, and you should have it regardless of this tool.
 - *Optional:* a **DataForSEO** account, for keyword volumes, competitor data and backlinks. Everything else works without it. See [competitive.md](competitive.md) for what it adds and what it costs.
 
+## 0. Install the tools this tool is built with
+
+If you're an SEO rather than a developer, your machine probably doesn't have Node.js or Git yet. Both are free, both install in a couple of minutes, and neither will bother you again afterwards.
+
+**Node.js** is the runtime the server runs on - it's what Claude actually starts when it loads the tool.
+
+- **Windows:** download the **LTS** installer from [nodejs.org](https://nodejs.org), run it, accept the defaults. Done.
+- **Mac:** same [nodejs.org](https://nodejs.org) LTS installer works; if you already use Homebrew, `brew install node` does the same job.
+
+Check it worked - open a terminal (Windows: search for "PowerShell"; Mac: search for "Terminal") and type:
+
+```bash
+node --version
+```
+
+Anything starting `v20` or higher and you're set. `npm` (the package installer used below) comes bundled with it - nothing extra to do.
+
+**Git** is how you download the code and, later, pull updates with one command.
+
+- **Windows:** download from [git-scm.com](https://git-scm.com/download/win), run the installer, accept the defaults (there are a lot of option screens; the defaults are all fine).
+- **Mac:** type `git --version` in Terminal - macOS offers to install its command-line tools if Git isn't there yet. Say yes.
+
+**Don't fancy Git at all?** You don't strictly need it. On the [GitHub page](https://github.com/houtini-ai/seo-audit), click the green **Code** button, then **Download ZIP**, and unzip it somewhere sensible (not your Downloads folder - you'll be pointing Claude at this location permanently). The trade-off: updating later means downloading a fresh ZIP rather than typing `git pull`.
+
 ## 1. Build it
+
+In your terminal, in the folder where you want the tool to live:
 
 ```bash
 git clone https://github.com/houtini-ai/seo-audit.git
@@ -18,7 +45,19 @@ npm install
 npm run build
 ```
 
-The build produces `dist/index.js` - that's the file your MCP config points at.
+(If you took the ZIP route, skip the first line - just `cd` into the unzipped folder and run the last two.)
+
+The build produces `dist/index.js` - that's the file your MCP config points at. If `npm install` throws certificate or proxy errors on a corporate machine, that's your IT department's network filtering, not the tool - your IT team will recognise the fix immediately.
+
+To update to a newer version later:
+
+```bash
+git pull
+npm install
+npm run build
+```
+
+then fully restart Claude (Desktop holds the old build until you do - see the restart note in step 3a).
 
 ## 2. Connect Google Search Console
 
