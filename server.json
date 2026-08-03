@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.houtini-ai/seo-audit-console",
-  "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit - 93 checks ranked by recoverable clicks, paste-ready fixes, keyword and content-gap research, AI-search readiness.",
+  "description": "Technical SEO audits in Claude: GSC + first-party crawl + DataForSEO. 93 prioritised checks + fixes.",
   "repository": {
     "url": "https://github.com/houtini-ai/seo-audit",
     "source": "github"
