@@ -45,6 +45,7 @@
     "build:ui:sync": "cross-env INPUT=src/ui/sync-progress.html vite build",
     "build:ui": "npm run build:ui:dashboard && npm run build:ui:sync",
     "build": "npm run build:server && npm run build:ui",
+    "build:mcpb": "npm run build && node scripts/build-mcpb.mjs",
     "dev": "tsc -p tsconfig.server.json --watch",
     "start": "node dist/index.js",
     "test": "npm run build:server && npm run smoke",

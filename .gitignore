@@ -26,6 +26,9 @@ crawl-tests/**/*.json
 crawl-tests/**/*.html
 crawl-tests/**/raw/
 
+# MCPB bundle output (mcpb/manifest.json IS tracked)
+mcpb-dist/
+
 # Build/tooling caches
 *.tsbuildinfo
 .vite/
@@ -72,3 +75,4 @@ scripts/*
 !scripts/probe-templates.mjs
 !scripts/probe-migrate.mjs
 !scripts/probe-boot.mjs
+!scripts/build-mcpb.mjs

@@ -1,0 +1,92 @@
+{
+  "manifest_version": "0.3",
+  "name": "seo-audit-console",
+  "display_name": "SEO Audit Console",
+  "version": "0.2.1",
+  "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 90 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
+  "long_description": "Merges Google Search Console history with a first-party site crawl (and on-demand DataForSEO) into one SQLite database per property, then runs ~90 deterministic and judgement-labelled checks scored by expected recoverable clicks per hour of effort. Includes a findings dashboard, finding-to-fix generators (JSON-LD, 301 maps, internal-link suggestions), change detection, keyword and content-gap research, and an agent-readiness score. Requires a Google Cloud service account with Search Console API access; DataForSEO credentials are optional.",
+  "author": {
+    "name": "Houtini",
+    "email": "hello@houtini.com",
+    "url": "https://github.com/houtini-ai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/houtini-ai/seo-audit"
+  },
+  "homepage": "https://github.com/houtini-ai/seo-audit",
+  "documentation": "https://github.com/houtini-ai/seo-audit/blob/master/manual/getting-started.md",
+  "support": "https://github.com/houtini-ai/seo-audit/issues",
+  "license": "SEE LICENSE IN LICENSE",
+  "privacy_policies": [
+    "https://github.com/houtini-ai/seo-audit#privacy-and-data"
+  ],
+  "keywords": [
+    "seo",
+    "technical-seo",
+    "seo-audit",
+    "google-search-console",
+    "crawler",
+    "site-audit",
+    "dataforseo",
+    "keyword-research"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${user_config.google_application_credentials}",
+        "SAC_DATA_DIR": "${user_config.sac_data_dir}",
+        "DATAFORSEO_USERNAME": "${user_config.dataforseo_username}",
+        "DATAFORSEO_PASSWORD": "${user_config.dataforseo_password}",
+        "DATAFORSEO_CACHE_DAYS": "${user_config.dataforseo_cache_days}"
+      }
+    }
+  },
+  "user_config": {
+    "google_application_credentials": {
+      "type": "file",
+      "title": "Google service-account JSON key",
+      "description": "Path to the Google Cloud service-account JSON key file with Search Console API access (the account must be added as a user on each GSC property).",
+      "required": true
+    },
+    "sac_data_dir": {
+      "type": "directory",
+      "title": "Data directory",
+      "description": "Where the per-property SQLite databases are stored. Leave empty for the default (~/Documents/seo-audit-console).",
+      "required": false
+    },
+    "dataforseo_username": {
+      "type": "string",
+      "title": "DataForSEO username (optional)",
+      "description": "DataForSEO API login. Optional - keyword, rank, backlink, and Labs tools degrade gracefully without it.",
+      "required": false
+    },
+    "dataforseo_password": {
+      "type": "string",
+      "title": "DataForSEO password (optional)",
+      "description": "DataForSEO API password.",
+      "sensitive": true,
+      "required": false
+    },
+    "dataforseo_cache_days": {
+      "type": "number",
+      "title": "DataForSEO cache days",
+      "description": "How many days to cache DataForSEO responses locally.",
+      "default": 20,
+      "min": 1,
+      "max": 90,
+      "required": false
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["win32"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}
