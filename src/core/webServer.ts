@@ -23,6 +23,15 @@ export interface WebServerOptions {
 
 interface RunningServer { server: http.Server; port: number; url: string }
 let running: RunningServer | null = null;
+let starting: Promise<{ url: string; port: number }> | null = null;
+
+/** DNS-rebinding / CSRF guard: only ever answer requests addressed to localhost itself.
+ * A malicious page that rebinds its domain to 127.0.0.1 arrives with a foreign Host. */
+function isLocalHostHeader(host: string | undefined): boolean {
+  if (!host) return false;
+  const bare = host.replace(/:\d+$/, '').toLowerCase();
+  return bare === '127.0.0.1' || bare === 'localhost' || bare === '[::1]';
+}
 
 const CACHE_DBS = new Set(['dataforseo-cache.db']);
 
@@ -70,9 +79,11 @@ h1{font-size:1.3rem}ul{line-height:2}a{color:#cd2026}</style></head>
 
 export async function startDashboardServer(opts: WebServerOptions): Promise<{ url: string; port: number }> {
   if (running) return { url: running.url, port: running.port };
+  if (starting) return starting; // concurrent callers share one startup — never bind twice
 
   const server = http.createServer(async (req, res) => {
     try {
+      if (!isLocalHostHeader(req.headers.host)) return json(res, 403, { error: 'forbidden' });
       const u = new URL(req.url ?? '/', 'http://localhost');
       const route = u.pathname;
 
@@ -89,7 +100,8 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
         }
         const boot = { siteUrl, properties: props.map(p => p.siteUrl) };
         const inject = `<script>window.__SAC_WEB__=${JSON.stringify(boot).replace(/</g, '\\u003c')};</script>`;
-        const html = opts.uiHtml().replace(/<head([^>]*)>/i, `<head$1>${inject}`);
+        // Replacement FUNCTION, not string — $-sequences in the payload must stay literal.
+        const html = opts.uiHtml().replace(/<head([^>]*)>/i, (_m, attrs: string) => `<head${attrs}>${inject}`);
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
         return res.end(html);
       }
@@ -99,6 +111,11 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
       }
 
       if (req.method === 'POST' && route === '/api/call') {
+        // Require a JSON content-type: cross-origin "simple" requests can only send
+        // text/plain without a CORS preflight, so this blocks blind CSRF POSTs.
+        if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) {
+          return json(res, 415, { error: 'content-type must be application/json' });
+        }
         const body = JSON.parse((await readBody(req)) || '{}') as { name?: string; arguments?: Record<string, unknown> };
         const handler = body.name ? opts.call[body.name] : undefined;
         if (!handler) return json(res, 404, { error: `unknown tool ${body.name ?? ''}` });
@@ -116,19 +133,25 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
     }
   });
 
-  const port = await new Promise<number>((resolve, reject) => {
-    server.once('error', reject);
-    // 127.0.0.1 only — never expose the dashboard (or the SQLite data behind it) on the network.
-    server.listen(opts.port ?? 0, '127.0.0.1', () => {
-      const addr = server.address();
-      resolve(typeof addr === 'object' && addr ? addr.port : (opts.port ?? 0));
+  starting = (async () => {
+    const port = await new Promise<number>((resolve, reject) => {
+      server.once('error', reject);
+      // 127.0.0.1 only — never expose the dashboard (or the SQLite data behind it) on the network.
+      server.listen(opts.port ?? 0, '127.0.0.1', () => {
+        const addr = server.address();
+        resolve(typeof addr === 'object' && addr ? addr.port : (opts.port ?? 0));
+      });
     });
-  });
-  server.unref(); // never keep the MCP process alive on our account
-
-  const url = `http://127.0.0.1:${port}`;
-  running = { server, port, url };
-  return { url, port };
+    server.unref(); // never keep the MCP process alive on our account
+    const url = `http://127.0.0.1:${port}`;
+    running = { server, port, url };
+    return { url, port };
+  })();
+  try {
+    return await starting;
+  } finally {
+    starting = null;
+  }
 }
 
 export async function stopDashboardServer(): Promise<boolean> {

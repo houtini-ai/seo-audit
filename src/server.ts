@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
-import { startDashboardServer, stopDashboardServer, dashboardServerUrl } from './core/webServer.js';
+import { startDashboardServer, stopDashboardServer, dashboardServerUrl, listLocalProperties } from './core/webServer.js';
 
 /** A clickable browser-dashboard link appended to tool outputs — the user should always
  * know the full interactive report is one click away (or one serve_dashboard call away). */
@@ -1503,7 +1503,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const tpl = readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8');
       const json = JSON.stringify(data).replace(/</g, '\\u003c'); // prevent </script> breakout
       const inject = `<script>window.__DASH_FIXTURE__=${json};window.__DASH_THEME__=${JSON.stringify(theme ?? 'light')};</script>`;
-      const html = tpl.replace(/<head([^>]*)>/i, `<head$1>${inject}`);
+      // Replacement FUNCTION, not string — crawl data containing $& / $' would otherwise
+      // be interpreted as String.replace substitution patterns and corrupt the report.
+      const html = tpl.replace(/<head([^>]*)>/i, (_m, attrs: string) => `<head${attrs}>${inject}`);
       const dir = path.join(dataDir(), 'reports');
       mkdirSync(dir, { recursive: true });
       const file = path.join(dir, `${sanitizeProperty(siteUrl)}-dashboard.html`);
@@ -1537,7 +1539,13 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         dataDir,
         uiHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8'),
         call: {
-          get_dashboard_data: async (a) => getDashboardData(dataDir(), String(a.siteUrl ?? '')) as unknown as Record<string, unknown>,
+          get_dashboard_data: async (a) => {
+            const want = String(a.siteUrl ?? '');
+            // Only serve properties that actually exist locally — getDashboardData would
+            // otherwise CREATE an empty DB file for any bogus siteUrl posted at the API.
+            if (!listLocalProperties(dataDir()).some(p => p.siteUrl === want)) throw new Error(`unknown property ${want}`);
+            return getDashboardData(dataDir(), want) as unknown as Record<string, unknown>;
+          },
           related_terms: async (a) => {
             const r = await requireDfs(dfs).relatedTerms(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined);
             return r as unknown as Record<string, unknown>;
@@ -1553,8 +1561,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         ...(port != null ? { port } : {}),
       });
       const open = siteUrl ? `${url}/dashboard?siteUrl=${encodeURIComponent(siteUrl)}` : `${url}/`;
+      const portNote = port != null && !url.endsWith(`:${port}`)
+        ? ` (already running on its original port — requested port ${port} ignored; stop=true first to move it)`
+        : '';
       return {
-        content: [{ type: 'text', text: `Dashboard server running — open ${open} in your browser. Live data, all charts, CSV downloads, property switcher. Stays up while this MCP server runs; serve_dashboard stop=true to stop it.` }],
+        content: [{ type: 'text', text: `Dashboard server running — open ${open} in your browser${portNote}. Live data, all charts, CSV downloads, property switcher. Stays up while this MCP server runs; serve_dashboard stop=true to stop it.` }],
         structuredContent: { url: open, base: url },
       };
     },
