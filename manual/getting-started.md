@@ -87,7 +87,7 @@ then fully restart Claude (Desktop holds the old build until you do - see the re
 
 ## 2. Connect Google Search Console
 
-The tool reads GSC through a **Google Cloud service account** - a robot login you create once, instead of an OAuth dance every session.
+The tool reads GSC through a **Google Cloud service account** - a robot login you create once, instead of an OAuth dance every session. If you'd rather follow a version with screenshots, the [Setting it up from scratch](https://houtini.com/articles/better-search-console/#setting-it-up-from-scratch) guide on houtini.com walks the identical flow, including the permissions screen from step 3 below.
 
 1. In [Google Cloud Console](https://console.cloud.google.com), create a project and **enable the Search Console API**.
 2. Create a **service account** and download its **JSON key** file. Keep it somewhere sensible; you'll reference its path in the config.
