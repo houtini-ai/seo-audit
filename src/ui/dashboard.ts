@@ -1,5 +1,9 @@
-import * as echarts from 'echarts';
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
+import {
+  esc, fmtNum, icons, sevBadge, statusBadge, badge, kpiGrid, filterGroup,
+  attachSort, formatTrend, accordionItem, accordionSection, accordionControls,
+  EChartWrapper, chartPalette, axisDefaults, tooltipDefaults, emptyState,
+} from './lib/index.js';
 
 // Local view types (avoid importing core, which pulls node-only deps into the bundle).
 interface Totals { clicks: number; impressions: number; ctr: number; position: number }
@@ -42,9 +46,7 @@ interface DashboardData {
 }
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
-const cssVar = (n: string, fb = ''): string => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb;
-const fmt = (n: number): string => new Intl.NumberFormat('en', { notation: n >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(n);
-const esc = (s: string): string => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
+const fmt = fmtNum;
 const safeJson = (s: string): any => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
 const catClass = (c: string): string => /(top performer|gained|entered)/.test(c) ? 'cat-up' : /(low performer|lost|dropped)/.test(c) ? 'cat-down' : /declining/.test(c) ? 'cat-warn' : /improve/.test(c) ? 'cat-info' : 'cat-neutral';
 const tableHtml = (headers: string[], rows: string[]): string => `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
@@ -57,24 +59,23 @@ const shortPath = (u: string, max = 56): string => {
   return `${p.slice(0, keep)}…${p.slice(-keep)}`;
 };
 
+// Chart palette — the semantic tokens plus the names the render code reads.
 function palette() {
-  const root = document.documentElement;
-  const isDark = root.getAttribute('data-theme') === 'dark'
-    || root.classList.contains('dark')
-    || (!root.getAttribute('data-theme') && !root.classList.contains('light') && matchMedia('(prefers-color-scheme: dark)').matches);
+  const c = chartPalette();
   return {
-    text: cssVar('--color-text-primary', '#0a0b0d'),
-    axisText: isDark ? '#ffffff' : '#000000', // chart axis labels: pure white (dark) / black (light)
-    muted: cssVar('--color-text-tertiary', '#62666d'),
-    accent: cssVar('--color-accent', '#5b5fff'),
-    violet: cssVar('--color-brand-violet', '#8b5cf6'),
-    grid: cssVar('--chart-grid', 'rgba(10,11,13,0.06)'),
-    green: cssVar('--color-status-live', '#16a34a'),
-    red: cssVar('--color-status-error', '#ef4444'),
-    amber: cssVar('--color-status-warning', '#f59e0b'),
-    surface: cssVar('--color-surface-elevated', '#ffffff'),
-    border: cssVar('--color-border-standard', 'rgba(10,11,13,0.1)'),
+    ...c,
+    green: c.success, red: c.danger, amber: c.warning,
+    blue: c.categorical[0], teal: c.categorical[4], violet: c.categorical[5], grey: c.categorical[7],
   };
+}
+
+// One EChartWrapper per chart element — lifecycle (ResizeObserver, theming,
+// echarts.connect groups) lives in the wrapper; re-renders re-tint in place.
+const chartsReg = new Map<string, EChartWrapper>();
+function wrap(id: string, group?: string): EChartWrapper {
+  let w = chartsReg.get(id);
+  if (!w) { w = new EChartWrapper(id, { group }); chartsReg.set(id, w); }
+  return w;
 }
 
 
@@ -148,14 +149,6 @@ async function downloadCsv(filename: string, rows: unknown[][]): Promise<void> {
 }
 
 let currentData: DashboardData | null = null;
-let distChart: echarts.ECharts | null = null;
-let rankHistChart: echarts.ECharts | null = null;
-let rankChart: echarts.ECharts | null = null;
-let kwChart: echarts.ECharts | null = null;
-let mismatchChart: echarts.ECharts | null = null;
-let scatterChart: echarts.ECharts | null = null;
-let cannChart: echarts.ECharts | null = null;
-let quickWinsChart: echarts.ECharts | null = null;
 const ARIA = { aria: { enabled: true } }; // ECharts-generated screen-reader description
 
 const app = new App({ name: 'SEO Audit Console', version: '0.1.0' });
@@ -201,7 +194,7 @@ app.ontoolresult = (result) => {
   if (sc?.siteUrl) loadDashboard(sc.siteUrl);
 };
 
-window.addEventListener('resize', () => { for (const c of [distChart, rankHistChart, rankChart, kwChart, mismatchChart, scatterChart, cannChart, quickWinsChart]) c?.resize(); });
+// Window/container resizes are handled per-chart by the wrapper's ResizeObserver.
 
 const SEV_ORDER = ['crit', 'high', 'med', 'low', 'info'] as const;
 const SEV_LABEL: Record<string, string> = { crit: 'Critical', high: 'High', med: 'Medium', low: 'Low', info: 'Info' };
@@ -285,7 +278,7 @@ function renderExecSummary(data: DashboardData): void {
 
   const pct = (a: number, b: number): number => b ? Math.round((a - b) / b * 100) : (a > 0 ? 100 : 0);
   const clkPct = pct(c.clicks, p?.clicks ?? 0);
-  const arrow = (n: number): string => n > 0 ? `▲ ${n}%` : n < 0 ? `▼ ${Math.abs(n)}%` : 'flat';
+  const arrow = (n: number): string => n > 0 ? `${icons.triangleUp} ${n}%` : n < 0 ? `${icons.triangleDown} ${Math.abs(n)}%` : 'flat';
   const dir = clkPct > 3 ? 'growing' : clkPct < -3 ? 'declining' : 'holding steady';
   const posShift = p ? Math.round((p.position - c.position) * 10) / 10 : 0; // positive = improved (lower rank number)
   const lead = `Organic search is <strong>${dir}</strong>: <strong>${fmt(c.clicks)}</strong> clicks and <strong>${fmt(c.impressions)}</strong> impressions in the last 28 days (clicks ${arrow(clkPct)} vs the prior 28), at an average position of <strong>${c.position.toFixed(1)}</strong>${posShift ? ` (${posShift > 0 ? 'improved' : 'slipped'} ${Math.abs(posShift)} spot${Math.abs(posShift) === 1 ? '' : 's'})` : ''}.`;
@@ -354,7 +347,7 @@ function renderBrandedSplit(data: DashboardData): void {
   const bc = b.branded.clicks, nc = b.nonBranded.clicks, tc = bc + nc;
   const bpct = tc ? Math.round(bc / tc * 100) : 0, npct = 100 - bpct;
   const dpc = (cur: number, prev: number): number => prev ? Math.round((cur - prev) / prev * 100) : (cur > 0 ? 100 : 0);
-  const arrow = (n: number): string => n > 0 ? `<span style="color:var(--green)">▲ ${n}%</span>` : n < 0 ? `<span style="color:var(--red)">▼ ${Math.abs(n)}%</span>` : '<span class="muted">flat</span>';
+  const arrow = (n: number): string => n > 0 ? `<span class="chg up">${icons.triangleUp} ${n}%</span>` : n < 0 ? `<span class="chg down">${icons.triangleDown} ${Math.abs(n)}%</span>` : '<span class="chg flat">flat</span>';
   el.innerHTML =
     `<div class="split-bar"><span class="split-branded" style="width:${bpct}%"></span><span class="split-nonbranded" style="width:${npct}%"></span></div>` +
     `<div class="split-legend">` +
@@ -384,22 +377,16 @@ function renderRecommendations(fc: DashboardData['findings']): void {
       const examplesHtml = exs.length
         ? `<div class="rec-examples"><div class="rec-label">Example${exs.length > 1 ? 's' : ''}</div>${exs.map(exampleRow).join('')}</div>`
         : '';
-      return `<details class="rec-acc">` +
-        `<summary><span class="sev ${c.severity}">${c.severity}</span><span class="rec-title">${esc(c.title)}</span><span class="rec-count">${c.count}</span><span class="rec-chev" aria-hidden="true">›</span></summary>` +
-        `<div class="rec-body"><div class="rec-fix"><span class="rec-label">Fix</span> ${esc(c.fix)}</div>${examplesHtml}</div>` +
-        `</details>`;
+      return accordionItem({
+        summaryHtml: `${sevBadge(c.severity)}<span class="rec-title">${esc(c.title)}</span><span class="rec-count">${c.count}</span>`,
+        bodyHtml: `<div class="rec-fix"><span class="rec-label">Fix</span> ${esc(c.fix)}</div>${examplesHtml}`,
+      });
     }).join('');
-    return `<div class="rec-cat"><h4 class="rec-cat-title">${esc(CAT_LABEL[cat.category] || cat.category)} <span class="rec-cat-count">${cat.checks.length}</span></h4>${items}</div>`;
+    return accordionSection(CAT_LABEL[cat.category] || cat.category, cat.checks.length, items);
   }).join('');
 
   const ctrl = $('recsControls');
-  if (ctrl) {
-    ctrl.innerHTML = `<button class="recs-btn" data-act="expand">Expand all</button><button class="recs-btn" data-act="collapse">Collapse all</button>`;
-    ctrl.querySelectorAll<HTMLButtonElement>('.recs-btn').forEach(b => b.addEventListener('click', () => {
-      const open = b.dataset.act === 'expand';
-      el.querySelectorAll('details').forEach(d => { (d as HTMLDetailsElement).open = open; });
-    }));
-  }
+  if (ctrl) accordionControls(ctrl, el);
 }
 
 // Findings: severity count-chips (click to filter) + a prioritised table with a
@@ -426,7 +413,9 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
     `</div>`;
 
   const drawTable = (): void => {
-    const list = fc.top.filter(f => active === 'all' || f.severity === active).slice(0, 25);
+    // Full list, no pagination — the .grid-virtual class (content-visibility:auto)
+    // keeps long lists cheap to render.
+    const list = fc.top.filter(f => active === 'all' || f.severity === active);
     const rows = list.map((f, i) => {
       const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk), ev = safeJson(f.evidence);
       const path = f.url_key ? shortPath(f.url_key) : '—';
@@ -435,8 +424,8 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
       const szClass = 'impact-' + (sz.toLowerCase() || 's');
       const qLabel = ev.query ? ` <span style="color:var(--text-muted);font-size:12px">“${esc(String(ev.query))}”</span>` : '';
       return `<tr class="fi-row" data-fi="${i}" tabindex="0" role="button" aria-expanded="false">` +
-        `<td><span class="sev ${f.severity}">${f.severity}</span></td>` +
-        `<td><span class="fi-chev" aria-hidden="true">›</span>${esc(rec.title || f.check_id)}${qLabel}</td>` +
+        `<td>${sevBadge(f.severity)}</td>` +
+        `<td><span class="fi-chev" aria-hidden="true">${icons.chevron}</span>${esc(rec.title || f.check_id)}${qLabel}</td>` +
         `<td class="url" title="${esc(f.url_key || '')}">${esc(path)}</td><td class="num">${traf.clicks || 0}</td>` +
         `<td class="num">${traf.impressions || 0}</td>` +
         `<td class="prio"><span class="impact ${szClass}">${esc(sz || '–')} ${f.impact ?? pct}</span></td>` +
@@ -444,7 +433,7 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
         `<tr class="fi-detail-row" hidden><td colspan="7">${findingDetailHtml(f)}</td></tr>`;
     });
     tableEl.innerHTML = rows.length
-      ? healthBar + `<table><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th><th>Fix</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      ? healthBar + `<table class="grid-virtual"><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th><th>Fix</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
       : healthBar + '<p class="muted">No findings at this severity in the top results.</p>';
     tableEl.querySelectorAll<HTMLElement>('.fi-row').forEach(row => {
       const toggle = (): void => {
@@ -459,40 +448,20 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
       row.addEventListener('keydown', e => { const k = (e as KeyboardEvent).key; if (k === 'Enter' || k === ' ') { e.preventDefault(); toggle(); } });
     });
   };
-  const drawChips = (): void => {
-    const chip = (sev: string, label: string, n: number): string =>
-      `<button class="sev-chip ${sev === 'all' ? 'c-all' : 's-' + sev} ${active === sev ? 'active' : ''}" data-sev="${sev}">${label} <b>${n}</b></button>`;
-    const parts = [chip('all', 'All', fc.total)];
-    for (const s of SEV_ORDER) if (sevCounts[s]) parts.push(chip(s, SEV_LABEL[s], sevCounts[s]));
-    chipsEl.innerHTML = parts.join('');
-    chipsEl.querySelectorAll('.sev-chip').forEach(b => b.addEventListener('click', () => {
-      active = (b as HTMLElement).dataset.sev!; drawChips(); drawTable();
-    }));
-  };
-  drawChips(); drawTable();
+  filterGroup(
+    chipsEl,
+    [
+      { key: 'all', label: 'All', count: fc.total },
+      ...SEV_ORDER.filter(s => sevCounts[s]).map(s => ({ key: s, label: SEV_LABEL[s], count: sevCounts[s], variant: s })),
+    ],
+    key => { active = key; drawTable(); },
+    'all',
+  );
+  drawTable();
   $('findingsSummary').textContent = `${fc.total} findings across ${fc.byCheck.length} checks, ranked by impact ÷ effort.`;
 }
 
-// Tiny inline-SVG sparkline (no axes, single muted line) — the 28-day shape behind a KPI.
-function sparkline(series: number[], lowerIsBetter = false): string {
-  const pts = series.filter(v => Number.isFinite(v));
-  if (pts.length < 2) return '';
-  const w = 96, h = 26, min = Math.min(...pts), max = Math.max(...pts), span = max - min || 1;
-  // For position (lower=better) invert Y so an improving trend still rises visually.
-  const norm = (v: number): number => lowerIsBetter ? (v - min) / span : 1 - (v - min) / span;
-  const step = w / (pts.length - 1);
-  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(norm(v) * (h - 4) + 2).toFixed(1)}`).join(' ');
-  return `<svg class="metric-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
-}
-
-function metricCard(label: string, value: string, change: number, lowerIsBetter = false, spark: number[] = []): string {
-  const better = lowerIsBetter ? change < 0 : change > 0;
-  const cls = change === 0 ? 'flat' : better ? 'up' : 'down';
-  const arrow = change === 0 ? '' : change > 0 ? '▲' : '▼';
-  const pct = `${arrow} ${Math.abs(Math.round(change))}%`;
-  return `<div class="metric-card"><div class="label">${label}</div><div class="value">${value}</div>` +
-    `<div class="metric-foot"><span class="chg ${cls}">${pct}</span>${sparkline(spark, lowerIsBetter)}</div></div>`;
-}
+// KPI tiles come from the display library (lib/kpi.ts: statBlock + kpiGrid).
 
 function render(data: DashboardData): void {
   $('loading').style.display = 'none';
@@ -518,15 +487,17 @@ function render(data: DashboardData): void {
   const sImpr = spark.map(d => d.impressions);
   const sCtr = spark.map(d => d.impressions ? d.clicks / d.impressions : 0);
   const sPos = spark.map(d => d.position).filter(v => v > 0);
-  $('metrics').innerHTML =
-    metricCard('Clicks', fmt(c.clicks), pctChg(c.clicks, p.clicks), false, sClicks) +
-    metricCard('Impressions', fmt(c.impressions), pctChg(c.impressions, p.impressions), false, sImpr) +
-    metricCard('CTR', `${(c.ctr * 100).toFixed(1)}%`, pctChg(c.ctr, p.ctr), false, sCtr) +
-    metricCard('Avg position', c.position.toFixed(1), pctChg(c.position, p.position), true, sPos);
+  $('metrics').outerHTML = kpiGrid([
+    { label: 'Clicks', value: fmt(c.clicks), change: pctChg(c.clicks, p.clicks), spark: sClicks },
+    { label: 'Impressions', value: fmt(c.impressions), change: pctChg(c.impressions, p.impressions), spark: sImpr },
+    { label: 'CTR', value: `${(c.ctr * 100).toFixed(1)}%`, change: pctChg(c.ctr, p.ctr), spark: sCtr },
+    { label: 'Avg position', value: c.position.toFixed(1), change: pctChg(c.position, p.position), lowerIsBetter: true, spark: sPos },
+  ]).replace('<div class="metrics">', '<div class="metrics" id="metrics">');
 
   const col = palette();
-  // axis tick labels + axis names use primary text (high contrast: white on dark, near-black on light)
-  const axis = { axisLine: { lineStyle: { color: col.border } }, axisLabel: { color: col.axisText, fontSize: 12 }, nameTextStyle: { color: col.axisText, fontSize: 12 }, splitLine: { lineStyle: { color: col.grid, type: 'dashed' as const, opacity: 0.6 } } };
+  // Axis discipline (brief #4): whisper dashed gridlines; numeric axes get M/k labels.
+  const axis = axisDefaults(col);
+  const axisNum = axisDefaults(col, { numeric: true });
 
   // Executive summary — plain-language read of performance + the prioritised "start here" list
   renderExecSummary(data);
@@ -538,19 +509,17 @@ function render(data: DashboardData): void {
 
   // 0) Equity vs reality — template mismatch (bars) + per-URL scatter (the architecture flagship)
   const mm = data.templateMismatch ?? [];
-  mismatchChart?.dispose();
-  mismatchChart = echarts.init($('mismatchChart'));
   if (mm.length) {
     const labels = mm.map(m => m.template).reverse();
-    mismatchChart.setOption({
+    wrap('mismatchChart').setOption({
       ...ARIA,
       grid: { left: 96, right: 24, top: 28, bottom: 30 },
       legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => v + '%' },
+      tooltip: { ...tooltipDefaults(col), axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => v + '%' },
       xAxis: { type: 'value', name: '% share', max: 100, ...axis },
       yAxis: { type: 'category', data: labels, ...axis },
       series: [
-        { name: 'Internal equity', type: 'bar', data: mm.map(m => m.iprPct).reverse(), itemStyle: { color: col.accent } },
+        { name: 'Internal equity', type: 'bar', data: mm.map(m => m.iprPct).reverse(), itemStyle: { color: col.blue } },
         { name: 'Organic traffic', type: 'bar', data: mm.map(m => m.trafficPct).reverse(), itemStyle: { color: col.green } },
       ],
     });
@@ -559,29 +528,27 @@ function render(data: DashboardData): void {
       ? `/${sink.template}/ absorbs ${sink.iprPct}% of internal equity but drives ${sink.trafficPct}% of traffic — equity flowing into a dead end.`
       : 'Internal equity share vs organic traffic share, by template.';
   } else {
-    mismatchChart.setOption({ ...ARIA, title: { text: 'Run a crawl to map equity flow', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    wrap('mismatchChart').setEmpty('Run a crawl to map equity flow', col);
     $('mismatchSummary').textContent = 'Run a crawl (refresh_property) to see equity flow by template.';
   }
 
   const sc = data.equityScatter ?? [];
-  const bucketColor: Record<string, string> = { content: col.accent, category: col.red, homepage: col.amber, other: col.muted };
+  const bucketColor: Record<string, string> = { content: col.blue, category: col.red, homepage: col.amber, other: col.muted };
   const scGroups: Record<string, number[][]> = {};
   for (const pt of sc) (scGroups[pt.t] ??= []).push([pt.x, Math.max(1, pt.y)]); // max(1) keeps the log axis valid
-  scatterChart?.dispose();
-  scatterChart = echarts.init($('scatterChart'));
   if (sc.length) {
-    scatterChart.setOption({
+    wrap('scatterChart').setOption({
       ...ARIA,
       grid: { left: 60, right: 24, top: 24, bottom: 40 },
       legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
-      tooltip: { trigger: 'item', formatter: (p: any) => `iPR ${p.value[0]} · ${fmt(p.value[1])} impressions` },
+      tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => `iPR ${p.value[0]} · ${fmt(p.value[1])} impressions` },
       xAxis: { type: 'value', name: 'internal PageRank', min: 0, max: 100, ...axis },
-      yAxis: { type: 'log', name: 'impressions', ...axis },
+      yAxis: { type: 'log', name: 'impressions', ...axisNum },
       series: Object.entries(scGroups).map(([t, pts]) => ({ name: t, type: 'scatter', symbolSize: t === 'category' ? 9 : 7, itemStyle: { color: bucketColor[t] ?? col.muted, opacity: 0.6 }, data: pts })),
     });
     $('scatterSummary').textContent = `${sc.length} URLs by internal PageRank and impressions; bottom-right = high-authority pages earning no traffic.`;
   } else {
-    scatterChart.setOption({ ...ARIA, title: { text: 'Run a crawl to map equity vs traffic', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    wrap('scatterChart').setEmpty('Run a crawl to map equity vs traffic', col);
     $('scatterSummary').textContent = 'Run a crawl (refresh_property) to see the equity map.';
   }
 
@@ -597,7 +564,7 @@ function render(data: DashboardData): void {
       </svg><div class="ar-score"><div class="ar-num" style="color:${scoreColor}">${ar.score}</div><div class="ar-of">/ 100</div></div></div>`;
     const cats = ar.byCategory.map(c => `<div class="ar-cat"><div class="c-label">${esc(c.category)}</div><div class="c-val">${c.passed}<span style="color:var(--text-muted)">/${c.total}</span></div></div>`).join('');
     const items = ar.checks.map(c => `<div class="ar-check">
-      <span class="${c.present ? 'ar-ok' : 'ar-no'}" style="min-width:14px;font-weight:600">${c.present ? '✓' : '○'}</span>
+      <span class="${c.present ? 'ar-ok' : 'ar-no'}" style="min-width:14px;font-weight:600">${c.present ? icons.check : icons.x}</span>
       <span style="flex:1">${esc(c.label)}${c.present && c.detail ? ` <span style="color:var(--text-muted)">— ${esc(c.detail)}</span>` : ''}</span>
       ${c.present ? '' : `<span class="ar-fix" style="max-width:48%;text-align:right">${esc(c.fix)}</span>`}</div>`).join('');
     $('agentPanel').innerHTML =
@@ -610,14 +577,10 @@ function render(data: DashboardData): void {
   // 0b) Cannibalisation braids — per contested query, competing URLs' weekly position over time
   const cann = data.cannibalisation ?? [];
   const cannSel = $('cannSelect') as HTMLSelectElement;
-  cannChart?.dispose();
-  cannChart = echarts.init($('cannChart'));
   if (cann.length) {
     cannSel.innerHTML = cann.map((q, i) => `<option value="${i}">${esc(q.query)} (${q.urls.length} URLs)</option>`).join('');
-    // Brand spectrum for the colliding lines (concrete hex so the canvas can use them).
-    const cssv = getComputedStyle(document.documentElement);
-    const brand = ['--color-brand-cyan', '--color-brand-fuchsia', '--color-brand-violet']
-      .map(v => cssv.getPropertyValue(v).trim() || col.accent);
+    // Categorical spectrum for the colliding lines (concrete hex for the canvas).
+    const brand = [col.teal, col.categorical[2], col.violet];
     const drawBraid = (qi: number): void => {
       const q = cann[qi];
       const top = q.urls.slice(0, 3); // only the real contenders — not a spaghetti of every URL
@@ -638,15 +601,16 @@ function render(data: DashboardData): void {
         }
       }
       const lines = top.map((u, ui) => ({
-        name: shortPath(u.url), type: 'line', smooth: true, connectNulls: true, showSymbol: false,
+        // Lines break on missing weeks (null-vs-zero discipline) — a gap is "not seen", not rank 0.
+        name: shortPath(u.url), type: 'line', smooth: true, connectNulls: false, showSymbol: false,
         lineStyle: { width: 2.5, color: brand[ui % brand.length] }, itemStyle: { color: brand[ui % brand.length] },
         data: weeks.map(w => maps[ui].get(w) ?? null),
       }));
-      cannChart!.setOption({
+      wrap('cannChart').setOption({
         ...ARIA,
         grid: { left: 48, right: 16, top: 28, bottom: 40 },
         legend: { top: 0, type: 'scroll', textStyle: { color: col.text, fontSize: 11 } },
-        tooltip: { trigger: 'axis' },
+        tooltip: tooltipDefaults(col),
         xAxis: { type: 'category', data: weeks, boundaryGap: false, ...axis },
         yAxis: { type: 'value', name: 'rank (1 = top)', inverse: true, min: 1, ...axis },
         series: [
@@ -655,55 +619,78 @@ function render(data: DashboardData): void {
             itemStyle: { color: col.text, borderColor: col.surface, borderWidth: 2 }, z: 6,
             tooltip: { trigger: 'item', formatter: (p: any): string => `Leader changed (week ${p.value[0]})` } },
         ],
-      }, true);
+      });
     };
     drawBraid(0);
     cannSel.onchange = (): void => drawBraid(Number(cannSel.value));
     $('cannSummary').textContent = `${cann.length} contested queries; each line is a competing URL's weekly rank (top = winning). A dot marks the week Google switched which URL it favours.`;
   } else {
     cannSel.innerHTML = '';
-    cannChart.setOption({ ...ARIA, title: { text: 'No cannibalisation detected', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    wrap('cannChart').setEmpty('No cannibalisation detected', col);
     $('cannSummary').textContent = 'No contested queries found.';
   }
 
   // 0d) Top internally-linked pages with their current status code (a non-200 high up = equity leak)
   const tlp = data.topLinkedPages ?? [];
-  const statusBadge = (s: number | null): string => {
-    if (s == null) return '<span class="cat cat-neutral">?</span>';
-    const cls = s === 200 ? 'cat-up' : s >= 400 ? 'cat-down' : s >= 300 ? 'cat-warn' : 'cat-neutral';
-    return `<span class="cat ${cls}">${s}</span>`;
-  };
   $('topLinkedTable').innerHTML = tlp.length
     ? tableHtml(['URL', 'Inlinks', 'Status', 'Indexable'], tlp.map(p =>
-      `<tr><td class="url" title="${esc(p.url)}">${esc(shortPath(p.url))}</td><td class="num">${p.inlinks}</td><td>${statusBadge(p.status)}</td><td>${p.indexable ? '✓' : '✗ ' + esc(p.reason || '')}</td></tr>`))
-    : '<p class="muted">Run a crawl (refresh_property) to see the internal-link hierarchy.</p>';
+      `<tr><td class="url" title="${esc(p.url)}">${esc(shortPath(p.url))}</td><td class="num">${p.inlinks}</td><td>${statusBadge(p.status)}</td><td>${p.indexable ? icons.check : `${icons.x} ${esc(p.reason || '')}`}</td></tr>`))
+    : emptyState('Run a crawl to see the internal-link hierarchy.', 'refresh_property');
   const tlpBroken = tlp.filter(p => p.status !== 200).length;
   $('topLinkedSummary').textContent = `Top ${tlp.length} internally-linked pages by inlink count; ${tlpBroken} return a non-200 status.`;
 
-  // 0e) Site health — Screaming-Frog-style stat bars (plain CSS, deliberately no chart lib)
+  // 0e) Site health — stat bars as EChartWrapper configs (brief: no DOM/SVG chart
+  // primitives — even stat bars go through the wrapper).
   {
     const ch = data.crawlHealth;
     // Tone (bar colour) rides on each data row — assigned in dashboardData where the bucket's
     // meaning is known, never inferred from label text here.
-    const sfList = (id: string, rows: { label: string; count: number; tone?: string }[] | undefined, base: number): void => {
+    const toneColor: Record<string, string> = { ok: col.green, warn: col.amber, bad: col.red, muted: col.grey };
+    const sfBars = (id: string, rows: { label: string; count: number; tone?: string }[] | undefined, base: number): void => {
       const el = $(id);
-      if (!rows?.length || base <= 0) { el.innerHTML = '<div class="sf-empty">Nothing to show - run a crawl first.</div>'; return; }
-      el.innerHTML = rows.map(r => {
-        const pct = Math.min(100, r.count / base * 100);
-        return `<div class="sf-row"><div class="sf-label" title="${esc(r.label)}">${esc(r.label)}</div>` +
-          `<div class="sf-track"><div class="sf-fill ${esc(r.tone ?? '')}" style="width:${Math.max(pct, r.count > 0 ? 1.5 : 0)}%"></div></div>` +
-          `<div class="sf-count">${fmt(r.count)}</div><div class="sf-pct">${pct < 1 && r.count > 0 ? '<1' : Math.round(pct)}%</div></div>`;
-      }).join('');
+      if (!rows?.length || base <= 0) {
+        chartsReg.get(id)?.dispose(); chartsReg.delete(id);
+        el.innerHTML = '<div class="sf-empty">Nothing to show - run a crawl first.</div>';
+        return;
+      }
+      if (el.querySelector('.sf-empty')) el.innerHTML = '';
+      const rev = rows.slice().reverse(); // horizontal bars read top-down
+      el.classList.add('sf-chart');
+      el.style.height = `${rev.length * 26 + 12}px`;
+      const pctOf = (n: number): string => { const p = (n / base) * 100; return p < 1 && n > 0 ? '<1' : String(Math.round(p)); };
+      // Truncate long axis labels in JS (predictable) — the full label stays in the tooltip.
+      const shortLabel = (s: string): string => (s.length > 24 ? `${s.slice(0, 23)}…` : s);
+      wrap(id).setOption({
+        ...ARIA,
+        grid: { left: 8, right: 96, top: 6, bottom: 6, containLabel: true },
+        tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => `${esc(String(rev[p.dataIndex].label))}: ${fmt(p.value)} (${pctOf(p.value)}%)` },
+        xAxis: { type: 'value', max: base, show: false },
+        yAxis: {
+          type: 'category', data: rev.map(r => shortLabel(r.label)),
+          axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: col.text, fontSize: 12 },
+        },
+        series: [{
+          type: 'bar', barWidth: 8,
+          showBackground: true, backgroundStyle: { color: col.grid, borderRadius: 4 },
+          itemStyle: { borderRadius: 4, color: (p: any) => toneColor[rev[p.dataIndex].tone ?? ''] ?? col.info },
+          label: {
+            show: true, position: 'right', color: col.muted, fontSize: 11,
+            formatter: (p: any) => `${fmt(p.value)} · ${pctOf(p.value)}%`,
+          },
+          data: rev.map(r => r.count),
+        }],
+      });
     };
     const total = ch?.totalPages ?? 0;
-    sfList('sfCodes', ch?.responseCodes, total);
-    sfList('sfIndexability', ch?.indexability, total);
-    sfList('sfSpeed', ch?.speed, total);
-    sfList('sfSize', ch?.htmlSize, total);
-    sfList('sfDepth', ch?.depth, total);
-    sfList('sfOnPage', ch?.onPage, total);
-    sfList('sfTitles', ch?.titles, total);
-    sfList('sfMetas', ch?.metas, total);
+    sfBars('sfCodes', ch?.responseCodes, total);
+    sfBars('sfIndexability', ch?.indexability, total);
+    sfBars('sfSpeed', ch?.speed, total);
+    sfBars('sfSize', ch?.htmlSize, total);
+    sfBars('sfDepth', ch?.depth, total);
+    sfBars('sfOnPage', ch?.onPage, total);
+    sfBars('sfTitles', ch?.titles, total);
+    sfBars('sfMetas', ch?.metas, total);
     const card = (id: string, show: boolean): HTMLElement => { const c = $(id); c.style.display = show ? '' : 'none'; return c; };
     card('sfServerErrorsCard', !!ch?.serverErrors?.length);
     if (ch?.serverErrors?.length) $('sfServerErrors').innerHTML = tableHtml(['URL', 'Status'],
@@ -725,19 +712,19 @@ function render(data: DashboardData): void {
   const dist = data.rankingDistribution ?? [];
   const buckets = [
     { key: 'b1' as const, name: 'Pos 1–3', color: col.green },
-    { key: 'b2' as const, name: 'Pos 4–10', color: col.accent },
+    { key: 'b2' as const, name: 'Pos 4–10', color: col.blue },
     { key: 'b3' as const, name: 'Pos 11–20', color: col.amber },
-    { key: 'b4' as const, name: 'Pos 21+', color: col.muted },
+    { key: 'b4' as const, name: 'Pos 21+', color: col.grey },
   ];
-  distChart?.dispose();
-  distChart = echarts.init($('distChart'));
-  distChart.setOption({
+  // 'ts' group: echarts.connect() unifies crosshair/tooltip across the daily
+  // time-series stack (ranking distribution + rank & clicks share the x domain).
+  wrap('distChart', 'ts').setOption({
     ...ARIA,
     grid: { left: 52, right: 16, top: 32, bottom: 30 },
     legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
-    tooltip: { trigger: 'axis' },
+    tooltip: tooltipDefaults(col),
     xAxis: { type: 'category', data: dist.map(d => d.date), ...axis },
-    yAxis: { type: 'value', name: 'impressions', ...axis },
+    yAxis: { type: 'value', name: 'impressions', ...axisNum },
     series: buckets.map(b => ({
       name: b.name, type: 'line', stack: 'imp', showSymbol: false, lineStyle: { width: 0 },
       areaStyle: { opacity: 0.55 }, itemStyle: { color: b.color }, data: dist.map(d => d[b.key]),
@@ -749,56 +736,53 @@ function render(data: DashboardData): void {
 
   // 1b) DataForSEO search visibility over time (rank_history) — reconciled window
   const rh = data.rankHistory ?? [];
-  rankHistChart?.dispose();
-  rankHistChart = echarts.init($('rankHistChart'));
   if (rh.length) {
     const rhBuckets = [
       { key: 'pos_1_3' as const, name: 'Pos 1–3', color: col.green },
-      { key: 'pos_4_10' as const, name: 'Pos 4–10', color: col.accent },
+      { key: 'pos_4_10' as const, name: 'Pos 4–10', color: col.blue },
       { key: 'pos_11_20' as const, name: 'Pos 11–20', color: col.amber },
-      { key: 'pos_21_100' as const, name: 'Pos 21–100', color: col.muted },
+      { key: 'pos_21_100' as const, name: 'Pos 21–100', color: col.grey },
     ];
-    rankHistChart.setOption({
+    wrap('rankHistChart').setOption({
       ...ARIA,
       grid: { left: 48, right: 56, top: 32, bottom: 30 },
       legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
-      tooltip: { trigger: 'axis' },
+      tooltip: tooltipDefaults(col),
       xAxis: { type: 'category', data: rh.map(p => p.period), ...axis },
       yAxis: [
-        { type: 'value', name: 'keywords', ...axis },
-        { type: 'value', name: 'ETV', ...axis, splitLine: { show: false } },
+        { type: 'value', name: 'keywords', ...axisNum },
+        { type: 'value', name: 'ETV', ...axisNum, splitLine: { show: false } },
       ],
       series: [
         ...rhBuckets.map(b => ({
           name: b.name, type: 'line', stack: 'kw', showSymbol: false, lineStyle: { width: 0 },
           areaStyle: { opacity: 0.55 }, itemStyle: { color: b.color }, data: rh.map(p => p[b.key]),
         })),
-        { name: 'ETV', type: 'line', yAxisIndex: 1, smooth: true, showSymbol: false, data: rh.map(p => Math.round(p.etv)), lineStyle: { color: col.red, width: 2 }, itemStyle: { color: col.red } },
+        { name: 'ETV', type: 'line', yAxisIndex: 1, smooth: true, showSymbol: false, data: rh.map(p => Math.round(p.etv)), lineStyle: { color: col.accent, width: 2 }, itemStyle: { color: col.accent } },
       ],
     });
     $('rankHistSummary').textContent = `DataForSEO ranking keywords by position bucket across ${rh.length} months, with estimated traffic value.`;
   } else {
-    rankHistChart.setOption({ ...ARIA, title: { text: 'No rank history yet — run track_ranks', left: 'center', top: 'center', textStyle: { color: col.muted, fontSize: 13, fontWeight: 'normal' } } });
+    wrap('rankHistChart').setEmpty('No rank history yet — run track_ranks', col);
     $('rankHistSummary').textContent = 'No DataForSEO rank history yet.';
   }
   $('alignNote').textContent = data.dateAlignment?.note ?? '';
 
   // 2) Rank + clicks over time (dual-axis) — flagship #6
   const trend = data.rankTrend ?? [];
-  rankChart?.dispose();
-  rankChart = echarts.init($('rankChart'));
-  rankChart.setOption({
+  wrap('rankChart', 'ts').setOption({
     ...ARIA,
     grid: { left: 48, right: 48, top: 20, bottom: 30 },
-    tooltip: { trigger: 'axis' },
+    tooltip: tooltipDefaults(col),
     xAxis: { type: 'category', data: trend.map(t => t.date), ...axis },
     yAxis: [
       { type: 'value', name: 'position', inverse: true, min: 1, ...axis },
-      { type: 'value', name: 'clicks', ...axis, splitLine: { show: false } },
+      { type: 'value', name: 'clicks', ...axisNum, splitLine: { show: false } },
     ],
     series: [
-      { name: 'clicks', type: 'bar', yAxisIndex: 1, data: trend.map(t => t.clicks), itemStyle: { color: col.violet, opacity: 0.35 } },
-      { name: 'avg position', type: 'line', yAxisIndex: 0, smooth: true, showSymbol: false, data: trend.map(t => Math.round(t.position * 10) / 10), lineStyle: { color: col.accent, width: 2 }, itemStyle: { color: col.accent } },
+      { name: 'clicks', type: 'bar', yAxisIndex: 1, data: trend.map(t => t.clicks), itemStyle: { color: col.blue, opacity: 0.35 } },
+      // Line breaks on days with no position data (null, never a dive to zero).
+      { name: 'avg position', type: 'line', yAxisIndex: 0, smooth: true, showSymbol: false, connectNulls: false, data: trend.map(t => (t.position > 0 ? Math.round(t.position * 10) / 10 : null)), lineStyle: { color: col.teal, width: 2 }, itemStyle: { color: col.teal } },
     ],
   });
   $('rankSummary').textContent = `Average Google position (higher is better) and daily clicks over ${trend.length} days.`;
@@ -807,8 +791,6 @@ function render(data: DashboardData): void {
 
   // 3b) Quick-wins matrix — CTR vs position against the expected-CTR curve, coloured by opportunity
   const qw = data.quickWins ?? [];
-  quickWinsChart?.dispose();
-  quickWinsChart = echarts.init($('quickWinsChart'));
   if (qw.length) {
     // Expected-CTR curve derived from the data points (server's model) — no client-side duplication.
     const curveMap = new Map<number, number>();
@@ -820,23 +802,23 @@ function render(data: DashboardData): void {
       name: SER_NAME[type], type: 'scatter', symbolSize: bub, itemStyle: { color, opacity },
       data: qw.filter(q => q.type === type).map(q => [q.position, q.ctr, q.impressions, q.expectedCtr, q.potential, q.query, q.type]),
     });
-    quickWinsChart.setOption({
+    wrap('quickWinsChart').setOption({
       ...ARIA,
       grid: { left: 56, right: 24, top: 34, bottom: 42 },
       legend: { top: 0, textStyle: { color: col.text, fontSize: 12 }, data: [SER_NAME.striking, SER_NAME.snippet, SER_NAME.serp, SER_NAME.ok, 'Expected CTR'] },
-      tooltip: { trigger: 'item', formatter: (p: any) => Array.isArray(p.value) ? `${esc(String(p.value[5]))}<br/>pos ${p.value[0]} · CTR ${p.value[1]}% (expected ${p.value[3]}%)<br/>${fmt(p.value[2])} impressions${p.value[6] === 'serp' ? '<br/><em>near-zero CTR — likely a SERP feature or cannibalisation; verify before rewriting</em>' : ` · ~${fmt(p.value[4])} clicks recoverable`}` : '' },
+      tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => Array.isArray(p.value) ? `${esc(String(p.value[5]))}<br/>pos ${p.value[0]} · CTR ${p.value[1]}% (expected ${p.value[3]}%)<br/>${fmt(p.value[2])} impressions${p.value[6] === 'serp' ? '<br/><em>near-zero CTR — likely a SERP feature or cannibalisation; verify before rewriting</em>' : ` · ~${fmt(p.value[4])} clicks recoverable`}` : '' },
       xAxis: { type: 'value', name: 'avg position', min: 1, max: 20, ...axis },
       yAxis: { type: 'value', name: 'CTR %', min: 0, ...axis },
       series: [
-        ser('ok', col.muted, 0.28),
+        ser('ok', col.grey, 0.28),
         ser('serp', col.red, 0.5),
         ser('striking', col.amber, 0.7),
-        ser('snippet', col.accent, 0.7),
+        ser('snippet', col.info, 0.7),
         { name: 'Expected CTR', type: 'line', data: curve, lineStyle: { color: col.text, type: 'dashed', width: 1.5, opacity: 0.5 }, symbol: 'none', tooltip: { show: false }, z: 1 },
       ],
     });
   } else {
-    quickWinsChart.setOption({ ...ARIA, graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No query data yet — sync Search Console.', fill: col.muted, fontSize: 13 } } });
+    wrap('quickWinsChart').setEmpty('No query data yet — sync Search Console.', col);
   }
 
   // Biggest quick wins table — ranked by recoverable clicks
@@ -880,36 +862,34 @@ function render(data: DashboardData): void {
         }).join('');
         return `<details class="rec-acc"><summary>` +
           `${cross}${verd}<span class="rec-title">“${esc(q.query)}”</span>` +
-          `<span class="rec-count">${q.urlCount} URLs · ${fmt(q.totalClicks)} clicks · ${fmt(q.totalImpressions)} impr</span><span class="rec-chev" aria-hidden="true">›</span>` +
+          `<span class="rec-count">${q.urlCount} URLs · ${fmt(q.totalClicks)} clicks · ${fmt(q.totalImpressions)} impr</span><span class="rec-chev" aria-hidden="true">${icons.chevron}</span>` +
           `</summary><div class="rec-body"><div class="rec-examples"><div class="rec-label">Competing URLs</div>${rows}</div></div></details>`;
       }).join('')
     : '<p class="muted">No cannibalisation detected — no query has 2+ of your URLs competing with real impressions.</p>';
 
   // 4) Top keyword performance (green/red + signed label so colour isn't the only cue)
   const kw = (data.topKeywords ?? []).slice().reverse(); // horizontal bar reads top-down
-  kwChart?.dispose();
-  kwChart = echarts.init($('kwChart'));
-  kwChart.setOption({
+  const kwWrap = wrap('kwChart');
+  kwWrap.setOption({
     ...ARIA,
     grid: { left: 8, right: 44, top: 10, bottom: 24, containLabel: true },
-    tooltip: { trigger: 'item', formatter: (pa: any) => `${esc(String(pa.name))}<br/>Δ clicks: ${pa.value >= 0 ? '+' : ''}${pa.value} (now ${kw[pa.dataIndex].clicks})` },
-    xAxis: { type: 'value', ...axis },
-    yAxis: { type: 'category', data: kw.map(k => k.query), axisLabel: { color: col.axisText, width: 180, overflow: 'truncate' }, axisLine: { lineStyle: { color: col.border } } },
+    tooltip: { ...tooltipDefaults(col, 'item'), formatter: (pa: any) => `${esc(String(pa.name))}<br/>Δ clicks: ${pa.value >= 0 ? '+' : ''}${pa.value} (now ${kw[pa.dataIndex].clicks})` },
+    xAxis: { type: 'value', ...axisNum },
+    yAxis: { type: 'category', data: kw.map(k => k.query), axisLabel: { color: col.text, width: 180, overflow: 'truncate' }, axisLine: { lineStyle: { color: col.border } } },
     series: [{
       type: 'bar',
       label: { show: true, position: 'right', color: col.muted, fontSize: 11, formatter: (p: any) => (p.value > 0 ? '+' : '') + p.value },
       data: kw.map(k => ({ value: k.clicksChange, itemStyle: { color: k.clicksChange >= 0 ? col.green : col.red } })),
     }],
   });
-  kwChart.off('click');
-  kwChart.on('click', (pa: any) => { void loadRelated(kw[pa.dataIndex].query); });
+  kwWrap.on('click', (pa: any) => { void loadRelated(kw[pa.dataIndex].query); });
   const up = kw.filter(k => k.clicksChange > 0).length, down = kw.filter(k => k.clicksChange < 0).length;
   $('kwSummary').textContent = `${kw.length} top keywords; ${up} improved and ${down} declined versus the prior period (signed click change shown on each bar).`;
 
   // Report tables (agency-style)
   const pp = data.pagePerformance ?? [];
   $('pagePerfTable').innerHTML = pp.length
-    ? tableHtml(['Trend', 'Page', 'Clicks', 'Δ%', 'Impr', 'Pos'], pp.map(p => `<tr><td><span class="cat ${catClass(p.category)}">${p.category}</span></td><td class="url" title="${esc(p.urlKey)}">${esc(shortPath(p.urlKey))}</td><td class="num">${p.clicks}</td><td class="num">${p.clicksChangePct > 0 ? '+' : ''}${p.clicksChangePct}%</td><td class="num">${p.impressions}</td><td class="num">${p.position}</td></tr>`))
+    ? tableHtml(['Trend', 'Page', 'Clicks', 'Δ%', 'Impr', 'Pos'], pp.map(p => `<tr><td><span class="cat ${catClass(p.category)}">${p.category}</span></td><td class="url" title="${esc(p.urlKey)}">${esc(shortPath(p.urlKey))}</td><td class="num">${p.clicks}</td><td class="num" data-sort="${p.clicksChangePct}">${formatTrend(p.clicksChangePct, { suffix: '%' })}</td><td class="num">${p.impressions}</td><td class="num">${p.position}</td></tr>`))
     : '<div class="hint">No GSC data.</div>';
   $('pagePerfSummary').textContent = `${pp.length} pages categorised by 28-day trend.`;
 
@@ -936,50 +916,17 @@ function render(data: DashboardData): void {
 
   // Make the data tables click-to-sort by any column (the findings list is excluded — its rows come
   // in expand/detail pairs that re-ordering would break).
-  ['quickWinsTable', 'contentDecayTable', 'pagePerfTable', 'movementTable', 'deviceTable', 'countryTable'].forEach(id => makeSortable($(id)));
+  ['quickWinsTable', 'contentDecayTable', 'pagePerfTable', 'movementTable', 'deviceTable', 'countryTable'].forEach(id => attachSort($(id)));
 
   setupTabs();
 }
 
-// Make a rendered data table sortable: click a header to sort rows by that column. Numeric columns are
-// detected from the `num` cell class and sort numerically (blanks/“—” sink to the bottom); the rest sort
-// alphabetically. Direction toggles per click. Re-wired on every render (innerHTML is rebuilt each time).
-function makeSortable(container: HTMLElement | null): void {
-  const table = container?.querySelector('table'); if (!table) return;
-  const tbody = table.querySelector('tbody'); if (!tbody) return;
-  const ths = [...table.querySelectorAll('thead th')] as HTMLElement[];
-  const first = tbody.querySelector('tr');
-  const toNum = (raw: string): number => { const m = raw.replace(/[−–]/g, '-').match(/-?\d[\d,]*\.?\d*/); return m ? parseFloat(m[0].replace(/,/g, '')) : NaN; };
-  ths.forEach((th, i) => {
-    if (th.classList.contains('nosort')) return;
-    const numeric = !!first && (first.children[i] as HTMLElement | undefined)?.classList.contains('num');
-    th.classList.add('sortable-th');
-    th.addEventListener('click', () => {
-      const dir = th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending';
-      ths.forEach(h => { h.removeAttribute('aria-sort'); h.classList.remove('sort-asc', 'sort-desc'); });
-      th.setAttribute('aria-sort', dir);
-      th.classList.add(dir === 'ascending' ? 'sort-asc' : 'sort-desc');
-      const val = (tr: Element): string => (tr.children[i] as HTMLElement | undefined)?.getAttribute('data-sort') ?? ((tr.children[i] as HTMLElement | undefined)?.textContent ?? '').trim();
-      const rows = [...tbody.querySelectorAll(':scope > tr')];
-      rows.sort((a, b) => {
-        if (numeric) {
-          const x = toNum(val(a)), y = toNum(val(b)), ax = isNaN(x), ay = isNaN(y);
-          if (ax && ay) return 0; if (ax) return 1; if (ay) return -1;
-          return dir === 'ascending' ? x - y : y - x;
-        }
-        const x = val(a).toLowerCase(), y = val(b).toLowerCase(), c = x < y ? -1 : x > y ? 1 : 0;
-        return dir === 'ascending' ? c : -c;
-      });
-      rows.forEach(r => tbody.appendChild(r));
-    });
-  });
-}
+// Table sorting lives in the display library (lib/data-grid.ts: attachSort).
 
 // Tabbed nav: switch panels, and resize the ECharts in the newly-shown panel — charts created in a
 // display:none panel lay out at 0×0, so they must be resized once their container is visible.
 function setupTabs(): void {
-  const live = (): (echarts.ECharts | null)[] => [distChart, rankHistChart, rankChart, kwChart, mismatchChart, scatterChart, cannChart, quickWinsChart];
-  const resizeVisible = (): void => { for (const c of live()) { try { if (c && (c.getDom() as HTMLElement).offsetParent !== null) c.resize(); } catch { /* disposed */ } } };
+  const resizeVisible = (): void => { for (const w of chartsReg.values()) w.resizeIfVisible(); };
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
     btn.onclick = (): void => {
       const panel = btn.dataset.panel;
@@ -1007,12 +954,12 @@ function buildExportBar(data: DashboardData): void {
   const mk = (label: string, fn: () => void): void => {
     const b = document.createElement('button');
     b.className = 'btn';
-    b.textContent = label;
+    b.innerHTML = `${icons.download} ${esc(label)}`;
     b.onclick = fn;
     bar.appendChild(b);
   };
   if (data.findings?.top?.length) {
-    mk('↓ Findings CSV', () => downloadCsv('seo-findings.csv', [
+    mk('Findings CSV', () => downloadCsv('seo-findings.csv', [
       ['severity', 'check', 'url', 'clicks', 'impressions', 'position', 'priority', 'fix'],
       ...data.findings!.top.map(f => {
         const rec = safeJson(f.recommendation), t = safeJson(f.traffic_at_risk);
@@ -1021,25 +968,25 @@ function buildExportBar(data: DashboardData): void {
     ]));
   }
   if (data.topKeywords?.length) {
-    mk('↓ Keywords CSV', () => downloadCsv('keywords.csv', [
+    mk('Keywords CSV', () => downloadCsv('keywords.csv', [
       ['query', 'clicks', 'prevClicks', 'clicksChange', 'avgPosition', 'prevPosition'],
       ...data.topKeywords!.map(k => [k.query, k.clicks, k.prevClicks, k.clicksChange, k.position, k.prevPosition]),
     ]));
   }
   if (data.strikingDistance?.length) {
-    mk('↓ Striking-distance CSV', () => downloadCsv('striking-distance.csv', [
+    mk('Striking-distance CSV', () => downloadCsv('striking-distance.csv', [
       ['query', 'position', 'impressions', 'clicks'],
       ...data.strikingDistance!.map(s => [s.query, s.position, s.impressions, s.clicks]),
     ]));
   }
   if (data.pagePerformance?.length) {
-    mk('↓ Pages CSV', () => downloadCsv('page-performance.csv', [
+    mk('Pages CSV', () => downloadCsv('page-performance.csv', [
       ['category', 'url', 'clicks', 'prevClicks', 'clicksChangePct', 'impressions', 'position'],
       ...data.pagePerformance!.map(p => [p.category, p.urlKey, p.clicks, p.prevClicks, p.clicksChangePct, p.impressions, p.position]),
     ]));
   }
   if (data.keywordMovement?.length) {
-    mk('↓ Movement CSV', () => downloadCsv('keyword-movement.csv', [
+    mk('Movement CSV', () => downloadCsv('keyword-movement.csv', [
       ['category', 'query', 'firstPos', 'lastPos', 'delta', 'firstDate', 'lastDate'],
       ...data.keywordMovement!.map(m => [m.category, m.query, m.firstPos, m.lastPos, m.delta, m.firstDate, m.lastDate]),
     ]));

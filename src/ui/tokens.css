@@ -1,226 +1,257 @@
 /* ============================================================
- * Better Search Console — shared design tokens
+ * SEO Audit Console — design tokens (pricemonitor SaaS theme)
  *
- * The houtini design system (Linear + NASA + GitHub composite),
- * ported from houtini-site/src/styles/global.css for the MCP app UIs.
+ * Semantic token architecture per plan/design-library-brief.md, with the
+ * REAL palette lifted from C:\dev\price-monitor\app\src\pages\index.astro
+ * (the pricemonitor web UI): cool grey canvas, white panels, crisp 1px
+ * lines, Work Sans body + Rubik display, tabular numerals throughout.
  *
- * Strategy
- *   1. Canonical houtini tokens (--color-*, fonts, radii) define the
- *      palette ONCE on :root for light mode.
- *   2. Every legacy variable the three UIs already reference
- *      (--bg-primary / --cyan / --accent / --surface / …) is aliased
- *      to a canonical token via var()/color-mix, so the component CSS
- *      is untouched and all three naming schemes resolve to the same
- *      houtini values.
- *   3. Dark mode overrides ONLY the canonical --color-* tokens; the
- *      aliases inherit automatically. It is applied both on an explicit
- *      host theme (:root.dark / [data-theme="dark"], set by the MCP host
- *      via applyDocumentTheme) AND on prefers-color-scheme when no host
- *      theme is forced — so the UIs adapt to Claude's theme but still
- *      work standalone in a browser.
+ * Layers
+ *   1. Semantic colour: --bg-canvas / --bg-surface / --bg-surface-hover /
+ *      --border-subtle / --text-primary / --text-secondary (+ tertiary).
+ *   2. Intent: --intent-danger/warning/success/info (+ -bg tints).
+ *   3. Charts: --chart-categorical-1..8, colourblind-safe muted.
+ *   4. Density: --space-compact (4/8), --space-standard (12/16),
+ *      --space-relaxed (24/32).
+ *   5. Type: --fs-axis 11 / --fs-badge 12 / --fs-table 13 / --fs-body 14 /
+ *      --fs-title 18 / --fs-kpi 24 / --fs-hero 32.
+ *   6. Back-compat aliases so pre-library CSS/TS keeps resolving.
  *
- * Fonts are embedded via @fontsource-variable; vite-plugin-singlefile
- * base64-inlines the woff2 into each standalone HTML bundle.
+ * Dark mode overrides the semantic layer only (host theme class wins,
+ * prefers-color-scheme covers standalone use — no toggle in the export).
  * ============================================================ */
 
-@import '@fontsource-variable/schibsted-grotesk/index.css';
+@import '@fontsource-variable/work-sans/index.css';
+@import '@fontsource-variable/rubik/index.css';
 @import '@fontsource-variable/jetbrains-mono/index.css';
 
 :root {
-  /* --- Canonical palette (light) --- */
-  --color-canvas: #fbfbfd;
-  --color-surface-panel: #f4f5f7;
-  --color-surface-elevated: #ffffff;
-  --color-surface-hover: #f0f1f3;
+  /* --- 1. Semantic colour (light — pricemonitor values) --- */
+  --bg-canvas: #eef0f3;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f6f8fa;
+  --bg-inset: #eef0f3;              /* inputs / tracks / chips on a surface */
+  --border-subtle: #eef1f4;         /* pm --line-2: row separators, whisper gridlines */
+  --border-standard: #e3e6ea;       /* pm --line: card + control borders */
+  --text-primary: #17191c;          /* pm --ink: headings, key numbers */
+  --text-secondary: #22262b;        /* pm --text: body */
+  --text-muted: #757c86;            /* pm --muted: labels, hints */
+  --text-faint: #9aa1ab;            /* pm --faint: micro-labels, disabled */
 
-  --color-text-primary: #0a0b0d;
-  --color-text-secondary: #2c2e33;
-  --color-text-tertiary: #62666d;
-  --color-text-quaternary: #8a8f98;
+  /* Brand accent (pricemonitor red) */
+  --accent: #cd2026;
+  --accent-strong: #a3181d;
+  --accent-bg: #fcecec;
+  --accent-on: #ffffff;
 
-  --color-border-subtle: rgba(10, 11, 13, 0.06);
-  --color-border-standard: rgba(10, 11, 13, 0.1);
-  --color-border-strong: #d0d6e0;
+  /* --- 2. Intent --- */
+  --intent-success: #1f9d64;  --intent-success-bg: #e8f5ee;
+  --intent-danger: #cf3742;   --intent-danger-bg: #fbe9eb;
+  --intent-warning: #c9821a;  --intent-warning-bg: #fbf1e0;
+  --intent-info: #3f8ecc;     --intent-info-bg: #e9f2fa;
 
-  /* Accent — houtini cooler-blue. The four metric hues map onto the
-   * houtini brand spectrum (blue → violet → fuchsia → cyan). */
-  --color-accent: #5b5fff;
-  --color-accent-hover: #7d80ff;
-  --color-accent-on: #ffffff;
-  --color-brand-violet: #8b5cf6;
-  --color-brand-fuchsia: #d946ef;
-  --color-brand-cyan: #06b6d4;
+  /* --- 3. Chart categorical (colourblind-safe muted, from the pm
+   * retailer spectrum + derived neutrals) --- */
+  --chart-categorical-1: #14497e;  /* deep blue */
+  --chart-categorical-2: #1f9d64;  /* green */
+  --chart-categorical-3: #d1541f;  /* orange */
+  --chart-categorical-4: #b81c1c;  /* red */
+  --chart-categorical-5: #158a86;  /* teal */
+  --chart-categorical-6: #6b5ca8;  /* violet */
+  --chart-categorical-7: #c9821a;  /* amber */
+  --chart-categorical-8: #757c86;  /* grey */
+  --chart-grid: #eef1f4;           /* whisper gridlines = lightest border */
+  --chart-axis: #757c86;
 
-  --color-status-live: #16a34a;
-  --color-status-error: #ef4444;
-  --color-status-warning: #f59e0b;
+  /* Shadows (pricemonitor) */
+  --shadow: 0 1px 2px rgba(20, 24, 30, .06), 0 12px 44px -14px rgba(20, 24, 30, .32);
+  --shadow-sm: 0 1px 2px rgba(20, 24, 30, .08), 0 4px 12px -6px rgba(20, 24, 30, .18);
+  --overlay: rgba(20, 24, 30, 0.4);
 
-  --shadow-card: 0 1px 2px rgba(10, 11, 13, 0.04), 0 1px 3px rgba(10, 11, 13, 0.04);
-  --shadow-card-hover: 0 1px 2px rgba(10, 11, 13, 0.06), 0 4px 12px rgba(10, 11, 13, 0.06);
-  --shadow-dropdown: 0 8px 24px rgba(10, 11, 13, 0.12);
-  --overlay: rgba(10, 11, 13, 0.4);
+  /* --- 4. Density --- */
+  --space-compact-1: 4px;
+  --space-compact-2: 8px;
+  --space-standard-1: 12px;
+  --space-standard-2: 16px;
+  --space-relaxed-1: 24px;
+  --space-relaxed-2: 32px;
 
-  /* Type — Schibsted Grotesk display/body, JetBrains Mono structural */
-  --font: "Schibsted Grotesk Variable", "Schibsted Grotesk", system-ui,
-    -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace,
-    SFMono-Regular, Menlo, Consolas, monospace;
+  /* --- 5. Type --- */
+  --font: "Work Sans Variable", "Work Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Rubik Variable", "Rubik", var(--font);
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-axis: 11px;
+  --fs-badge: 12px;
+  --fs-table: 13px;
+  --fs-body: 14px;
+  --fs-title: 18px;
+  --fs-kpi: 24px;
+  --fs-hero: 32px;
 
-  /* Radii — tight, per Linear */
-  --radius: 8px;
-  --radius-sm: 6px;
+  /* Radii + motion (pricemonitor) */
+  --radius: 10px;
+  --radius-sm: 8px;
+  --radius-pill: 20px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
 
   /* ========================================================
-   * Aliases — mode-independent, derived from the tokens above.
-   * Overriding the canonical tokens in dark mode cascades here.
+   * 6. Back-compat aliases (pre-library naming still in use).
+   * Overriding the semantic layer in dark mode cascades here.
    * ======================================================== */
-
-  /* Dashboard + Overview scheme */
-  --bg-primary: var(--color-canvas);
-  --bg-card: var(--color-surface-elevated);
-  --bg-card-hover: var(--color-surface-hover);
-  --bg-input: var(--color-surface-panel);
-  --bg-table-alt: color-mix(in srgb, var(--color-surface-elevated) 55%, var(--color-surface-panel));
-  --border: var(--color-border-standard);
-  --border-subtle: var(--color-border-subtle);
-  --text-primary: var(--color-text-primary);
-  --text-secondary: var(--color-text-secondary);
-  --text-muted: var(--color-text-tertiary);
-
-  --cyan: var(--color-accent);
-  --cyan-bg: color-mix(in srgb, var(--color-accent) 8%, transparent);
-  --cyan-bg-strong: color-mix(in srgb, var(--color-accent) 15%, transparent);
-  --purple: var(--color-brand-violet);
-  --purple-bg: color-mix(in srgb, var(--color-brand-violet) 8%, transparent);
-  --orange: var(--color-brand-fuchsia);
-  --orange-bg: color-mix(in srgb, var(--color-brand-fuchsia) 8%, transparent);
-  --amber: var(--color-brand-cyan);
-  --amber-bg: color-mix(in srgb, var(--color-brand-cyan) 8%, transparent);
-  --green: var(--color-status-live);
-  --red: var(--color-status-error);
-
-  /* Chart fills/grid are read by Chart.js via getComputedStyle and handed to
-   * canvas, which does NOT resolve color-mix() — so these stay concrete rgba
-   * (overridden per-mode in the dark blocks below). */
-  --chart-cyan-fill: rgba(91, 95, 255, 0.07);     /* accent #5b5fff */
-  --chart-purple-fill: rgba(139, 92, 246, 0.05);  /* violet #8b5cf6 */
-  --chart-grid: rgba(10, 11, 13, 0.06);
-  --chart-tooltip-bg: var(--color-surface-elevated);
-  --chart-tooltip-border: var(--color-border-standard);
-  --chart-tooltip-title: var(--color-text-primary);
-  --chart-tooltip-body: var(--color-text-secondary);
-
+  --bg-primary: var(--bg-canvas);
+  --bg-card: var(--bg-surface);
+  --bg-card-hover: var(--bg-surface-hover);
+  --bg-input: var(--bg-inset);
+  --border: var(--border-standard);
+  --color-canvas: var(--bg-canvas);
+  --color-surface-panel: var(--bg-inset);
+  --color-surface-elevated: var(--bg-surface);
+  --color-surface-hover: var(--bg-surface-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-muted);
+  --color-text-quaternary: var(--text-faint);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-standard: var(--border-standard);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-strong);
+  --color-accent-on: var(--accent-on);
+  --color-status-live: var(--intent-success);
+  --color-status-error: var(--intent-danger);
+  --color-status-warning: var(--intent-warning);
+  --color-brand-violet: var(--chart-categorical-6);
+  --color-brand-fuchsia: var(--chart-categorical-3);
+  --color-brand-cyan: var(--chart-categorical-5);
+  --cyan: var(--accent);
+  --purple: var(--chart-categorical-6);
+  --green: var(--intent-success);
+  --red: var(--intent-danger);
+  --amber: var(--intent-warning);
+  --shadow-card: var(--shadow-sm);
+  --shadow-card-hover: var(--shadow);
+  --shadow-dropdown: var(--shadow);
   /* Sync-progress scheme */
-  --bg: var(--color-canvas);
-  --surface: var(--color-surface-elevated);
-  --text: var(--color-text-primary);
-  --accent: var(--color-accent);
-  --accent-glow: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  --success: var(--color-status-live);
-  --error: var(--color-status-error);
-  --warning: var(--color-status-warning);
-  --skipped: var(--color-text-tertiary);
+  --bg: var(--bg-canvas);
+  --surface: var(--bg-surface);
+  --text: var(--text-primary);
+  --accent-glow: color-mix(in srgb, var(--accent) 12%, transparent);
+  --success: var(--intent-success);
+  --error: var(--intent-danger);
+  --warning: var(--intent-warning);
+  --skipped: var(--text-muted);
+  --chart-cyan-fill: rgba(205, 32, 38, 0.06);
+  --chart-purple-fill: rgba(107, 92, 168, 0.05);
+  --chart-tooltip-bg: var(--bg-surface);
+  --chart-tooltip-border: var(--border-standard);
+  --chart-tooltip-title: var(--text-primary);
+  --chart-tooltip-body: var(--text-secondary);
 }
 
-/* --- Dark palette ---
- * Override canonical tokens only. Two selectors so an explicit host
- * theme wins, and prefers-color-scheme covers standalone use. */
+/* --- Dark palette (pricemonitor dark) --- */
 :root.dark,
 :root[data-theme="dark"] {
-  --color-canvas: #08090a;
-  --color-surface-panel: #0f1011;
-  --color-surface-elevated: #191a1b;
-  --color-surface-hover: #28282c;
+  --bg-canvas: #111418;
+  --bg-surface: #171b20;
+  --bg-surface-hover: #1c222a;
+  --bg-inset: #111418;
+  --border-subtle: #1f242a;
+  --border-standard: #272d34;
+  --text-primary: #f0f2f5;
+  --text-secondary: #e4e8ee;
+  --text-muted: #8a929d;
+  --text-faint: #6b7580;
 
-  --color-text-primary: #f7f8f8;
-  --color-text-secondary: #d0d6e0;
-  --color-text-tertiary: #8a8f98;
-  --color-text-quaternary: #62666d;
+  --accent: #f24a4f;
+  --accent-strong: #e0353b;
+  --accent-bg: #2a1618;
 
-  --color-border-subtle: rgba(255, 255, 255, 0.05);
-  --color-border-standard: rgba(255, 255, 255, 0.08);
-  --color-border-strong: #23252a;
+  --intent-success: #37c185;  --intent-success-bg: #12281f;
+  --intent-danger: #ef6673;   --intent-danger-bg: #2c1519;
+  --intent-warning: #dca23f;  --intent-warning-bg: #2a2212;
+  --intent-info: #5da3d9;     --intent-info-bg: #14212c;
 
-  --color-accent: #6d70ff;
-  --color-accent-hover: #7d80ff;
-  --color-brand-violet: #a78bff;
-  --color-brand-fuchsia: #e879f9;
-  --color-brand-cyan: #22d3ee;
+  --chart-categorical-1: #5b8fc4;
+  --chart-categorical-2: #37c185;
+  --chart-categorical-3: #e07b4a;
+  --chart-categorical-4: #e05c5c;
+  --chart-categorical-5: #3bb3ae;
+  --chart-categorical-6: #9c8dd6;
+  --chart-categorical-7: #dca23f;
+  --chart-categorical-8: #8a929d;
+  --chart-grid: #1f242a;
+  --chart-axis: #8a929d;
 
-  --color-status-live: #27a644;
-  --color-status-error: #f87171;
-  --color-status-warning: #f59e0b;
-
-  --chart-cyan-fill: rgba(109, 112, 255, 0.10);   /* accent #6d70ff */
-  --chart-purple-fill: rgba(167, 139, 255, 0.06); /* violet #a78bff */
-  --chart-grid: rgba(255, 255, 255, 0.06);
-
-  --shadow-card: none;
-  --shadow-card-hover: 0 0 0 1px rgba(255, 255, 255, 0.06);
-  --shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 48px -14px rgba(0, 0, 0, .66);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 12px -6px rgba(0, 0, 0, .5);
   --overlay: rgba(0, 0, 0, 0.7);
+  --chart-cyan-fill: rgba(242, 74, 79, 0.10);
+  --chart-purple-fill: rgba(156, 141, 214, 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not([data-theme="light"]) {
-    --color-canvas: #08090a;
-    --color-surface-panel: #0f1011;
-    --color-surface-elevated: #191a1b;
-    --color-surface-hover: #28282c;
+    --bg-canvas: #111418;
+    --bg-surface: #171b20;
+    --bg-surface-hover: #1c222a;
+    --bg-inset: #111418;
+    --border-subtle: #1f242a;
+    --border-standard: #272d34;
+    --text-primary: #f0f2f5;
+    --text-secondary: #e4e8ee;
+    --text-muted: #8a929d;
+    --text-faint: #6b7580;
 
-    --color-text-primary: #f7f8f8;
-    --color-text-secondary: #d0d6e0;
-    --color-text-tertiary: #8a8f98;
-    --color-text-quaternary: #62666d;
+    --accent: #f24a4f;
+    --accent-strong: #e0353b;
+    --accent-bg: #2a1618;
 
-    --color-border-subtle: rgba(255, 255, 255, 0.05);
-    --color-border-standard: rgba(255, 255, 255, 0.08);
-    --color-border-strong: #23252a;
+    --intent-success: #37c185;  --intent-success-bg: #12281f;
+    --intent-danger: #ef6673;   --intent-danger-bg: #2c1519;
+    --intent-warning: #dca23f;  --intent-warning-bg: #2a2212;
+    --intent-info: #5da3d9;     --intent-info-bg: #14212c;
 
-    --color-accent: #6d70ff;
-    --color-accent-hover: #7d80ff;
-    --color-brand-violet: #a78bff;
-    --color-brand-fuchsia: #e879f9;
-    --color-brand-cyan: #22d3ee;
+    --chart-categorical-1: #5b8fc4;
+    --chart-categorical-2: #37c185;
+    --chart-categorical-3: #e07b4a;
+    --chart-categorical-4: #e05c5c;
+    --chart-categorical-5: #3bb3ae;
+    --chart-categorical-6: #9c8dd6;
+    --chart-categorical-7: #dca23f;
+    --chart-categorical-8: #8a929d;
+    --chart-grid: #1f242a;
+    --chart-axis: #8a929d;
 
-    --color-status-live: #27a644;
-    --color-status-error: #f87171;
-    --color-status-warning: #f59e0b;
-
-    --chart-cyan-fill: rgba(109, 112, 255, 0.10);   /* accent #6d70ff */
-    --chart-purple-fill: rgba(167, 139, 255, 0.06); /* violet #a78bff */
-    --chart-grid: rgba(255, 255, 255, 0.06);
-
-    --shadow-card: none;
-    --shadow-card-hover: 0 0 0 1px rgba(255, 255, 255, 0.06);
-    --shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 48px -14px rgba(0, 0, 0, .66);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 12px -6px rgba(0, 0, 0, .5);
     --overlay: rgba(0, 0, 0, 0.7);
+    --chart-cyan-fill: rgba(242, 74, 79, 0.10);
+    --chart-purple-fill: rgba(156, 141, 214, 0.06);
   }
 }
 
-/* --- Global polish shared by all three UIs --- */
+/* --- Global polish --- */
 html { color-scheme: light dark; }
 html.dark, html[data-theme="dark"] { color-scheme: dark; }
 html.light, html[data-theme="light"] { color-scheme: light; }
 
 body {
-  /* tnum keeps stat tiles/tables aligned on the digit; case lifts
-   * bracket/hyphen alignment beside caps — both from the houtini brief. */
+  /* Tabular numerals GLOBAL — brief pattern #1. */
   font-feature-settings: "tnum", "case";
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
 ::selection {
-  background: var(--color-accent);
-  color: var(--color-accent-on);
+  background: var(--accent);
+  color: var(--accent-on);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -102,6 +102,8 @@ The crawl is where audits usually go wrong, so it's worth understanding what thi
 
 After the crawl it computes a real link graph: internal PageRank with nav and footer links down-weighted, click depth from the homepage counting body links only, in-degree per page. That graph powers the orphan, equity-leak and underlinked-page checks - and the donor rankings when the tool suggests internal links.
 
+![The Site health tab - classic crawl diagnostics as stat bars](assets/site-health.png)
+
 ---
 
 ## The workflows, briefly

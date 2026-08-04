@@ -2,6 +2,8 @@
 
 Two ways to look at everything at once: the interactive dashboard rendered right in the chat (*"show me the dashboard for mysite.com"*), and the same thing exported as a single shareable HTML file (*"export the report"*). Both are built from your synced data, both are organised into six tabs, and every number in them traces back to a datapoint in your database.
 
+The dashboard uses a neutral light or dark theme: it follows the host's theme in chat and your system preference in the export. Numbers are tabular and right-aligned throughout, missing values render as a dash rather than a zero, and detail lives in the tooltips rather than on the canvas.
+
 Run `refresh_property` first, and `run_audit` if you want the findings populated. The DataForSEO panels (visibility over time, agent readiness) fill in when you've run the corresponding tools; everything else works from GSC and the crawl alone.
 
 ## Overview

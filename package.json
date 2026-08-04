@@ -74,6 +74,8 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@fontsource-variable/rubik": "^5.3.0",
+    "@fontsource-variable/work-sans": "^5.3.0",
     "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
