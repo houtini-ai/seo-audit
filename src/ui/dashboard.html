@@ -181,6 +181,12 @@
           <p class="sr-only" id="mismatchSummary"></p>
           <div class="chart" id="mismatchChart" role="img" aria-label="Internal equity share versus organic traffic share by template"></div>
         </div>
+        <div class="chart-card" id="linkFlowsCard" style="display:none">
+          <h3>Where link equity flows - folder to folder</h3>
+          <div class="hint">Internal PageRank moving between site sections through in-content links (each page's equity split across its outgoing body links, summed by section). Wide ribbons into sections that earn little traffic = equity flowing into a dead end; thin ribbons into your money sections = the case for more in-content links.</div>
+          <p class="sr-only" id="linkFlowsSummary"></p>
+          <div class="chart chart-tall" id="linkFlowsChart" role="img" aria-label="Sankey of internal PageRank flow between site sections"></div>
+        </div>
         <div class="chart-card">
           <h3>Equity vs reality - every URL</h3>
           <div class="hint">Internal PageRank (x) vs impressions (y, log), coloured by template. Bottom-right = equity black holes (high authority, no traffic); top-left = starved winners (traffic, little equity).</div>

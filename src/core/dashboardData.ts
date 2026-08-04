@@ -67,6 +67,8 @@ export interface DashboardData {
   // Agent readiness (from check_agent_readiness) — how ready the site is for AI agents.
   agentReadiness?: { score: number; level: string; checkedAt: string; byCategory: { category: string; passed: number; total: number }[]; checks: { id: string; category: string; label: string; present: boolean; detail: string; fix: string }[] };
   serpFootprint?: SerpFootprint | null;
+  // Internal link explorer: folder-to-folder iPR flow (bipartite Sankey - left sources, right targets).
+  linkFlows?: { sources: string[]; targets: string[]; flows: { source: string; target: string; value: number }[] };
   findings?: {
     runId: string;
     total: number;
@@ -93,7 +95,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '6';
+const PAYLOAD_VERSION = '7';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -383,6 +385,39 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         .sort((x, y) => y.iprPct - x.iprPct).slice(0, 8);
     }
 
+    // Internal link explorer: iPR flow between folders as a bipartite Sankey. Each body link
+    // carries ipr(source)/outdegree(source); flows are summed folder→folder, intra-folder
+    // flows dropped (they're the noise, cross-folder equity movement is the architecture story).
+    let linkFlows: DashboardData['linkFlows'];
+    {
+      const iprMap = new Map<string, number>();
+      for (const p of db.db.prepare(`SELECT url_key, COALESCE(ipr,0) ipr FROM pages WHERE is_internal=1`).all() as { url_key: string; ipr: number }[]) iprMap.set(p.url_key, p.ipr);
+      const edges = db.db.prepare(
+        `SELECT source_key s, target_key t, COUNT(*) n FROM links WHERE is_internal=1 AND placement='body' AND source_key <> target_key GROUP BY source_key, target_key`,
+      ).all() as { s: string; t: string; n: number }[];
+      if (edges.length && iprMap.size) {
+        const outdeg = new Map<string, number>();
+        for (const e of edges) outdeg.set(e.s, (outdeg.get(e.s) ?? 0) + e.n);
+        const flow = new Map<string, number>(); // "src|dst" folder pair → summed equity
+        for (const e of edges) {
+          const sf = templateBucket(e.s), tf = templateBucket(e.t);
+          if (sf === tf) continue;
+          const ipr = iprMap.get(e.s) ?? 0;
+          const od = outdeg.get(e.s) ?? 1;
+          if (ipr <= 0) continue;
+          const k = `${sf}|${tf}`;
+          flow.set(k, (flow.get(k) ?? 0) + (ipr * e.n) / od);
+        }
+        const pairs = [...flow.entries()].map(([k, v]) => { const [source, target] = k.split('|'); return { source, target, value: Math.round(v * 10) / 10 }; })
+          .filter(p => p.value > 0).sort((a, b) => b.value - a.value).slice(0, 24);
+        if (pairs.length) {
+          const sources = [...new Set(pairs.map(p => p.source))];
+          const targets = [...new Set(pairs.map(p => p.target))];
+          linkFlows = { sources, targets, flows: pairs };
+        }
+      }
+    }
+
     // Top internally-linked pages with their current status code (most-linked first). A 404/redirect
     // high in this list is a major leak — lots of internal links pointing at a dead/redirected URL.
     const topLinkedPages = (db.db.prepare(`SELECT url_key, COALESCE(inlink_count,0) inl, status_code, indexable, indexable_reason FROM pages WHERE is_internal=1 ORDER BY inlink_count DESC, status_code LIMIT 30`).all() as any[])
@@ -571,6 +606,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       cannibalisationTable,
       brandedSplit,
       topLinkedPages,
+      linkFlows,
       agentReadiness,
       rankHistory,
       dateAlignment,

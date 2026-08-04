@@ -550,6 +550,35 @@ function render(data: DashboardData): void {
     $('mismatchSummary').textContent = 'Run a crawl (refresh_property) to see equity flow by template.';
   }
 
+  // 0b) Internal link explorer - folder-to-folder iPR flow as a bipartite Sankey.
+  // Left nodes are sources ("x →"), right nodes targets ("→ x"): bipartite by construction,
+  // so mutual flows (blog→products AND products→blog) can never form the cycles ECharts rejects.
+  const lf = data.linkFlows;
+  const lfCard = document.getElementById('linkFlowsCard');
+  if (lfCard) lfCard.style.display = lf?.flows?.length ? '' : 'none';
+  if (lf?.flows?.length) {
+    const nodes = [
+      ...lf.sources.map(s => ({ name: `${s} →`, itemStyle: { color: col.blue } })),
+      ...lf.targets.map(t => ({ name: `→ ${t}`, itemStyle: { color: col.green } })),
+    ];
+    wrap('linkFlowsChart').setOption({
+      ...ARIA,
+      tooltip: { ...tooltipDefaults(col), trigger: 'item', valueFormatter: (v: number) => `${v} iPR units` },
+      series: [{
+        type: 'sankey',
+        left: 12, right: 110, top: 16, bottom: 16,
+        nodeGap: 14,
+        emphasis: { focus: 'adjacency' },
+        lineStyle: { color: 'gradient', opacity: 0.35 },
+        label: { color: col.text, fontSize: 12 },
+        data: nodes,
+        links: lf.flows.map(f => ({ source: `${f.source} →`, target: `→ ${f.target}`, value: f.value })),
+      }],
+    });
+    const top = lf.flows[0];
+    $('linkFlowsSummary').textContent = `${lf.flows.length} folder-to-folder equity flows; largest: ${top.source} into ${top.target} (${top.value} iPR units).`;
+  }
+
   const sc = data.equityScatter ?? [];
   const bucketColor: Record<string, string> = { content: col.blue, category: col.red, homepage: col.amber, other: col.muted };
   const scGroups: Record<string, number[][]> = {};
