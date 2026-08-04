@@ -95,6 +95,15 @@ export class DataForSeoClient {
         throw new Error(`DataForSEO ${endpoint} failed: ${res.status} ${json?.status_message ?? ''}`.trim());
       }
       const tasks = json.tasks ?? [];
+      // Task-level failures (40xxx inside tasks[0]) must be LOUD — swallowed, they surface as a
+      // plausible-looking empty result (found live: Labs rejecting a field returned [] at $0).
+      const t0 = tasks[0];
+      if (t0 && (t0.status_code ?? 20000) >= 40000) {
+        throw new Error(
+          `DataForSEO ${endpoint} task failed: ${t0.status_code} ${t0.status_message ?? ''}`.trim() +
+          (t0.status_code === 40204 ? ' — the Backlinks API is a separate DataForSEO subscription; activate it at app.dataforseo.com to use pull_backlinks.' : ''),
+        );
+      }
       const cost = Number(json.cost) || 0;
       // Only cache genuinely successful responses — a task-level failure (40xxx) or
       // all-null results must not be cached for 20 days; let a later call retry.
@@ -196,15 +205,15 @@ export class DataForSeoClient {
     limit = 50,
     orderBy = 'ranked_serp_element.serp_item.etv,desc',
     filters?: unknown[],
-    itemTypes: string[] = ['organic'],
   ): Promise<DfsResponse> {
+    // NB: item_types is NOT a valid field on Labs ranked_keywords (40501) — element-type
+    // scoping (e.g. AI Overview citations) is expressed via `filters` on serp_item.type.
     const body: Record<string, unknown> = {
       target,
       ...this.loc(location),
       language_code: languageCode,
       limit: Math.min(limit, 1000),
       order_by: [orderBy],
-      item_types: itemTypes,
     };
     if (filters && filters.length) body.filters = filters;
     return this.call('/v3/dataforseo_labs/google/ranked_keywords/live', [body]);

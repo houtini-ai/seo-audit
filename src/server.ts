@@ -124,7 +124,7 @@ Raw access: query_audit runs any single check with full evidence; every table ab
 
 ## Worked recipes
 
-1. **AI Overview citation loss.** ranked_keywords target:<your domain> aioOnly:true → the keywords where you are cited as an AIO source. For each cited keyword's ranking page, pull its per-day clicks from search_analytics (page_key × date). Pages whose clicks fell while the AIO citation appeared = you are feeding the answer without earning the visit.
+1. **AI Overview exposure & citation loss.** ranked_keywords target:<your domain> aioOnly:true → keywords you rank for where the SERP shows an AI Overview (exposure). For citation (are YOU a source?) check specific keywords with related_terms/serpOrganic — the ai_overview item's references[] carries domain/url/quoted text. For each exposed keyword's ranking page, pull its per-day clicks from search_analytics (page_key × date). Pages whose clicks fell while the AIO citation appeared = you are feeding the answer without earning the visit.
 2. **Striking distance without body coverage.** query_audit check:striking-distance (GSC rank 11–20) → for each page, check pages.body_chunks for the query's terms. The automated versions: body-missing-top-query, rag-answer-gap, and score_passages for the dense-answer test. Pages ranking 11–20 that never answer the query in one passage are the highest-yield rewrites.
 3. **Not indexed + no equity.** url_inspection.coverage_state ~ 'not indexed' joined to pages.ipr + inlink_count. Low-iPR unindexed pages need internal links, not resubmission; high-iPR unindexed pages are the real anomalies. (Checks: coverage-not-indexed, underlinked-high-demand.)
 4. **Cannibalisation with semantic overlap.** run_audit → keyword-cannibalisation evidence lists the competing URLs per query → compare those pages' body_chunks: heavy chunk overlap = consolidate (301 the loser); light overlap = differentiate the titles/H1s and interlink with distinct anchors.
@@ -1209,7 +1209,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'ranked_keywords',
     {
       title: 'Ranked keywords for a domain / URL / folder (DataForSEO Labs)',
-      description: 'Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV, the ranking URL, plus keyword difficulty, search intent and SERP features where the response carries them. Set aioOnly:true to list only keywords where the target is CITED as a source in Google AI Overviews (the "which keywords cite us in AIO" view). The Semrush-style "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market. Grain: keyword × target. Joins: keyword → GSC search_analytics.query; URL → pages.url_key.',
+      description: 'Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV, the ranking URL, plus keyword difficulty, search intent and SERP features where the response carries them. Set aioOnly:true to list only keywords whose SERP shows a Google AI Overview (your AIO exposure list; per-keyword CITATION checking uses the SERP tools — see the cookbook). The Semrush-style "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market. Grain: keyword × target. Joins: keyword → GSC search_analytics.query; URL → pages.url_key.',
       inputSchema: {
         target: z.string().describe('Domain, subdomain, or full URL (full URL required for scope:url)'),
         scope: z.enum(['domain', 'subdomain', 'url', 'folder']).optional(),
@@ -1218,7 +1218,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         languageCode: z.string().optional(),
         limit: z.number().int().min(1).max(200).optional(),
         orderBy: z.enum(['etv', 'volume', 'position']).optional(),
-        aioOnly: z.boolean().optional().describe('Only keywords where the target is cited as an AI Overview source (Labs item_types:["ai_overview"])'),
+        aioOnly: z.boolean().optional().describe('Only keywords whose SERP shows an AI Overview (exposure, not citation)'),
       },
     },
     async ({ target, scope, folder, location, languageCode, limit, orderBy, aioOnly }) => {
@@ -1236,13 +1236,16 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const folderPath = mode === 'folder'
         ? (folder!.trim().startsWith('/') ? folder!.trim() : '/' + folder!.trim())
         : null;
-      const filters = folderPath
-        ? [['ranked_serp_element.serp_item.relative_url', 'like', `${folderPath}%`]]
-        : undefined;
-      // aioOnly: Labs returns only rows where the target appears as an ai_overview_reference —
-      // i.e. keywords where the domain is CITED as a source in the AI Overview (plan/data-utilisation.md 1a route 2).
-      const itemTypes = aioOnly ? ['ai_overview'] : undefined;
-      const r = await client.rankedKeywords(dfsTarget, location, languageCode ?? 'en', limit ?? 50, order, filters as unknown[] | undefined, itemTypes);
+      // aioOnly: only rows where the target's ranked element is an AI Overview citation —
+      // expressed as a serp_item.type filter (item_types is invalid on this Labs endpoint).
+      const clauses: unknown[] = [];
+      if (folderPath) clauses.push(['ranked_serp_element.serp_item.relative_url', 'like', `${folderPath}%`]);
+      // Exposure, not citation: Labs ranked_keywords carries no citation fields (verified via
+      // available_filters) — this filters to keywords whose SERP CONTAINS an AI Overview.
+      // Per-keyword citation checking (are WE a reference?) is the SERP-advanced recipe.
+      if (aioOnly) clauses.push(['keyword_data.serp_info.serp_item_types', 'has', 'ai_overview']);
+      const filters = clauses.length === 0 ? undefined : clauses.length === 1 ? clauses : [clauses[0], 'and', clauses[1]];
+      const r = await client.rankedKeywords(dfsTarget, location, languageCode ?? 'en', limit ?? 50, order, filters as unknown[] | undefined);
       const result = r.tasks[0]?.result?.[0] ?? {};
       const items: any[] = result.items ?? [];
       const kws = items
@@ -1282,7 +1285,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const hasFeatures = kws.some(k => (k.serpFeatures && k.serpFeatures.length) || k.isFeaturedSnippet);
       const optHead = `${hasKd ? ' KD |' : ''}${hasIntent ? ' Intent |' : ''}${hasFeatures ? ' SERP features |' : ''}`;
       const optSep = `${hasKd ? '---|' : ''}${hasIntent ? '---|' : ''}${hasFeatures ? '---|' : ''}`;
-      const header = `**${scopeLabel}** (scope: ${mode})${aioOnly ? ' — AI Overview citations only' : ''} — ${kws.length} of ${fmtNum(totalCount)} ${aioOnly ? 'citing keywords' : 'ranked keywords'}, ordered by ${orderBy ?? 'etv'}\n\n` +
+      const header = `**${scopeLabel}** (scope: ${mode})${aioOnly ? ' — AI Overview SERPs only' : ''} — ${kws.length} of ${fmtNum(totalCount)} ${aioOnly ? 'AIO-exposed keywords' : 'ranked keywords'}, ordered by ${orderBy ?? 'etv'}\n\n` +
         `| Keyword | Pos | Volume | ETV |${optHead} URL |\n|---|---|---|---|${optSep}---|`;
       const featCell = (k: typeof kws[number]): string => {
         const f = (k.serpFeatures ?? []).map(t => (t === 'featured_snippet' && k.isFeaturedSnippet ? 'featured_snippet (owned)' : t));

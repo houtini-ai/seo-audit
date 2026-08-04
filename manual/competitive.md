@@ -51,7 +51,7 @@ Every keyword a target ranks for, scoped however you like: a whole domain, a sub
 > What does competitor.com/blog/ rank for?
 > What does this exact page rank for: https://rival.com/best-widgets
 
-**The AI Overview view.** Set `aioOnly:true` and the same tool returns only keywords where the target is **cited as a source in Google's AI Overviews**. Run it on yourself to see where you're feeding AI answers; run it on a competitor to see where they've become the quoted source. Then compose it with your own click data (recipe 1 in [composition.md](composition.md)) to find citations that cost you visits.
+**The AI Overview view.** Set `aioOnly:true` and the same tool returns only keywords where the target is **exposed as a source in Google's AI Overviews**. Run it on yourself to see where you're feeding AI answers; run it on a competitor to see where they've become the quoted source. Then compose it with your own click data (recipe 1 in [composition.md](composition.md)) to find citations that cost you visits.
 
 > Which keywords cite mysite.com in AI Overviews?
 

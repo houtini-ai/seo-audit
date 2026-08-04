@@ -136,7 +136,7 @@ Any domain's top organic pages by estimated traffic, with keyword counts and top
 > Top pages on competitor.com
 
 ### `ranked_keywords`
-Every keyword a target ranks for - scoped to a whole domain, a subdomain, one URL (`scope:url`), or a subfolder (`scope:folder`, `folder:"/blog/"`). Rows carry position, volume, ETV, the ranking URL, keyword difficulty, intent and SERP features. `aioOnly:true` narrows it to keywords where the target is **cited as a source in Google AI Overviews** - the "which keywords cite us in AIO" view, which as far as I know almost nothing else surfaces. Joins to your GSC data on the keyword.
+Every keyword a target ranks for - scoped to a whole domain, a subdomain, one URL (`scope:url`), or a subfolder (`scope:folder`, `folder:"/blog/"`). Rows carry position, volume, ETV, the ranking URL, keyword difficulty, intent and SERP features. `aioOnly:true` narrows it to keywords where the target is **ranked where the SERP shows a Google AI Overview (exposure; per-keyword citation checking is the SERP recipe in composition.md)** - the "which keywords cite us in AIO" view, which as far as I know almost nothing else surfaces. Joins to your GSC data on the keyword.
 > What does competitor.com/blog/ rank for?
 > Which keywords cite mysite.com in AI Overviews?
 
