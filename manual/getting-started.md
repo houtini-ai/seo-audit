@@ -116,6 +116,12 @@ The tool reads GSC through a **Google Cloud service account** - a robot login yo
    Keep that file somewhere sensible; you'll reference its path in the config.
 3. In [Search Console](https://search.google.com/search-console), under *Settings → Users and permissions*, add the service account's **email address** as a user on each property you want to audit (copy the email from the service-accounts list - it ends `.iam.gserviceaccount.com`).
 
+   This is what done looks like - the service account sitting in the users list:
+
+   ![Search Console Users and permissions with the service account added](../images/service-account-user-added.jpg)
+
+   (Full user is enough for everything this tool does; Owner also works, as shown.)
+
 **Step 3 is the one everyone misses.** The service account is its own "person" with its own email address (it looks like `something@your-project.iam.gserviceaccount.com`). Until you add that email to the property, it sees nothing - exactly as a new colleague would. If `list_properties` comes back empty later, this step is almost always why.
 
 ## 3a. Configure Claude Desktop
