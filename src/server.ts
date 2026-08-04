@@ -46,6 +46,8 @@ import { Backlinks } from './core/Backlinks.js';
 import { WikidataClient } from './core/WikidataClient.js';
 import { Entities } from './core/Entities.js';
 import { JobManager } from './core/JobManager.js';
+import { gscFreshness } from './core/gscFreshness.js';
+import { clusterKeywordList } from './audit/keywordList.js';
 import type { FetchOptions } from './core/types.js';
 
 const SERVER_NAME = 'seo-audit-console';
@@ -941,6 +943,41 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         return {
           content: [{ type: 'text', text: r.proposals.length ? `${r.proposals.length} new-page opportunities (from ${r.consideredQueries} queries, ${r.afterDedup} after dedup):\n${top}${intentTip}` : `No new-page gaps found (${r.consideredQueries} queries considered). Needs synced GSC data.` }],
           structuredContent: r as unknown as Record<string, unknown>,
+        };
+      } finally { db.close(); }
+    },
+  );
+
+  // keyword_list — demand-first clustering ("list mode"): a keyword list becomes topics
+  // with own/weak/absent verdicts, clustered by the URL Google already answers them with.
+  server.registerTool(
+    'keyword_list',
+    {
+      title: 'Cluster a keyword list into topics with own/weak/absent verdicts',
+      description: 'Demand-first keyword clustering from stored data - NO paid calls. Give it a keyword list (or omit keywords to use your top 500 GSC queries) and it clusters them by the page Google ALREADY answers them with (two keywords that rank via the same URL belong together - the strongest clustering signal, free from your own GSC data), then groups non-ranking keywords lexically. Each cluster gets a deterministic verdict: OWN (best position <=3), WEAK (4-20), ABSENT (no ranking page), plus the ranking URL, summed 90-day impressions and clicks. The keyword-research workhorse: paste a client keyword list, get the topic map and where you stand. Chain with keyword_volume for market volumes on the interesting clusters, or draft_content for the absent ones.',
+      inputSchema: {
+        siteUrl: z.string(),
+        keywords: z.array(z.string()).max(2000).optional().describe('The keyword list. Omit to derive from your top 500 GSC queries by impressions'),
+        limit: z.number().int().min(1).max(200).optional().describe('Clusters to show in the table (default 40)'),
+      },
+    },
+    async ({ siteUrl, keywords, limit }) => {
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try {
+        const fresh = gscFreshness(db.db);
+        const r = clusterKeywordList(db.db, keywords, { maxDate: fresh.effectiveMax });
+        const show = r.clusters.slice(0, limit ?? 40);
+        const counts = { own: 0, weak: 0, absent: 0 } as Record<string, number>;
+        for (const c of r.clusters) counts[c.verdict]++;
+        const rowsMd = show.map(c =>
+          `| ${c.head.replace(/\|/g, '\\|')} | ${c.verdict.toUpperCase()} | ${c.bestPosition ?? '-'} | ${fmtNum(c.impressions)} | ${c.keywords.length} | ${c.url ? c.url.replace(/\|/g, '\\|') : '-'} |`);
+        const md = `**Keyword list clustered for ${siteUrl}** - ${r.totalKeywords} keywords (${r.derived ? 'derived from your GSC demand' : 'your list'}, ${r.inGsc} with GSC data) → ${r.clusters.length} clusters: ${counts.own} own · ${counts.weak} weak · ${counts.absent} absent\n\n` +
+          `| Cluster (head term) | Verdict | Best pos | Impressions 90d | Keywords | Ranking URL |\n|---|---|---|---|---|---|\n` +
+          rowsMd.join('\n') +
+          `\n\nVerdicts are deterministic from your GSC positions. ABSENT clusters are content opportunities - chain into keyword_volume (market volume) or draft_content (a brief).`;
+        return {
+          content: [{ type: 'text', text: md }],
+          structuredContent: { ...r, clusters: r.clusters.slice(0, 200) } as unknown as Record<string, unknown>,
         };
       } finally { db.close(); }
     },
