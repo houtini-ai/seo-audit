@@ -949,6 +949,61 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
   );
 
+  // content_opportunities — the content marketer's report: everything the stored data
+  // says about what to WRITE, REFRESH and REWRITE, in one free composition.
+  server.registerTool(
+    'content_opportunities',
+    {
+      title: 'Content opportunity report (write / refresh / rewrite)',
+      description: 'The content marketer\'s report, composed entirely from stored data - NO paid calls. Four sections: WRITE NEXT (new pages proposed from queries you already earn impressions for but have no winning page - suggest_pages), REFRESH NOW (pages that lost 20%+ of their clicks vs the prior period - content decay), REWRITE SNIPPETS (page-1 rankings earning far below expected CTR - title/meta rewrites, the fastest wins), and STRENGTHEN (keyword clusters where you rank 4-20 - one push from the money positions). Every line traces to real Search Console data. Chain into draft_content for a brief, or keyword_volume to size a cluster against the market.',
+      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(3).max(30).optional().describe('Rows per section (default 10)') },
+    },
+    async ({ siteUrl, limit }) => {
+      const n = limit ?? 10;
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      let proposals: ReturnType<typeof suggestPages>['proposals'];
+      let weak: ReturnType<typeof clusterKeywordList>['clusters'];
+      try {
+        proposals = suggestPages(db.db, { maxProposals: n }).proposals;
+        const fresh = gscFreshness(db.db);
+        weak = clusterKeywordList(db.db, undefined, { maxDate: fresh.effectiveMax }).clusters
+          .filter(c => c.verdict === 'weak' && c.bestPosition != null && c.bestPosition >= 4).slice(0, n);
+      } finally { db.close(); }
+      const dash = getDashboardData(dataDir(), siteUrl);
+      const decay = (dash.contentDecay ?? []).slice(0, n);
+      const snippets = (dash.quickWins ?? []).filter(q => q.type === 'snippet').sort((a, b) => b.potential - a.potential).slice(0, n);
+      const sect: string[] = [];
+      sect.push(`## 1. Write next - demand you already have, no winning page\n` + (proposals.length
+        ? `| Proposed page (head term) | Impressions/mo | Best pos today | Queries |\n|---|---|---|---|\n` +
+          proposals.map(p => `| ${p.headTerm.replace(/\|/g, '\\|')} | ${fmtNum(p.totalImpressions)} | ${p.bestPosition} | ${p.queries.length} |`).join('\n')
+        : '_No unserved-demand gaps found._'));
+      sect.push(`## 2. Refresh now - pages losing clicks\n` + (decay.length
+        ? `| Page | Clicks were | Now | Drop | Clicks lost |\n|---|---|---|---|---|\n` +
+          decay.map(d => `| ${d.urlKey.replace(/\|/g, '\\|')} | ${fmtNum(d.prevClicks)} | ${fmtNum(d.clicks)} | ${d.dropPct}% | ${fmtNum(d.lost)} |`).join('\n')
+        : '_No significant decay - nothing lost 20%+ of its clicks._'));
+      sect.push(`## 3. Rewrite snippets - ranking well, under-clicked\n` + (snippets.length
+        ? `| Query | Position | CTR | Expected | Clicks recoverable/mo |\n|---|---|---|---|---|\n` +
+          snippets.map(q => `| ${q.query.replace(/\|/g, '\\|')} | ${q.position} | ${(q.ctr * 100).toFixed(1)}% | ${(q.expectedCtr * 100).toFixed(1)}% | ${fmtNum(Math.round(q.potential))} |`).join('\n')
+        : '_No page-1 CTR gaps found._'));
+      sect.push(`## 4. Strengthen - clusters one push from the money positions\n` + (weak.length
+        ? `| Cluster | Best pos | Impressions 90d | Keywords | Ranking URL |\n|---|---|---|---|---|\n` +
+          weak.map(c => `| ${c.head.replace(/\|/g, '\\|')} | ${c.bestPosition} | ${fmtNum(c.impressions)} | ${c.keywords.length} | ${c.url ?? '-'} |`).join('\n')
+        : '_No weak clusters - your rankings are polarised own/absent._'));
+      const md = `# Content opportunity report - ${siteUrl}\n\nEverything below is from your own Search Console + crawl data (no paid calls, no invented keywords).\n\n` +
+        sect.join('\n\n') +
+        `\n\nNext moves: draft_content for a brief on any row · keyword_volume to size a cluster against the market · topic_gaps to add what competitors own.` +
+        browserLink(siteUrl);
+      return {
+        content: [{ type: 'text', text: md }],
+        structuredContent: {
+          siteUrl,
+          writeNext: proposals, refreshNow: decay, rewriteSnippets: snippets,
+          strengthen: weak.map(c => ({ head: c.head, bestPosition: c.bestPosition, impressions: c.impressions, url: c.url, keywords: c.keywords.length })),
+        } as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
   // keyword_list — demand-first clustering ("list mode"): a keyword list becomes topics
   // with own/weak/absent verdicts, clustered by the URL Google already answers them with.
   server.registerTool(
