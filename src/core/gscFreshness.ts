@@ -22,18 +22,28 @@ export function gscFreshness(db: Database.Database): GscFreshness {
     .all() as { date: string; i: number }[];
   if (rows.length === 0) return { rawMax: null, effectiveMax: null, trimmedDays: 0 };
   const rawMax = rows[rows.length - 1].date;
-  if (rows.length < 8) return { rawMax, effectiveMax: rawMax, trimmedDays: 0 };
+
+  // Calendar guard first: GSC marks roughly the last two days as not-yet-finalised, and a partial
+  // day can still clear the 50%-of-median test below (a 70%-of-normal day reads as a worrying dip,
+  // not a crater). Never chart a day within 2 days of now, regardless of its numbers.
+  const cutoff = new Date(Date.now() - 2 * 86400_000).toISOString().slice(0, 10);
+  let calTrimmed = 0;
+  while (rows.length - 1 - calTrimmed >= 0 && rows[rows.length - 1 - calTrimmed].date > cutoff) calTrimmed++;
+  if (calTrimmed >= rows.length) return { rawMax, effectiveMax: rawMax, trimmedDays: 0 };
+  const kept = rows.slice(0, rows.length - calTrimmed);
+
+  if (kept.length < 8) return { rawMax, effectiveMax: kept[kept.length - 1].date, trimmedDays: calTrimmed };
 
   // Reference level from a recent stable window (last ~21 days, excluding the last 3 that may be partial).
-  const stable = rows.slice(Math.max(0, rows.length - 24), rows.length - 3).map(r => r.i).sort((a, b) => a - b);
+  const stable = kept.slice(Math.max(0, kept.length - 24), kept.length - 3).map(r => r.i).sort((a, b) => a - b);
   const median = stable.length ? stable[Math.floor(stable.length / 2)] : 0;
-  if (median <= 0) return { rawMax, effectiveMax: rawMax, trimmedDays: 0 };
+  if (median <= 0) return { rawMax, effectiveMax: kept[kept.length - 1].date, trimmedDays: calTrimmed };
 
   let trimmed = 0;
-  for (let k = rows.length - 1; k >= 0 && trimmed < 3; k--) {
-    if (rows[k].i < median * 0.5) trimmed++;
+  for (let k = kept.length - 1; k >= 0 && trimmed < 3; k--) {
+    if (kept[k].i < median * 0.5) trimmed++;
     else break;
   }
-  const effectiveMax = rows[rows.length - 1 - trimmed].date;
-  return { rawMax, effectiveMax, trimmedDays: trimmed };
+  const effectiveMax = kept[kept.length - 1 - trimmed].date;
+  return { rawMax, effectiveMax, trimmedDays: calTrimmed + trimmed };
 }
