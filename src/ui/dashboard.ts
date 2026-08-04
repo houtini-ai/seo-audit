@@ -862,8 +862,36 @@ function render(data: DashboardData): void {
       `<td class="num">${fmt(d.lost)}</td><td class="num">${fmt(d.impressions)}</td><td class="num">${d.position || '-'}</td></tr>`;
   }).join('');
   $('contentDecayTable').innerHTML = decay.length
-    ? `<table><thead><tr><th>Page</th><th class="num">Was</th><th class="num">Now</th><th class="num">Drop</th><th class="num">Clicks lost</th><th class="num">Impr</th><th class="num">Pos</th></tr></thead><tbody>${decayRows}</tbody></table>`
+    ? `<table><thead><tr><th>Page</th><th class="num">Was</th><th class="num">Now</th><th class="num">Drop</th><th class="num">Clicks lost</th><th class="num">Impressions</th><th class="num">Position</th></tr></thead><tbody>${decayRows}</tbody></table>`
     : '<p class="muted">No significant content decay - no page lost 20%+ of its clicks vs the prior 28 days.</p>';
+
+  // SERP-feature footprint (serp_features tool) - volume-weighted exposure per feature,
+  // split by the page-1 ownership proxy. Card hidden until the tool has run.
+  const fp = data.serpFootprint;
+  const fpCard = document.getElementById('serpFeaturesCard');
+  if (fpCard) fpCard.style.display = fp?.features?.length ? '' : 'none';
+  if (fp?.features?.length) {
+    const feats = [...fp.features].slice(0, 10).reverse(); // reverse: biggest ends up top of the y axis
+    const r1 = (n: number): number => Math.round(n * 10) / 10;
+    const owned = feats.map(f => r1(f.volumeSharePct * f.page1SharePct / 100));
+    const exposed = feats.map(f => r1(f.volumeSharePct * (100 - f.page1SharePct) / 100));
+    wrap('serpFeaturesChart').setOption({
+      ...ARIA,
+      grid: { left: 132, right: 40, top: 30, bottom: 34 },
+      legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
+      tooltip: { ...tooltipDefaults(col), valueFormatter: (v: number) => `${v}% of sampled volume` },
+      xAxis: { type: 'value', name: '% of sampled search volume', nameLocation: 'middle', nameGap: 24, ...axisNum },
+      yAxis: { type: 'category', data: feats.map(f => f.label), ...axis },
+      series: [
+        { name: 'You rank page 1', type: 'bar', stack: 'fp', itemStyle: { color: col.green }, data: owned },
+        { name: 'Not page 1', type: 'bar', stack: 'fp', itemStyle: { color: col.amber, opacity: 0.55 }, data: exposed },
+      ],
+    });
+    const aio = fp.features.find(f => f.feature === 'ai_overview');
+    $('serpFeaturesSummary').textContent =
+      `Sample: top ${fmt(fp.sampleKeywords)} keywords by volume (${fmt(fp.sampleVolume)} searches/mo).` +
+      (aio ? ` AI Overviews appear on ${aio.volumeSharePct}% of sampled volume; you rank page 1 for ${aio.page1SharePct}% of that.` : '');
+  }
 
   // Cannibalisation - accordion per contested query, expand to the competing URLs
   const cannT = data.cannibalisationTable ?? [];

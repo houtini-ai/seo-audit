@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
 import { startDashboardServer, stopDashboardServer, dashboardServerUrl, listLocalProperties } from './core/webServer.js';
+import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
 
 /** A clickable browser-dashboard link appended to tool outputs — the user should always
  * know the full interactive report is one click away (or one serve_dashboard call away). */
@@ -1313,6 +1314,54 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: md }],
         structuredContent: { target: dfsTarget, scope: mode, aioOnly: aioOnly ?? false, totalCount, rowsTotal: kws.length, keywords: kws.slice(0, 100), cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  // serp_features — the SERP-feature footprint: "how much of my market do AI Overviews,
+  // snippets and other features sit on, and do I already rank page 1 there?" One cached
+  // Labs pull, volume-weighted; persisted so the dashboard can chart it.
+  server.registerTool(
+    'serp_features',
+    {
+      title: 'SERP-feature footprint (AI Overviews, snippets, PAA)',
+      description: 'How much of your keyword universe carries each SERP feature - AI Overviews, featured snippets, People Also Ask, shopping, video - weighted by search volume, and how much of that volume you already rank page 1 for. ONE DataForSEO Labs ranked_keywords pull (top-volume sample, cached 20 days, never per-keyword SERP loops). Answers "how exposed are we to AI Overviews / zero-click?" with real numbers. Deterministic: feature PRESENCE (from the Labs index). Judgement proxy: page-1 rank stands in for feature ownership - true ownership needs per-keyword SERP calls (see ranked_keywords aioOnly + the cookbook). Persists to the property DB so the dashboard charts it.',
+      inputSchema: {
+        siteUrl: z.string().describe('The GSC property - results persist to its database'),
+        target: z.string().optional().describe('Override the analysed domain (defaults to the property host)'),
+        location: z.union([z.string(), z.number()]).optional(),
+        languageCode: z.string().optional(),
+        limit: z.number().int().min(100).max(1000).optional().describe('Keyword sample size (default 1000, ordered by volume)'),
+      },
+    },
+    async ({ siteUrl, target, location, languageCode, limit }) => {
+      const client = requireDfs(dfs);
+      const domain = dfsHost(target ?? siteUrl);
+      const r = await client.rankedKeywords(domain, location, languageCode ?? 'en', limit ?? 1000, 'keyword_data.keyword_info.search_volume,desc');
+      const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
+      const sample = items.map((it: any) => {
+        const kd = it.keyword_data ?? {};
+        const serp = it.ranked_serp_element?.serp_item ?? {};
+        return {
+          keyword: kd.keyword as string,
+          position: Number(serp.rank_absolute) || null,
+          searchVolume: kd.keyword_info?.search_volume ?? null,
+          serpFeatures: Array.isArray(kd.serp_info?.serp_item_types) ? kd.serp_info.serp_item_types as string[] : null,
+        };
+      }).filter(s => s.keyword);
+      const fp = computeSerpFootprint(domain, typeof location === 'string' ? location : location != null ? String(location) : null, sample);
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try { persistSerpFootprint(db.db, fp); } finally { db.close(); }
+      const lines = fp.features.map(f =>
+        `| ${f.label} | ${f.volumeSharePct}% | ${fmtNum(f.volume)} | ${f.keywords} | ${f.page1SharePct}% |`);
+      const md = `**SERP-feature footprint for ${domain}** - sample: top ${fp.sampleKeywords} keywords by volume (${fmtNum(fp.sampleVolume)} searches/mo)\n\n` +
+        `| Feature | % of sample volume | Volume on feature SERPs | Keywords | You rank page 1 (share of that volume) |\n|---|---|---|---|---|\n` +
+        lines.join('\n') +
+        `\n\nPresence is deterministic (Labs index); "page 1" is an ownership PROXY - per-keyword citation/ownership checks are the SERP tools. ${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`} Persisted for the dashboard.` +
+        browserLink(siteUrl);
+      return {
+        content: [{ type: 'text', text: md }],
+        structuredContent: fp as unknown as Record<string, unknown>,
       };
     },
   );

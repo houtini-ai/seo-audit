@@ -4,6 +4,7 @@ import { gscFreshness } from './gscFreshness.js';
 import { expectedCtr } from './ctrModel.js';
 import { brandToken } from './url-key.js';
 import { HTML_CT } from './sql.js';
+import { latestSerpFootprint, ensureFootprintTable, type SerpFootprint } from './serpFootprint.js';
 
 export interface DashboardData {
   siteUrl: string;
@@ -65,6 +66,7 @@ export interface DashboardData {
   };
   // Agent readiness (from check_agent_readiness) — how ready the site is for AI agents.
   agentReadiness?: { score: number; level: string; checkedAt: string; byCategory: { category: string; passed: number; total: number }[]; checks: { id: string; category: string; label: string; present: boolean; detail: string; fix: string }[] };
+  serpFootprint?: SerpFootprint | null;
   findings?: {
     runId: string;
     total: number;
@@ -91,7 +93,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '5';
+const PAYLOAD_VERSION = '6';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -102,13 +104,15 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     // Probe every table the payload reads from — search_analytics + pages + the latest audit run,
     // PLUS agent_readiness and rank_history (written by check_agent_readiness / track_ranks via their
     // own paths). Omitting the latter two would serve a stale dashboard after those tools run.
+    ensureFootprintTable(db.db); // probe below reads it; create before first serp_features run
     const ver = db.db.prepare(
       `SELECT (SELECT MAX(date)||':'||COALESCE(MAX(rowid),0) FROM search_analytics) sa,
               (SELECT run_id FROM audit_runs ORDER BY started_at DESC LIMIT 1) run,
               (SELECT COALESCE(MAX(rowid),0) FROM pages) pg,
               (SELECT COALESCE(MAX(checked_at),'') FROM agent_readiness) ar,
-              (SELECT COUNT(*)||':'||COALESCE(MAX(period),'') FROM rank_history) rh`).get() as { sa: string | null; run: string | null; pg: number; ar: string | null; rh: string | null };
-    const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}|${ver.ar ?? ''}|${ver.rh ?? ''}`;
+              (SELECT COUNT(*)||':'||COALESCE(MAX(period),'') FROM rank_history) rh,
+              (SELECT COALESCE(MAX(id),0) FROM serp_footprint) sf`).get() as { sa: string | null; run: string | null; pg: number; ar: string | null; rh: string | null; sf: number };
+    const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}|${ver.ar ?? ''}|${ver.rh ?? ''}|${ver.sf}`;
     const hit = db.db.prepare('SELECT payload FROM dashboard_cache WHERE id=1 AND version=?').get(version) as { payload: string } | undefined;
     // A corrupt/truncated cache row must fall through to a rebuild, not throw forever.
     if (hit) { try { return JSON.parse(hit.payload) as DashboardData; } catch { /* rebuild below */ } }
@@ -585,6 +589,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       pagePerformance,
       keywordMovement,
       findings,
+      serpFootprint: latestSerpFootprint(db.db),
     };
     // Best-effort cache write (skip silently if the DB is read-only).
     try {
