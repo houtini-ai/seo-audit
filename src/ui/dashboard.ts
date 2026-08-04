@@ -491,13 +491,10 @@ function render(data: DashboardData): void {
   $('site').textContent = data.siteUrl;
   const dr = data.dateRange;
   $('range').textContent = dr?.current ?? '';
+  // Trailing unfinalised GSC days are excluded upstream (gscFreshness); the range already
+  // states the end date — no visible caveat (hover-only explanation for the curious).
   if (dr && dr.trimmedDays && dr.trimmedDays > 0 && dr.rawMaxDate) {
-    const rangeEl = $('range');
-    rangeEl.title = `Search Console data runs to ${dr.rawMaxDate}, but the last ${dr.trimmedDays} day${dr.trimmedDays > 1 ? 's' : ''} are still being finalised by Google and are excluded so the charts don’t show a false drop.`;
-    const note = document.createElement('span');
-    note.className = 'range-note';
-    note.textContent = ` · excl. last ${dr.trimmedDays}d (GSC not finalised)`;
-    rangeEl.appendChild(note);
+    $('range').title = `Data to ${dr.maxDate}; the last ${dr.trimmedDays} day${dr.trimmedDays > 1 ? 's' : ''} of Search Console data aren’t final yet and are excluded.`;
   }
 
   const c = data.summary.current, p = data.summary.prior;
