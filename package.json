@@ -1,6 +1,6 @@
 {
   "name": "@houtini/seo-audit-console",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "mcpName": "io.github.houtini-ai/seo-audit-console",
   "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 90 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
   "type": "module",
