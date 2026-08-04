@@ -10,7 +10,7 @@ Run `refresh_property` first, and `run_audit` if you want the findings populated
 
 ![The Overview tab - executive summary, critical issues, recoverable clicks](../assets/dashboard-overview.png)
 
-The executive summary: clicks and impressions for the last 28 days against the prior period, the headline finding counts, and the top issues by impact. It's the tab you'd screenshot for a stakeholder - the state of the property in one screen. Beneath it sits a "Where to go next" card: suggested questions chosen from what your data actually contains, written as prompts to type or say to Claude rather than buttons. In the chat widget this card replaces the CSV export buttons, because the widget's sandbox blocks file downloads; the exported report keeps the CSV buttons and shows the suggestions underneath them.
+The executive summary: clicks and impressions for the last 28 days against the prior period, the headline finding counts, and the top issues by impact. It's the tab you'd screenshot for a stakeholder - the state of the property in one screen.
 
 ## Issues & fixes
 
