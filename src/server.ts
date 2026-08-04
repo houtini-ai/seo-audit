@@ -245,7 +245,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       description: 'Overview of every tool/feature with an example prompt for each. Start here.',
       inputSchema: {},
     },
-    async () => ({ content: [{ type: 'text', text: HELP_TEXT }], structuredContent: { version: SERVER_VERSION } }),
+    async () => ({ content: [{ type: 'text', text: HELP_TEXT }] }), // text-only: a structuredContent stub eclipses the text in hosts that prefer structured output
   );
 
   server.registerTool(
@@ -255,7 +255,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       description: 'The full data-surface map (every source: grain, dimensions, join keys, freshness, cost) plus worked multi-source recipes and novel combinations, in this server\'s actual tool and table names. Static — no API calls, no cost. Call this BEFORE planning any complex question that spans more than one data source.',
       inputSchema: {},
     },
-    async () => ({ content: [{ type: 'text', text: COOKBOOK_TEXT }], structuredContent: { version: SERVER_VERSION } }),
+    async () => ({ content: [{ type: 'text', text: COOKBOOK_TEXT }] }), // text-only (see seo_audit_help note)
   );
 
   server.registerTool(
