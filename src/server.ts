@@ -60,8 +60,10 @@ export function dataDir(): string {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DASHBOARD_URI = 'ui://dashboard/main.html';
-const SYNC_PROGRESS_URI = 'ui://sync-progress/main.html';
+// Version the widget URIs: hosts may cache ui:// resources by URI indefinitely, so an
+// unversioned URI can pin users to a stale (or broken) cached bundle across releases.
+const DASHBOARD_URI = `ui://dashboard/main-${SERVER_VERSION}.html`;
+const SYNC_PROGRESS_URI = `ui://sync-progress/main-${SERVER_VERSION}.html`;
 
 // Must match the categories actually used by CHECKS (src/audit/checks.ts) so category
 // filters never silently return empty. (Was listing performance/agentic/integrity/war-stories
