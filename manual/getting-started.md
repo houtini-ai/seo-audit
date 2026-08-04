@@ -109,7 +109,11 @@ The tool reads GSC through a **Google Cloud service account** - a robot login yo
 
    ![The blank create-service-account form](../images/create-service-account.jpg)
 
-   Once it exists, open it, go to the **Keys** tab → **Add key** → **Create new key** → **JSON**, and a key file downloads. Keep it somewhere sensible; you'll reference its path in the config.
+   Once it exists, open it, go to the **Keys** tab → **Add key** → **Create new key** → **JSON**, and a key file downloads:
+
+   ![The Keys tab - Add key, then JSON, and the key file downloads](../images/download-json-key.jpg)
+
+   Keep that file somewhere sensible; you'll reference its path in the config.
 3. In [Search Console](https://search.google.com/search-console), under *Settings → Users and permissions*, add the service account's **email address** as a user on each property you want to audit (copy the email from the service-accounts list - it ends `.iam.gserviceaccount.com`).
 
 **Step 3 is the one everyone misses.** The service account is its own "person" with its own email address (it looks like `something@your-project.iam.gserviceaccount.com`). Until you add that email to the property, it sees nothing - exactly as a new colleague would. If `list_properties` comes back empty later, this step is almost always why.
