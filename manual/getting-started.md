@@ -89,9 +89,24 @@ then fully restart Claude (Desktop holds the old build until you do - see the re
 
 The tool reads GSC through a **Google Cloud service account** - a robot login you create once, instead of an OAuth dance every session. If you'd rather follow a version with screenshots, the [Setting it up from scratch](https://houtini.com/articles/better-search-console/#setting-it-up-from-scratch) guide on houtini.com walks the identical flow, including the permissions screen from step 3 below.
 
-1. In [Google Cloud Console](https://console.cloud.google.com), create a project and **enable the Search Console API**.
-2. Create a **service account** and download its **JSON key** file. Keep it somewhere sensible; you'll reference its path in the config.
-3. In [Search Console](https://search.google.com/search-console), under *Settings → Users and permissions*, add the service account's **email address** as a user on each property you want to audit.
+1. In [Google Cloud Console](https://console.cloud.google.com), create a project and **enable the Search Console API**. From the console home, open the APIs section:
+
+   ![Google Cloud Console home - View APIs highlighted](../images/console-cloud-home-1.jpg)
+
+   Search the API library for "search console":
+
+   ![Searching the API library for the Search Console API](../images/search-for-search-console-api.jpg)
+
+   And enable it:
+
+   ![The Search Console API page with the Enable button](../images/enable.jpg)
+
+2. Create a **service account** (IAM & Admin → Service Accounts → Create service account - the name doesn't matter, something like `seo-audit` is fine):
+
+   ![The blank create-service-account form](../images/create-service-account.jpg)
+
+   Once it exists, open it, go to the **Keys** tab → **Add key** → **Create new key** → **JSON**, and a key file downloads. Keep it somewhere sensible; you'll reference its path in the config.
+3. In [Search Console](https://search.google.com/search-console), under *Settings → Users and permissions*, add the service account's **email address** as a user on each property you want to audit (copy the email from the service-accounts list - it ends `.iam.gserviceaccount.com`).
 
 **Step 3 is the one everyone misses.** The service account is its own "person" with its own email address (it looks like `something@your-project.iam.gserviceaccount.com`). Until you add that email to the property, it sees nothing - exactly as a new colleague would. If `list_properties` comes back empty later, this step is almost always why.
 
