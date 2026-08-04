@@ -1,6 +1,6 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
 import {
-  esc, fmtNum, icons, sevBadge, statusBadge, badge, kpiGrid, filterGroup,
+  esc, fmtNum, icons, sevBadge, statusBadge, badge, kpiGrid, filterGroup, card,
   attachSort, formatTrend, accordionItem, accordionSection, accordionControls,
   EChartWrapper, chartPalette, axisDefaults, tooltipDefaults, emptyState,
 } from './lib/index.js';
@@ -28,6 +28,10 @@ interface DashboardData {
   keywordMovement?: { query: string; firstPos: number; lastPos: number; delta: number; firstDate: string; lastDate: string; category: string }[];
   findings?: { runId: string; total: number; finishedAt: string | null; byCheck: any[]; top: any[]; recommendations?: any[] } | null;
   topLinkedPages?: { url: string; inlinks: number; status: number | null; indexable: boolean; reason: string | null }[];
+  templateMismatch?: { template: string; iprPct: number; trafficPct: number }[];
+  equityScatter?: { x: number; y: number; t: string }[];
+  cannibalisation?: { query: string; urls: { url: string; points: { week: string; position: number }[] }[] }[];
+  agentReadiness?: { score: number; level: string; byCategory: { category: string; passed: number; total: number }[]; checks: { label: string; present: boolean; detail?: string; fix: string }[] };
   crawlHealth?: {
     responseCodes: { label: string; count: number }[];
     indexability: { label: string; count: number }[];
@@ -95,57 +99,19 @@ function toast(msg: string, kind: 'ok' | 'warn' = 'ok'): void {
   setTimeout(() => t.remove(), 4200);
 }
 
-/** Copy text in a sandboxed iframe: clipboard API where allowed, else a hidden-textarea execCommand. */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; }
-  } catch { /* fall through to execCommand */ }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand('copy');
-    ta.remove();
-    return ok;
-  } catch { return false; }
-}
-
-// Direct <a download> blob clicks are blocked inside MCP-App sandboxed iframes — that's why the
-// host exposes ui/download-file. We use it only when the host advertises the capability; otherwise
-// we fall back to copying the CSV to the clipboard, and we always surface the outcome via a toast.
-async function downloadCsv(filename: string, rows: unknown[][]): Promise<void> {
-  const csv = toCsv(rows);
-
-  // Standalone export (opened directly in a browser, not an MCP host): a normal blob download works.
-  if ((window as any).__DASH_FIXTURE__) {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    return;
-  }
-
-  // In an MCP host: only call downloadFile if the host says it supports it.
-  if (app.getHostCapabilities()?.downloadFile) {
-    try {
-      const r = await app.downloadFile({
-        contents: [{ type: 'resource', resource: { uri: `file:///${filename}`, mimeType: 'text/csv', text: csv } }],
-      });
-      if (!r?.isError) { toast(`Saved ${filename}`); return; }
-    } catch (e) { console.warn('downloadFile failed', e); }
-    // denied / cancelled / threw → fall through to clipboard so the data isn't lost
-  }
-
-  const copied = await copyText(csv);
-  toast(
-    copied
-      ? `This host can't save files — ${filename} copied to clipboard (paste into a .csv)`
-      : `This host can't save files and clipboard is blocked — use “Export report” for a downloadable file`,
-    'warn',
-  );
+// CSV download — STANDALONE EXPORT ONLY (__DASH_FIXTURE__): a normal blob <a download> works
+// in a real browser. The widget path was removed deliberately: inside the MCP-App sandbox
+// downloads are blocked, and the old fallback's first branch awaited app.downloadFile() with
+// the SDK's default 60-second request timeout — when the host advertised ui/download-file but
+// never completed the request, the await sat silently past the user's attention span, so no
+// toast appeared and the button read as dead. Widget mode now shows prompt suggestions instead.
+function downloadCsv(filename: string, rows: unknown[][]): void {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([toCsv(rows)], { type: 'text/csv' }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast(`Saved ${filename}`);
 }
 
 let currentData: DashboardData | null = null;
@@ -948,9 +914,44 @@ function setupTabs(): void {
   });
 }
 
+// "Where to go next" — data-conditional prompt suggestions. These are things to TYPE or SAY
+// to Claude (not buttons): everything in the database is one question away, and the card
+// points at whichever composition the loaded payload says is most valuable right now.
+function nextStepSuggestions(data: DashboardData): string[] {
+  const s: string[] = [];
+  const site = data.siteUrl;
+  if (data.findings?.top?.length) s.push('Show me the top 5 issues and their fixes');
+  else s.push(`Run an audit on ${site}`);
+  if (data.cannibalisationTable?.length) s.push('Walk me through the cannibalisation findings');
+  if (data.contentDecay?.length) s.push('Which decaying pages should I refresh first?');
+  if ((data.quickWins ?? []).some(q => q.type === 'snippet' && q.potential > 0)) s.push('Rewrite the titles for my under-clicked pages');
+  if (!data.agentReadiness) s.push(`Check the agent readiness of ${site}`);
+  if (!data.rankHistory?.length) s.push(`What do my competitors rank for that I don't?`);
+  if (data.crawlHealth?.totalPages) s.push(`Score the passages on ${site} and show me pages with no extractable answer`);
+  return s.slice(0, 4);
+}
+
+function renderNextSteps(data: DashboardData): void {
+  const el = document.getElementById('nextSteps'); if (!el) return;
+  const rows = nextStepSuggestions(data).map(t =>
+    `<div class="suggest-row"><span class="suggest-icon">${icons.chat}</span><span class="suggest-ask">Ask</span><span class="suggest-quote">“${esc(t)}”</span></div>`,
+  ).join('');
+  const footer = `<div class="suggest-footer">Anything across Search Console, the crawl and DataForSEO is one question away - ask what's possible, or say <span class="suggest-quote">“open the composition cookbook”</span>.</div>`;
+  el.innerHTML = card({
+    id: 'nextStepsCard',
+    title: 'Where to go next',
+    hint: 'These are prompts, not buttons - type or say them to Claude in the chat.',
+    bodyHtml: `<div class="suggest-list">${rows}</div>${footer}`,
+  });
+}
+
 function buildExportBar(data: DashboardData): void {
   const bar = $('exportbar');
   bar.innerHTML = '';
+  // Widget mode (MCP-App host): downloads are sandbox-blocked, so no CSV buttons —
+  // the "Where to go next" card takes this slot. Standalone export keeps both.
+  renderNextSteps(data);
+  if (!(window as any).__DASH_FIXTURE__) return;
   const mk = (label: string, fn: () => void): void => {
     const b = document.createElement('button');
     b.className = 'btn';

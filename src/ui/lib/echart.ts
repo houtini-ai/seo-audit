@@ -72,26 +72,43 @@ export class EChartWrapper {
   private ro: ResizeObserver | null = null;
   private el: HTMLElement;
   private group?: string;
+  private pending: echarts.EChartsCoreOption | null = null;
+  private handlers = new Map<string, (p: any) => void>();
 
   constructor(elOrId: string | HTMLElement, opts: { group?: string } = {}) {
     this.el = typeof elOrId === 'string' ? document.getElementById(elOrId)! : elOrId;
     this.group = opts.group;
   }
 
-  /** (Re)build the chart with a full option. Re-init keeps theme-change simple. */
+  /**
+   * (Re)build the chart with a full option. Re-init keeps theme-change simple.
+   * Zero-size guard: in an MCP-App iframe the container can have no layout yet
+   * (hidden tab, or the host hasn't sized the widget) — echarts.init would bake
+   * in 0×0. Defer the option until the ResizeObserver reports real dimensions.
+   */
   setOption(option: echarts.EChartsCoreOption): void {
+    if (!this.ro) {
+      this.ro = new ResizeObserver(() => this.onResize());
+      this.ro.observe(this.el);
+    }
+    if (!this.el.clientWidth || !this.el.clientHeight) {
+      this.pending = option;
+      this.chart?.dispose();
+      this.chart = null;
+      return;
+    }
+    this.pending = null;
     this.chart?.dispose();
     this.chart = echarts.init(this.el);
     this.chart.setOption(option);
+    for (const [ev, fn] of this.handlers) { this.chart.on(ev, fn); }
     if (this.group) {
       this.chart.group = this.group;
       echarts.connect(this.group); // crosshair/tooltip sync across the stack
     }
-    if (!this.ro) {
-      this.ro = new ResizeObserver(() => this.resizeIfVisible());
-      this.ro.observe(this.el);
-    }
   }
+
+  private onResize(): void { this.resizeIfVisible(); }
 
   /** Centered muted message for the no-data case (chart canvas kept for layout). */
   setEmpty(text: string, col: ChartPalette): void {
@@ -100,12 +117,18 @@ export class EChartWrapper {
     });
   }
 
+  /** Handlers survive deferred init and theme re-init — stored and re-applied. */
   on(event: string, handler: (p: any) => void): void {
+    this.handlers.set(event, handler);
     this.chart?.off(event);
     this.chart?.on(event, handler);
   }
 
   resizeIfVisible(): void {
+    if (this.pending && this.el.clientWidth && this.el.clientHeight) {
+      this.setOption(this.pending); // container finally has layout — build for real
+      return;
+    }
     try {
       if (this.chart && (this.el as HTMLElement).offsetParent !== null) this.chart.resize();
     } catch { /* disposed */ }
@@ -114,5 +137,6 @@ export class EChartWrapper {
   dispose(): void {
     this.ro?.disconnect(); this.ro = null;
     this.chart?.dispose(); this.chart = null;
+    this.pending = null; this.handlers.clear();
   }
 }

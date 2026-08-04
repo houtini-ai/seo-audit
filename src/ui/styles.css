@@ -89,6 +89,21 @@ body {
 
 /* Buttons — pricemonitor .btn */
 .exportbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: var(--space-standard-2); }
+.exportbar:empty { display: none; }
+
+/* "Where to go next" — prompt suggestions (things to SAY to Claude, not buttons):
+ * quote treatment, no button affordance, chat glyph + quoted prompt. */
+.suggest-list { display: flex; flex-direction: column; gap: 6px; margin-top: var(--space-standard-1); }
+.suggest-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 9px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  background: var(--bg-inset); border-left: 3px solid var(--accent);
+}
+.suggest-icon { align-self: center; display: inline-flex; color: var(--text-faint); }
+.suggest-ask { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); }
+.suggest-quote { font-style: italic; color: var(--text-primary); }
+.suggest-footer { margin-top: 12px; font-size: 12px; color: var(--text-muted); }
+.suggest-footer .suggest-quote { font-size: 12px; }
 .btn {
   font-family: var(--font); font-size: 12.5px; font-weight: 600;
   color: var(--text-secondary); background: var(--bg-surface);
