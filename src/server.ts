@@ -109,6 +109,18 @@ ARCHETYPE CHAINS (compose along these lines):
 2. Authority → waste: iPR / backlinks flowing into non-200, redirected, or orphaned URLs → recover the equity with 301s or internal links (fix_finding generates them).
 3. Competitor → gap: competitor keyword footprints (ranked_keywords / topic_gaps) minus our GSC + crawled-page footprint → topics to cover, each tied to the nearest existing page.
 
+COST DISCIPLINE (behave like a strategist who knows the margins):
+- Free and instant, use liberally: everything on synced data — query_data, run_audit, query_audit, suggest_pages, list_templates, detect_changes, get_dashboard, serve_dashboard, export_report.
+- Paid but CHEAP and 20-day cached (Labs/Keywords, ~$0.01–0.13 a call): keyword_volume, search_intent, ranked_keywords, serp_features, domain_visibility, top_pages, competitors_domain, page_intersection, topic_gaps. Top-down pulls only — ONE ranked_keywords call answers "what does this domain rank for"; NEVER loop keywords through SERP endpoints to reconstruct what a Labs call returns.
+- Paid per-keyword (SERP): related_terms and AI-Overview CITATION checks. On-demand for a handful of clicked/explicit keywords, never a list.
+- Separate subscription: pull_backlinks (DataForSEO Backlinks — a 40204 error means it isn't activated).
+
+AGENCY MACRO-WORKFLOWS (the engagement arc — each stage feeds the next):
+1. Baseline: refresh_property → run_audit → serve_dashboard (share the URL).
+2. Market: serp_features (feature exposure) + domain_visibility + competitors_domain → topic_gaps vs the named rivals.
+3. Content plan: suggest_pages (demand you already have) + topic_gaps (demand rivals own) → draft_content briefs.
+4. Fix cycle: fix_finding per top finding → re-crawl → detect_changes to prove the fix landed.
+
 Before planning ANY complex multi-source question, call composition_cookbook — it returns the full data-surface map and worked recipes using these exact tool and table names.`;
 
 const COOKBOOK_TEXT = `# Composition cookbook — the data surface and how to join it
@@ -152,6 +164,14 @@ Raw access: query_audit runs any single check with full evidence; every table ab
 - **AIO text vs your content:** the ai_overview items in a SERP call (related_terms' underlying serpOrganic) × pages.body_chunks — is the text Google quotes actually on your page, and in one extractable chunk?
 - **Crawl-to-first-impression latency:** url_inspection.last_crawl_time vs the first date a page appears in search_analytics — how fast does Google turn a crawl into impressions, per template? Slow templates have an indexing-pipeline problem.
 - **Crawled-as vs response times:** url_inspection.crawled_as (mobile/desktop agent) × pages.response_time_ms — slow responses specifically on the agent Google uses against you.
+
+## Agency engagement recipes (the deliverable arc)
+
+- **Week-one baseline:** refresh_property → run_audit → serve_dashboard. Share the dashboard URL; the ranked findings ARE the technical workstream.
+- **Market read:** serp_features (feature/AIO exposure, volume-weighted) + domain_visibility for the client and each named rival (one cached call each) → who is structurally winning, and how much of the market SERP features already absorb.
+- **Content plan:** suggest_pages (demand you already earn impressions for) + topic_gaps (demand rivals own that you don't) → draft_content for the winners. Every proposal traces to real impressions or a rival's real footprint - no invented "keyword ideas".
+- **Fix-and-prove cycle:** fix_finding on the top finding → ship → start_crawl → detect_changes shows the fix landed → re-run run_audit and watch the finding drop off. That screenshot is the client update.
+- **Cost rule of thumb:** an entire competitive read (visibility + footprint + gaps for 4 domains) is a handful of cached Labs calls - under a dollar. If a plan involves looping SERP calls over a keyword list, it is the wrong plan; a Labs endpoint already has that answer top-down.
 
 Plan the join first (url_key / query / domain), state the grain of each side, then run the fewest paid calls that answer it.`;
 
@@ -868,7 +888,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'keyword_volume',
     {
       title: 'Keyword search volume (DataForSEO)',
-      description: 'True monthly search volume + CPC + competition for keywords (DataForSEO KEYWORDS_DATA). Served from a 20-day cache; live calls are serialised. Default location: United States (2840).',
+      description: '[Paid: Keywords API, cheap, cached 20d | Use for: demand sizing] True monthly search volume + CPC + competition for keywords (DataForSEO KEYWORDS_DATA). Served from a 20-day cache; live calls are serialised. Default location: United States (2840).',
       inputSchema: {
         keywords: z.array(z.string()).min(1).max(700),
         location: z.union([z.string(), z.number()]).optional(),
@@ -892,7 +912,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'related_terms',
     {
       title: 'Related terms (People Also Ask + related searches)',
-      description: 'People Also Ask questions and related searches for a keyword (DataForSEO SERP). Powers click-through "related terms" on the keyword charts. SERP call — cached 20 days.',
+      description: '[Paid: SERP call PER KEYWORD - only for clicked/explicit keywords, never lists | Use for: the SERP context of a single keyword] People Also Ask questions and related searches for a keyword (DataForSEO SERP). Powers click-through "related terms" on the keyword charts. SERP call — cached 20 days.',
       inputSchema: { keyword: z.string(), location: z.union([z.string(), z.number()]).optional(), languageCode: z.string().optional() },
     },
     async ({ keyword, location, languageCode }) => {
@@ -930,7 +950,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'search_intent',
     {
       title: 'Search intent classification (DataForSEO Labs)',
-      description: 'Classify the search intent (informational / navigational / commercial / transactional) of keywords — primary label + probability + secondary intents. Use it to spot intent mismatch: e.g. a transactional product page ranking for an informational query (a common cause of high impressions / low CTR). Pass siteUrl to persist the intents so run_audit can surface intent-vs-pagetype-mismatch. Labs call, cached 20 days, up to 1000 keywords. Language-only (no location).',
+      description: '[Paid: Labs, cheap, cached 20d, up to 1000 kw/call | Use for: intent mapping before content planning] Classify the search intent (informational / navigational / commercial / transactional) of keywords — primary label + probability + secondary intents. Use it to spot intent mismatch: e.g. a transactional product page ranking for an informational query (a common cause of high impressions / low CTR). Pass siteUrl to persist the intents so run_audit can surface intent-vs-pagetype-mismatch. Labs call, cached 20 days, up to 1000 keywords. Language-only (no location).',
       inputSchema: { keywords: z.array(z.string()).min(1).max(1000), languageCode: z.string().optional(), siteUrl: z.string().optional() },
     },
     async ({ keywords, languageCode, siteUrl }) => {
@@ -962,7 +982,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'page_lighthouse',
     {
       title: 'Page Lighthouse — lab Core Web Vitals (DataForSEO On-Page)',
-      description: 'Run a live Lighthouse audit for ONE url: lab Core Web Vitals (LCP, CLS, TBT, FCP, Speed Index), category scores (performance/SEO/best-practices/accessibility), and the top time-saving opportunities. Complements GSC/CrUX field data (aggregate + delayed) with on-demand lab data. Pass siteUrl to persist the CWV so run_audit can surface high-yield-cwv-fail. Paid On-Page call (~2000 credits), slow (~20–120s), cached 20 days.',
+      description: '[Paid: On-Page, ONE URL per call | Use for: CWV evidence on a page that earns clicks] Run a live Lighthouse audit for ONE url: lab Core Web Vitals (LCP, CLS, TBT, FCP, Speed Index), category scores (performance/SEO/best-practices/accessibility), and the top time-saving opportunities. Complements GSC/CrUX field data (aggregate + delayed) with on-demand lab data. Pass siteUrl to persist the CWV so run_audit can surface high-yield-cwv-fail. Paid On-Page call (~2000 credits), slow (~20–120s), cached 20 days.',
       inputSchema: { url: z.string().url(), forMobile: z.boolean().optional(), siteUrl: z.string().optional() },
     },
     async ({ url, forMobile, siteUrl }) => {
@@ -1019,7 +1039,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'competitors_domain',
     {
       title: 'Competitor domains (DataForSEO Labs)',
-      description: 'Discover the domains competing with a target for the same organic keywords (ranked by keyword overlap), with intersection counts and organic traffic estimates. The seed list for content-gap analysis (feed these into page_intersection). Labs call, cached 20 days. Pass location + language for the right market.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: naming the real competitor set - the opening move of competitive work] Discover the domains competing with a target for the same organic keywords (ranked by keyword overlap), with intersection counts and organic traffic estimates. The seed list for content-gap analysis (feed these into page_intersection). Labs call, cached 20 days. Pass location + language for the right market.',
       inputSchema: { target: z.string(), location: z.union([z.string(), z.number()]).optional(), languageCode: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
     },
     async ({ target, location, languageCode, limit }) => {
@@ -1046,7 +1066,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'page_intersection',
     {
       title: 'Content gap — page intersection (DataForSEO Labs)',
-      description: 'Find keywords that competitor pages rank for but your page does NOT (the content gap). Pass competitor URLs as `competitorUrls` (max 20; wildcards like https://site.com/blog/* allowed) and your own URL(s) in `excludePages` (max 10) to subtract. Returns gap keywords sorted by search volume, with each competitor’s rank. Labs call, cached 20 days. Pass location + language.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: page-level content gap vs named rival URLs] Find keywords that competitor pages rank for but your page does NOT (the content gap). Pass competitor URLs as `competitorUrls` (max 20; wildcards like https://site.com/blog/* allowed) and your own URL(s) in `excludePages` (max 10) to subtract. Returns gap keywords sorted by search volume, with each competitor’s rank. Labs call, cached 20 days. Pass location + language.',
       inputSchema: {
         competitorUrls: z.array(z.string()).min(1).max(20),
         excludePages: z.array(z.string()).max(10).optional(),
@@ -1103,7 +1123,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'domain_visibility',
     {
       title: 'Domain visibility over time (DataForSEO Labs)',
-      description: 'Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic value (ETV) per month, plus a trend verdict. The Semrush-style "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market. Grain: month × domain. Joins: domain → Labs/backlinks tools; period → rank_history.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: visibility-over-time trend, any domain, no GSC needed] Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic value (ETV) per month, plus a trend verdict. The Semrush-style "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market. Grain: month × domain. Joins: domain → Labs/backlinks tools; period → rank_history.',
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme (e.g. example.com or blog.example.com)'),
         location: z.union([z.string(), z.number()]).optional(),
@@ -1168,7 +1188,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'top_pages',
     {
       title: 'Top ranking pages on a domain (DataForSEO Labs)',
-      description: 'The top organic pages of ANY domain or subdomain, ranked by estimated traffic value (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The Semrush-style "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market. Grain: page × domain. Joins: domain → Labs tools; URL → pages.url_key on your own property.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: where rival traffic actually lands] The top organic pages of ANY domain or subdomain, ranked by estimated traffic value (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The Semrush-style "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market. Grain: page × domain. Joins: domain → Labs tools; URL → pages.url_key on your own property.',
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme'),
         location: z.union([z.string(), z.number()]).optional(),
@@ -1221,7 +1241,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'ranked_keywords',
     {
       title: 'Ranked keywords for a domain / URL / folder (DataForSEO Labs)',
-      description: 'Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV, the ranking URL, plus keyword difficulty, search intent and SERP features where the response carries them. Set aioOnly:true to list only keywords whose SERP shows a Google AI Overview (your AIO exposure list; per-keyword CITATION checking uses the SERP tools — see the cookbook). The Semrush-style "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market. Grain: keyword × target. Joins: keyword → GSC search_analytics.query; URL → pages.url_key.',
+      description: '[Paid: Labs, cheap, cached 20d - ONE call replaces any keyword loop | Use for: full keyword footprint of a domain/page/folder] Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV, the ranking URL, plus keyword difficulty, search intent and SERP features where the response carries them. Set aioOnly:true to list only keywords whose SERP shows a Google AI Overview (your AIO exposure list; per-keyword CITATION checking uses the SERP tools — see the cookbook). The Semrush-style "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market. Grain: keyword × target. Joins: keyword → GSC search_analytics.query; URL → pages.url_key.',
       inputSchema: {
         target: z.string().describe('Domain, subdomain, or full URL (full URL required for scope:url)'),
         scope: z.enum(['domain', 'subdomain', 'url', 'folder']).optional(),
@@ -1325,7 +1345,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'serp_features',
     {
       title: 'SERP-feature footprint (AI Overviews, snippets, PAA)',
-      description: 'How much of your keyword universe carries each SERP feature - AI Overviews, featured snippets, People Also Ask, shopping, video - weighted by search volume, and how much of that volume you already rank page 1 for. ONE DataForSEO Labs ranked_keywords pull (top-volume sample, cached 20 days, never per-keyword SERP loops). Answers "how exposed are we to AI Overviews / zero-click?" with real numbers. Deterministic: feature PRESENCE (from the Labs index). Judgement proxy: page-1 rank stands in for feature ownership - true ownership needs per-keyword SERP calls (see ranked_keywords aioOnly + the cookbook). Persists to the property DB so the dashboard charts it.',
+      description: '[Paid: Labs, ONE cached call | Use for: AI-Overview / zero-click exposure with real numbers] How much of your keyword universe carries each SERP feature - AI Overviews, featured snippets, People Also Ask, shopping, video - weighted by search volume, and how much of that volume you already rank page 1 for. ONE DataForSEO Labs ranked_keywords pull (top-volume sample, cached 20 days, never per-keyword SERP loops). Answers "how exposed are we to AI Overviews / zero-click?" with real numbers. Deterministic: feature PRESENCE (from the Labs index). Judgement proxy: page-1 rank stands in for feature ownership - true ownership needs per-keyword SERP calls (see ranked_keywords aioOnly + the cookbook). Persists to the property DB so the dashboard charts it.',
       inputSchema: {
         siteUrl: z.string().describe('The GSC property - results persist to its database'),
         target: z.string().optional().describe('Override the analysed domain (defaults to the property host)'),
@@ -1370,7 +1390,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'topic_gaps',
     {
       title: 'Topic gaps — what to cover to be expert in your space (Labs + GSC)',
-      description: 'What related topics should this site cover to be seen as expert in its space? Pulls competitor keyword footprints (DataForSEO Labs ranked_keywords, ≤4 bounded + 20-day-cached calls), subtracts everything YOU already surface for (every GSC query with impressions) or already have a page about (title/H1/slug near-match), clusters the surviving gap keywords lexically, and scores each topic by summed search volume × how many competitors rank there. Each topic names the owning competitor with an example URL, your nearest existing page to build from, and (when resolve_entities has run) whether it sits beside entities you already cover. Pass competitors explicitly (max 3) or let it derive the top 2 from ranking overlap. Needs synced GSC data + DataForSEO credentials.',
+      description: '[Paid: Labs, <=4 cached calls | Use for: topic-level gap plan vs competitors] What related topics should this site cover to be seen as expert in its space? Pulls competitor keyword footprints (DataForSEO Labs ranked_keywords, ≤4 bounded + 20-day-cached calls), subtracts everything YOU already surface for (every GSC query with impressions) or already have a page about (title/H1/slug near-match), clusters the surviving gap keywords lexically, and scores each topic by summed search volume × how many competitors rank there. Each topic names the owning competitor with an example URL, your nearest existing page to build from, and (when resolve_entities has run) whether it sits beside entities you already cover. Pass competitors explicitly (max 3) or let it derive the top 2 from ranking overlap. Needs synced GSC data + DataForSEO credentials.',
       inputSchema: {
         siteUrl: z.string(),
         competitors: z.array(z.string()).max(3).optional().describe('Competitor domains (max 3, e.g. ["rival.com"]). Omitted → derived via competitors_domain'),
@@ -1626,7 +1646,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'pull_backlinks',
     {
       title: 'Pull backlink profile (DataForSEO)',
-      description: 'Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Paid DataForSEO call, 20-day cached, on-demand only. Async job — poll check_sync_status. Grain: one row per backlinked URL. Joins: url_key → pages/GSC; domain → Labs tools.',
+      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), cached 20d | Use for: authority + dead-backlink recovery] Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Paid DataForSEO call, 20-day cached, on-demand only. Async job — poll check_sync_status. Grain: one row per backlinked URL. Joins: url_key → pages/GSC; domain → Labs tools.',
       inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(1000).optional(), statusLimit: z.number().int().min(0).max(1000).optional() },
     },
     async ({ siteUrl, limit, statusLimit }) => {
