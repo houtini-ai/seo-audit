@@ -11,6 +11,8 @@
 
 **Built by [Houtini](https://houtini.com).** We build automation for the grunt work of digital marketing - the data collection, the crawling, the merging, the checking - so your team's time goes on the thinking, the strategy and the client work that needs a human. This plugin is that idea applied to the technical SEO audit.
 
+> **New to MCPs, or not sure where to start?** The **[Getting started guide](manual/getting-started.md)** takes you from a completely fresh machine (no Node, no Git, never heard of a service account) to your first audit - every step screenshotted, including the one everyone misses. Ten minutes, honestly.
+
 ```console
 you  › run an SEO audit on simracingcockpit.gg
 
