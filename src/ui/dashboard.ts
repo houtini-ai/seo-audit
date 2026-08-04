@@ -894,6 +894,35 @@ function render(data: DashboardData): void {
     ? `<table><thead><tr><th>Page</th><th class="num">Was</th><th class="num">Now</th><th class="num">Drop</th><th class="num">Clicks lost</th><th class="num">Impressions</th><th class="num">Position</th></tr></thead><tbody>${decayRows}</tbody></table>`
     : '<p class="muted">No significant content decay - no page lost 20%+ of its clicks vs the prior 28 days.</p>';
 
+  // Market Sizing and Prioritisation (market_sizing tool) - 100% stacked SoV per topic cluster.
+  const ms = data.marketSizing;
+  const msCard = document.getElementById('marketSizingCard');
+  if (msCard) msCard.style.display = ms?.clusters?.length ? '' : 'none';
+  if (ms?.clusters?.length) {
+    const own = ms.domains[0];
+    const clusters = [...ms.clusters].reverse(); // biggest topic at the top of the y axis
+    const palette = [col.green, col.blue, col.amber, col.red, col.muted];
+    wrap('marketSizingChart').setOption({
+      ...ARIA,
+      grid: { left: 150, right: 30, top: 30, bottom: 34 },
+      legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
+      tooltip: { ...tooltipDefaults(col), valueFormatter: (v: number) => `${v}% share of voice` },
+      xAxis: { type: 'value', max: 100, name: '% share of voice (ETV)', nameLocation: 'middle', nameGap: 24, ...axisNum },
+      yAxis: { type: 'category', data: clusters.map(c => `${c.head} (${fmt(c.volume)}/mo)`), ...axis },
+      series: ms.domains.map((d, i) => ({
+        name: d === own ? `${d} (you)` : d,
+        type: 'bar', stack: 'sov',
+        itemStyle: { color: palette[i % palette.length], opacity: d === own ? 1 : 0.55 },
+        data: clusters.map(c => c.sov[d] ?? 0),
+      })),
+    });
+    const lead = ms.clusters.filter(c => c.leader === own).length;
+    $('marketSizingSummary').textContent =
+      `${fmt(ms.universeKeywords)} keywords, ${fmt(ms.universeVolume)} searches/mo total demand. Overall share of voice: ` +
+      ms.domains.map(d => `${d} ${ms.sovByDomain[d]}%`).join(', ') +
+      `. You lead ${lead} of ${ms.clusters.length} topic clusters.`;
+  }
+
   // SERP-feature footprint (serp_features tool) - volume-weighted exposure per feature,
   // split by the page-1 ownership proxy. Card hidden until the tool has run.
   const fp = data.serpFootprint;

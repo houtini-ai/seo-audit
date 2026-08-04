@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { getDashboardData } from './core/dashboardData.js';
 import { startDashboardServer, stopDashboardServer, dashboardServerUrl, listLocalProperties } from './core/webServer.js';
 import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
+import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
 
 /** A clickable browser-dashboard link appended to tool outputs — the user should always
  * know the full interactive report is one click away (or one serve_dashboard call away). */
@@ -1419,6 +1420,61 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: md }],
         structuredContent: fp as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  // market_sizing — Market Sizing and Prioritisation: the organic market read that opens
+  // an engagement. Top-down Labs pulls only (client + <=4 rivals), cached, ~$0.65 worst case.
+  server.registerTool(
+    'market_sizing',
+    {
+      title: 'Market Sizing and Prioritisation (share of voice vs competitors)',
+      description: '[Paid: Labs, one cached call per domain (<=5) | Use for: sizing the organic market and who owns it] Build the organic market map: your domain plus up to 4 named competitors, ONE cached Labs ranked_keywords pull each, unioned into a keyword universe. Returns total monthly demand (deduplicated search volume), each domain\'s share of voice (ETV share) overall and per topic cluster, and the leader per cluster - the "here is the market, here is who owns it, here is where to attack" table that opens an engagement. Deterministic: the competitor set and ranked keywords (Labs index). Judgement: ETV is DataForSEO\'s CTR-curve traffic estimate - the SoV percentages inherit that. Persists to the property DB for the dashboard chart. Get the competitor set from competitors_domain first if unsure.',
+      inputSchema: {
+        siteUrl: z.string(),
+        competitors: z.array(z.string()).min(1).max(4).describe('Competitor domains, e.g. ["rival.com", "other.co.uk"]'),
+        location: z.union([z.string(), z.number()]).optional(),
+        languageCode: z.string().optional(),
+        limitPerDomain: z.number().int().min(100).max(1000).optional().describe('Keywords sampled per domain (default 1000, by volume)'),
+      },
+    },
+    async ({ siteUrl, competitors, location, languageCode, limitPerDomain }) => {
+      const client = requireDfs(dfs);
+      const own = dfsHost(siteUrl);
+      const domains = [own, ...competitors.map(c => dfsHost(c)).filter(c => c && c !== own)];
+      const inputs = [];
+      let cost = 0; let cachedAll = true;
+      for (const domain of domains) { // sequential - the client serialises anyway
+        const r = await client.rankedKeywords(domain, location, languageCode ?? 'en', limitPerDomain ?? 1000, 'keyword_data.keyword_info.search_volume,desc');
+        cost += r.cost; cachedAll = cachedAll && r.cached;
+        const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
+        inputs.push({
+          domain,
+          keywords: items.map((it: any) => ({
+            keyword: it.keyword_data?.keyword as string,
+            volume: it.keyword_data?.keyword_info?.search_volume ?? null,
+            position: Number(it.ranked_serp_element?.serp_item?.rank_absolute) || null,
+            etv: it.ranked_serp_element?.serp_item?.etv != null ? Number(it.ranked_serp_element.serp_item.etv) : null,
+          })).filter((k: any) => k.keyword),
+        });
+      }
+      const m = computeMarketSizing(inputs, typeof location === 'string' ? location : location != null ? String(location) : null);
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try { persistMarketSizing(db.db, m); } finally { db.close(); }
+      const sovLine = m.domains.map(d => `${d === own ? '**' + d + '**' : d} ${m.sovByDomain[d]}%`).join(' · ');
+      const clusterRows = m.clusters.map(c =>
+        `| ${c.head.replace(/\|/g, '\\|')} | ${fmtNum(c.volume)} | ${c.keywords} | ${c.leader === own ? '**you**' : (c.leader ?? '-')} | ${m.domains.map(d => `${c.sov[d]}%`).join(' / ')} |`);
+      const md = `**Market Sizing and Prioritisation** - ${m.domains.join(' vs ')}\n\n` +
+        `Universe: ${fmtNum(m.universeKeywords)} unique keywords, **${fmtNum(m.universeVolume)} searches/mo** total demand.\n` +
+        `Share of voice (ETV share): ${sovLine}\n\n` +
+        `| Topic cluster | Volume/mo | Keywords | Leader | SoV (${m.domains.join(' / ')}) |\n|---|---|---|---|---|\n` +
+        clusterRows.join('\n') +
+        `\n\nD: competitor set + ranked keywords (Labs index). N: ETV is a CTR-curve estimate - SoV inherits it. ${cachedAll ? 'All cached.' : `Live cost $${cost.toFixed(4)}.`} Persisted for the dashboard.` +
+        browserLink(siteUrl);
+      return {
+        content: [{ type: 'text', text: md }],
+        structuredContent: m as unknown as Record<string, unknown>,
       };
     },
   );

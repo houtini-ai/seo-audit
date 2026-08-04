@@ -95,6 +95,12 @@
           <div class="hint">The highest-opportunity queries, scored by clicks you could recover by closing the CTR gap or reaching page 1. Every row is grounded in real Search Console data.</div>
           <div id="quickWinsTable" class="findings-table"></div>
         </div>
+        <div class="chart-card" id="marketSizingCard" style="display:none">
+          <h3>Market sizing - share of voice by topic</h3>
+          <div class="hint" id="marketSizingHint">Each bar is a topic cluster in your market's keyword universe, split by estimated share of voice (ETV share) per domain. Deterministic: the ranked keywords behind it. Judgement: ETV is a CTR-curve traffic estimate. Run <code>market_sizing</code> with your competitors to populate.</div>
+          <p class="sr-only" id="marketSizingSummary"></p>
+          <div class="chart chart-tall" id="marketSizingChart" role="img" aria-label="Share of voice per topic cluster, stacked to 100 percent"></div>
+        </div>
         <div class="chart-card" id="serpFeaturesCard" style="display:none">
           <h3>SERP-feature footprint - AI Overviews, snippets and friends</h3>
           <div class="hint">Share of your sampled search volume whose results pages carry each SERP feature. The solid segment is volume where you already rank page 1 (an ownership proxy - feature presence is deterministic, ownership needs per-keyword SERP checks); the pale remainder is exposure you don't yet capture. Run <code>serp_features</code> to populate or refresh.</div>
