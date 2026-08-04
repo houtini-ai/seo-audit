@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
+import { startDashboardServer, stopDashboardServer, dashboardServerUrl } from './core/webServer.js';
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 import { buildAuditMarkdown } from './audit/report.js';
 import { diffLatest, buildDriftMarkdown } from './audit/drift.js';
@@ -1502,6 +1503,51 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: `Report saved: ${file}\nOpen it in any browser for the full interactive dashboard (${data.findings?.total ?? 0} findings). Shareable — send it to a client as-is.` }],
         structuredContent: { path: file, siteUrl, findings: data.findings?.total ?? 0, bytes: html.length },
+      };
+    },
+  );
+
+  // serve_dashboard — the local webserver delivery surface: the full dashboard in a real
+  // browser tab (live data, property switcher, native downloads), no MCP-App host needed.
+  server.registerTool(
+    'serve_dashboard',
+    {
+      title: 'Serve the dashboard on a local webserver',
+      description: 'Start a localhost-only webserver and return a URL that opens the full interactive dashboard in your browser — live data straight from the local database (always current, unlike export_report snapshots), a property switcher, working CSV downloads, and no host widget limits. The server stays up while the MCP server runs; call again with stop=true to shut it down. Localhost only — nothing is exposed to the network.',
+      inputSchema: { siteUrl: z.string().optional(), port: z.number().int().min(1024).max(65535).optional(), stop: z.boolean().optional() },
+    },
+    async ({ siteUrl, port, stop }) => {
+      if (stop) {
+        const was = dashboardServerUrl();
+        const stopped = await stopDashboardServer();
+        return {
+          content: [{ type: 'text', text: stopped ? `Dashboard server stopped (was ${was}).` : 'No dashboard server running.' }],
+          structuredContent: { stopped },
+        };
+      }
+      const { url } = await startDashboardServer({
+        dataDir,
+        uiHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8'),
+        call: {
+          get_dashboard_data: async (a) => getDashboardData(dataDir(), String(a.siteUrl ?? '')) as unknown as Record<string, unknown>,
+          related_terms: async (a) => {
+            const r = await requireDfs(dfs).relatedTerms(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined);
+            return r as unknown as Record<string, unknown>;
+          },
+          keyword_volume: async (a) => {
+            const r = await requireDfs(dfs).searchVolume((a.keywords as string[]) ?? [], a.location as string | number | undefined, a.languageCode as string | undefined);
+            const items = (r.tasks[0]?.result ?? []).map((k: any) => ({
+              keyword: k.keyword, searchVolume: k.search_volume, cpc: k.cpc, competition: k.competition,
+            }));
+            return { keywords: items, cached: r.cached, cost: r.cost };
+          },
+        },
+        ...(port != null ? { port } : {}),
+      });
+      const open = siteUrl ? `${url}/dashboard?siteUrl=${encodeURIComponent(siteUrl)}` : `${url}/`;
+      return {
+        content: [{ type: 'text', text: `Dashboard server running — open ${open} in your browser. Live data, all charts, CSV downloads, property switcher. Stays up while this MCP server runs; serve_dashboard stop=true to stop it.` }],
+        structuredContent: { url: open, base: url },
       };
     },
   );

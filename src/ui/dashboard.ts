@@ -118,8 +118,8 @@ async function copyText(text: string): Promise<boolean> {
 async function downloadCsv(filename: string, rows: unknown[][]): Promise<void> {
   const csv = toCsv(rows);
 
-  // Standalone export (opened directly in a browser, not an MCP host): a normal blob download works.
-  if ((window as any).__DASH_FIXTURE__) {
+  // Standalone export or web mode (a real browser, not an MCP host): a normal blob download works.
+  if ((window as any).__DASH_FIXTURE__ || __sacWeb) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     a.download = filename;
@@ -153,6 +153,27 @@ const ARIA = { aria: { enabled: true } }; // ECharts-generated screen-reader des
 
 const app = new App({ name: 'SEO Audit Console', version: '0.1.0' });
 
+// Web mode: served by the local serve_dashboard webserver — data comes over plain HTTP
+// from the same origin instead of the MCP-App host bridge. No host, no sandbox, no cache.
+const __sacWeb = (window as any).__SAC_WEB__ as { siteUrl: string; properties?: string[] } | undefined;
+
+/** One data path for both worlds: /api/call in web mode, app.callServerTool under an MCP host. */
+async function callServer(name: string, args: Record<string, unknown>): Promise<any> {
+  if (__sacWeb) {
+    const r = await fetch('/api/call', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, arguments: args }),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => null) as { error?: string } | null;
+      throw new Error(body?.error ?? `HTTP ${r.status}`);
+    }
+    return await r.json();
+  }
+  return app.callServerTool({ name, arguments: args });
+}
+
 function applyHostContext(ctx: { theme?: 'light' | 'dark'; styles?: { variables?: Record<string, string> } } | undefined) {
   if (!ctx) return;
   if (ctx.theme) {
@@ -175,7 +196,7 @@ async function loadDashboard(siteUrl: string): Promise<void> {
   if (dataLoaded || !siteUrl) return;
   dataLoaded = true;
   try {
-    const res = await app.callServerTool({ name: 'get_dashboard_data', arguments: { siteUrl } });
+    const res = await callServer('get_dashboard_data', { siteUrl });
     const data = res?.structuredContent as DashboardData | undefined;
     if (!data) throw new Error('no data');
     currentData = data;
@@ -1000,8 +1021,8 @@ async function loadRelated(keyword: string): Promise<void> {
   el.innerHTML = `<div class="group-label">Looking up “${esc(keyword)}”…</div>`;
   try {
     const [relRes, volRes] = await Promise.all([
-      app.callServerTool({ name: 'related_terms', arguments: { keyword } }) as Promise<any>,
-      (app.callServerTool({ name: 'keyword_volume', arguments: { keywords: [keyword] } }) as Promise<any>).catch(() => null),
+      callServer('related_terms', { keyword }),
+      callServer('keyword_volume', { keywords: [keyword] }).catch(() => null),
     ]);
     const sc = relRes?.structuredContent ?? {};
     const paa: string[] = sc.peopleAlsoAsk ?? [];
@@ -1025,6 +1046,25 @@ const __fixture = (window as any).__DASH_FIXTURE__;
 if (__fixture) {
   applyHostContext({ theme: (window as any).__DASH_THEME__ ?? 'light' });
   currentData = __fixture; render(__fixture);
+} else if (__sacWeb) {
+  // Web mode: honour the browser's colour scheme, load over HTTP, offer a property switcher.
+  applyHostContext({ theme: window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' });
+  if ((__sacWeb.properties?.length ?? 0) > 1) {
+    const header = document.querySelector('.header');
+    if (header) {
+      const sel = document.createElement('select');
+      sel.setAttribute('aria-label', 'Switch property');
+      sel.className = 'property-switcher';
+      for (const p of __sacWeb.properties!) {
+        const o = document.createElement('option');
+        o.value = p; o.textContent = p; o.selected = p === __sacWeb.siteUrl;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', () => { location.href = `/dashboard?siteUrl=${encodeURIComponent(sel.value)}`; });
+      header.appendChild(sel);
+    }
+  }
+  loadDashboard(__sacWeb.siteUrl);
 } else {
   app.connect().then(() => applyHostContext(app.getHostContext() as any));
 }
