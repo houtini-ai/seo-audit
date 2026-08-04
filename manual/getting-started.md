@@ -101,7 +101,11 @@ The tool reads GSC through a **Google Cloud service account** - a robot login yo
 
    ![The Search Console API page with the Enable button](../images/enable.jpg)
 
-2. Create a **service account** (IAM & Admin → Service Accounts → Create service account - the name doesn't matter, something like `seo-audit` is fine):
+2. Create a **service account**. Once the API is enabled, its page offers the route straight there - follow the highlighted service-account link (or IAM & Admin → Service Accounts):
+
+   ![The API page with the service-account link highlighted](../images/service-account-link.jpg)
+
+   Then create the account - the name doesn't matter, something like `seo-audit` is fine:
 
    ![The blank create-service-account form](../images/create-service-account.jpg)
 
