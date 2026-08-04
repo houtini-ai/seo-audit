@@ -28,7 +28,7 @@ let startedAt: number | null = null;
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let ticker: ReturnType<typeof setInterval> | null = null;
 
-const app = new App({ name: 'SEO Audit — Sync Progress', version: '0.1.0' });
+const app = new App({ name: 'SEO Audit - Sync Progress', version: '0.1.0' });
 
 function applyHostContext(ctx: { theme?: 'light' | 'dark'; styles?: { variables?: Record<string, string> } } | undefined): void {
   if (!ctx) return;
@@ -129,7 +129,7 @@ function render(job: Job): void {
         r.inspect ? ['URL inspection', `${r.inspect.inspected ?? 0} inspected`] : null,
         r.ranks ? ['Rank history', `${r.ranks.periods ?? 0} periods${r.ranks.cost ? ` · $${r.ranks.cost}` : ''}`] : null,
       ].filter(Boolean) as [string, string][];
-      sum.innerHTML = `<div class="summary-done">✓ Refresh complete — run <code>run_audit</code> next.</div>` +
+      sum.innerHTML = `<div class="summary-done">✓ Refresh complete - run <code>run_audit</code> next.</div>` +
         rows.map(([k, v]) => `<div class="summary-row"><span>${k}</span><span>${escapeHtml(v)}</span></div>`).join('');
     }
   } else {

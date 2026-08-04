@@ -51,7 +51,7 @@ const safeJson = (s: string): any => { try { return JSON.parse(s || '{}'); } cat
 const catClass = (c: string): string => /(top performer|gained|entered)/.test(c) ? 'cat-up' : /(low performer|lost|dropped)/.test(c) ? 'cat-down' : /declining/.test(c) ? 'cat-warn' : /improve/.test(c) ? 'cat-info' : 'cat-neutral';
 const tableHtml = (headers: string[], rows: string[]): string => `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
 // Domain-stripped path, middle-truncated when long so the meaningful slug END survives (an SEO
-// reads the page identifier at the end of the path — never truncate that off). Callers esc() it.
+// reads the page identifier at the end of the path - never truncate that off). Callers esc() it.
 const shortPath = (u: string, max = 56): string => {
   const p = (u || '').replace(/^https?:\/\/[^/]+/, '') || '/';
   if (p.length <= max) return p;
@@ -59,7 +59,7 @@ const shortPath = (u: string, max = 56): string => {
   return `${p.slice(0, keep)}…${p.slice(-keep)}`;
 };
 
-// Chart palette — the semantic tokens plus the names the render code reads.
+// Chart palette - the semantic tokens plus the names the render code reads.
 function palette() {
   const c = chartPalette();
   return {
@@ -69,7 +69,7 @@ function palette() {
   };
 }
 
-// One EChartWrapper per chart element — lifecycle (ResizeObserver, theming,
+// One EChartWrapper per chart element - lifecycle (ResizeObserver, theming,
 // echarts.connect groups) lives in the wrapper; re-renders re-tint in place.
 const chartsReg = new Map<string, EChartWrapper>();
 function wrap(id: string, group?: string): EChartWrapper {
@@ -82,7 +82,7 @@ function wrap(id: string, group?: string): EChartWrapper {
 const csvCell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const toCsv = (rows: unknown[][]): string => rows.map(r => r.map(csvCell).join(',')).join('\r\n');
 
-/** Brief visible notice (top-centre) — so download success/failure is never silent. */
+/** Brief visible notice (top-centre) - so download success/failure is never silent. */
 function toast(msg: string, kind: 'ok' | 'warn' = 'ok'): void {
   const t = document.createElement('div');
   t.textContent = msg;
@@ -112,7 +112,7 @@ async function copyText(text: string): Promise<boolean> {
   } catch { return false; }
 }
 
-// Direct <a download> blob clicks are blocked inside MCP-App sandboxed iframes — that's why the
+// Direct <a download> blob clicks are blocked inside MCP-App sandboxed iframes - that's why the
 // host exposes ui/download-file. We use it only when the host advertises the capability; otherwise
 // we fall back to copying the CSV to the clipboard, and we always surface the outcome via a toast.
 async function downloadCsv(filename: string, rows: unknown[][]): Promise<void> {
@@ -142,8 +142,8 @@ async function downloadCsv(filename: string, rows: unknown[][]): Promise<void> {
   const copied = await copyText(csv);
   toast(
     copied
-      ? `This host can't save files — ${filename} copied to clipboard (paste into a .csv)`
-      : `This host can't save files and clipboard is blocked — use “Export report” for a downloadable file`,
+      ? `This host can't save files - ${filename} copied to clipboard (paste into a .csv)`
+      : `This host can't save files and clipboard is blocked - use “Export report” for a downloadable file`,
     'warn',
   );
 }
@@ -153,7 +153,7 @@ const ARIA = { aria: { enabled: true } }; // ECharts-generated screen-reader des
 
 const app = new App({ name: 'SEO Audit Console', version: '0.1.0' });
 
-// Web mode: served by the local serve_dashboard webserver — data comes over plain HTTP
+// Web mode: served by the local serve_dashboard webserver - data comes over plain HTTP
 // from the same origin instead of the MCP-App host bridge. No host, no sandbox, no cache.
 const __sacWeb = (window as any).__SAC_WEB__ as { siteUrl: string; properties?: string[] } | undefined;
 
@@ -189,7 +189,7 @@ app.onhostcontextchanged = (ctx) => {
 };
 
 // get_dashboard returns only { siteUrl } (keeps the big payload out of the model context).
-// The widget fetches the full dataset itself via the app-only get_dashboard_data tool —
+// The widget fetches the full dataset itself via the app-only get_dashboard_data tool -
 // results route to the iframe, bypassing the model token cap.
 let dataLoaded = false;
 async function loadDashboard(siteUrl: string): Promise<void> {
@@ -254,7 +254,7 @@ const fmtEvVal = (k: string, v: unknown): string =>
   typeof v === 'number' ? (/position/i.test(k) ? v.toFixed(1) : fmt(v)) : String(v);
 
 // The expanded row: the full recommendation (untruncated) + every evidence field as a readable
-// snapshot — stat chips for scalars, notes for free text — plus traffic-at-risk and the effort/payoff.
+// snapshot - stat chips for scalars, notes for free text - plus traffic-at-risk and the effort/payoff.
 function findingDetailHtml(f: any): string {
   const rec = safeJson(f.recommendation), ev = safeJson(f.evidence) as Record<string, unknown>;
   const traf = safeJson(f.traffic_at_risk), eff = safeJson(f.effort);
@@ -290,7 +290,7 @@ function findingDetailHtml(f: any): string {
     `</div>`;
 }
 
-// Executive summary — synthesises the dashboard data into a plain-language read: a traffic verdict,
+// Executive summary - synthesises the dashboard data into a plain-language read: a traffic verdict,
 // where the biggest opportunities are, what's urgent, and a prioritised "start here" action list.
 function renderExecSummary(data: DashboardData): void {
   const el = $('execSummary'); if (!el) return;
@@ -320,7 +320,7 @@ function renderExecSummary(data: DashboardData): void {
     const strike = data.strikingDistance?.length ?? cnt('striking-distance');
     const cann = data.cannibalisation?.length ?? cnt('keyword-cannibalisation');
     const opp: string[] = [];
-    if (ctr) opp.push(`<strong>${ctr}</strong> page${ctr > 1 ? 's' : ''} rank well but are under-clicked — a title/meta rewrite is the fastest lever`);
+    if (ctr) opp.push(`<strong>${ctr}</strong> page${ctr > 1 ? 's' : ''} rank well but are under-clicked - a title/meta rewrite is the fastest lever`);
     if (strike) opp.push(`<strong>${strike}</strong> quer${strike > 1 ? 'ies' : 'y'} sit in striking distance (page 2) and could reach page 1 with a small push`);
     if (cann) opp.push(`<strong>${cann}</strong> quer${cann > 1 ? 'ies are' : 'y is'} cannibalised across multiple URLs`);
     if (opp.length) main.push(`<p><span class="exec-tag">Opportunities</span> ${opp.join('; ')}.</p>`);
@@ -329,7 +329,7 @@ function renderExecSummary(data: DashboardData): void {
     if (crit || high) {
       const worst = fc.top?.find((f: any) => f.severity === 'crit') ?? fc.top?.[0];
       const worstTitle = worst ? safeJson(worst.recommendation).title : '';
-      main.push(`<p><span class="exec-tag urgent">Fix first</span> ${crit ? `<strong>${crit}</strong> critical` : ''}${crit && high ? ' and ' : ''}${high ? `<strong>${high}</strong> high-severity` : ''} issue${(crit + high) > 1 ? 's' : ''} need attention${worstTitle ? ` — starting with “${esc(worstTitle)}”` : ''}.</p>`);
+      main.push(`<p><span class="exec-tag urgent">Fix first</span> ${crit ? `<strong>${crit}</strong> critical` : ''}${crit && high ? ' and ' : ''}${high ? `<strong>${high}</strong> high-severity` : ''} issue${(crit + high) > 1 ? 's' : ''} need attention${worstTitle ? ` - starting with “${esc(worstTitle)}”` : ''}.</p>`);
     }
 
     const seen = new Set<string>(); const actions: any[] = [];
@@ -339,15 +339,15 @@ function renderExecSummary(data: DashboardData): void {
         const rec = safeJson(f.recommendation), ev = safeJson(f.evidence);
         const where = f.url_key ? esc(shortPath(f.url_key)) : (ev.query ? `“${esc(String(ev.query))}”` : 'site-wide');
         const sz = (f.size ?? '').toString();
-        return `<li><span class="impact impact-${sz.toLowerCase() || 's'}">${esc(sz || '–')}</span> ${esc(rec.title || f.check_id)} <span class="exec-where">— ${where}</span></li>`;
+        return `<li><span class="impact impact-${sz.toLowerCase() || 's'}">${esc(sz || '–')}</span> ${esc(rec.title || f.check_id)} <span class="exec-where">- ${where}</span></li>`;
       }).join('');
-      main.push(`<div class="exec-actions"><div class="exec-actions-title">Start here — your highest-impact fixes</div><ol>${lis}</ol></div>`);
+      main.push(`<div class="exec-actions"><div class="exec-actions-title">Start here - your highest-impact fixes</div><ol>${lis}</ol></div>`);
     }
   } else {
     main.push('<p class="muted">Run <code>run_audit</code> to populate findings and the prioritised action list.</p>');
   }
 
-  // RIGHT (40%): the scorecard — the three numbers an SEO weighs first, in one shaded box.
+  // RIGHT (40%): the scorecard - the three numbers an SEO weighs first, in one shaded box.
   const stat = (num: string, label: string, color = ''): string =>
     `<div class="es-stat"><div class="es-num"${color ? ` style="color:${color}"` : ''}>${num}</div><div class="es-lbl">${label}</div></div>`;
   const score =
@@ -358,13 +358,13 @@ function renderExecSummary(data: DashboardData): void {
   el.innerHTML = `<div class="exec-grid"><div class="exec-main">${main.join('')}</div><aside class="exec-score">${score}</aside></div>`;
 }
 
-// Branded vs non-branded split — transparent brand match, surfaced so the user can verify it.
+// Branded vs non-branded split - transparent brand match, surfaced so the user can verify it.
 function renderBrandedSplit(data: DashboardData): void {
   const el = $('brandedSplit'); if (!el) return;
   const b = data.brandedSplit;
   if (!b) { el.innerHTML = '<p class="muted">Brand could not be auto-detected from this property.</p>'; return; }
   const hint = $('brandedHint');
-  if (hint) hint.innerHTML = `Branded = queries containing <strong>“${esc(b.brand)}”</strong> (auto-detected from the domain). How much of your demand is people looking for you vs discovering you — last 28 days.`;
+  if (hint) hint.innerHTML = `Branded = queries containing <strong>“${esc(b.brand)}”</strong> (auto-detected from the domain). How much of your demand is people looking for you vs discovering you - last 28 days.`;
   const bc = b.branded.clicks, nc = b.nonBranded.clicks, tc = bc + nc;
   const bpct = tc ? Math.round(bc / tc * 100) : 0, npct = 100 - bpct;
   const dpc = (cur: number, prev: number): number => prev ? Math.round((cur - prev) / prev * 100) : (cur > 0 ? 100 : 0);
@@ -380,7 +380,7 @@ function renderBrandedSplit(data: DashboardData): void {
 // Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
 function renderRecommendations(fc: DashboardData['findings']): void {
   const el = $('recs');
-  if (!fc || !fc.recommendations?.length) { el.innerHTML = '<p class="muted">No audit yet — run run_audit.</p>'; return; }
+  if (!fc || !fc.recommendations?.length) { el.innerHTML = '<p class="muted">No audit yet - run run_audit.</p>'; return; }
   const exampleRow = (ex: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number }): string => {
     const fullPath = ex?.urlKey ? (ex.urlKey.replace(/^https?:\/\/[^/]+/, '') || '/') : '';
     const path = esc(ex?.urlKey ? shortPath(ex.urlKey) : '');
@@ -415,7 +415,7 @@ function renderRecommendations(fc: DashboardData['findings']): void {
 function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof palette>): void {
   const chipsEl = $('sevChips'), tableEl = $('findingsTable');
   if (!fc || !fc.byCheck.length) {
-    chipsEl.innerHTML = '<span class="muted">No audit yet — run run_audit.</span>';
+    chipsEl.innerHTML = '<span class="muted">No audit yet - run run_audit.</span>';
     tableEl.innerHTML = '';
     $('findingsSummary').textContent = 'No audit findings yet.';
     return;
@@ -425,7 +425,7 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
   const maxPrio = Math.max(...fc.top.map(f => f.priority), 0.0001);
   let active = 'all';
 
-  // Severity health bar — proportion of all findings by severity, at a glance
+  // Severity health bar - proportion of all findings by severity, at a glance
   const HB_CLASS: Record<string, string> = { crit: 'hb-crit', high: 'hb-high', med: 'hb-med', low: 'hb-low', info: 'hb-low' };
   const hbTotal = SEV_ORDER.reduce((s, x) => s + (sevCounts[x] ?? 0), 0) || 1;
   const healthBar = `<div class="health-bar" role="img" aria-label="Findings by severity">` +
@@ -434,12 +434,12 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
     `</div>`;
 
   const drawTable = (): void => {
-    // Full list, no pagination — the .grid-virtual class (content-visibility:auto)
+    // Full list, no pagination - the .grid-virtual class (content-visibility:auto)
     // keeps long lists cheap to render.
     const list = fc.top.filter(f => active === 'all' || f.severity === active);
     const rows = list.map((f, i) => {
       const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk), ev = safeJson(f.evidence);
-      const path = f.url_key ? shortPath(f.url_key) : '—';
+      const path = f.url_key ? shortPath(f.url_key) : '-';
       const pct = Math.max(3, Math.round((f.priority / maxPrio) * 100));
       const sz = (f.size ?? '').toString();
       const szClass = 'impact-' + (sz.toLowerCase() || 's');
@@ -492,7 +492,7 @@ function render(data: DashboardData): void {
   const dr = data.dateRange;
   $('range').textContent = dr?.current ?? '';
   // Trailing unfinalised GSC days are excluded upstream (gscFreshness); the range already
-  // states the end date — no visible caveat (hover-only explanation for the curious).
+  // states the end date - no visible caveat (hover-only explanation for the curious).
   if (dr && dr.trimmedDays && dr.trimmedDays > 0 && dr.rawMaxDate) {
     $('range').title = `Data to ${dr.maxDate}; the last ${dr.trimmedDays} day${dr.trimmedDays > 1 ? 's' : ''} of Search Console data aren’t final yet and are excluded.`;
   }
@@ -517,15 +517,15 @@ function render(data: DashboardData): void {
   const axis = axisDefaults(col);
   const axisNum = axisDefaults(col, { numeric: true });
 
-  // Executive summary — plain-language read of performance + the prioritised "start here" list
+  // Executive summary - plain-language read of performance + the prioritised "start here" list
   renderExecSummary(data);
   renderBrandedSplit(data);
-  // Audit findings — severity filter chips + prioritised table, then the categorised report
+  // Audit findings - severity filter chips + prioritised table, then the categorised report
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);
   buildExportBar(data);
 
-  // 0) Equity vs reality — template mismatch (bars) + per-URL scatter (the architecture flagship)
+  // 0) Equity vs reality - template mismatch (bars) + per-URL scatter (the architecture flagship)
   const mm = data.templateMismatch ?? [];
   if (mm.length) {
     const labels = mm.map(m => m.template).reverse();
@@ -543,7 +543,7 @@ function render(data: DashboardData): void {
     });
     const sink = mm.find(m => m.iprPct >= 10 && m.trafficPct < m.iprPct * 0.3);
     $('mismatchSummary').textContent = sink
-      ? `/${sink.template}/ absorbs ${sink.iprPct}% of internal equity but drives ${sink.trafficPct}% of traffic — equity flowing into a dead end.`
+      ? `/${sink.template}/ absorbs ${sink.iprPct}% of internal equity but drives ${sink.trafficPct}% of traffic - equity flowing into a dead end.`
       : 'Internal equity share vs organic traffic share, by template.';
   } else {
     wrap('mismatchChart').setEmpty('Run a crawl to map equity flow', col);
@@ -574,7 +574,7 @@ function render(data: DashboardData): void {
   const ar = data.agentReadiness;
   if (ar) {
     const scoreColor = ar.score >= 80 ? 'var(--color-status-live)' : ar.score >= 50 ? 'var(--color-status-warning)' : 'var(--color-status-error)';
-    // SVG score ring — circumference arc proportional to score, colour-graded
+    // SVG score ring - circumference arc proportional to score, colour-graded
     const R = 46, CIRC = 2 * Math.PI * R, off = CIRC * (1 - Math.max(0, Math.min(100, ar.score)) / 100);
     const ring = `<div class="ar-ring"><svg viewBox="0 0 104 104" width="104" height="104" aria-hidden="true">
         <circle cx="52" cy="52" r="${R}" fill="none" stroke="var(--bg-input)" stroke-width="9"/>
@@ -583,7 +583,7 @@ function render(data: DashboardData): void {
     const cats = ar.byCategory.map(c => `<div class="ar-cat"><div class="c-label">${esc(c.category)}</div><div class="c-val">${c.passed}<span style="color:var(--text-muted)">/${c.total}</span></div></div>`).join('');
     const items = ar.checks.map(c => `<div class="ar-check">
       <span class="${c.present ? 'ar-ok' : 'ar-no'}" style="min-width:14px;font-weight:600">${c.present ? icons.check : icons.x}</span>
-      <span style="flex:1">${esc(c.label)}${c.present && c.detail ? ` <span style="color:var(--text-muted)">— ${esc(c.detail)}</span>` : ''}</span>
+      <span style="flex:1">${esc(c.label)}${c.present && c.detail ? ` <span style="color:var(--text-muted)">- ${esc(c.detail)}</span>` : ''}</span>
       ${c.present ? '' : `<span class="ar-fix" style="max-width:48%;text-align:right">${esc(c.fix)}</span>`}</div>`).join('');
     $('agentPanel').innerHTML =
       `<div class="ar-top">${ring}<div class="ar-meta"><div class="ar-level">${esc(ar.level)}</div><div class="ar-cats">${cats}</div></div></div>
@@ -592,7 +592,7 @@ function render(data: DashboardData): void {
     $('agentPanel').innerHTML = '<p class="muted">Run <code>check_agent_readiness</code> for this site to populate the agent-readiness score.</p>';
   }
 
-  // 0b) Cannibalisation braids — per contested query, competing URLs' weekly position over time
+  // 0b) Cannibalisation braids - per contested query, competing URLs' weekly position over time
   const cann = data.cannibalisation ?? [];
   const cannSel = $('cannSelect') as HTMLSelectElement;
   if (cann.length) {
@@ -601,10 +601,10 @@ function render(data: DashboardData): void {
     const brand = [col.teal, col.categorical[2], col.violet];
     const drawBraid = (qi: number): void => {
       const q = cann[qi];
-      const top = q.urls.slice(0, 3); // only the real contenders — not a spaghetti of every URL
+      const top = q.urls.slice(0, 3); // only the real contenders - not a spaghetti of every URL
       const weeks = [...new Set(top.flatMap(u => u.points.map(p => p.week)))].sort();
       const maps = top.map(u => new Map(u.points.map(p => [p.week, p.position])));
-      // Crossover dots: the week the leader changed (one URL overtook another) — the whole point.
+      // Crossover dots: the week the leader changed (one URL overtook another) - the whole point.
       const crossovers: [string, number][] = [];
       for (let a = 0; a < maps.length; a++) {
         for (let b = a + 1; b < maps.length; b++) {
@@ -619,7 +619,7 @@ function render(data: DashboardData): void {
         }
       }
       const lines = top.map((u, ui) => ({
-        // Lines break on missing weeks (null-vs-zero discipline) — a gap is "not seen", not rank 0.
+        // Lines break on missing weeks (null-vs-zero discipline) - a gap is "not seen", not rank 0.
         name: shortPath(u.url), type: 'line', smooth: true, connectNulls: false, showSymbol: false,
         lineStyle: { width: 2.5, color: brand[ui % brand.length] }, itemStyle: { color: brand[ui % brand.length] },
         data: weeks.map(w => maps[ui].get(w) ?? null),
@@ -651,17 +651,17 @@ function render(data: DashboardData): void {
   // 0d) Top internally-linked pages with their current status code (a non-200 high up = equity leak)
   const tlp = data.topLinkedPages ?? [];
   $('topLinkedTable').innerHTML = tlp.length
-    ? tableHtml(['URL', 'Inlinks', 'Status', 'Indexable'], tlp.map(p =>
+    ? tableHtml(['URL', 'Internal links in', 'Status', 'Indexable'], tlp.map(p =>
       `<tr><td class="url" title="${esc(p.url)}">${esc(shortPath(p.url))}</td><td class="num">${p.inlinks}</td><td>${statusBadge(p.status)}</td><td>${p.indexable ? icons.check : `${icons.x} ${esc(p.reason || '')}`}</td></tr>`))
     : emptyState('Run a crawl to see the internal-link hierarchy.', 'refresh_property');
   const tlpBroken = tlp.filter(p => p.status !== 200).length;
   $('topLinkedSummary').textContent = `Top ${tlp.length} internally-linked pages by inlink count; ${tlpBroken} return a non-200 status.`;
 
-  // 0e) Site health — stat bars as EChartWrapper configs (brief: no DOM/SVG chart
-  // primitives — even stat bars go through the wrapper).
+  // 0e) Site health - stat bars as EChartWrapper configs (brief: no DOM/SVG chart
+  // primitives - even stat bars go through the wrapper).
   {
     const ch = data.crawlHealth;
-    // Tone (bar colour) rides on each data row — assigned in dashboardData where the bucket's
+    // Tone (bar colour) rides on each data row - assigned in dashboardData where the bucket's
     // meaning is known, never inferred from label text here.
     const toneColor: Record<string, string> = { ok: col.green, warn: col.amber, bad: col.red, muted: col.grey };
     const sfBars = (id: string, rows: { label: string; count: number; tone?: string }[] | undefined, base: number): void => {
@@ -676,7 +676,7 @@ function render(data: DashboardData): void {
       el.classList.add('sf-chart');
       el.style.height = `${rev.length * 26 + 12}px`;
       const pctOf = (n: number): string => { const p = (n / base) * 100; return p < 1 && n > 0 ? '<1' : String(Math.round(p)); };
-      // Truncate long axis labels in JS (predictable) — the full label stays in the tooltip.
+      // Truncate long axis labels in JS (predictable) - the full label stays in the tooltip.
       const shortLabel = (s: string): string => (s.length > 24 ? `${s.slice(0, 23)}…` : s);
       wrap(id).setOption({
         ...ARIA,
@@ -726,7 +726,7 @@ function render(data: DashboardData): void {
     }
   }
 
-  // 1) Ranking distribution over time (stacked area) — flagship #1
+  // 1) Ranking distribution over time (stacked area) - flagship #1
   const dist = data.rankingDistribution ?? [];
   const buckets = [
     { key: 'b1' as const, name: 'Pos 1–3', color: col.green },
@@ -752,7 +752,7 @@ function render(data: DashboardData): void {
   const lastTot = last ? last.b1 + last.b2 + last.b3 + last.b4 : 0;
   $('distSummary').textContent = `Impressions by SERP position bucket across ${dist.length} days; latest day ${lastTot} impressions, ${lastTot ? Math.round((last.b1 / lastTot) * 100) : 0}% in positions 1–3.`;
 
-  // 1b) DataForSEO search visibility over time (rank_history) — reconciled window
+  // 1b) DataForSEO search visibility over time (rank_history) - reconciled window
   const rh = data.rankHistory ?? [];
   if (rh.length) {
     const rhBuckets = [
@@ -781,12 +781,12 @@ function render(data: DashboardData): void {
     });
     $('rankHistSummary').textContent = `DataForSEO ranking keywords by position bucket across ${rh.length} months, with estimated traffic value.`;
   } else {
-    wrap('rankHistChart').setEmpty('No rank history yet — run track_ranks', col);
+    wrap('rankHistChart').setEmpty('No rank history yet - run track_ranks', col);
     $('rankHistSummary').textContent = 'No DataForSEO rank history yet.';
   }
   $('alignNote').textContent = data.dateAlignment?.note ?? '';
 
-  // 2) Rank + clicks over time (dual-axis) — flagship #6
+  // 2) Rank + clicks over time (dual-axis) - flagship #6
   const trend = data.rankTrend ?? [];
   wrap('rankChart', 'ts').setOption({
     ...ARIA,
@@ -805,12 +805,12 @@ function render(data: DashboardData): void {
   });
   $('rankSummary').textContent = `Average Google position (higher is better) and daily clicks over ${trend.length} days.`;
 
-  // (Striking-distance now lives in the Opportunities quick-wins matrix — no separate scatter.)
+  // (Striking-distance now lives in the Opportunities quick-wins matrix - no separate scatter.)
 
-  // 3b) Quick-wins matrix — CTR vs position against the expected-CTR curve, coloured by opportunity
+  // 3b) Quick-wins matrix - CTR vs position against the expected-CTR curve, coloured by opportunity
   const qw = data.quickWins ?? [];
   if (qw.length) {
-    // Expected-CTR curve derived from the data points (server's model) — no client-side duplication.
+    // Expected-CTR curve derived from the data points (server's model) - no client-side duplication.
     const curveMap = new Map<number, number>();
     for (const q of qw) { const rp = Math.round(q.position); if (rp >= 1 && rp <= 10 && !curveMap.has(rp)) curveMap.set(rp, q.expectedCtr); }
     const curve = [...curveMap.entries()].sort((a, b) => a[0] - b[0]);
@@ -824,7 +824,7 @@ function render(data: DashboardData): void {
       ...ARIA,
       grid: { left: 56, right: 24, top: 34, bottom: 42 },
       legend: { top: 0, textStyle: { color: col.text, fontSize: 12 }, data: [SER_NAME.striking, SER_NAME.snippet, SER_NAME.serp, SER_NAME.ok, 'Expected CTR'] },
-      tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => Array.isArray(p.value) ? `${esc(String(p.value[5]))}<br/>pos ${p.value[0]} · CTR ${p.value[1]}% (expected ${p.value[3]}%)<br/>${fmt(p.value[2])} impressions${p.value[6] === 'serp' ? '<br/><em>near-zero CTR — likely a SERP feature or cannibalisation; verify before rewriting</em>' : ` · ~${fmt(p.value[4])} clicks recoverable`}` : '' },
+      tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => Array.isArray(p.value) ? `${esc(String(p.value[5]))}<br/>pos ${p.value[0]} · CTR ${p.value[1]}% (expected ${p.value[3]}%)<br/>${fmt(p.value[2])} impressions${p.value[6] === 'serp' ? '<br/><em>near-zero CTR - likely a SERP feature or cannibalisation; verify before rewriting</em>' : ` · ~${fmt(p.value[4])} clicks recoverable`}` : '' },
       xAxis: { type: 'value', name: 'avg position', min: 1, max: 20, ...axis },
       yAxis: { type: 'value', name: 'CTR %', min: 0, ...axis },
       series: [
@@ -836,10 +836,10 @@ function render(data: DashboardData): void {
       ],
     });
   } else {
-    wrap('quickWinsChart').setEmpty('No query data yet — sync Search Console.', col);
+    wrap('quickWinsChart').setEmpty('No query data yet - sync Search Console.', col);
   }
 
-  // Biggest quick wins table — ranked by recoverable clicks
+  // Biggest quick wins table - ranked by recoverable clicks
   const qwTop = qw.filter(q => q.type !== 'ok' && q.potential > 0).slice(0, 20);
   const qwTypeLabel: Record<string, string> = { striking: 'Striking distance', snippet: 'Under-clicked' };
   const qwRows = qwTop.map(q =>
@@ -850,29 +850,29 @@ function render(data: DashboardData): void {
     `<td class="num">${fmt(q.potential)}</td></tr>`).join('');
   $('quickWinsTable').innerHTML = qwTop.length
     ? `<table><thead><tr><th>Query</th><th>Opportunity</th><th class="num">Pos</th><th class="num">Impr</th><th class="num">CTR / exp.</th><th class="num">Clicks recoverable</th></tr></thead><tbody>${qwRows}</tbody></table>`
-    : '<p class="muted">No quick wins surfaced — run a sync + audit, or this property is already clicking to potential.</p>';
+    : '<p class="muted">No quick wins surfaced - run a sync + audit, or this property is already clicking to potential.</p>';
 
-  // Content decay — pages to refresh, ranked by clicks lost
+  // Content decay - pages to refresh, ranked by clicks lost
   const decay = data.contentDecay ?? [];
   const decayRows = decay.map(d => {
     const path = esc(shortPath(d.urlKey || ''));
     return `<tr><td class="url" title="${esc(d.urlKey || '')}">${path}</td>` +
       `<td class="num">${fmt(d.prevClicks)}</td><td class="num">${fmt(d.clicks)}</td>` +
       `<td class="num"><span class="impact ${d.dropPct >= 60 ? 'impact-xl' : d.dropPct >= 35 ? 'impact-l' : 'impact-m'}">−${d.dropPct}%</span></td>` +
-      `<td class="num">${fmt(d.lost)}</td><td class="num">${fmt(d.impressions)}</td><td class="num">${d.position || '—'}</td></tr>`;
+      `<td class="num">${fmt(d.lost)}</td><td class="num">${fmt(d.impressions)}</td><td class="num">${d.position || '-'}</td></tr>`;
   }).join('');
   $('contentDecayTable').innerHTML = decay.length
     ? `<table><thead><tr><th>Page</th><th class="num">Was</th><th class="num">Now</th><th class="num">Drop</th><th class="num">Clicks lost</th><th class="num">Impr</th><th class="num">Pos</th></tr></thead><tbody>${decayRows}</tbody></table>`
-    : '<p class="muted">No significant content decay — no page lost 20%+ of its clicks vs the prior 28 days.</p>';
+    : '<p class="muted">No significant content decay - no page lost 20%+ of its clicks vs the prior 28 days.</p>';
 
-  // Cannibalisation — accordion per contested query, expand to the competing URLs
+  // Cannibalisation - accordion per contested query, expand to the competing URLs
   const cannT = data.cannibalisationTable ?? [];
   $('cannTable').innerHTML = cannT.length
     ? cannT.map(q => {
         const verd = q.verdict === 'split'
           ? '<span class="impact impact-l">Split</span>'
           : '<span class="impact impact-s">Dominant</span>';
-        // Cross-type (different page templates competing) is the most actionable — lead with it.
+        // Cross-type (different page templates competing) is the most actionable - lead with it.
         const cross = q.crossType ? '<span class="impact impact-xl">Cross-type</span>' : '';
         const rows = q.urls.map(u => {
           const path = esc(shortPath(u.url || ''));
@@ -883,7 +883,7 @@ function render(data: DashboardData): void {
           `<span class="rec-count">${q.urlCount} URLs · ${fmt(q.totalClicks)} clicks · ${fmt(q.totalImpressions)} impr</span><span class="rec-chev" aria-hidden="true">${icons.chevron}</span>` +
           `</summary><div class="rec-body"><div class="rec-examples"><div class="rec-label">Competing URLs</div>${rows}</div></div></details>`;
       }).join('')
-    : '<p class="muted">No cannibalisation detected — no query has 2+ of your URLs competing with real impressions.</p>';
+    : '<p class="muted">No cannibalisation detected - no query has 2+ of your URLs competing with real impressions.</p>';
 
   // 4) Top keyword performance (green/red + signed label so colour isn't the only cue)
   const kw = (data.topKeywords ?? []).slice().reverse(); // horizontal bar reads top-down
@@ -907,32 +907,32 @@ function render(data: DashboardData): void {
   // Report tables (agency-style)
   const pp = data.pagePerformance ?? [];
   $('pagePerfTable').innerHTML = pp.length
-    ? tableHtml(['Trend', 'Page', 'Clicks', 'Δ%', 'Impr', 'Pos'], pp.map(p => `<tr><td><span class="cat ${catClass(p.category)}">${p.category}</span></td><td class="url" title="${esc(p.urlKey)}">${esc(shortPath(p.urlKey))}</td><td class="num">${p.clicks}</td><td class="num" data-sort="${p.clicksChangePct}">${formatTrend(p.clicksChangePct, { suffix: '%' })}</td><td class="num">${p.impressions}</td><td class="num">${p.position}</td></tr>`))
+    ? tableHtml(['Trend', 'Page', 'Clicks', 'Clicks change', 'Impressions', 'Position'], pp.map(p => `<tr><td><span class="cat ${catClass(p.category)}">${p.category}</span></td><td class="url" title="${esc(p.urlKey)}">${esc(shortPath(p.urlKey))}</td><td class="num">${p.clicks}</td><td class="num" data-sort="${p.clicksChangePct}">${formatTrend(p.clicksChangePct, { suffix: '%' })}</td><td class="num">${p.impressions}</td><td class="num">${p.position}</td></tr>`))
     : '<div class="hint">No GSC data.</div>';
   $('pagePerfSummary').textContent = `${pp.length} pages categorised by 28-day trend.`;
 
   const mv = data.keywordMovement ?? [];
   $('movementTable').innerHTML = mv.length
-    ? tableHtml(['Movement', 'Query', 'First', 'Last', 'Δ pos'], mv.map(m => `<tr><td><span class="cat ${catClass(m.category)}">${m.category}</span></td><td>${esc(m.query)}</td><td class="num">${m.firstPos}</td><td class="num">${m.lastPos}</td><td class="num">${m.delta > 0 ? '+' : ''}${m.delta}</td></tr>`))
+    ? tableHtml(['Movement', 'Query', 'First pos', 'Latest pos', 'Pos change'], mv.map(m => `<tr><td><span class="cat ${catClass(m.category)}">${m.category}</span></td><td>${esc(m.query)}</td><td class="num">${m.firstPos}</td><td class="num">${m.lastPos}</td><td class="num">${m.delta > 0 ? '+' : ''}${m.delta}</td></tr>`))
     : '<div class="hint">No movement data.</div>';
   $('movementSummary').textContent = `${mv.length} queries with rank movement.`;
 
   const dv = data.deviceBreakdown ?? [];
   $('deviceTable').innerHTML = dv.length
-    ? tableHtml(['Device', 'Clicks', 'Prev', 'CTR', 'Pos'], dv.map(d => `<tr><td>${d.device}</td><td class="num">${d.clicks}</td><td class="num">${d.prevClicks}</td><td class="num">${(d.ctr * 100).toFixed(1)}%</td><td class="num">${d.position}</td></tr>`))
-    : '<div class="hint">—</div>';
+    ? tableHtml(['Device', 'Clicks', 'Prev clicks', 'CTR', 'Position'], dv.map(d => `<tr><td>${d.device}</td><td class="num">${d.clicks}</td><td class="num">${d.prevClicks}</td><td class="num">${(d.ctr * 100).toFixed(1)}%</td><td class="num">${d.position}</td></tr>`))
+    : '<div class="hint">-</div>';
 
   const ct = data.countryBreakdown ?? [];
   $('countryTable').innerHTML = ct.length
-    ? tableHtml(['Country', 'Clicks', 'Prev', 'Impr'], ct.map(c => `<tr><td>${esc(c.country.toUpperCase())}</td><td class="num">${c.clicks}</td><td class="num">${c.prevClicks}</td><td class="num">${c.impressions}</td></tr>`))
-    : '<div class="hint">—</div>';
-  // Hide breakdowns that carry only one value (e.g. a single-country property) — a one-row table is
+    ? tableHtml(['Country', 'Clicks', 'Prev clicks', 'Impressions'], ct.map(c => `<tr><td>${esc(c.country.toUpperCase())}</td><td class="num">${c.clicks}</td><td class="num">${c.prevClicks}</td><td class="num">${c.impressions}</td></tr>`))
+    : '<div class="hint">-</div>';
+  // Hide breakdowns that carry only one value (e.g. a single-country property) - a one-row table is
   // noise, not insight. Show a block only with genuine variety (2+ rows); hide the card if neither has.
   const showDev = dv.length >= 2, showCty = ct.length >= 2;
   const setVis = (id: string, on: boolean): void => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none'; };
   setVis('deviceBlock', showDev); setVis('countryBlock', showCty); setVis('breakdownsCard', showDev || showCty);
 
-  // Make the data tables click-to-sort by any column (the findings list is excluded — its rows come
+  // Make the data tables click-to-sort by any column (the findings list is excluded - its rows come
   // in expand/detail pairs that re-ordering would break).
   ['quickWinsTable', 'contentDecayTable', 'pagePerfTable', 'movementTable', 'deviceTable', 'countryTable'].forEach(id => attachSort($(id)));
 
@@ -941,7 +941,7 @@ function render(data: DashboardData): void {
 
 // Table sorting lives in the display library (lib/data-grid.ts: attachSort).
 
-// Tabbed nav: switch panels, and resize the ECharts in the newly-shown panel — charts created in a
+// Tabbed nav: switch panels, and resize the ECharts in the newly-shown panel - charts created in a
 // display:none panel lay out at 0×0, so they must be resized once their container is visible.
 function setupTabs(): void {
   const resizeVisible = (): void => { for (const w of chartsReg.values()) w.resizeIfVisible(); };
@@ -1011,7 +1011,7 @@ function buildExportBar(data: DashboardData): void {
   }
 }
 
-// On-demand only: fetch DataForSEO data for the ONE clicked keyword (never bulk —
+// On-demand only: fetch DataForSEO data for the ONE clicked keyword (never bulk -
 // a site can have a million keywords; we enrich what's on screen / clicked).
 async function loadRelated(keyword: string): Promise<void> {
   const el = $('related');
@@ -1027,7 +1027,7 @@ async function loadRelated(keyword: string): Promise<void> {
     const vol = volRes?.structuredContent?.keywords?.[0];
     const tags = (xs: string[]): string => xs.map(x => `<span class="tag">${esc(String(x))}</span>`).join('');
     el.innerHTML =
-      (vol ? `<div class="group-label">“${esc(keyword)}” — search volume</div><span class="tag">${esc(String(vol.searchVolume ?? 'n/a'))}/mo</span><span class="tag">CPC ${esc(String(vol.cpc ?? 'n/a'))}</span>` : '') +
+      (vol ? `<div class="group-label">“${esc(keyword)}” - search volume</div><span class="tag">${esc(String(vol.searchVolume ?? 'n/a'))}/mo</span><span class="tag">CPC ${esc(String(vol.cpc ?? 'n/a'))}</span>` : '') +
       (paa.length ? `<div class="group-label">People also ask</div>${tags(paa)}` : '') +
       (rel.length ? `<div class="group-label">Related searches</div>${tags(rel)}` : '') +
       (!paa.length && !rel.length && !vol ? `<div class="group-label">No DataForSEO data for “${esc(keyword)}”.</div>` : '');
@@ -1036,7 +1036,7 @@ async function loadRelated(keyword: string): Promise<void> {
   }
 }
 
-// Boot: connect to the host. Production-inert preview hook — a screenshot harness can
+// Boot: connect to the host. Production-inert preview hook - a screenshot harness can
 // set window.__DASH_FIXTURE__ to render real data with no host. Placed last so every
 // definition (incl. SEV_ORDER/renderFindings) is initialised before render() runs.
 const __fixture = (window as any).__DASH_FIXTURE__;

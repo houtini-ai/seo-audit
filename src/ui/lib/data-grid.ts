@@ -1,4 +1,4 @@
-// DataGrid — the one table primitive: sticky headers, click-to-sort, right-
+// DataGrid - the one table primitive: sticky headers, click-to-sort, right-
 // aligned numerics with tabular numerals, and a lightweight virtual window via
 // content-visibility:auto (the .grid-virtual class) instead of pagination.
 // Cell formatters (formatDiff / formatStatBar / formatTrend) live here too.

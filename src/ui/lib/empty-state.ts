@@ -1,4 +1,4 @@
-// EmptyState — the consistent "no data yet" message, with the command that fixes it.
+// EmptyState - the consistent "no data yet" message, with the command that fixes it.
 import { esc } from './h.js';
 import { icons } from './icons.js';
 

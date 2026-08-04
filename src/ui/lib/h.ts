@@ -1,4 +1,4 @@
-// Tiny DOM/string helpers shared by the display library. No framework — the
+// Tiny DOM/string helpers shared by the display library. No framework - the
 // library renders HTML strings (matching the dashboard's innerHTML pipeline)
 // plus a small h() element factory for components that need live wiring.
 

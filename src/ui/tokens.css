@@ -1,5 +1,5 @@
 /* ============================================================
- * SEO Audit Console — design tokens (pricemonitor SaaS theme)
+ * SEO Audit Console - design tokens (pricemonitor SaaS theme)
  *
  * Semantic token architecture per plan/design-library-brief.md, with the
  * REAL palette lifted from C:\dev\price-monitor\app\src\pages\index.astro
@@ -18,7 +18,7 @@
  *   6. Back-compat aliases so pre-library CSS/TS keeps resolving.
  *
  * Dark mode overrides the semantic layer only (host theme class wins,
- * prefers-color-scheme covers standalone use — no toggle in the export).
+ * prefers-color-scheme covers standalone use - no toggle in the export).
  * ============================================================ */
 
 @import '@fontsource-variable/work-sans/index.css';
@@ -26,7 +26,7 @@
 @import '@fontsource-variable/jetbrains-mono/index.css';
 
 :root {
-  /* --- 1. Semantic colour (light — pricemonitor values) --- */
+  /* --- 1. Semantic colour (light - pricemonitor values) --- */
   --bg-canvas: #eef0f3;
   --bg-surface: #ffffff;
   --bg-surface-hover: #f6f8fa;
@@ -235,7 +235,7 @@ html.dark, html[data-theme="dark"] { color-scheme: dark; }
 html.light, html[data-theme="light"] { color-scheme: light; }
 
 body {
-  /* Tabular numerals GLOBAL — brief pattern #1. */
+  /* Tabular numerals GLOBAL - brief pattern #1. */
   font-feature-settings: "tnum", "case";
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;

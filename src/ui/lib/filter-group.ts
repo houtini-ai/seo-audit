@@ -1,4 +1,4 @@
-// FilterGroup — a row of count chips with a single active selection.
+// FilterGroup - a row of count chips with a single active selection.
 // Renders into a container and re-renders itself on selection change.
 import { esc } from './h.js';
 

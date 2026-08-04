@@ -1,4 +1,4 @@
-// Card — white surface, 1px line, title + optional hint. The static panels in
+// Card - white surface, 1px line, title + optional hint. The static panels in
 // dashboard.html use the same .chart-card classes; this factory covers
 // dynamically-built cards so both paths share one look.
 import { esc } from './h.js';

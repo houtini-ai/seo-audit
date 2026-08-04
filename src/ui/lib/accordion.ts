@@ -1,4 +1,4 @@
-// AccordionGroup — native <details> items with a shared expand/collapse control.
+// AccordionGroup - native <details> items with a shared expand/collapse control.
 import { esc } from './h.js';
 import { icons } from './icons.js';
 

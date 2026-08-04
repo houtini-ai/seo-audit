@@ -1,4 +1,4 @@
-// Badge — the one pill/label primitive. Variants map to the intent layer;
+// Badge - the one pill/label primitive. Variants map to the intent layer;
 // severity/size/status all resolve through it so tinting stays consistent.
 import { esc } from './h.js';
 
@@ -8,7 +8,7 @@ export type BadgeVariant = 'danger' | 'warning' | 'success' | 'info' | 'accent' 
 export const badge = (label: string, variant: BadgeVariant = 'neutral', title = ''): string =>
   `<span class="badge badge-${variant}"${title ? ` title="${esc(title)}"` : ''}>${esc(label)}</span>`;
 
-/** Outlined mono tag (impact sizes XL/L/M/S) — quieter than the tinted pill. */
+/** Outlined mono tag (impact sizes XL/L/M/S) - quieter than the tinted pill. */
 export const tag = (label: string, variant: BadgeVariant = 'neutral', title = ''): string =>
   `<span class="tag-badge tag-${variant}"${title ? ` title="${esc(title)}"` : ''}>${esc(label)}</span>`;
 

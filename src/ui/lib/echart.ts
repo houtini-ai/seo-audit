@@ -1,4 +1,4 @@
-// EChartWrapper — every chart (including stat bars and gauges) goes through
+// EChartWrapper - every chart (including stat bars and gauges) goes through
 // here: lifecycle (init/dispose), ResizeObserver, light/dark palette from the
 // CSS tokens, axis discipline (M/k labels, whisper dashed gridlines),
 // zero-delay tooltips, and echarts.connect() groups for cross-chart crosshair
@@ -54,7 +54,7 @@ export function axisDefaults(col: ChartPalette, opts: { numeric?: boolean } = {}
   };
 }
 
-/** Zero-delay themed tooltip (brief pattern #5 — density via tooltips). */
+/** Zero-delay themed tooltip (brief pattern #5 - density via tooltips). */
 export function tooltipDefaults(col: ChartPalette, trigger: 'axis' | 'item' = 'axis') {
   return {
     trigger,

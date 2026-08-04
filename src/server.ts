@@ -10,6 +10,14 @@ import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
 import { startDashboardServer, stopDashboardServer, dashboardServerUrl } from './core/webServer.js';
+
+/** A clickable browser-dashboard link appended to tool outputs — the user should always
+ * know the full interactive report is one click away (or one serve_dashboard call away). */
+function browserLink(siteUrl?: string): string {
+  const base = dashboardServerUrl();
+  if (base) return `\n\nBrowser dashboard: ${base}/dashboard${siteUrl ? `?siteUrl=${encodeURIComponent(siteUrl)}` : ''}`;
+  return `\n\nTip: run serve_dashboard to open the full interactive dashboard in your browser.`;
+}
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 import { buildAuditMarkdown } from './audit/report.js';
 import { diffLatest, buildDriftMarkdown } from './audit/drift.js';
@@ -383,7 +391,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     async ({ siteUrl, scope, categories, includeJudgement }) => {
       const result = runAudit(dataDir(), siteUrl, { scope, categories, includeJudgement });
       return {
-        content: [{ type: 'text', text: buildAuditMarkdown(result, siteUrl) }],
+        content: [{ type: 'text', text: buildAuditMarkdown(result, siteUrl) + browserLink(siteUrl) }],
         structuredContent: result as unknown as Record<string, unknown>,
       };
     },
@@ -1454,7 +1462,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       }
       const c = data.summary?.current;
       const summary = `Dashboard opened for ${siteUrl} — ${c?.clicks ?? 0} clicks / ${c?.impressions ?? 0} impressions (last 28d)` +
-        `${data.findings ? `, ${data.findings.total} audit findings` : ''}. Interactive charts + findings render in the widget.`;
+        `${data.findings ? `, ${data.findings.total} audit findings` : ''}. Interactive charts + findings render in the widget.` + browserLink(siteUrl);
       return { content: [{ type: 'text', text: summary }], structuredContent: { siteUrl } };
     },
   );
@@ -1501,7 +1509,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const file = path.join(dir, `${sanitizeProperty(siteUrl)}-dashboard.html`);
       writeFileSync(file, html);
       return {
-        content: [{ type: 'text', text: `Report saved: ${file}\nOpen it in any browser for the full interactive dashboard (${data.findings?.total ?? 0} findings). Shareable — send it to a client as-is.` }],
+        content: [{ type: 'text', text: `Report saved: ${file}\nOpen it in any browser for the full interactive dashboard (${data.findings?.total ?? 0} findings). Shareable — send it to a client as-is.` + browserLink(siteUrl) }],
         structuredContent: { path: file, siteUrl, findings: data.findings?.total ?? 0, bytes: html.length },
       };
     },

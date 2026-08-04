@@ -1,4 +1,4 @@
-// StatBlock + KpiGrid — label + tabular number + delta + optional sparkline.
+// StatBlock + KpiGrid - label + tabular number + delta + optional sparkline.
 import { icons } from './icons.js';
 
 export interface StatBlockOpts {
@@ -9,7 +9,7 @@ export interface StatBlockOpts {
   spark?: number[];        // series behind the number
 }
 
-/** Inline SVG sparkline — no axes, single muted line. */
+/** Inline SVG sparkline - no axes, single muted line. */
 export function sparkline(series: number[], lowerIsBetter = false): string {
   const pts = series.filter(v => Number.isFinite(v));
   if (pts.length < 2) return '';

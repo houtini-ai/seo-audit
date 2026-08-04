@@ -1,4 +1,4 @@
-// Display-component library barrel — vanilla TS factories, no framework.
+// Display-component library barrel - vanilla TS factories, no framework.
 export * from './h.js';
 export * from './icons.js';
 export * from './badge.js';

@@ -1,4 +1,4 @@
-/* SEO Audit Console — dashboard styles. Tokens (pricemonitor SaaS theme) in
+/* SEO Audit Console - dashboard styles. Tokens (pricemonitor SaaS theme) in
  * tokens.css; component classes here back the src/ui/lib display library. */
 @import './tokens.css';
 
@@ -21,7 +21,7 @@ body {
 /* Icons (inline Lucide glyphs from lib/icons.ts) */
 .icon { vertical-align: -2px; flex: 0 0 auto; }
 
-/* Tabbed navigation — pricemonitor pill tabs: 1px line, active = ink fill */
+/* Tabbed navigation - pricemonitor pill tabs: 1px line, active = ink fill */
 .tabs { display: flex; gap: 6px; margin-bottom: var(--space-relaxed-1); flex-wrap: wrap; }
 .tab-btn {
   font-family: var(--font); font-size: 12.5px; font-weight: 600;
@@ -87,7 +87,7 @@ body {
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
-/* Buttons — pricemonitor .btn */
+/* Buttons - pricemonitor .btn */
 .exportbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: var(--space-standard-2); }
 .btn {
   font-family: var(--font); font-size: 12.5px; font-weight: 600;
@@ -99,7 +99,7 @@ body {
 .btn:hover { color: var(--text-primary); box-shadow: var(--shadow-sm); }
 .btn:active { transform: translateY(1px); }
 
-/* Badge (lib/badge.ts) — soft-tinted intent pills */
+/* Badge (lib/badge.ts) - soft-tinted intent pills */
 .badge {
   display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill);
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
@@ -124,7 +124,7 @@ body {
 .tag-accent  { color: var(--accent);         border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .tag-neutral { color: var(--text-muted);     border-color: var(--border-standard); }
 
-/* Legacy badge aliases (sev / cat / impact) — same intent system */
+/* Legacy badge aliases (sev / cat / impact) - same intent system */
 .sev { display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .sev.crit { background: var(--intent-danger-bg); color: var(--intent-danger); }
 .sev.high { background: var(--intent-warning-bg); color: var(--intent-warning); }
@@ -142,7 +142,7 @@ body {
 .impact-m  { color: var(--intent-info); border-color: color-mix(in srgb, var(--intent-info) 45%, transparent); }
 .impact-s  { color: var(--text-muted); border-color: var(--border-standard); }
 
-/* DataGrid (lib/data-grid.ts) — sticky uppercase headers, right-aligned numerics */
+/* DataGrid (lib/data-grid.ts) - sticky uppercase headers, right-aligned numerics */
 .findings-table { margin-top: var(--space-standard-1); overflow-x: auto; }
 .findings-table table, table.data-grid { width: 100%; border-collapse: collapse; font-size: var(--fs-table); }
 .findings-table th, .data-grid th {
@@ -160,7 +160,7 @@ body {
 .findings-table tbody tr:hover td { background: var(--bg-surface-hover); }
 .cell-null { color: var(--text-faint); }
 
-/* Virtual window — long lists render lazily, no pagination */
+/* Virtual window - long lists render lazily, no pagination */
 .grid-virtual tbody tr { content-visibility: auto; contain-intrinsic-size: auto 36px; }
 
 /* click-to-sort headers */
@@ -279,7 +279,7 @@ body {
 
 @media (max-width: 760px) { .metrics { grid-template-columns: repeat(2, 1fr); } }
 
-/* Agent-readiness — score ring + category tiles */
+/* Agent-readiness - score ring + category tiles */
 .ar-top { display: flex; align-items: center; gap: 22px; margin: 6px 0 16px; flex-wrap: wrap; }
 .ar-ring { flex: 0 0 auto; position: relative; width: 104px; height: 104px; }
 .ar-ring .ar-score { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -324,7 +324,7 @@ body {
 .es-num .chg { font-size: 13px; }
 .es-lbl { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; }
 
-/* Segmented control — pricemonitor .seg */
+/* Segmented control - pricemonitor .seg */
 .seg { display: inline-flex; border: 1px solid var(--border-standard); border-radius: var(--radius-sm); overflow: hidden; margin: 6px 0 16px; }
 .seg-btn { font-size: 12.5px; font-weight: 600; color: var(--text-muted); background: var(--bg-surface); border: none; padding: 7px 14px; cursor: pointer; transition: background .14s var(--ease), color .14s var(--ease); }
 .seg-btn:hover { color: var(--text-primary); }
@@ -343,7 +343,7 @@ body {
 .split-k { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .split-v { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-/* Site health — EChartWrapper stat-bar panels */
+/* Site health - EChartWrapper stat-bar panels */
 .sf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 34px; margin-top: 14px; }
 @media (max-width: 720px) { .sf-grid { grid-template-columns: 1fr; } }
 .sf-grid h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); margin-bottom: 8px; font-weight: 700; }
