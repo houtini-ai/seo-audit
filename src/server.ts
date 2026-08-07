@@ -1022,17 +1022,18 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'recon_targets',
     {
       title: 'Content recon: why a page is losing, and what to do about it',
-      description: '[Paid: DataForSEO SERP per page (~$0.004 each), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, or competitive-gap. It writes a per-page classification plus deterministic to-dos (schema gaps, freshness, cannibalisation, video format) into a trackable ledger, and returns the competitor set (organic-above + AI-Overview references + ranking videos) for the research session to diff. Set scrapeCompetitors:true to also pull the top competitors as content, routed by source: YouTube/video → Supadata transcript (SUPADATA_API_KEY), Reddit → its .json, other pages → Firecrawl (FIRECRAWL_API_KEY) with a free HTTP fallback. Some hard-protected publishers (Reddit, Cloudflare-guarded sites like PCMag) can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; transcribe the videos (usually what wins these SERPs) and use the pages that are reachable. Then write findings back with save_recon_todo; track with recon_todos.',
+      description: '[Paid: DataForSEO SERP per page (~$0.004 each), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, or competitive-gap. It writes a per-page classification plus deterministic to-dos (schema gaps, freshness, cannibalisation, video format) into a trackable ledger, and returns the competitor set (organic-above + AI-Overview references + ranking videos) for the research session to diff. Set scrapeCompetitors:true to also pull the top competitors as content, routed by source: YouTube/video → Supadata transcript (SUPADATA_API_KEY), Reddit → its .json, other pages → Firecrawl (FIRECRAWL_API_KEY) with a free HTTP fallback. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Transcribe the videos (usually what wins these SERPs) and use the reachable pages. Then write findings back with save_recon_todo; track with recon_todos.',
       inputSchema: {
         siteUrl: z.string(),
         limit: z.number().int().min(1).max(15).optional().describe('Pages per batch (default 5)'),
         minImpressions: z.number().int().min(1).optional(),
         location: z.union([z.string(), z.number()]).optional(),
         urls: z.array(z.string()).optional().describe('Analyse these exact pages instead of auto-selecting'),
-        scrapeCompetitors: z.boolean().optional().describe('Also scrape the top competitors to markdown (needs Firecrawl)'),
+        scrapeCompetitors: z.boolean().optional().describe('Also fetch the top competitors (video→transcript, pages→markdown/HTML)'),
+        crawlAs: z.enum(['browser', 'googlebot']).optional().describe('UA for the free HTTP fetch: browser (default, mimics a visit from Google — gets Reddit + mid-tier) or googlebot'),
       },
     },
-    async ({ siteUrl, limit, minImpressions, location, urls, scrapeCompetitors }) => {
+    async ({ siteUrl, limit, minImpressions, location, urls, scrapeCompetitors, crawlAs }) => {
       const client = requireDfs(dfs);
       const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
       try {
@@ -1090,7 +1091,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             serp.videoItems.slice(0, 1).forEach(v => add(v.url));
             competitorContent = [];
             for (const url of candidates.slice(0, 3)) {
-              competitorContent.push(await fetchCompetitorContent(url, { firecrawl, supadata }, { maxChars: 4000 }));
+              competitorContent.push(await fetchCompetitorContent(url, { firecrawl, supadata }, { maxChars: 4000, ua: crawlAs ?? 'browser' }));
             }
           }
 
@@ -1111,7 +1112,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             return `## ${r.urlKey}\n"${r.query}" — organic #${r.organicRank ?? '?'} (GSC avg ${r.gscPosition}${r.slipped ? `, slipped from ${r.priorPosition}` : ''}), ${r.impressions} impr. ${flags}\n**${r.verdict}** — ${r.verdictNote}\n` +
               (r.todos.length ? '\nTo do:\n' + r.todos.map((t: any) => `- [${t.type}] ${t.action}`).join('\n') : '');
           }).join('\n\n') +
-          `\n\nNext: research the competitors (firecrawl/supadata), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
+          (() => {
+            const blocked = results.flatMap(r => (r.competitorContent ?? []).filter((c: any) => c.error).map((c: any) => c.url));
+            return blocked.length ? `\n\n${blocked.length} competitor(s) couldn't be fetched (hard bot-protection, e.g. Cloudflare/PCMag): ${blocked.slice(0, 5).join(', ')}. Paste their copy here, or drop a text file, and I'll diff it into the recon.` : '';
+          })() +
+          `\n\nNext: research the competitors (transcribe the videos, read the reachable pages), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
         return { content: [{ type: 'text', text: md }], structuredContent: { siteUrl, cost, targets: results } };
       } finally { db.close(); }
     },

@@ -1,7 +1,35 @@
+import { Agent, fetch as ufetch } from 'undici';
 import type { FirecrawlClient } from './FirecrawlClient.js';
 import type { SupadataClient } from './SupadataClient.js';
 import { hostOf } from './serpRecon.js';
 import { extractPage } from './extract.js';
+
+const httpAgent = new Agent({ allowH2: true, connections: 6, keepAliveTimeout: 30_000 });
+const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const GOOGLEBOT_UA = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/131.0.0.0 Safari/537.36';
+
+/** User-agent modes for the free HTTP fetch. 'browser' mimics a real visit arriving from Google
+ * (referer + cross-site fetch metadata) — this is what gets past Reddit and the mid-tier.
+ * 'googlebot' spoofs Googlebot's UA (UA-gated sites only; strict-verified Cloudflare rejects it).
+ * Cloudflare *managed-challenge* sites (e.g. PCMag) reject every HTTP-only client regardless. */
+export type UaMode = 'browser' | 'googlebot';
+
+function browserHeaders(mode: UaMode): Record<string, string> {
+  if (mode === 'googlebot') {
+    return { 'user-agent': GOOGLEBOT_UA, 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'accept-encoding': 'gzip, deflate, br', 'from': 'googlebot(at)googlebot.com' };
+  }
+  return {
+    'user-agent': CHROME_UA,
+    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8',
+    'accept-encoding': 'gzip, deflate, br',
+    'referer': 'https://www.google.com/',
+    'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate', 'sec-fetch-site': 'cross-site', 'sec-fetch-user': '?1',
+    'upgrade-insecure-requests': '1',
+  };
+}
 
 /**
  * Route a competitor URL to the right fetcher by who owns the source:
@@ -22,13 +50,11 @@ export interface CompetitorContent {
 const isVideo = (host: string): boolean => /youtube|youtu\.be|tiktok|twitter\.com|x\.com/.test(host);
 const isReddit = (host: string): boolean => /reddit\.com/.test(host);
 
-/** Reddit serves clean JSON at url.json — title + selftext + top comments, no scraper needed. */
-export async function fetchRedditJson(url: string, maxChars = 4000): Promise<{ title: string | null; content: string }> {
+/** Reddit serves clean JSON at url.json — title + selftext + top comments, no scraper needed.
+ * Needs the browser header profile (UA + Google referer) — a bot UA gets a 403. */
+export async function fetchRedditJson(url: string, maxChars = 4000, ua: UaMode = 'browser'): Promise<{ title: string | null; content: string }> {
   const jsonUrl = url.split('?')[0].replace(/\/$/, '') + '.json';
-  const res = await fetch(jsonUrl, {
-    headers: { 'user-agent': 'seo-audit-console:recon:1.0 (+https://github.com/houtini-ai/seo-audit)' },
-    signal: AbortSignal.timeout(20000),
-  });
+  const res = await ufetch(jsonUrl, { headers: browserHeaders(ua), dispatcher: httpAgent, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`Reddit .json ${res.status}`);
   const data: any = await res.json();
   const post = data?.[0]?.data?.children?.[0]?.data ?? {};
@@ -48,11 +74,8 @@ export async function fetchRedditJson(url: string, maxChars = 4000): Promise<{ t
 
 /** Free HTTP fallback for pages Firecrawl refuses (its blocklist covers major publishers).
  * Fetches with a browser-like UA and reuses our own extractor for clean main-content text. */
-export async function fetchPlainPage(url: string, maxChars = 4000): Promise<{ title: string | null; content: string }> {
-  const res = await fetch(url, {
-    headers: { 'user-agent': 'Mozilla/5.0 (compatible; seo-audit-console recon; +https://github.com/houtini-ai/seo-audit)', 'accept': 'text/html' },
-    signal: AbortSignal.timeout(20000),
-  });
+export async function fetchPlainPage(url: string, maxChars = 4000, ua: UaMode = 'browser'): Promise<{ title: string | null; content: string }> {
+  const res = await ufetch(url, { headers: browserHeaders(ua), dispatcher: httpAgent, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`plain fetch ${res.status}`);
   const html = await res.text();
   const host = new URL(url).hostname.replace(/^www\./, '');
@@ -64,10 +87,11 @@ export async function fetchPlainPage(url: string, maxChars = 4000): Promise<{ ti
 export async function fetchCompetitorContent(
   url: string,
   clients: { firecrawl: FirecrawlClient | null; supadata: SupadataClient | null },
-  opts: { maxChars?: number } = {},
+  opts: { maxChars?: number; ua?: UaMode } = {},
 ): Promise<CompetitorContent> {
   const host = hostOf(url);
   const max = opts.maxChars ?? 4000;
+  const ua = opts.ua ?? 'browser';
   try {
     if (isVideo(host)) {
       if (!clients.supadata) return { url, kind: 'video', title: null, content: '', cached: false, error: 'SUPADATA_API_KEY not set — cannot transcribe video' };
@@ -75,17 +99,17 @@ export async function fetchCompetitorContent(
       return { url, kind: 'video', title: null, content: t.content, cached: t.cached };
     }
     if (isReddit(host)) {
-      // .json first (Firecrawl hard-blocks Reddit); plain HTML as a long shot if that 403s.
-      try { const r = await fetchRedditJson(url, max); return { url, kind: 'reddit', title: r.title, content: r.content, cached: false }; }
-      catch { const r = await fetchPlainPage(url, max); return { url, kind: 'reddit', title: r.title, content: r.content, cached: false }; }
+      // .json first (cleaner structured data); HTML fallback. Both need the browser profile.
+      try { const r = await fetchRedditJson(url, max, ua); return { url, kind: 'reddit', title: r.title, content: r.content, cached: false }; }
+      catch { const r = await fetchPlainPage(url, max, ua); return { url, kind: 'reddit', title: r.title, content: r.content, cached: false }; }
     }
-    // Pages: Firecrawl first (cleaner, handles JS); fall back to a free plain fetch for the
-    // sites Firecrawl refuses ("we do not support this site") or when no key is set.
+    // Pages: Firecrawl first (cleaner, handles JS); fall back to the free browser-profile fetch
+    // for sites Firecrawl refuses ("we do not support this site") or when no key is set.
     if (clients.firecrawl) {
       try { const s = await clients.firecrawl.scrape(url, { maxChars: max, proxy: 'auto' }); return { url, kind: 'page', title: s.title, content: s.markdown, cached: s.cached }; }
-      catch { /* fall through to plain fetch */ }
+      catch { /* fall through to the browser-profile fetch */ }
     }
-    const p = await fetchPlainPage(url, max);
+    const p = await fetchPlainPage(url, max, ua);
     return { url, kind: 'page', title: p.title, content: p.content, cached: false };
   } catch (e) {
     const kind = isVideo(host) ? 'video' : isReddit(host) ? 'reddit' : 'page';
