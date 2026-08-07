@@ -41,14 +41,34 @@ function browserHeaders(mode: UaMode): Record<string, string> {
 export interface CompetitorContent {
   url: string;
   kind: 'video' | 'reddit' | 'page';
+  via: 'supadata' | 'reddit-json' | 'firecrawl' | 'plain-fetch' | 'none';  // which fetcher actually ran
   title: string | null;
   content: string;
   cached: boolean;
   error?: string;
 }
 
-const isVideo = (host: string): boolean => /youtube|youtu\.be|tiktok|twitter\.com|x\.com/.test(host);
-const isReddit = (host: string): boolean => /reddit\.com/.test(host);
+/** Hosts whose content only Supadata can read (transcripts) and hosts we read via Reddit's own JSON. */
+const VIDEO_HOSTS = ['youtube.com', 'youtu.be', 'tiktok.com', 'twitter.com', 'x.com', 'vimeo.com', 'dailymotion.com', 'instagram.com', 'facebook.com'];
+const REDDIT_HOSTS = ['reddit.com', 'redd.it'];
+
+/** Exact host or subdomain match — NEVER a substring test. A substring `/x\.com/` classified
+ * pimax.com as video and sent every Shopify product page to the transcriber, which 400'd
+ * (build lesson, 2026-08-07: that one regex is why scrapeCompetitors returned almost nothing). */
+export function hostIsOneOf(host: string, domains: string[]): boolean {
+  const h = hostOf(host);
+  return domains.some(d => h === d || h.endsWith(`.${d}`));
+}
+
+const isVideo = (host: string): boolean => hostIsOneOf(host, VIDEO_HOSTS);
+const isReddit = (host: string): boolean => hostIsOneOf(host, REDDIT_HOSTS);
+
+/** Which fetcher a URL will be routed to — exposed so recon can report routing per URL
+ * instead of leaving a silent misroute to look like an empty competitor set. */
+export function routeFor(url: string): CompetitorContent['kind'] {
+  const host = hostOf(url);
+  return isVideo(host) ? 'video' : isReddit(host) ? 'reddit' : 'page';
+}
 
 /** Reddit serves clean JSON at url.json — title + selftext + top comments, no scraper needed.
  * Needs the browser header profile (UA + Google referer) — a bot UA gets a 403. */
@@ -89,30 +109,33 @@ export async function fetchCompetitorContent(
   clients: { firecrawl: FirecrawlClient | null; supadata: SupadataClient | null },
   opts: { maxChars?: number; ua?: UaMode } = {},
 ): Promise<CompetitorContent> {
-  const host = hostOf(url);
   const max = opts.maxChars ?? 4000;
   const ua = opts.ua ?? 'browser';
+  const kind = routeFor(url);
+  let firecrawlError: string | null = null;
   try {
-    if (isVideo(host)) {
-      if (!clients.supadata) return { url, kind: 'video', title: null, content: '', cached: false, error: 'SUPADATA_API_KEY not set — cannot transcribe video' };
+    if (kind === 'video') {
+      if (!clients.supadata) return { url, kind, via: 'none', title: null, content: '', cached: false, error: 'SUPADATA_API_KEY not set — cannot transcribe video' };
       const t = await clients.supadata.transcript(url, { maxChars: Math.max(max, 5000) });
-      return { url, kind: 'video', title: null, content: t.content, cached: t.cached };
+      return { url, kind, via: 'supadata', title: null, content: t.content, cached: t.cached };
     }
-    if (isReddit(host)) {
+    if (kind === 'reddit') {
       // .json first (cleaner structured data); HTML fallback. Both need the browser profile.
-      try { const r = await fetchRedditJson(url, max, ua); return { url, kind: 'reddit', title: r.title, content: r.content, cached: false }; }
-      catch { const r = await fetchPlainPage(url, max, ua); return { url, kind: 'reddit', title: r.title, content: r.content, cached: false }; }
+      try { const r = await fetchRedditJson(url, max, ua); return { url, kind, via: 'reddit-json', title: r.title, content: r.content, cached: false }; }
+      catch { const r = await fetchPlainPage(url, max, ua); return { url, kind, via: 'plain-fetch', title: r.title, content: r.content, cached: false }; }
     }
     // Pages: Firecrawl first (cleaner, handles JS); fall back to the free browser-profile fetch
     // for sites Firecrawl refuses ("we do not support this site") or when no key is set.
     if (clients.firecrawl) {
-      try { const s = await clients.firecrawl.scrape(url, { maxChars: max, proxy: 'auto' }); return { url, kind: 'page', title: s.title, content: s.markdown, cached: s.cached }; }
-      catch { /* fall through to the browser-profile fetch */ }
+      try { const s = await clients.firecrawl.scrape(url, { maxChars: max, proxy: 'auto' }); return { url, kind, via: 'firecrawl', title: s.title, content: s.markdown, cached: s.cached }; }
+      catch (e) { firecrawlError = e instanceof Error ? e.message : String(e); /* fall through to the browser-profile fetch */ }
     }
     const p = await fetchPlainPage(url, max, ua);
-    return { url, kind: 'page', title: p.title, content: p.content, cached: false };
+    return { url, kind, via: 'plain-fetch', title: p.title, content: p.content, cached: false };
   } catch (e) {
-    const kind = isVideo(host) ? 'video' : isReddit(host) ? 'reddit' : 'page';
-    return { url, kind, title: null, content: '', cached: false, error: e instanceof Error ? e.message : String(e) };
+    // Report BOTH failures when Firecrawl was tried first — "plain fetch 403" alone hides the
+    // fact that the paid fetcher refused the site for a different reason.
+    const msg = e instanceof Error ? e.message : String(e);
+    return { url, kind, via: 'none', title: null, content: '', cached: false, error: firecrawlError ? `${msg} (firecrawl first: ${firecrawlError})` : msg };
   }
 }

@@ -14,10 +14,10 @@ import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint
 import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
 import { FirecrawlClient } from './core/FirecrawlClient.js';
 import { SupadataClient } from './core/SupadataClient.js';
-import { fetchCompetitorContent } from './core/reconResearch.js';
+import { fetchCompetitorContent, routeFor } from './core/reconResearch.js';
 import { fetchOwnPage } from './core/reconFetch.js';
 import { parseSerpForRecon, reconVerdict } from './core/serpRecon.js';
-import { selectReconTargets, deterministicTodos, persistReconPage, insertTodos } from './audit/recon.js';
+import { selectReconTargets, deterministicTodos, persistReconPage, insertTodos, pageState, crawlRealityOverride, clusterCannibalisation, opportunityBasis } from './audit/recon.js';
 
 /** A clickable browser-dashboard link appended to tool outputs — the user should always
  * know the full interactive report is one click away (or one serve_dashboard call away). */
@@ -512,15 +512,22 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'score_passages',
     {
       title: 'Score passage relevance (AI-search readiness)',
-      description: 'Run a local cross-encoder reranker (ms-marco-MiniLM-L-6-v2, downloaded once to a cache, no Python) over each ranking page\'s heading chunks against its top Search Console query, and persist the single best-passage relevance score. It SCORES relevance (a classifier — it cannot hallucinate). Powers the `weak-passage-answer` check — the "RAG snippetability" test: does any passage confidently answer the query, the way AI/passage search re-ranks? On-demand + ML-heavy (~0.6s/page), bounded to pages that already rank. `limit` caps pages (highest-impression first); `minImpressions` sets the floor (default 50). First run downloads ~25MB. Re-run after a re-crawl.',
-      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(2000).optional(), minImpressions: z.number().int().min(0).optional() },
+      description: 'Run a local cross-encoder reranker (ms-marco-MiniLM-L-6-v2, downloaded once to a cache, no Python) over each ranking page\'s heading chunks against its top Search Console query, and persist the single best-passage relevance score. It SCORES relevance (a classifier — it cannot hallucinate). Powers the `weak-passage-answer` check — the "RAG snippetability" test: does any passage confidently answer the query, the way AI/passage search re-ranks? Returns the score for EVERY page it scored (not just the failures) with the flag threshold, the band convention and the run\'s own distribution, so a passing page\'s score is readable without a second query_data hop. On-demand + ML-heavy (~0.6s/page), bounded to pages that already rank. `limit` caps pages (highest-impression first); `minImpressions` sets the floor (default 50). First run downloads ~25MB. Re-run after a re-crawl.',
+      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(2000).optional(), minImpressions: z.number().int().min(0).optional(), urls: z.array(z.string()).optional().describe('Only report these pages (they are still scored site-wide; this filters the returned list)') },
     },
-    async ({ siteUrl, limit, minImpressions }) => {
+    async ({ siteUrl, limit, minImpressions, urls }) => {
       const r = await scoreSitePassages(dataDir(), siteUrl, { limit, minImpressions });
-      const lines = r.weakest.slice(0, 15).map(w => `  ${w.score}  ${w.url.replace(/^https?:\/\/[^/]+/, '')} · "${w.query}"`).join('\n');
+      const keys = urls?.length ? new Set(urls.map(u => urlKey(u, { hostForm: hostFormForProperty(siteUrl) ?? 'asis' }))) : null;
+      const shown = keys ? r.pages.filter(p => keys.has(p.url)) : r.pages;
+      const rows = shown.slice(0, 25).map(p => `  ${String(p.score).padStart(7)}  ${p.band.padEnd(8)} ${p.url.replace(/^https?:\/\/[^/]+/, '')} · "${p.query}" (${p.impressions} impr)`).join('\n');
+      const d = r.distribution;
+      const text = `Scored ${r.scored} ranking pages; ${r.flagged} below the weak threshold of ${r.threshold} — run_audit surfaces those as weak-passage-answer.\n\n` +
+        `Scale: ${r.scale}\n` +
+        (d ? `This run: min ${d.min} · p25 ${d.p25} · median ${d.median} · p75 ${d.p75} · max ${d.max}\n` : '') +
+        (rows ? `\nScores (${shown.length === r.pagesTotal ? `all ${r.pagesTotal}` : `${shown.length} of ${r.pagesTotal}`}, showing up to 25):\n${rows}` : '');
       return {
-        content: [{ type: 'text', text: `Scored ${r.scored} ranking pages; ${r.flagged} have no strongly-relevant passage (score < 3) — run_audit surfaces them as weak-passage-answer.${lines ? `\n\nWeakest:\n${lines}` : ''}` }],
-        structuredContent: r as unknown as Record<string, unknown>,
+        content: [{ type: 'text', text }],
+        structuredContent: { ...r, ...(keys ? { pages: shown, pagesReturned: shown.length } : {}) } as unknown as Record<string, unknown>,
       };
     },
   );
@@ -1022,7 +1029,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'recon_targets',
     {
       title: 'Content recon: why a page is losing, and what to do about it',
-      description: '[Paid: DataForSEO SERP per page (~$0.004 each), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, or competitive-gap. It writes a per-page classification plus deterministic to-dos (schema gaps, freshness, cannibalisation, video format) into a trackable ledger, and returns the competitor set (organic-above + AI-Overview references + ranking videos) for the research session to diff. Set scrapeCompetitors:true to also pull the top competitors as content, routed by source: YouTube/video → Supadata transcript (SUPADATA_API_KEY), Reddit → its .json, other pages → Firecrawl (FIRECRAWL_API_KEY) with a free HTTP fallback. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Transcribe the videos (usually what wins these SERPs) and use the reachable pages. Then write findings back with save_recon_todo; track with recon_todos. **Async job:** returns a jobId immediately - poll check_sync_status; the finished job carries the per-page verdicts, to-dos and a summary. (Each page is persisted to the ledger as it completes, so recon_todos shows results even mid-run.)',
+      description: '[Paid: DataForSEO SERP per page (~$0.004 each, plus a small refundable surcharge for loading async AI Overviews), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced, depth 20 organic), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, competitive-gap, or page-cannot-rank (the crawl says the URL is noindex/canonicalised away, so its GSC history is legacy and the SERP read belongs to another page). Honesty rules baked in: every GSC figure carries its 28-day window; organicRank:null means "absent from the top 20 ORGANIC results", never a position; and an AI Overview whose citations could not be resolved reports aioCitesUs:null (UNKNOWN) rather than "not cited". To-dos are prioritised by OPPORTUNITY (impressions x the CTR gap between where you rank and a realistic target, damped by the verdict), not by raw impressions, and cannibalisation is counted across the whole query cluster. Set scrapeCompetitors:true to also pull the top competitors as content, routed by host: YouTube/video → Supadata transcript (SUPADATA_API_KEY), Reddit → its .json, other pages → Firecrawl (FIRECRAWL_API_KEY) with a free HTTP fallback; competitorLimit (default 5) caps how many are fetched and everything above the cap is listed as skipped. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Transcribe the videos (usually what wins these SERPs) and use the reachable pages. Then write findings back with save_recon_todo; track with recon_todos. **Async job:** returns a jobId immediately - poll check_sync_status; the finished job carries the per-page verdicts, to-dos and a summary. (Each page is persisted to the ledger as it completes, so recon_todos shows results even mid-run.)',
       inputSchema: {
         siteUrl: z.string(),
         limit: z.number().int().min(1).max(50).optional().describe('Pages per batch (default 5; async so large batches are fine)'),
@@ -1030,10 +1037,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         location: z.union([z.string(), z.number()]).optional(),
         urls: z.array(z.string()).optional().describe('Analyse these exact pages instead of auto-selecting'),
         scrapeCompetitors: z.boolean().optional().describe('Also fetch the top competitors (video→transcript, pages→markdown/HTML)'),
+        competitorLimit: z.number().int().min(1).max(12).optional().describe('How many competitors to fetch per page when scrapeCompetitors is on (default 5). Whatever is not fetched is listed as skipped, never dropped silently.'),
         crawlAs: z.enum(['browser', 'googlebot']).optional().describe('UA for the free HTTP fetch: browser (default, mimics a visit from Google — gets Reddit + mid-tier) or googlebot'),
       },
     },
-    async ({ siteUrl, limit, minImpressions, location, urls, scrapeCompetitors, crawlAs }) => {
+    async ({ siteUrl, limit, minImpressions, location, urls, scrapeCompetitors, competitorLimit, crawlAs }) => {
       const client = requireDfs(dfs); // fail fast if no DataForSEO creds, before starting the job
       const count = urls?.length ?? limit ?? 5;
       // Async job: N live page-fetches + N serialised SERP calls exceed the ~60s MCP ceiling
@@ -1046,6 +1054,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           const today = new Date().toISOString().slice(0, 10);
           const ownDomain = dfsHost(siteUrl);
           const hostForm = hostFormForProperty(siteUrl) ?? 'asis';
+          const SERP_DEPTH = 20;
+          // Every GSC number below is this window and only this window. Undeclared, a 28-day figure
+          // read against an all-time baseline looks exactly like a decline.
+          const windowStart = db.db.prepare(`SELECT date(?, '-27 days') d`).get(fresh.effectiveMax) as { d: string };
+          const gscWindow = { start: windowStart.d, end: fresh.effectiveMax, days: 28, metric: 'Search Console, last 28 days of synced data (not all-time)' };
 
           let targets;
           if (urls?.length) {
@@ -1070,11 +1083,17 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             update({ phase: 'recon', done: i, total: targets.length, current: t.urlKey });
             let own = null;
             try { own = await fetchOwnPage(t.urlKey, hostForm === 'asis' ? 'asis' : hostForm); } catch { /* page unreachable — classify on SERP alone */ }
-            const serpResp = await client.serpOrganic(t.query, location, 'en', 20);
+            const serpResp = await client.serpOrganic(t.query, location, 'en', SERP_DEPTH, { loadAsyncAiOverview: true });
             cost += serpResp.cost;
-            const serp = parseSerpForRecon(serpResp, ownDomain);
-            const verdict = reconVerdict(serp);
-            const baseline = { organicRank: serp.ourOrganicRank, aioCitesUs: serp.aioCitesUs, gscPosition: t.position, gscImpressions: t.impressions, at: today };
+            const serp = parseSerpForRecon(serpResp, ownDomain, SERP_DEPTH);
+            // The crawl row overrides the SERP/GSC read: GSC keeps reporting impressions for URLs
+            // that have since been canonicalised away or set noindex.
+            const state = pageState(db.db, t.urlKey);
+            const serpVerdict = reconVerdict(serp);
+            const verdict = crawlRealityOverride(serpVerdict, state) ?? serpVerdict;
+            const cluster = clusterCannibalisation(db.db, t.query, fresh.effectiveMax);
+            const basis = opportunityBasis(t.impressions, serp.ourOrganicRank, t.position, verdict.verdict);
+            const baseline = { organicRank: serp.ourOrganicRank, serpDepth: SERP_DEPTH, aioCitesUs: serp.aioCitesUs, gscPosition: t.position, gscImpressions: t.impressions, window: gscWindow, at: today };
             persistReconPage(db.db, {
               urlKey: t.urlKey, query: t.query, verdict: verdict.verdict, verdictNote: verdict.note,
               organicRank: serp.ourOrganicRank, gscPosition: t.position, gscImpressions: t.impressions,
@@ -1082,42 +1101,84 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
               hasProductSchema: own?.hasProductOrReview ?? false, schemaTypes: own?.jsonLdTypes ?? [],
               competitors: { organicAbove: serp.organicAbove, aioReferences: serp.aioReferences, videoItems: serp.videoItems },
             });
-            const todos = own ? deterministicTodos(t, own, serp, verdict, today) : [];
+            const todos = own ? deterministicTodos(t, own, serp, verdict, today, { state, cluster }) : [];
             const inserted = todos.length ? insertTodos(db.db, t.urlKey, t.query, todos, baseline, 'auto') : 0;
 
             let competitorContent: any = undefined;
+            let competitorFetch: any = undefined;
             if (scrapeCompetitors && (firecrawl || supadata)) {
-              // Build a routed candidate set: organic-above + a couple of AI-Overview references +
-              // one ranking video, deduped, our own domain removed. Each URL routes by domain
-              // (YouTube→supadata, Reddit→.json, else→firecrawl). Bounded to keep the payload sane.
+              // Build a routed candidate set: organic-above + AI-Overview references + one ranking
+              // video, deduped, our own domain removed. Each URL routes by HOST (YouTube→supadata,
+              // Reddit→.json, else→firecrawl). What we don't fetch is REPORTED, not silently dropped
+              // — an undeclared cap of 3 is what made this look like it returned nothing.
               const seen = new Set<string>();
-              const candidates: string[] = [];
-              const add = (u?: string) => { if (u && !seen.has(u) && dfsHost(u) !== ownDomain) { seen.add(u); candidates.push(u); } };
-              serp.organicAbove.forEach(o => add(o.url));
-              serp.aioReferences.slice(0, 4).forEach(r => add(r.url));
-              serp.videoItems.slice(0, 1).forEach(v => add(v.url));
+              const candidates: { url: string; from: string; route: string }[] = [];
+              const add = (url: string | undefined, from: string) => {
+                if (url && !seen.has(url) && dfsHost(url) !== ownDomain) { seen.add(url); candidates.push({ url, from, route: routeFor(url) }); }
+              };
+              serp.organicAbove.forEach(o => add(o.url, `organic #${o.rank}`));
+              serp.aioReferences.slice(0, 6).forEach(r => add(r.url, 'aio-reference'));
+              serp.videoItems.slice(0, 2).forEach(v => add(v.url, 'video-pack'));
+
+              const lim = competitorLimit ?? 5;
+              // Organic-above first (the editorial pages actually worth diffing), but keep one slot
+              // for a ranking video — video is usually what wins these SERPs.
+              const video = candidates.find(c => c.route === 'video');
+              const rest = candidates.filter(c => c !== video);
+              const reserve = video && lim >= 3 ? 1 : 0;
+              const chosen = [...rest.slice(0, lim - reserve), ...(reserve && video ? [video] : [])];
+              const skipped = candidates.filter(c => !chosen.includes(c));
+
               competitorContent = [];
-              for (const url of candidates.slice(0, 3)) {
-                competitorContent.push(await fetchCompetitorContent(url, { firecrawl, supadata }, { maxChars: 4000, ua: crawlAs }));
+              for (const c of chosen) {
+                competitorContent.push(await fetchCompetitorContent(c.url, { firecrawl, supadata }, { maxChars: 4000, ua: crawlAs }));
               }
+              competitorFetch = {
+                limit: lim,
+                identified: candidates.length,
+                attempted: chosen.length,
+                fetched: competitorContent.filter((c: any) => !c.error && c.content).length,
+                failed: competitorContent.filter((c: any) => c.error).length,
+                empty: competitorContent.filter((c: any) => !c.error && !c.content).length,
+                routes: chosen.map(c => ({ url: c.url, from: c.from, route: c.route })),
+                skipped: skipped.map(c => ({ url: c.url, from: c.from, route: c.route })),
+                note: skipped.length ? `${skipped.length} identified competitor(s) not fetched (competitorLimit ${lim}) — raise competitorLimit or fetch them directly.` : undefined,
+              };
             }
 
             results.push({
-              urlKey: t.urlKey, query: t.query, impressions: t.impressions, gscPosition: t.position, priorPosition: t.priorPosition, slipped: t.slipped,
-              organicRank: serp.ourOrganicRank, aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, videoPresent: serp.videoPresent,
+              urlKey: t.urlKey, query: t.query, window: gscWindow,
+              impressions: t.impressions, gscPosition: t.position, priorPosition: t.priorPosition, slipped: t.slipped,
+              organicRank: serp.ourOrganicRank, serpDepth: SERP_DEPTH,
+              organicRankNote: serp.ourOrganicRank == null ? `absent from the top ${SERP_DEPTH} organic results — position beyond ${SERP_DEPTH} was not measured` : undefined,
+              aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, aioResolved: serp.aioResolved, aioAsync: serp.aioAsync,
+              aioNote: serp.aioCitesUs == null && serp.aioPresent ? 'AI Overview present but citations unresolved — citation status UNKNOWN, not "not cited"' : undefined,
+              videoPresent: serp.videoPresent,
               verdict: verdict.verdict, verdictNote: verdict.note,
+              ...(verdict.verdict === 'page-cannot-rank' ? { serpVerdict: serpVerdict.verdict, serpVerdictNote: serpVerdict.note } : {}),
+              pageState: state, priorityBasis: basis, cannibalisationCluster: cluster,
               ownHeadings: own?.headings.map(h => h.heading) ?? null, schemaTypes: own?.jsonLdTypes ?? null, hasProductSchema: own?.hasProductOrReview ?? null, dateModified: own?.dateModified ?? null,
               todos, todosInserted: inserted,
               competitors: { organicAbove: serp.organicAbove, aioReferences: serp.aioReferences, videoItems: serp.videoItems },
-              ...(competitorContent ? { competitorContent } : {}),
+              ...(competitorContent ? { competitorContent, competitorFetch } : {}),
             });
           }
           update({ phase: 'done', done: results.length, total: targets.length });
 
-          const md = `# Content recon — ${siteUrl}\n\n${results.length} page(s), ${results.reduce((s, r) => s + r.todosInserted, 0)} to-dos saved. DataForSEO SERP cost $${cost.toFixed(4)}.\n\n` +
+          const md = `# Content recon — ${siteUrl}\n\n${results.length} page(s), ${results.reduce((s, r) => s + r.todosInserted, 0)} to-dos saved. DataForSEO SERP cost $${cost.toFixed(4)}.\n` +
+            `All Search Console figures below are **${gscWindow.start} to ${gscWindow.end}** (28 days) — not all-time; SERP ranks are live at depth ${SERP_DEPTH} organic.\n\n` +
             results.map(r => {
-              const flags = [r.aioPresent ? (r.aioCitesUs ? 'AIO: cited' : 'AIO: NOT cited') : 'no AIO', r.videoPresent ? 'video pack' : null].filter(Boolean).join(' · ');
-              return `## ${r.urlKey}\n"${r.query}" — organic #${r.organicRank ?? '?'} (GSC avg ${r.gscPosition}${r.slipped ? `, slipped from ${r.priorPosition}` : ''}), ${r.impressions} impr. ${flags}\n**${r.verdict}** — ${r.verdictNote}\n` +
+              const aio = !r.aioPresent ? 'no AIO'
+                : r.aioCitesUs == null ? 'AIO: citation UNKNOWN (unresolved)'
+                : r.aioCitesUs ? 'AIO: cited' : `AIO: NOT cited (${r.competitors.aioReferences.length} refs checked)`;
+              const flags = [aio, r.videoPresent ? 'video pack' : null].filter(Boolean).join(' · ');
+              const rank = r.organicRank != null ? `organic #${r.organicRank}` : `not in the top ${SERP_DEPTH} organic`;
+              const cann = r.cannibalisationCluster?.cannibalising ? `\nCluster overlap: ${r.cannibalisationCluster.urls.length} of your URLs across "${r.cannibalisationCluster.core.join(' ')}", colliding on ${r.cannibalisationCluster.collidingQueries} of ${r.cannibalisationCluster.clusterQueries} queries.` : '';
+              const cf = r.competitorFetch
+                ? `\nCompetitors: ${r.competitorFetch.fetched}/${r.competitorFetch.attempted} fetched of ${r.competitorFetch.identified} identified (limit ${r.competitorFetch.limit})${r.competitorFetch.skipped.length ? `; skipped ${r.competitorFetch.skipped.map((s: any) => s.url).join(', ')}` : ''}.`
+                : '';
+              return `## ${r.urlKey}\n"${r.query}" — ${rank} (GSC avg ${r.gscPosition}${r.slipped ? `, slipped from ${r.priorPosition}` : ''}), ${r.impressions} impr. ${flags}\n` +
+                `**${r.verdict}** — ${r.verdictNote}\nOpportunity: ~${r.priorityBasis.opportunityClicks} clicks/28d if it moved from ${r.priorityBasis.position} (${r.priorityBasis.positionSource}) to ${r.priorityBasis.targetPosition}.${cann}${cf}\n` +
                 (r.todos.length ? '\nTo do:\n' + r.todos.map((t: any) => `- [${t.type}] ${t.action}`).join('\n') : '');
             }).join('\n\n') +
             (() => {
@@ -1126,12 +1187,12 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
               const needKey = errs.filter(c => /not set/i.test(c.error));
               const blocked = errs.filter(c => !/not set/i.test(c.error));
               let note = '';
-              if (blocked.length) note += `\n\n${blocked.length} competitor(s) couldn't be fetched (bot-protection like Cloudflare, a block, or a fetch error): ${blocked.slice(0, 5).map(c => c.url).join(', ')}. If one matters, paste its copy here or drop a text file and I'll diff it in.`;
+              if (blocked.length) note += `\n\n${blocked.length} competitor(s) couldn't be fetched (bot-protection like Cloudflare, a block, or a fetch error): ${blocked.slice(0, 5).map(c => `${c.url} [${c.via}: ${c.error}]`).join('; ')}. If one matters, paste its copy here or drop a text file and I'll diff it in.`;
               if (needKey.length) note += `\n\n${needKey.length} competitor(s) skipped for a missing API key: ${[...new Set(needKey.map(c => c.error))].join('; ')}.`;
               return note;
             })() +
             `\n\nNext: research the competitors (transcribe the videos, read the reachable pages), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
-          return { siteUrl, cost, targets: results, summary: md };
+          return { siteUrl, cost, window: gscWindow, serpDepth: SERP_DEPTH, targets: results, summary: md };
         } finally { db.close(); }
       });
       return {
@@ -1164,10 +1225,16 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
       try {
         const key = urlKey(rawUrl, { hostForm: hostFormForProperty(siteUrl) ?? 'asis' });
-        const page = db.db.prepare(`SELECT query, organic_rank, aio_cites_us, gsc_position FROM recon_page WHERE url_key=?`).get(key) as
-          { query: string; organic_rank: number | null; aio_cites_us: number; gsc_position: number } | undefined;
-        const baseline = page ? { organicRank: page.organic_rank, aioCitesUs: !!page.aio_cites_us, gscPosition: page.gsc_position, at: new Date().toISOString().slice(0, 10) } : {};
-        const drafts = todos.map(t => ({ action: t.action, type: t.type ?? 'content-gap', rationale: t.rationale ?? '', evidence: t.evidence ?? {}, priority: t.priority ?? 0 }));
+        const page = db.db.prepare(`SELECT query, organic_rank, aio_cites_us, gsc_position, gsc_impressions, verdict FROM recon_page WHERE url_key=?`).get(key) as
+          { query: string; organic_rank: number | null; aio_cites_us: number | null; gsc_position: number; gsc_impressions: number; verdict: string } | undefined;
+        // aio_cites_us is NULL when the AI Overview never resolved — keep that as unknown rather
+        // than coercing it to false, or the outcome diff reads "no → yes" off a missing fetch.
+        const baseline = page ? { organicRank: page.organic_rank, aioCitesUs: page.aio_cites_us == null ? null : !!page.aio_cites_us, gscPosition: page.gsc_position, at: new Date().toISOString().slice(0, 10) } : {};
+        // Default priority to the PAGE's opportunity so research to-dos sort on the same scale as
+        // the deterministic ones (a default of 0 buried every judgement finding at the bottom).
+        const basis = page ? opportunityBasis(page.gsc_impressions ?? 0, page.organic_rank, page.gsc_position ?? 20, page.verdict) : null;
+        const fallbackPriority = basis ? Math.max(1, Math.round(basis.opportunityClicks * basis.verdictFactor)) : 0;
+        const drafts = todos.map(t => ({ action: t.action, type: t.type ?? 'content-gap', rationale: t.rationale ?? '', evidence: t.evidence ?? {}, priority: t.priority ?? fallbackPriority }));
         const n = insertTodos(db.db, key, page?.query ?? '', drafts, baseline, 'research');
         return { content: [{ type: 'text', text: `Saved ${n} recon to-do(s) for ${key}${n < drafts.length ? ` (${drafts.length - n} already open)` : ''}. Track with recon_todos.` }], structuredContent: { urlKey: key, inserted: n } };
       } finally { db.close(); }
@@ -1202,11 +1269,14 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           let outcome = row.outcome;
           let outcomeNote = '';
           if (status === 'shipped' && remeasure && dfs) {
-            const serpResp = await dfs.serpOrganic(row.query, location, 'en', 20);
-            const serp = parseSerpForRecon(serpResp, dfsHost(siteUrl));
-            outcome = JSON.stringify({ organicRank: serp.ourOrganicRank, aioCitesUs: serp.aioCitesUs, at: new Date().toISOString().slice(0, 10) });
+            // Same depth + async-AIO handling as recon_targets, so before/after are comparable.
+            const serpResp = await dfs.serpOrganic(row.query, location, 'en', 20, { loadAsyncAiOverview: true });
+            const serp = parseSerpForRecon(serpResp, dfsHost(siteUrl), 20);
+            const cited = (v: unknown) => (v == null ? 'unknown' : v ? 'yes' : 'no');
+            outcome = JSON.stringify({ organicRank: serp.ourOrganicRank, serpDepth: 20, aioCitesUs: serp.aioCitesUs, aioResolved: serp.aioResolved, at: new Date().toISOString().slice(0, 10) });
             const base = row.baseline ? JSON.parse(row.baseline) : {};
-            outcomeNote = ` Outcome: organic ${base.organicRank ?? '?'}→${serp.ourOrganicRank ?? '?'}, AIO cited ${base.aioCitesUs ? 'yes' : 'no'}→${serp.aioCitesUs ? 'yes' : 'no'}.`;
+            const rankStr = (r: number | null | undefined) => (r == null ? 'not in top 20' : `#${r}`);
+            outcomeNote = ` Outcome: organic ${rankStr(base.organicRank)}→${rankStr(serp.ourOrganicRank)}, AIO cited ${cited(base.aioCitesUs)}→${cited(serp.aioCitesUs)}.`;
           }
           db.db.prepare(`UPDATE recon_todo SET status=COALESCE(?,status), notes=?, outcome=COALESCE(?,outcome), updated_at=datetime('now') WHERE id=?`)
             .run(status ?? null, notes, outcome ?? null, id);

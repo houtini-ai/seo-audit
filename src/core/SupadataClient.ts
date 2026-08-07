@@ -56,15 +56,22 @@ export class SupadataClient {
     return { url, content: opts.maxChars ? content.slice(0, opts.maxChars) : content, lang, cached: false };
   }
 
-  private async pollJob(jobId: string, tries = 8, delayMs = 2500): Promise<any> {
+  /** Poll /transcript/{jobId}. Statuses are queued | active | completed | failed; the docs
+   * recommend a 1s cadence and results expire an hour after completion. 30 x 1s covers the
+   * long-video generate path (2.5s x 8 = 20s was timing out on anything substantial). */
+  private async pollJob(jobId: string, tries = 30, delayMs = 1000): Promise<any> {
     for (let i = 0; i < tries; i++) {
       await new Promise(r => setTimeout(r, delayMs));
       const res = await fetch(`${BASE_URL}/transcript/${jobId}`, { headers: { 'x-api-key': this.apiKey }, signal: AbortSignal.timeout(30000) });
       const j: any = await res.json();
       const status = j?.status;
       if (status === 'completed' || j?.content) return j;
-      if (status === 'failed' || status === 'error') throw new Error(`Supadata job ${jobId} ${status}: ${j?.error ?? ''}`.trim());
+      if (status === 'failed') {
+        // `error` is an object in this API — interpolating it raw prints [object Object].
+        const err = typeof j?.error === 'string' ? j.error : j?.error ? JSON.stringify(j.error) : '';
+        throw new Error(`Supadata job ${jobId} failed: ${err}`.trim());
+      }
     }
-    throw new Error(`Supadata job ${jobId} did not complete in time`);
+    throw new Error(`Supadata job ${jobId} did not complete within ${(tries * delayMs) / 1000}s`);
   }
 }

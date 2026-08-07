@@ -138,10 +138,21 @@ export class DataForSeoClient {
     ]);
   }
 
-  /** SERP — live Google organic results (per-request cost; use sparingly). */
-  async serpOrganic(keyword: string, location?: string | number, languageCode = 'en', depth = 20): Promise<DfsResponse> {
+  /** SERP — live Google organic results (per-request cost; use sparingly).
+   * `depth` = how many ORGANIC results to collect (not total SERP elements), so a domain absent
+   * at depth=20 is absent from the top 20 organic — nothing is known about its position beyond that.
+   * `loadAsyncAiOverview` makes DataForSEO wait for a client-side-loaded AI Overview and return its
+   * references; without it those SERPs come back with an empty AIO (asynchronous_ai_overview:true)
+   * and citation is unknowable. Small surcharge, refunded when no async AIO is found. */
+  async serpOrganic(
+    keyword: string, location?: string | number, languageCode = 'en', depth = 20,
+    opts: { loadAsyncAiOverview?: boolean } = {},
+  ): Promise<DfsResponse> {
     return this.call('/v3/serp/google/organic/live/advanced', [
-      { keyword, ...this.loc(location), language_code: languageCode, depth },
+      {
+        keyword, ...this.loc(location), language_code: languageCode, depth,
+        ...(opts.loadAsyncAiOverview ? { load_async_ai_overview: true } : {}),
+      },
     ]);
   }
 

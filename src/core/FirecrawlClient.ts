@@ -55,8 +55,11 @@ export class FirecrawlClient {
   }
 
   /** Scrape one URL to clean markdown (main content only). Cached for the TTL.
-   * proxy: 'auto' lets Firecrawl escalate to stealth on bot-protected sites (costs more). */
-  async scrape(url: string, opts: { maxChars?: number; timeoutMs?: number; proxy?: 'basic' | 'stealth' | 'auto' } = {}): Promise<ScrapeResult> {
+   * proxy (v2 enum: basic | enhanced | auto — 'stealth' was the v1 name and is rejected):
+   * 'auto' retries with enhanced proxies when basic is blocked, billed at up to 5 credits.
+   * maxAge is Firecrawl's OWN cache (default 2 days) — we pass it explicitly so the freshness
+   * of a competitor page is a declared choice rather than a silent default. */
+  async scrape(url: string, opts: { maxChars?: number; timeoutMs?: number; proxy?: 'basic' | 'enhanced' | 'auto'; maxAgeMs?: number } = {}): Promise<ScrapeResult> {
     const key = createHash('sha256').update('scrape\n' + url).digest('hex');
     const row = this.cache
       .prepare('SELECT url, markdown, title, fetched_at FROM firecrawl_cache WHERE cache_key = ?')
@@ -70,7 +73,11 @@ export class FirecrawlClient {
       const res = await fetch(`${BASE_URL}/v2/scrape`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true, proxy: opts.proxy ?? 'auto' }),
+        body: JSON.stringify({
+          url, formats: ['markdown'], onlyMainContent: true,
+          proxy: opts.proxy ?? 'auto',
+          maxAge: opts.maxAgeMs ?? 172800000, // Firecrawl's default; explicit so it's visible
+        }),
         signal: AbortSignal.timeout(opts.timeoutMs ?? 45000),
       });
       const json: any = await res.json();
@@ -79,8 +86,18 @@ export class FirecrawlClient {
       }
       // API nests under .data (MCP flattens it — we read the API shape here).
       const data = json.data ?? json;
+      // A success:true response can still carry the TARGET's error status (403/404/challenge page):
+      // metadata.statusCode is the page's, not Firecrawl's. Treat 4xx/5xx as a failure so the
+      // caller falls back to the browser-profile fetch instead of diffing a block page.
+      const pageStatus = Number(data.metadata?.statusCode);
+      if (Number.isFinite(pageStatus) && pageStatus >= 400) {
+        throw new Error(`Firecrawl got ${pageStatus} for ${url}${data.metadata?.error ? `: ${data.metadata.error}` : ''}`);
+      }
       const markdown: string = data.markdown ?? '';
-      const title: string | null = data.metadata?.title ?? null;
+      // metadata.title is oneOf string | string[] in the v2 schema — an array would throw on bind
+      // ("can only bind numbers, strings, ...") when cached. Normalise to a single string.
+      const rawTitle = data.metadata?.title;
+      const title: string | null = Array.isArray(rawTitle) ? (rawTitle[0] ?? null) : (rawTitle ?? null);
       this.cache
         .prepare(
           `INSERT INTO firecrawl_cache (cache_key, url, markdown, title, fetched_at)
