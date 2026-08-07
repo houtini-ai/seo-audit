@@ -416,6 +416,46 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_entity_edge_related ON entity_edge(related_qid);
     `);
 
+    // ── Content recon (recon_targets) — per-page SERP/AIO classification + a trackable
+    //    to-do ledger with baseline→outcome so a fix's effect on rank/citation is measurable.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recon_page (
+        url_key TEXT PRIMARY KEY,         -- OUR page under recon
+        query TEXT,                       -- the primary money query analysed
+        verdict TEXT,                     -- defend-and-deepen | accuracy-or-freshness | consolidate-weak-page | competitive-gap
+        verdict_note TEXT,
+        organic_rank INTEGER,             -- our live organic rank (DataForSEO), distinct from GSC avg
+        gsc_position REAL,                -- GSC blended average position (for contrast)
+        gsc_impressions INTEGER,
+        aio_present INTEGER DEFAULT 0,
+        aio_cites_us INTEGER DEFAULT 0,
+        video_present INTEGER DEFAULT 0,
+        has_product_schema INTEGER DEFAULT 0,
+        schema_types TEXT,                -- JSON string[]
+        competitors TEXT,                 -- JSON { organicAbove[], aioReferences[], videoItems[] }
+        researched_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS recon_todo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url_key TEXT NOT NULL,
+        query TEXT,
+        action TEXT NOT NULL,             -- the to-do ("Add a Meta Quest 3S section")
+        type TEXT,                        -- content-gap | schema | freshness | format | cannibalisation | originality
+        rationale TEXT,
+        evidence TEXT,                    -- JSON datapoint backing the action
+        priority REAL DEFAULT 0,
+        status TEXT DEFAULT 'open',       -- open | researching | drafted | shipped | dismissed
+        source TEXT DEFAULT 'auto',       -- auto (deterministic) | research (session-discovered)
+        baseline TEXT,                    -- JSON snapshot at creation (rank/citation/position)
+        outcome TEXT,                     -- JSON snapshot after 'shipped' (re-measured)
+        notes TEXT,                       -- append-only annotation log (timestamped lines)
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_recon_todo_url ON recon_todo(url_key);
+      CREATE INDEX IF NOT EXISTS idx_recon_todo_status ON recon_todo(status);
+    `);
+
     this.migrate();
   }
 

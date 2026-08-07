@@ -12,6 +12,10 @@ import { getDashboardData } from './core/dashboardData.js';
 import { startDashboardServer, stopDashboardServer, dashboardServerUrl, listLocalProperties } from './core/webServer.js';
 import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
 import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
+import { FirecrawlClient } from './core/FirecrawlClient.js';
+import { fetchOwnPage } from './core/reconFetch.js';
+import { parseSerpForRecon, reconVerdict } from './core/serpRecon.js';
+import { selectReconTargets, deterministicTodos, persistReconPage, insertTodos } from './audit/recon.js';
 
 /** A clickable browser-dashboard link appended to tool outputs — the user should always
  * know the full interactive report is one click away (or one serve_dashboard call away). */
@@ -174,6 +178,7 @@ Raw access: query_audit runs any single check with full evidence; every table ab
 - **Market read:** serp_features (feature/AIO exposure, volume-weighted) + domain_visibility for the client and each named rival (one cached call each) → who is structurally winning, and how much of the market SERP features already absorb.
 - **Content plan:** suggest_pages (demand you already earn impressions for) + topic_gaps (demand rivals own that you don't) → draft_content for the winners. Every proposal traces to real impressions or a rival's real footprint - no invented "keyword ideas".
 - **Fix-and-prove cycle:** fix_finding on the top finding → ship → start_crawl → detect_changes shows the fix landed → re-run run_audit and watch the finding drop off. That screenshot is the client update.
+- **Content recon (why a page is losing):** recon_targets picks the worst declining/striking pages, fetches our live page + the Google SERP (organic rank + AI-Overview citations + video), and classifies WHY — the sharpest class is "we rank but the AI Overview won't quote us" = a data-accuracy/freshness/markup problem. Then research the competitor set it returns (firecrawl for pages, supadata for the ranking videos), write the gaps back with save_recon_todo, and track the fixes with recon_todos (which can re-measure whether you moved from uncited→cited). Pass location to match where your impressions come from — organic rank is location-sensitive.
 - **Cost rule of thumb:** an entire competitive read (visibility + footprint + gaps for 4 domains) is a handful of cached Labs calls - under a dollar. If a plan involves looping SERP calls over a keyword list, it is the wrong plan; a Labs endpoint already has that answer top-down.
 
 Plan the join first (url_key / query / domain), state the grain of each side, then run the fewest paid calls that answer it.`;
@@ -261,6 +266,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     : null;
   const rankTracker = dfs ? new RankTracker(dfs, dataDir()) : null;
   const backlinks = dfs ? new Backlinks(dfs, dataDir()) : null;
+  // Firecrawl (competitor-page scraping for content recon) — optional; degrades gracefully.
+  const firecrawlKey = process.env.FIRECRAWL_API_KEY;
+  const firecrawl = firecrawlKey ? new FirecrawlClient(firecrawlKey, path.join(dataDir(), 'firecrawl-cache.db')) : null;
   const entities = new Entities(new WikidataClient(path.join(dataDir(), 'wikidata-cache.db')), dataDir());
   const refresh = new Refresh(sync, crawler, inspector, rankTracker);
   const requireGsc = <T>(v: T | null): T => {
@@ -1001,6 +1009,194 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           strengthen: weak.map(c => ({ head: c.head, bestPosition: c.bestPosition, impressions: c.impressions, url: c.url, keywords: c.keywords.length })),
         } as unknown as Record<string, unknown>,
       };
+    },
+  );
+
+  // ── Content recon (recon_targets) — the data-intensive "why are we losing, what to do" mission ──
+  server.registerTool(
+    'recon_targets',
+    {
+      title: 'Content recon: why a page is losing, and what to do about it',
+      description: '[Paid: DataForSEO SERP per page (~$0.004 each), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, or competitive-gap. It writes a per-page classification plus deterministic to-dos (schema gaps, freshness, cannibalisation, video format) into a trackable ledger, and returns the competitor set (organic-above + AI-Overview references + ranking videos) for the research session to diff. Set scrapeCompetitors:true to also pull the top competitors as markdown (needs FIRECRAWL_API_KEY). Then research with firecrawl/supadata and write findings back with save_recon_todo; track with recon_todos.',
+      inputSchema: {
+        siteUrl: z.string(),
+        limit: z.number().int().min(1).max(15).optional().describe('Pages per batch (default 5)'),
+        minImpressions: z.number().int().min(1).optional(),
+        location: z.union([z.string(), z.number()]).optional(),
+        urls: z.array(z.string()).optional().describe('Analyse these exact pages instead of auto-selecting'),
+        scrapeCompetitors: z.boolean().optional().describe('Also scrape the top competitors to markdown (needs Firecrawl)'),
+      },
+    },
+    async ({ siteUrl, limit, minImpressions, location, urls, scrapeCompetitors }) => {
+      const client = requireDfs(dfs);
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try {
+        const fresh = gscFreshness(db.db);
+        if (!fresh.effectiveMax) return { content: [{ type: 'text', text: `No synced GSC data for ${siteUrl} — run refresh_property first.` }], structuredContent: { error: 'empty', siteUrl } };
+        const today = new Date().toISOString().slice(0, 10);
+        const ownDomain = dfsHost(siteUrl);
+        const hostForm = hostFormForProperty(siteUrl) ?? 'asis';
+
+        let targets;
+        if (urls?.length) {
+          targets = [];
+          for (const u of urls) {
+            const key = urlKey(u, { hostForm });
+            const row = db.db.prepare(`SELECT query, SUM(impressions) imp, SUM(clicks) clk, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+              FROM search_analytics WHERE page_key=? AND query IS NOT NULL AND date > date(?, '-28 days') AND date <= ? GROUP BY query ORDER BY imp DESC LIMIT 1`)
+              .get(key, fresh.effectiveMax, fresh.effectiveMax) as { query: string; imp: number; clk: number; pos: number } | undefined;
+            if (row?.query) targets.push({ urlKey: key, query: row.query, impressions: row.imp, clicks: row.clk, position: Math.round(row.pos * 10) / 10, priorPosition: null, slipped: false, competingUrls: 0 });
+          }
+        } else {
+          targets = selectReconTargets(db.db, { ...(limit != null ? { limit } : {}), ...(minImpressions != null ? { minImpressions } : {}), maxDate: fresh.effectiveMax });
+        }
+        if (!targets.length) return { content: [{ type: 'text', text: `No recon targets found (declining/striking-distance pages, position 3-15, ${minImpressions ?? 300}+ impressions). Try a lower minImpressions or pass explicit urls.` }], structuredContent: { siteUrl, targets: [] } };
+
+        const results: any[] = [];
+        let cost = 0;
+        for (const t of targets) {
+          let own = null;
+          try { own = await fetchOwnPage(t.urlKey, hostForm === 'asis' ? 'asis' : hostForm); } catch { /* page unreachable — classify on SERP alone */ }
+          const serpResp = await client.serpOrganic(t.query, location, 'en', 20);
+          cost += serpResp.cost;
+          const serp = parseSerpForRecon(serpResp, ownDomain);
+          const verdict = reconVerdict(serp);
+          const baseline = { organicRank: serp.ourOrganicRank, aioCitesUs: serp.aioCitesUs, gscPosition: t.position, gscImpressions: t.impressions, at: today };
+          persistReconPage(db.db, {
+            urlKey: t.urlKey, query: t.query, verdict: verdict.verdict, verdictNote: verdict.note,
+            organicRank: serp.ourOrganicRank, gscPosition: t.position, gscImpressions: t.impressions,
+            aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, videoPresent: serp.videoPresent,
+            hasProductSchema: own?.hasProductOrReview ?? false, schemaTypes: own?.jsonLdTypes ?? [],
+            competitors: { organicAbove: serp.organicAbove, aioReferences: serp.aioReferences, videoItems: serp.videoItems },
+          });
+          const todos = own ? deterministicTodos(t, own, serp, verdict, today) : [];
+          const inserted = todos.length ? insertTodos(db.db, t.urlKey, t.query, todos, baseline, 'auto') : 0;
+
+          let competitorContent: any = undefined;
+          if (scrapeCompetitors && firecrawl) {
+            competitorContent = [];
+            for (const c of serp.organicAbove.slice(0, 2)) {
+              try { const s = await firecrawl.scrape(c.url, { maxChars: 4000 }); competitorContent.push({ url: c.url, title: s.title, markdown: s.markdown, cached: s.cached }); }
+              catch (e) { competitorContent.push({ url: c.url, error: e instanceof Error ? e.message : String(e) }); }
+            }
+          }
+
+          results.push({
+            urlKey: t.urlKey, query: t.query, impressions: t.impressions, gscPosition: t.position, priorPosition: t.priorPosition, slipped: t.slipped,
+            organicRank: serp.ourOrganicRank, aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, videoPresent: serp.videoPresent,
+            verdict: verdict.verdict, verdictNote: verdict.note,
+            ownHeadings: own?.headings.map(h => h.heading) ?? null, schemaTypes: own?.jsonLdTypes ?? null, hasProductSchema: own?.hasProductOrReview ?? null, dateModified: own?.dateModified ?? null,
+            todos, todosInserted: inserted,
+            competitors: { organicAbove: serp.organicAbove, aioReferences: serp.aioReferences, videoItems: serp.videoItems },
+            ...(competitorContent ? { competitorContent } : {}),
+          });
+        }
+
+        const md = `# Content recon — ${siteUrl}\n\n${results.length} page(s), ${results.reduce((s, r) => s + r.todosInserted, 0)} to-dos saved. DataForSEO SERP cost $${cost.toFixed(4)}.\n\n` +
+          results.map(r => {
+            const flags = [r.aioPresent ? (r.aioCitesUs ? 'AIO: cited' : 'AIO: NOT cited') : 'no AIO', r.videoPresent ? 'video pack' : null].filter(Boolean).join(' · ');
+            return `## ${r.urlKey}\n"${r.query}" — organic #${r.organicRank ?? '?'} (GSC avg ${r.gscPosition}${r.slipped ? `, slipped from ${r.priorPosition}` : ''}), ${r.impressions} impr. ${flags}\n**${r.verdict}** — ${r.verdictNote}\n` +
+              (r.todos.length ? '\nTo do:\n' + r.todos.map((t: any) => `- [${t.type}] ${t.action}`).join('\n') : '');
+          }).join('\n\n') +
+          `\n\nNext: research the competitors (firecrawl/supadata), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
+        return { content: [{ type: 'text', text: md }], structuredContent: { siteUrl, cost, targets: results } };
+      } finally { db.close(); }
+    },
+  );
+
+  // save_recon_todo — the research session writes its content-gap / originality findings back
+  // into the ledger against a page (source: 'research').
+  server.registerTool(
+    'save_recon_todo',
+    {
+      title: 'Save content-recon to-dos (research writeback)',
+      description: 'Write content-recon findings back into the trackable ledger for a page — the gaps and originality the research session found by diffing competitors (firecrawl) and videos (supadata) against our content. Each to-do is an action with a type (content-gap / originality / schema / freshness / format), rationale and evidence. Snapshots the page baseline so the fix\'s effect on rank/AIO-citation is measurable later. Run recon_targets first (it classifies the page and seeds the deterministic to-dos); this adds the judgement ones. Track everything with recon_todos.',
+      inputSchema: {
+        siteUrl: z.string(),
+        urlKey: z.string().describe('The page (any URL form — normalised to its key)'),
+        todos: z.array(z.object({
+          action: z.string(),
+          type: z.string().optional(),
+          rationale: z.string().optional(),
+          evidence: z.record(z.any()).optional(),
+          priority: z.number().optional(),
+        })).min(1),
+      },
+    },
+    async ({ siteUrl, urlKey: rawUrl, todos }) => {
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try {
+        const key = urlKey(rawUrl, { hostForm: hostFormForProperty(siteUrl) ?? 'asis' });
+        const page = db.db.prepare(`SELECT query, organic_rank, aio_cites_us, gsc_position FROM recon_page WHERE url_key=?`).get(key) as
+          { query: string; organic_rank: number | null; aio_cites_us: number; gsc_position: number } | undefined;
+        const baseline = page ? { organicRank: page.organic_rank, aioCitesUs: !!page.aio_cites_us, gscPosition: page.gsc_position, at: new Date().toISOString().slice(0, 10) } : {};
+        const drafts = todos.map(t => ({ action: t.action, type: t.type ?? 'content-gap', rationale: t.rationale ?? '', evidence: t.evidence ?? {}, priority: t.priority ?? 0 }));
+        const n = insertTodos(db.db, key, page?.query ?? '', drafts, baseline, 'research');
+        return { content: [{ type: 'text', text: `Saved ${n} recon to-do(s) for ${key}${n < drafts.length ? ` (${drafts.length - n} already open)` : ''}. Track with recon_todos.` }], structuredContent: { urlKey: key, inserted: n } };
+      } finally { db.close(); }
+    },
+  );
+
+  // recon_todos — list, track and annotate the ledger. No id → list (optionally filtered);
+  // id → update status and/or append a dated annotation, and optionally re-measure the outcome.
+  server.registerTool(
+    'recon_todos',
+    {
+      title: 'List, track and annotate content-recon to-dos',
+      description: 'The content-recon to-do board. With no id: list to-dos (optionally filter by page or status), grouped by page with each page\'s verdict — the pick-a-page-to-work-on surface, and the hand-off to content-machine. With id: update one to-do — set status (open → researching → drafted → shipped → dismissed) and/or append a dated annotation note (your own observations, the history). On status:shipped with remeasure:true it re-fetches the SERP and records the outcome, so you can see whether the fix moved you from AIO-uncited to cited, or up the organic ranks.',
+      inputSchema: {
+        siteUrl: z.string(),
+        urlKey: z.string().optional().describe('Filter the list to one page'),
+        status: z.enum(['open', 'researching', 'drafted', 'shipped', 'dismissed']).optional().describe('Filter the list, or the new status when id is set'),
+        id: z.number().int().optional().describe('Update this to-do'),
+        note: z.string().optional().describe('Append a dated annotation to this to-do'),
+        remeasure: z.boolean().optional().describe('On status:shipped, re-fetch the SERP and record the outcome (paid)'),
+        location: z.union([z.string(), z.number()]).optional(),
+      },
+    },
+    async ({ siteUrl, urlKey: rawUrl, status, id, note, remeasure, location }) => {
+      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try {
+        if (id != null) {
+          const row = db.db.prepare(`SELECT * FROM recon_todo WHERE id=?`).get(id) as any;
+          if (!row) throw new Error(`No recon to-do #${id}.`);
+          let notes = row.notes ?? '';
+          if (note) notes = (notes ? notes + '\n' : '') + `[${new Date().toISOString().slice(0, 10)}] ${note}`;
+          let outcome = row.outcome;
+          let outcomeNote = '';
+          if (status === 'shipped' && remeasure && dfs) {
+            const serpResp = await dfs.serpOrganic(row.query, location, 'en', 20);
+            const serp = parseSerpForRecon(serpResp, dfsHost(siteUrl));
+            outcome = JSON.stringify({ organicRank: serp.ourOrganicRank, aioCitesUs: serp.aioCitesUs, at: new Date().toISOString().slice(0, 10) });
+            const base = row.baseline ? JSON.parse(row.baseline) : {};
+            outcomeNote = ` Outcome: organic ${base.organicRank ?? '?'}→${serp.ourOrganicRank ?? '?'}, AIO cited ${base.aioCitesUs ? 'yes' : 'no'}→${serp.aioCitesUs ? 'yes' : 'no'}.`;
+          }
+          db.db.prepare(`UPDATE recon_todo SET status=COALESCE(?,status), notes=?, outcome=COALESCE(?,outcome), updated_at=datetime('now') WHERE id=?`)
+            .run(status ?? null, notes, outcome ?? null, id);
+          return { content: [{ type: 'text', text: `Updated to-do #${id}${status ? ` → ${status}` : ''}${note ? ' (note added)' : ''}.${outcomeNote}` }], structuredContent: { id, status: status ?? row.status, outcome: outcome ? JSON.parse(outcome) : null } };
+        }
+
+        const key = rawUrl ? urlKey(rawUrl, { hostForm: hostFormForProperty(siteUrl) ?? 'asis' }) : null;
+        const where: string[] = []; const args: unknown[] = [];
+        if (key) { where.push('url_key=?'); args.push(key); }
+        if (status) { where.push('status=?'); args.push(status); }
+        const rows = db.db.prepare(`SELECT id, url_key, query, action, type, rationale, priority, status, source, notes, baseline, outcome
+          FROM recon_todo ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY url_key, priority DESC`).all(...args) as any[];
+        if (!rows.length) return { content: [{ type: 'text', text: `No recon to-dos${key ? ` for ${key}` : ''}${status ? ` with status ${status}` : ''}. Run recon_targets to generate some.` }], structuredContent: { todos: [] } };
+
+        const byPage = new Map<string, any[]>();
+        for (const r of rows) (byPage.get(r.url_key) ?? byPage.set(r.url_key, []).get(r.url_key)!).push(r);
+        const verdictStmt = db.db.prepare(`SELECT verdict, verdict_note FROM recon_page WHERE url_key=?`);
+        const md = `# Content-recon to-dos — ${rows.length} item(s)${status ? `, status ${status}` : ''}\n\n` +
+          [...byPage.entries()].map(([url, items]) => {
+            const v = verdictStmt.get(url) as { verdict: string; verdict_note: string } | undefined;
+            return `## ${url}${v ? `\n_${v.verdict}_ — ${v.verdict_note}` : ''}\n\n| # | Status | Type | Action |\n|---|---|---|---|\n` +
+              items.map(i => `| ${i.id} | ${i.status} | ${i.type ?? ''} | ${String(i.action).replace(/\|/g, '\\|')} |`).join('\n') +
+              (items.some(i => i.notes) ? '\n\nNotes:\n' + items.filter(i => i.notes).map(i => `- #${i.id}: ${String(i.notes).replace(/\n/g, ' / ')}`).join('\n') : '');
+          }).join('\n\n') +
+          browserLink(siteUrl);
+        return { content: [{ type: 'text', text: md }], structuredContent: { todos: rows } };
+      } finally { db.close(); }
     },
   );
 
