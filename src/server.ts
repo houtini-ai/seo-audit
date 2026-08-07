@@ -1022,10 +1022,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'recon_targets',
     {
       title: 'Content recon: why a page is losing, and what to do about it',
-      description: '[Paid: DataForSEO SERP per page (~$0.004 each), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, or competitive-gap. It writes a per-page classification plus deterministic to-dos (schema gaps, freshness, cannibalisation, video format) into a trackable ledger, and returns the competitor set (organic-above + AI-Overview references + ranking videos) for the research session to diff. Set scrapeCompetitors:true to also pull the top competitors as content, routed by source: YouTube/video → Supadata transcript (SUPADATA_API_KEY), Reddit → its .json, other pages → Firecrawl (FIRECRAWL_API_KEY) with a free HTTP fallback. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Transcribe the videos (usually what wins these SERPs) and use the reachable pages. Then write findings back with save_recon_todo; track with recon_todos.',
+      description: '[Paid: DataForSEO SERP per page (~$0.004 each), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, or competitive-gap. It writes a per-page classification plus deterministic to-dos (schema gaps, freshness, cannibalisation, video format) into a trackable ledger, and returns the competitor set (organic-above + AI-Overview references + ranking videos) for the research session to diff. Set scrapeCompetitors:true to also pull the top competitors as content, routed by source: YouTube/video → Supadata transcript (SUPADATA_API_KEY), Reddit → its .json, other pages → Firecrawl (FIRECRAWL_API_KEY) with a free HTTP fallback. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Transcribe the videos (usually what wins these SERPs) and use the reachable pages. Then write findings back with save_recon_todo; track with recon_todos. **Async job:** returns a jobId immediately - poll check_sync_status; the finished job carries the per-page verdicts, to-dos and a summary. (Each page is persisted to the ledger as it completes, so recon_todos shows results even mid-run.)',
       inputSchema: {
         siteUrl: z.string(),
-        limit: z.number().int().min(1).max(15).optional().describe('Pages per batch (default 5)'),
+        limit: z.number().int().min(1).max(50).optional().describe('Pages per batch (default 5; async so large batches are fine)'),
         minImpressions: z.number().int().min(1).optional(),
         location: z.union([z.string(), z.number()]).optional(),
         urls: z.array(z.string()).optional().describe('Analyse these exact pages instead of auto-selecting'),
@@ -1034,97 +1034,110 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       },
     },
     async ({ siteUrl, limit, minImpressions, location, urls, scrapeCompetitors, crawlAs }) => {
-      const client = requireDfs(dfs);
-      const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
-      try {
-        const fresh = gscFreshness(db.db);
-        if (!fresh.effectiveMax) return { content: [{ type: 'text', text: `No synced GSC data for ${siteUrl} — run refresh_property first.` }], structuredContent: { error: 'empty', siteUrl } };
-        const today = new Date().toISOString().slice(0, 10);
-        const ownDomain = dfsHost(siteUrl);
-        const hostForm = hostFormForProperty(siteUrl) ?? 'asis';
+      const client = requireDfs(dfs); // fail fast if no DataForSEO creds, before starting the job
+      const count = urls?.length ?? limit ?? 5;
+      // Async job: N live page-fetches + N serialised SERP calls exceed the ~60s MCP ceiling
+      // past a handful of pages, so return a jobId and poll (like refresh_property).
+      const jobId = jobs.start('recon', async (update, signal) => {
+        const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+        try {
+          const fresh = gscFreshness(db.db);
+          if (!fresh.effectiveMax) return { siteUrl, empty: true, note: 'No synced GSC data — run refresh_property first.' };
+          const today = new Date().toISOString().slice(0, 10);
+          const ownDomain = dfsHost(siteUrl);
+          const hostForm = hostFormForProperty(siteUrl) ?? 'asis';
 
-        let targets;
-        if (urls?.length) {
-          targets = [];
-          for (const u of urls) {
-            const key = urlKey(u, { hostForm });
-            const row = db.db.prepare(`SELECT query, SUM(impressions) imp, SUM(clicks) clk, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
-              FROM search_analytics WHERE page_key=? AND query IS NOT NULL AND date > date(?, '-28 days') AND date <= ? GROUP BY query ORDER BY imp DESC LIMIT 1`)
-              .get(key, fresh.effectiveMax, fresh.effectiveMax) as { query: string; imp: number; clk: number; pos: number } | undefined;
-            if (row?.query) targets.push({ urlKey: key, query: row.query, impressions: row.imp, clicks: row.clk, position: Math.round(row.pos * 10) / 10, priorPosition: null, slipped: false, competingUrls: 0 });
-          }
-        } else {
-          targets = selectReconTargets(db.db, { ...(limit != null ? { limit } : {}), ...(minImpressions != null ? { minImpressions } : {}), maxDate: fresh.effectiveMax });
-        }
-        if (!targets.length) return { content: [{ type: 'text', text: `No recon targets found (declining/striking-distance pages, position 3-15, ${minImpressions ?? 300}+ impressions). Try a lower minImpressions or pass explicit urls.` }], structuredContent: { siteUrl, targets: [] } };
-
-        const results: any[] = [];
-        let cost = 0;
-        for (const t of targets) {
-          let own = null;
-          try { own = await fetchOwnPage(t.urlKey, hostForm === 'asis' ? 'asis' : hostForm); } catch { /* page unreachable — classify on SERP alone */ }
-          const serpResp = await client.serpOrganic(t.query, location, 'en', 20);
-          cost += serpResp.cost;
-          const serp = parseSerpForRecon(serpResp, ownDomain);
-          const verdict = reconVerdict(serp);
-          const baseline = { organicRank: serp.ourOrganicRank, aioCitesUs: serp.aioCitesUs, gscPosition: t.position, gscImpressions: t.impressions, at: today };
-          persistReconPage(db.db, {
-            urlKey: t.urlKey, query: t.query, verdict: verdict.verdict, verdictNote: verdict.note,
-            organicRank: serp.ourOrganicRank, gscPosition: t.position, gscImpressions: t.impressions,
-            aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, videoPresent: serp.videoPresent,
-            hasProductSchema: own?.hasProductOrReview ?? false, schemaTypes: own?.jsonLdTypes ?? [],
-            competitors: { organicAbove: serp.organicAbove, aioReferences: serp.aioReferences, videoItems: serp.videoItems },
-          });
-          const todos = own ? deterministicTodos(t, own, serp, verdict, today) : [];
-          const inserted = todos.length ? insertTodos(db.db, t.urlKey, t.query, todos, baseline, 'auto') : 0;
-
-          let competitorContent: any = undefined;
-          if (scrapeCompetitors && (firecrawl || supadata)) {
-            // Build a routed candidate set: organic-above + a couple of AI-Overview references +
-            // one ranking video, deduped, our own domain removed. Each URL routes by domain
-            // (YouTube→supadata, Reddit→.json, else→firecrawl). Bounded to keep the payload sane.
-            const seen = new Set<string>();
-            const candidates: string[] = [];
-            const add = (u?: string) => { if (u && !seen.has(u) && dfsHost(u) !== ownDomain) { seen.add(u); candidates.push(u); } };
-            serp.organicAbove.forEach(o => add(o.url));
-            serp.aioReferences.slice(0, 4).forEach(r => add(r.url));
-            serp.videoItems.slice(0, 1).forEach(v => add(v.url));
-            competitorContent = [];
-            for (const url of candidates.slice(0, 3)) {
-              competitorContent.push(await fetchCompetitorContent(url, { firecrawl, supadata }, { maxChars: 4000, ua: crawlAs }));
+          let targets;
+          if (urls?.length) {
+            targets = [];
+            for (const u of urls) {
+              const key = urlKey(u, { hostForm });
+              const row = db.db.prepare(`SELECT query, SUM(impressions) imp, SUM(clicks) clk, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
+                FROM search_analytics WHERE page_key=? AND query IS NOT NULL AND date > date(?, '-28 days') AND date <= ? GROUP BY query ORDER BY imp DESC LIMIT 1`)
+                .get(key, fresh.effectiveMax, fresh.effectiveMax) as { query: string; imp: number; clk: number; pos: number } | undefined;
+              if (row?.query) targets.push({ urlKey: key, query: row.query, impressions: row.imp, clicks: row.clk, position: Math.round(row.pos * 10) / 10, priorPosition: null, slipped: false, competingUrls: 0 });
             }
+          } else {
+            targets = selectReconTargets(db.db, { ...(limit != null ? { limit } : {}), ...(minImpressions != null ? { minImpressions } : {}), maxDate: fresh.effectiveMax });
           }
+          if (!targets.length) return { siteUrl, targets: [], note: `No recon targets (declining/striking pages, position 3-15, ${minImpressions ?? 300}+ impressions). Lower minImpressions or pass urls.` };
 
-          results.push({
-            urlKey: t.urlKey, query: t.query, impressions: t.impressions, gscPosition: t.position, priorPosition: t.priorPosition, slipped: t.slipped,
-            organicRank: serp.ourOrganicRank, aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, videoPresent: serp.videoPresent,
-            verdict: verdict.verdict, verdictNote: verdict.note,
-            ownHeadings: own?.headings.map(h => h.heading) ?? null, schemaTypes: own?.jsonLdTypes ?? null, hasProductSchema: own?.hasProductOrReview ?? null, dateModified: own?.dateModified ?? null,
-            todos, todosInserted: inserted,
-            competitors: { organicAbove: serp.organicAbove, aioReferences: serp.aioReferences, videoItems: serp.videoItems },
-            ...(competitorContent ? { competitorContent } : {}),
-          });
-        }
+          const results: any[] = [];
+          let cost = 0;
+          for (let i = 0; i < targets.length; i++) {
+            if (signal.aborted) break;
+            const t = targets[i];
+            update({ phase: 'recon', done: i, total: targets.length, current: t.urlKey });
+            let own = null;
+            try { own = await fetchOwnPage(t.urlKey, hostForm === 'asis' ? 'asis' : hostForm); } catch { /* page unreachable — classify on SERP alone */ }
+            const serpResp = await client.serpOrganic(t.query, location, 'en', 20);
+            cost += serpResp.cost;
+            const serp = parseSerpForRecon(serpResp, ownDomain);
+            const verdict = reconVerdict(serp);
+            const baseline = { organicRank: serp.ourOrganicRank, aioCitesUs: serp.aioCitesUs, gscPosition: t.position, gscImpressions: t.impressions, at: today };
+            persistReconPage(db.db, {
+              urlKey: t.urlKey, query: t.query, verdict: verdict.verdict, verdictNote: verdict.note,
+              organicRank: serp.ourOrganicRank, gscPosition: t.position, gscImpressions: t.impressions,
+              aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, videoPresent: serp.videoPresent,
+              hasProductSchema: own?.hasProductOrReview ?? false, schemaTypes: own?.jsonLdTypes ?? [],
+              competitors: { organicAbove: serp.organicAbove, aioReferences: serp.aioReferences, videoItems: serp.videoItems },
+            });
+            const todos = own ? deterministicTodos(t, own, serp, verdict, today) : [];
+            const inserted = todos.length ? insertTodos(db.db, t.urlKey, t.query, todos, baseline, 'auto') : 0;
 
-        const md = `# Content recon — ${siteUrl}\n\n${results.length} page(s), ${results.reduce((s, r) => s + r.todosInserted, 0)} to-dos saved. DataForSEO SERP cost $${cost.toFixed(4)}.\n\n` +
-          results.map(r => {
-            const flags = [r.aioPresent ? (r.aioCitesUs ? 'AIO: cited' : 'AIO: NOT cited') : 'no AIO', r.videoPresent ? 'video pack' : null].filter(Boolean).join(' · ');
-            return `## ${r.urlKey}\n"${r.query}" — organic #${r.organicRank ?? '?'} (GSC avg ${r.gscPosition}${r.slipped ? `, slipped from ${r.priorPosition}` : ''}), ${r.impressions} impr. ${flags}\n**${r.verdict}** — ${r.verdictNote}\n` +
-              (r.todos.length ? '\nTo do:\n' + r.todos.map((t: any) => `- [${t.type}] ${t.action}`).join('\n') : '');
-          }).join('\n\n') +
-          (() => {
-            const errs = results.flatMap(r => (r.competitorContent ?? []).filter((c: any) => c.error) as any[]);
-            if (!errs.length) return '';
-            const needKey = errs.filter(c => /not set/i.test(c.error));
-            const blocked = errs.filter(c => !/not set/i.test(c.error));
-            let note = '';
-            if (blocked.length) note += `\n\n${blocked.length} competitor(s) couldn't be fetched (bot-protection like Cloudflare, a block, or a fetch error): ${blocked.slice(0, 5).map(c => c.url).join(', ')}. If one matters, paste its copy here or drop a text file and I'll diff it in.`;
-            if (needKey.length) note += `\n\n${needKey.length} competitor(s) skipped for a missing API key: ${[...new Set(needKey.map(c => c.error))].join('; ')}.`;
-            return note;
-          })() +
-          `\n\nNext: research the competitors (transcribe the videos, read the reachable pages), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
-        return { content: [{ type: 'text', text: md }], structuredContent: { siteUrl, cost, targets: results } };
-      } finally { db.close(); }
+            let competitorContent: any = undefined;
+            if (scrapeCompetitors && (firecrawl || supadata)) {
+              // Build a routed candidate set: organic-above + a couple of AI-Overview references +
+              // one ranking video, deduped, our own domain removed. Each URL routes by domain
+              // (YouTube→supadata, Reddit→.json, else→firecrawl). Bounded to keep the payload sane.
+              const seen = new Set<string>();
+              const candidates: string[] = [];
+              const add = (u?: string) => { if (u && !seen.has(u) && dfsHost(u) !== ownDomain) { seen.add(u); candidates.push(u); } };
+              serp.organicAbove.forEach(o => add(o.url));
+              serp.aioReferences.slice(0, 4).forEach(r => add(r.url));
+              serp.videoItems.slice(0, 1).forEach(v => add(v.url));
+              competitorContent = [];
+              for (const url of candidates.slice(0, 3)) {
+                competitorContent.push(await fetchCompetitorContent(url, { firecrawl, supadata }, { maxChars: 4000, ua: crawlAs }));
+              }
+            }
+
+            results.push({
+              urlKey: t.urlKey, query: t.query, impressions: t.impressions, gscPosition: t.position, priorPosition: t.priorPosition, slipped: t.slipped,
+              organicRank: serp.ourOrganicRank, aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, videoPresent: serp.videoPresent,
+              verdict: verdict.verdict, verdictNote: verdict.note,
+              ownHeadings: own?.headings.map(h => h.heading) ?? null, schemaTypes: own?.jsonLdTypes ?? null, hasProductSchema: own?.hasProductOrReview ?? null, dateModified: own?.dateModified ?? null,
+              todos, todosInserted: inserted,
+              competitors: { organicAbove: serp.organicAbove, aioReferences: serp.aioReferences, videoItems: serp.videoItems },
+              ...(competitorContent ? { competitorContent } : {}),
+            });
+          }
+          update({ phase: 'done', done: results.length, total: targets.length });
+
+          const md = `# Content recon — ${siteUrl}\n\n${results.length} page(s), ${results.reduce((s, r) => s + r.todosInserted, 0)} to-dos saved. DataForSEO SERP cost $${cost.toFixed(4)}.\n\n` +
+            results.map(r => {
+              const flags = [r.aioPresent ? (r.aioCitesUs ? 'AIO: cited' : 'AIO: NOT cited') : 'no AIO', r.videoPresent ? 'video pack' : null].filter(Boolean).join(' · ');
+              return `## ${r.urlKey}\n"${r.query}" — organic #${r.organicRank ?? '?'} (GSC avg ${r.gscPosition}${r.slipped ? `, slipped from ${r.priorPosition}` : ''}), ${r.impressions} impr. ${flags}\n**${r.verdict}** — ${r.verdictNote}\n` +
+                (r.todos.length ? '\nTo do:\n' + r.todos.map((t: any) => `- [${t.type}] ${t.action}`).join('\n') : '');
+            }).join('\n\n') +
+            (() => {
+              const errs = results.flatMap(r => (r.competitorContent ?? []).filter((c: any) => c.error) as any[]);
+              if (!errs.length) return '';
+              const needKey = errs.filter(c => /not set/i.test(c.error));
+              const blocked = errs.filter(c => !/not set/i.test(c.error));
+              let note = '';
+              if (blocked.length) note += `\n\n${blocked.length} competitor(s) couldn't be fetched (bot-protection like Cloudflare, a block, or a fetch error): ${blocked.slice(0, 5).map(c => c.url).join(', ')}. If one matters, paste its copy here or drop a text file and I'll diff it in.`;
+              if (needKey.length) note += `\n\n${needKey.length} competitor(s) skipped for a missing API key: ${[...new Set(needKey.map(c => c.error))].join('; ')}.`;
+              return note;
+            })() +
+            `\n\nNext: research the competitors (transcribe the videos, read the reachable pages), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
+          return { siteUrl, cost, targets: results, summary: md };
+        } finally { db.close(); }
+      });
+      return {
+        content: [{ type: 'text', text: `Content recon started for ${count} page(s) — job ${jobId}. Each page is a live page-fetch + a serialised SERP call (a few seconds each), so poll check_sync_status with jobId "${jobId}"; the finished job's result carries the per-page verdicts, to-dos and a summary.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
+      };
     },
   );
 
