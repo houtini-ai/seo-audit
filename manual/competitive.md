@@ -84,6 +84,30 @@ Where `suggest_pages` (free, GSC-only) mines demand Google has already shown you
 - **`pull_backlinks`** - your backlink profile with a live status check on every linked page, so backlinks pointing at 404s become findings with ready-made 301s. Needs the separate Backlinks subscription, as above.
 - **`track_ranks`** - the monthly rank-distribution history that gives the dashboard's visibility chart its time axis. Runs as part of `refresh_property` when credentials are present.
 
+## Market sizing: `market_sizing` and `serp_features`
+
+Two views that open an engagement. **`market_sizing`** takes your domain plus up to four named competitors, pulls one cached Labs footprint each, and unions them into a keyword universe: total monthly demand, each domain's share of voice (ETV share) overall and per topic cluster, and who leads each cluster. It's the "here's the market, here's who owns it, here's where to attack" table that used to need a Semrush subscription. **`serp_features`** measures how much of that universe carries each SERP feature - AI Overviews, snippets, PAA, video - by search volume, split by whether you already rank page 1 there. The honest answer to "how much of my market is zero-click now?"
+
+> Size the market: mysite.com vs rival1.com and rival2.com
+> What's our AI Overview exposure?
+
+## Content recon: why a page is losing
+
+The deepest use of the SERP data. **`recon_targets`** takes your worst declining or striking-distance pages, fetches your live page with the crawler, pulls the live Google SERP for its top query, and classifies *why* you're behind on the **organic-rank × AI-Overview-citation** matrix:
+
+- **defend-and-deepen** - you rank well and the AI Overview already cites you; deepen to become the primary source.
+- **accuracy-or-freshness** - you rank but the AI Overview won't quote you. This is the sharpest, most actionable class: it's a data-accuracy, freshness or markup problem, not a rewrite.
+- **consolidate-weak-page** - cited on a weak page; strengthen it.
+- **competitive-gap** - not cited, weak rank; run the full competitor diff.
+
+It seeds deterministic to-dos (schema, freshness, cannibalisation, video) and returns the competitor set Google rewards. Set `scrapeCompetitors:true` and it fetches them too, routed by source: the ranking **videos** to Supadata for transcripts (usually what wins these SERPs), competitor **pages** to Firecrawl ([get a key](https://firecrawl.link/2d1PLD8)) with a free browser-profile fetch behind it that even reaches Reddit. Cloudflare-challenge publishers (PCMag) can't be fetched from a server - they're flagged so you can paste their copy and have it diffed in.
+
+Then **`save_recon_todo`** writes the competitor-diff gaps back with a baseline, and **`recon_todos`** is the trackable, annotatable board - filter by page or status, update a to-do's status, append dated notes, and on `status:shipped remeasure:true` it re-fetches the SERP to show whether the fix moved you from AIO-uncited to cited.
+
+> Run content recon on mysite.com, location United Kingdom
+> Save these gaps for /my-page: [ ... ]
+> Show my recon to-dos
+
 ## Location matters
 
-Most of these tools take a `location` (a name like "United Kingdom" or "Australia", or a numeric code; the default is the United States). Set it to the market you compete in - rankings differ per country and so does every number downstream. `track_ranks` saves the location per property, so you set it once.
+Most of these tools take a `location` (a name like "United Kingdom" or "Australia", or a numeric code; the default is the United States). Set it to the market you compete in - rankings differ per country and so does every number downstream. This matters *especially* for content recon: a page that looks mid-table in your Search Console average can be outside the top 20 on a US SERP and top 5 on a UK one, and the verdict flips with it. `track_ranks` saves the location per property, so you set it once.

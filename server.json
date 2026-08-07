@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.houtini-ai/seo-audit-console",
-  "description": "Technical SEO audits in Claude: GSC + first-party crawl + DataForSEO. 93 prioritised checks + fixes.",
+  "description": "Technical SEO in Claude: GSC + crawl + DataForSEO - audit, market sizing, content recon.",
   "repository": {
     "url": "https://github.com/houtini-ai/seo-audit",
     "source": "github"
   },
-  "version": "0.4.2",
+  "version": "0.4.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@houtini/seo-audit-console",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "transport": {
         "type": "stdio"
       },
@@ -32,7 +32,7 @@
         },
         {
           "name": "DATAFORSEO_USERNAME",
-          "description": "DataForSEO API username (optional, enables SERP/keyword/domain checks).",
+          "description": "DataForSEO API username (optional, enables SERP/keyword/domain/market/recon checks).",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -50,6 +50,20 @@
           "isRequired": false,
           "format": "string",
           "isSecret": false
+        },
+        {
+          "name": "FIRECRAWL_API_KEY",
+          "description": "Firecrawl API key (optional). Lets content recon scrape competitor pages. Get one at https://firecrawl.link/2d1PLD8",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "SUPADATA_API_KEY",
+          "description": "Supadata API key (optional). Lets content recon transcribe the ranking videos (YouTube/TikTok/X).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
         }
       ]
     }

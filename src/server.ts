@@ -1091,7 +1091,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             serp.videoItems.slice(0, 1).forEach(v => add(v.url));
             competitorContent = [];
             for (const url of candidates.slice(0, 3)) {
-              competitorContent.push(await fetchCompetitorContent(url, { firecrawl, supadata }, { maxChars: 4000, ua: crawlAs ?? 'browser' }));
+              competitorContent.push(await fetchCompetitorContent(url, { firecrawl, supadata }, { maxChars: 4000, ua: crawlAs }));
             }
           }
 
@@ -1113,8 +1113,14 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
               (r.todos.length ? '\nTo do:\n' + r.todos.map((t: any) => `- [${t.type}] ${t.action}`).join('\n') : '');
           }).join('\n\n') +
           (() => {
-            const blocked = results.flatMap(r => (r.competitorContent ?? []).filter((c: any) => c.error).map((c: any) => c.url));
-            return blocked.length ? `\n\n${blocked.length} competitor(s) couldn't be fetched (hard bot-protection, e.g. Cloudflare/PCMag): ${blocked.slice(0, 5).join(', ')}. Paste their copy here, or drop a text file, and I'll diff it into the recon.` : '';
+            const errs = results.flatMap(r => (r.competitorContent ?? []).filter((c: any) => c.error) as any[]);
+            if (!errs.length) return '';
+            const needKey = errs.filter(c => /not set/i.test(c.error));
+            const blocked = errs.filter(c => !/not set/i.test(c.error));
+            let note = '';
+            if (blocked.length) note += `\n\n${blocked.length} competitor(s) couldn't be fetched (bot-protection like Cloudflare, a block, or a fetch error): ${blocked.slice(0, 5).map(c => c.url).join(', ')}. If one matters, paste its copy here or drop a text file and I'll diff it in.`;
+            if (needKey.length) note += `\n\n${needKey.length} competitor(s) skipped for a missing API key: ${[...new Set(needKey.map(c => c.error))].join('; ')}.`;
+            return note;
           })() +
           `\n\nNext: research the competitors (transcribe the videos, read the reachable pages), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
         return { content: [{ type: 'text', text: md }], structuredContent: { siteUrl, cost, targets: results } };

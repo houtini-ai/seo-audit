@@ -148,6 +148,36 @@ The bigger question: what should this site cover to be seen as expert in its spa
 Your backlink profile - summary metrics plus per-page backlink and referring-domain counts - with a live HTTP status check on each linked page, so backlinks pointing at 404s get caught (`backlinks-to-404` in the next audit). One gotcha: Backlinks is a **separate DataForSEO subscription** from SERP/Keywords/Labs; if it isn't activated the tool says so plainly. Runs as a background job.
 > Pull the backlinks for mysite.com
 
+### `market_sizing`
+Market Sizing and Prioritisation: your domain plus up to four named competitors, one cached Labs pull each, unioned into a keyword universe. Returns total monthly demand (deduplicated volume), each domain's share of voice (ETV share) overall and per topic cluster, and the leader per cluster - the "here's the market, here's who owns it, here's where to attack" table that opens an engagement.
+> Size the market: mysite.com vs rival1.com and rival2.com
+
+### `serp_features`
+The SERP-feature footprint: how much of your keyword universe carries each feature - AI Overviews, featured snippets, People Also Ask, shopping, video - weighted by search volume, and how much of that volume you already rank page 1 for. One cached Labs pull. Answers "how exposed are we to AI Overviews and zero-click?" with real numbers.
+> What's our AI Overview exposure on mysite.com?
+
+## Content and recon
+
+### `keyword_list`
+Demand-first keyword clustering, from stored data, no paid calls. Give it a keyword list (or let it use your top GSC queries) and it clusters them by the page Google already answers them with, then a verdict per cluster: **own** (position ≤3), **weak** (4-20), **absent** (no ranking page), with the ranking URL and 90-day impressions. The keyword-research workhorse - paste a client list, get the topic map and where you stand.
+> Cluster these keywords for mysite.com: [ ... ]
+
+### `content_opportunities`
+The content marketer's report, composed from stored data. Four sections: **write next** (demand you already earn impressions for with no winning page), **refresh now** (pages bleeding clicks), **rewrite snippets** (page-1 rankings under-clicked), **strengthen** (clusters at position 4-20). Every row traces to real Search Console data.
+> Content opportunities for mysite.com
+
+### `recon_targets`
+Content recon - *why* a page is losing, and what to do. For your worst declining / striking-distance pages (auto-selected, or pass `urls`), it fetches your live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies the cause on the **organic-rank × AI-Overview-citation** matrix: *defend-and-deepen* (cited and strong), *accuracy-or-freshness* (you rank but the AI Overview won't quote you - the sharpest class), *consolidate-weak-page*, or *competitive-gap*. It seeds deterministic to-dos (schema, freshness, cannibalisation, video) and returns the competitor set. Set `scrapeCompetitors:true` to fetch them too - videos to Supadata for transcripts, pages to Firecrawl ([get a key](https://firecrawl.link/2d1PLD8)) with a free browser-profile fetch behind it that even gets Reddit. Cloudflare-challenge sites (PCMag) can't be fetched from a server and are flagged so you can paste their copy. Pass `location` to match where your impressions come from - organic rank is location-sensitive. Paid: ~$0.004 of DataForSEO per page.
+> Run content recon on mysite.com, location United Kingdom
+
+### `save_recon_todo`
+Writes the content-gap and originality findings from the research session (the competitor diff) back into the ledger for a page, with a baseline snapshot so the fix's effect on rank and AIO citation is measurable later.
+> Save these gaps for /my-page: [ ... ]
+
+### `recon_todos`
+The recon to-do board. List (optionally filtered by page or status), grouped by page with each page's verdict - the pick-a-page-to-work-on surface and the hand-off to your content pipeline. With an `id`: update a to-do's status (open → researching → drafted → shipped → dismissed) and append a dated annotation. On `status:shipped remeasure:true` it re-fetches the SERP and records whether you moved from AIO-uncited to cited, or up the ranks.
+> Show my recon to-dos for mysite.com
+
 ## Monitoring
 
 ### `detect_changes`
@@ -159,6 +189,10 @@ Diffs your two most recent crawls, per URL, severity-classified: a 200 that beca
 ### `get_dashboard`
 The interactive dashboard, rendered right in the chat: six tabs of findings, crawl health, opportunities, search performance and architecture. What each tab shows: [dashboard.md](dashboard.md). Needs synced data.
 > Show me the dashboard for mysite.com
+
+### `serve_dashboard`
+The same dashboard, served on a localhost-only webserver so you can open it in a real browser tab: live data straight from the local database (always current, unlike an exported snapshot), a property switcher, and working CSV downloads. Localhost only - nothing is exposed to the network. `stop:true` shuts it down.
+> Serve the dashboard for mysite.com
 
 ### `get_dashboard_data`
 Internal - the widget fetches its own dataset through this so the full payload never hits the model's token limits. Not for direct use; listed here so you know what it is when you see it.
