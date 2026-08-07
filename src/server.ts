@@ -13,6 +13,8 @@ import { startDashboardServer, stopDashboardServer, dashboardServerUrl, listLoca
 import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
 import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
 import { FirecrawlClient } from './core/FirecrawlClient.js';
+import { SupadataClient } from './core/SupadataClient.js';
+import { fetchCompetitorContent } from './core/reconResearch.js';
 import { fetchOwnPage } from './core/reconFetch.js';
 import { parseSerpForRecon, reconVerdict } from './core/serpRecon.js';
 import { selectReconTargets, deterministicTodos, persistReconPage, insertTodos } from './audit/recon.js';
@@ -269,6 +271,9 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   // Firecrawl (competitor-page scraping for content recon) — optional; degrades gracefully.
   const firecrawlKey = process.env.FIRECRAWL_API_KEY;
   const firecrawl = firecrawlKey ? new FirecrawlClient(firecrawlKey, path.join(dataDir(), 'firecrawl-cache.db')) : null;
+  // Supadata (transcribes the ranking videos for content recon) — optional; degrades gracefully.
+  const supadataKey = process.env.SUPADATA_API_KEY;
+  const supadata = supadataKey ? new SupadataClient(supadataKey, path.join(dataDir(), 'supadata-cache.db')) : null;
   const entities = new Entities(new WikidataClient(path.join(dataDir(), 'wikidata-cache.db')), dataDir());
   const refresh = new Refresh(sync, crawler, inspector, rankTracker);
   const requireGsc = <T>(v: T | null): T => {
@@ -1017,7 +1022,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'recon_targets',
     {
       title: 'Content recon: why a page is losing, and what to do about it',
-      description: '[Paid: DataForSEO SERP per page (~$0.004 each), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, or competitive-gap. It writes a per-page classification plus deterministic to-dos (schema gaps, freshness, cannibalisation, video format) into a trackable ledger, and returns the competitor set (organic-above + AI-Overview references + ranking videos) for the research session to diff. Set scrapeCompetitors:true to also pull the top competitors as markdown (needs FIRECRAWL_API_KEY). Then research with firecrawl/supadata and write findings back with save_recon_todo; track with recon_todos.',
+      description: '[Paid: DataForSEO SERP per page (~$0.004 each), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, or competitive-gap. It writes a per-page classification plus deterministic to-dos (schema gaps, freshness, cannibalisation, video format) into a trackable ledger, and returns the competitor set (organic-above + AI-Overview references + ranking videos) for the research session to diff. Set scrapeCompetitors:true to also pull the top competitors as content, routed by source: YouTube/video → Supadata transcript (SUPADATA_API_KEY), Reddit → its .json, other pages → Firecrawl (FIRECRAWL_API_KEY) with a free HTTP fallback. Some hard-protected publishers (Reddit, Cloudflare-guarded sites like PCMag) can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; transcribe the videos (usually what wins these SERPs) and use the pages that are reachable. Then write findings back with save_recon_todo; track with recon_todos.',
       inputSchema: {
         siteUrl: z.string(),
         limit: z.number().int().min(1).max(15).optional().describe('Pages per batch (default 5)'),
@@ -1073,11 +1078,19 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           const inserted = todos.length ? insertTodos(db.db, t.urlKey, t.query, todos, baseline, 'auto') : 0;
 
           let competitorContent: any = undefined;
-          if (scrapeCompetitors && firecrawl) {
+          if (scrapeCompetitors && (firecrawl || supadata)) {
+            // Build a routed candidate set: organic-above + a couple of AI-Overview references +
+            // one ranking video, deduped, our own domain removed. Each URL routes by domain
+            // (YouTube→supadata, Reddit→.json, else→firecrawl). Bounded to keep the payload sane.
+            const seen = new Set<string>();
+            const candidates: string[] = [];
+            const add = (u?: string) => { if (u && !seen.has(u) && dfsHost(u) !== ownDomain) { seen.add(u); candidates.push(u); } };
+            serp.organicAbove.forEach(o => add(o.url));
+            serp.aioReferences.slice(0, 4).forEach(r => add(r.url));
+            serp.videoItems.slice(0, 1).forEach(v => add(v.url));
             competitorContent = [];
-            for (const c of serp.organicAbove.slice(0, 2)) {
-              try { const s = await firecrawl.scrape(c.url, { maxChars: 4000 }); competitorContent.push({ url: c.url, title: s.title, markdown: s.markdown, cached: s.cached }); }
-              catch (e) { competitorContent.push({ url: c.url, error: e instanceof Error ? e.message : String(e) }); }
+            for (const url of candidates.slice(0, 3)) {
+              competitorContent.push(await fetchCompetitorContent(url, { firecrawl, supadata }, { maxChars: 4000 }));
             }
           }
 

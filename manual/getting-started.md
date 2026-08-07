@@ -186,6 +186,7 @@ Don't commit real credential paths to a shared repo unless the team shares the s
 | `DATAFORSEO_USERNAME` / `DATAFORSEO_PASSWORD` | optional | Switches on the keyword / SERP / competitor / CWV / backlink tools |
 | `DATAFORSEO_CACHE_DAYS` | optional | DataForSEO response cache TTL (default 20 days) |
 | `FIRECRAWL_API_KEY` | optional | Lets content recon scrape competitor pages to markdown (`recon_targets scrapeCompetitors:true`). Everything else works without it. |
+| `SUPADATA_API_KEY` | optional | Lets content recon transcribe the ranking videos (YouTube/TikTok/X). Recon works without it - it just skips video. |
 
 You can also move the data directory later without touching config - ask *"where is my audit data stored?"* or *"set the data location to D:/seo-data"* (the `data_location` tool persists the choice).
 

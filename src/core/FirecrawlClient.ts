@@ -54,8 +54,9 @@ export class FirecrawlClient {
     return result;
   }
 
-  /** Scrape one URL to clean markdown (main content only). Cached for the TTL. */
-  async scrape(url: string, opts: { maxChars?: number; timeoutMs?: number } = {}): Promise<ScrapeResult> {
+  /** Scrape one URL to clean markdown (main content only). Cached for the TTL.
+   * proxy: 'auto' lets Firecrawl escalate to stealth on bot-protected sites (costs more). */
+  async scrape(url: string, opts: { maxChars?: number; timeoutMs?: number; proxy?: 'basic' | 'stealth' | 'auto' } = {}): Promise<ScrapeResult> {
     const key = createHash('sha256').update('scrape\n' + url).digest('hex');
     const row = this.cache
       .prepare('SELECT url, markdown, title, fetched_at FROM firecrawl_cache WHERE cache_key = ?')
@@ -69,7 +70,7 @@ export class FirecrawlClient {
       const res = await fetch(`${BASE_URL}/v2/scrape`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true }),
+        body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true, proxy: opts.proxy ?? 'auto' }),
         signal: AbortSignal.timeout(opts.timeoutMs ?? 45000),
       });
       const json: any = await res.json();
