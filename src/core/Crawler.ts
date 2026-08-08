@@ -7,6 +7,7 @@ import { extractPage, isInternalHost } from './extract.js';
 import { fetchRobots } from './robots.js';
 import { finalizeLinkGraph } from './linkGraph.js';
 import { fetchSitemapUrls } from './sitemap.js';
+import { snapshotCrawl } from '../audit/drift.js';
 
 // Robust HTML detection from a Content-Type header: take the MIME type before any
 // parameters (charset, boundary), normalised — text/html and XHTML count as HTML.
@@ -555,6 +556,15 @@ export class Crawler {
       finishedAt, Date.parse(finishedAt) - Date.parse(startedAt), crawlId,
     );
     db.db.prepare(`UPDATE property_meta SET last_crawl_id=? WHERE site_url=?`).run(crawlId, siteUrl);
+
+    // Drift snapshot — the crawl OWNS its own history. This used to happen only in runAudit, so a
+    // crawl that wasn't followed by an audit never entered page_snapshots and detect_changes
+    // silently diffed older crawls while presenting them as current. Idempotent per crawl_id, so
+    // the runAudit call stays as a self-heal for legacy/killed crawls.
+    // Skipped on cancel: a partial page set would read as hundreds of pages "removed" next diff.
+    if (!signal.aborted) {
+      try { snapshotCrawl(db.db, crawlId, finishedAt); } catch { /* never fail a good crawl over history */ }
+    }
     return { crawlId, siteUrl, crawled, failed, skipped };
     } catch (err) {
       try {

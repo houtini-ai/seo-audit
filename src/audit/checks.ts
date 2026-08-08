@@ -429,7 +429,8 @@ export const CHECKS: CheckDef[] = [
       FROM prev LEFT JOIN cur ON cur.page_key=prev.page_key
       WHERE prev.c >= 30 AND COALESCE(cur.c,0) < prev.c * 0.6
       ORDER BY (prev.c - COALESCE(cur.c,0)) DESC LIMIT 40`)
-      .map(r => ({ urlKey: null, evidence: { url: r.url, previousClicks: r.prevC, currentClicks: r.curC, clicksLost: r.prevC - r.curC, dropPercent: Math.round((1 - r.curC / r.prevC) * 100) + '%', clicks: r.prevC - r.curC, impressions: r.curI, position: Math.round(r.pos * 10) / 10 } })),
+      // page_key IS a url_key — carry it in the joinable column, not just evidence.
+      .map(r => ({ urlKey: r.url, evidence: { url: r.url, previousClicks: r.prevC, currentClicks: r.curC, clicksLost: r.prevC - r.curC, dropPercent: Math.round((1 - r.curC / r.prevC) * 100) + '%', clicks: r.prevC - r.curC, impressions: r.curI, position: Math.round(r.pos * 10) / 10 } })),
   },
   {
     id: 'lost-queries', category: 'merged', severity: 'med', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
@@ -482,7 +483,7 @@ export const CHECKS: CheckDef[] = [
       FROM cur LEFT JOIN prev ON prev.page_key=cur.page_key
       WHERE cur.c >= 30 AND cur.c >= COALESCE(prev.c,0) * 1.5
       ORDER BY (cur.c - COALESCE(prev.c,0)) DESC LIMIT 25`)
-      .map(r => ({ urlKey: null, evidence: { url: r.url, previousClicks: r.prevC, currentClicks: r.curC, clicksGained: r.curC - r.prevC, clicks: r.curC, impressions: r.curI, position: Math.round(r.pos * 10) / 10 } })),
+      .map(r => ({ urlKey: r.url, evidence: { url: r.url, previousClicks: r.prevC, currentClicks: r.curC, clicksGained: r.curC - r.prevC, clicks: r.curC, impressions: r.curI, position: Math.round(r.pos * 10) / 10 } })),
   },
   {
     id: 'traffic-to-dead-url', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
@@ -500,7 +501,7 @@ export const CHECKS: CheckDef[] = [
       FROM cur JOIN prev ON prev.page_key=cur.page_key
       WHERE prev.i >= 200 AND cur.i >= prev.i * 1.3 AND cur.c <= prev.c
       ORDER BY (cur.i - prev.i) DESC LIMIT 40`)
-      .map(r => ({ urlKey: null, evidence: { url: r.url, previousImpressions: r.prevImpr, currentImpressions: r.curImpr, impressionsChange: '+' + Math.round((r.curImpr / r.prevImpr - 1) * 100) + '%', previousClicks: r.prevClicks, currentClicks: r.curClicks, impressions: r.curImpr, clicks: r.curClicks, position: Math.round(r.pos * 10) / 10 } })),
+      .map(r => ({ urlKey: r.url, evidence: { url: r.url, previousImpressions: r.prevImpr, currentImpressions: r.curImpr, impressionsChange: '+' + Math.round((r.curImpr / r.prevImpr - 1) * 100) + '%', previousClicks: r.prevClicks, currentClicks: r.curClicks, impressions: r.curImpr, clicks: r.curClicks, position: Math.round(r.pos * 10) / 10 } })),
   },
   {
     id: 'h1-missing-top-query', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
@@ -701,7 +702,7 @@ export const CHECKS: CheckDef[] = [
         const dm = newestSchemaDate(x.jl); if (!dm) continue;
         const ageDays = (Date.parse(d) - Date.parse(dm)) / 86400000;
         if (!(ageDays >= 365)) continue; // only genuinely stale pages (>12 months since last schema date)
-        out.push({ urlKey: null, evidence: { url: x.url, dateModified: dm.slice(0, 10), clicksYoY: `${x.pyC}→${x.curC} (-${Math.round((1 - x.curC / x.pyC) * 100)}%)`, impressionsYoY: `${x.pyI}→${x.curI}`, clicks: x.pyC - x.curC, impressions: x.pyI } });
+        out.push({ urlKey: x.url, evidence: { url: x.url, dateModified: dm.slice(0, 10), clicksYoY: `${x.pyC}→${x.curC} (-${Math.round((1 - x.curC / x.pyC) * 100)}%)`, impressionsYoY: `${x.pyI}→${x.curI}`, clicks: x.pyC - x.curC, impressions: x.pyI } });
       }
       return out;
     },

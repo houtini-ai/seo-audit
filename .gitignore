@@ -63,6 +63,7 @@ scripts/*
 !scripts/probe-fixfinding.mjs
 !scripts/probe-schema.mjs
 !scripts/probe-schema-rules.mjs
+!scripts/probe-drift-fixes.mjs
 !scripts/probe-extract.mjs
 !scripts/probe-extract2.mjs
 !scripts/probe-backlinks.mjs

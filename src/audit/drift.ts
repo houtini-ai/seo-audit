@@ -19,6 +19,8 @@ export interface DriftResult {
   currentAt: string | null;
   changes: PageChange[];
   summary: Record<string, number>;
+  /** Set when a completed crawl is newer than the newest snapshot — the diff below is NOT current. */
+  staleness?: { newestCrawl: string; newestCrawlAt: string; snapshotAt: string | null; note: string };
 }
 
 const SNAP_COLS = 'crawl_id,url_key,captured_at,status_code,indexable,indexable_reason,title,meta_description,h1,canonical_key,robots,x_robots_tag,word_count,schema_types';
@@ -70,12 +72,14 @@ const fmt = (v: unknown): string => { if (v === null || v === undefined || v ===
 
 /** Render a drift result as a human-readable markdown report (for the detect_changes tool). */
 export function buildDriftMarkdown(d: DriftResult, siteUrl: string, limit = 50): string {
+  const stale = d.staleness ? `\n> ⚠️ **This diff is not current.** ${d.staleness.note}\n` : '';
   if (!d.baselineCrawl) {
-    return `# Change detection — ${siteUrl}\n\nOnly one crawl snapshot exists so far. Change detection compares two crawls — run \`refresh_property\` again (e.g. tomorrow) then re-check.`;
+    return `# Change detection — ${siteUrl}\n${stale}\nOnly one crawl snapshot exists so far. Change detection compares two crawls — run \`refresh_property\` again (e.g. tomorrow) then re-check.`;
   }
   const s = d.summary;
   const out: string[] = [
     `# Change detection — ${siteUrl}`,
+    stale,
     `\nComparing **${d.baselineAt}** → **${d.currentAt}**`,
     `\n**${s.pagesChanged || 0}** URLs changed · ${s.modified || 0} modified · ${s.added || 0} added · ${s.removed || 0} removed · 🔴 ${s.crit || 0} critical · 🟠 ${s.high || 0} high\n`,
   ];
@@ -90,11 +94,35 @@ export function buildDriftMarkdown(d: DriftResult, siteUrl: string, limit = 50):
   return out.join('\n');
 }
 
+/**
+ * A completed crawl that never made it into page_snapshots means the diff below is stale — it
+ * compares older crawls while a newer one sits unsnapshotted. Historically this happened whenever
+ * a crawl wasn't followed by run_audit (the only place that used to snapshot); the crawler now
+ * snapshots itself, so this covers legacy DBs and crawls killed before finalising.
+ */
+function stalenessOf(db: Database.Database, newestSnapAt: string | null): DriftResult['staleness'] {
+  const r = db.prepare(
+    `SELECT crawl_id, REPLACE(REPLACE(finished_at, 'T', ' '), 'Z', '') at FROM crawl_metadata
+     WHERE status='completed' AND finished_at IS NOT NULL ORDER BY at DESC LIMIT 1`,
+  ).get() as { crawl_id: string; at: string } | undefined;
+  if (!r) return undefined;
+  const snapped = db.prepare('SELECT 1 FROM page_snapshots WHERE crawl_id=? LIMIT 1').get(r.crawl_id);
+  if (snapped) return undefined;
+  return {
+    newestCrawl: r.crawl_id, newestCrawlAt: r.at, snapshotAt: newestSnapAt,
+    note: `Crawl ${r.crawl_id} (${r.at}) has no snapshot, so it is NOT in the diff below — these changes are older than your latest crawl. Run run_audit to snapshot it, then re-run detect_changes.`,
+  };
+}
+
 /** Diff the two most recent snapshots in the DB. */
 export function diffLatest(db: Database.Database): DriftResult {
   const crawls = latestTwoCrawls(db);
   if (crawls.length < 2) {
-    return { baselineCrawl: null, currentCrawl: crawls[0]?.crawl_id ?? null, baselineAt: null, currentAt: crawls[0]?.at ?? null, changes: [], summary: {} };
+    return {
+      baselineCrawl: null, currentCrawl: crawls[0]?.crawl_id ?? null, baselineAt: null,
+      currentAt: crawls[0]?.at ?? null, changes: [], summary: {},
+      staleness: stalenessOf(db, crawls[0]?.at ?? null),
+    };
   }
   const [cur, base] = crawls;
   const load = (id: string): Map<string, any> => {
@@ -142,5 +170,8 @@ export function diffLatest(db: Database.Database): DriftResult {
     summary[c.kind]++;
     if (c.kind === 'modified') { if (c.changes.some(x => x.severity === 'crit')) summary.crit++; if (c.changes.some(x => x.severity === 'high')) summary.high++; }
   }
-  return { baselineCrawl: base.crawl_id, currentCrawl: cur.crawl_id, baselineAt: base.at, currentAt: cur.at, changes, summary };
+  return {
+    baselineCrawl: base.crawl_id, currentCrawl: cur.crawl_id, baselineAt: base.at, currentAt: cur.at,
+    changes, summary, staleness: stalenessOf(db, cur.at),
+  };
 }
