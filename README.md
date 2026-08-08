@@ -1,4 +1,4 @@
-# SEO Audit Console
+# SEO Audit Console - the technical SEO audit MCP server for Claude
 
 **A technical SEO audit you can hold a conversation with - built from your own Search Console data and a live crawl of your site, run inside Claude.**
 
@@ -7,7 +7,7 @@
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-server-purple?style=flat-square)](https://modelcontextprotocol.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
-**The complete technical SEO audit, at conversation speed.** SEO Audit Console merges your **Google Search Console** history, a **first-party crawl** of your site, and on-demand **DataForSEO** market data into one prioritised audit inside Claude - from crawlability, indexation, canonicalisation, structured data, Core Web Vitals and hreflang right through to keyword cannibalisation, striking-distance queries, content gaps, competitor analysis and AI-search readiness. Ninety-three checks, every finding ranked by the clicks it could recover, every fix written for you: paste-ready redirects, JSON-LD, internal links and grounded content briefs. What used to be a fortnight of crawling, exporting and cross-referencing spreadsheets is twenty minutes and a prompt - and your data never leaves your machine.
+**The complete technical SEO audit, at conversation speed.** SEO Audit Console is an SEO MCP server that merges your **Google Search Console** history, a **first-party crawl** of your site, and on-demand **DataForSEO** market data into one prioritised audit inside Claude - from crawlability, indexation, canonicalisation, structured data, Core Web Vitals and hreflang right through to keyword cannibalisation, striking-distance queries, content gaps, competitor analysis and AI-search readiness. Ninety-three checks, every finding ranked by the clicks it could recover, every fix written for you: paste-ready redirects, JSON-LD, internal links and grounded content briefs. What used to be a fortnight of crawling, exporting and cross-referencing spreadsheets is twenty minutes and a prompt - and your data never leaves your machine.
 
 **Built by [Houtini](https://houtini.com).** We build automation for the grunt work of digital marketing - the data collection, the crawling, the merging, the checking - so your team's time goes on the thinking, the strategy and the client work that needs a human. This plugin is that idea applied to the technical SEO audit.
 
@@ -86,13 +86,13 @@ Yes. The crawl-plus-GSC merge is not a novelty; it's the method. On one property
 
 Every check is labelled **D** (deterministic - here are the bytes) or **N** (judgement - off by default, ask for *"the judgement findings"* to see them). In my view a wrong finding is worse than no finding at all, so the heuristic checks have to ask permission. The full registry, check by check, is in [the manual](manual/checks.md).
 
-And if you grew up on desktop crawlers, the dashboard's Site health tab will feel like home - response codes, indexability reasons, crawl depth, the heaviest images, server errors and slow pages, all as clean stat bars. The tab-by-tab tour is in [dashboard.md](manual/dashboard.md).
+And if you grew up on Screaming Frog or Sitebulb, the dashboard's Site health tab will feel like home - response codes, indexability reasons, crawl depth, the heaviest images, server errors and slow pages, all as clean stat bars. Same diagnostics, except each one is sitting next to the Search Console numbers for the same URL. The tab-by-tab tour is in [dashboard.md](manual/dashboard.md).
 
 ---
 
 ## The crawl, properly explained
 
-The crawl is where audits usually go wrong, so it's worth understanding what this one does differently. I've spent enough of my career cleaning up after crawlers that fooled themselves.
+The crawl is where audits usually go wrong, so it's worth understanding what this one does differently. I've spent enough of my career cleaning up after crawlers that fooled themselves. This one is a proper SEO crawler - it just happens to have your Search Console history sitting next to it.
 
 **It discovers pages three ways.** Following links, reading your XML sitemaps, and - the important one - starting from every URL Google is already sending traffic to, straight out of your GSC data. Coverage stops depending on your sitemap being honest. It's also exactly how ghost pages get caught: if Google ranks a URL your own site structure can't reach, that URL still gets crawled, and the mismatch becomes a finding.
 
