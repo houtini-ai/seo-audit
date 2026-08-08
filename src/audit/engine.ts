@@ -37,7 +37,10 @@ export interface AuditResult {
   total: number;
   bySeverity: Record<string, number>;
   byCategory: Record<string, number>;
-  byCheck: { checkId: string; category: string; severity: string; count: number; priority: number }[];
+  /** `count` is findings STORED; when the per-check cap bit, `totalFound` is the real number. */
+  byCheck: { checkId: string; category: string; severity: string; count: number; priority: number; totalFound?: number; truncated?: boolean }[];
+  /** Checks whose findings exceeded MAX_PER_CHECK, with their true totals — never cap silently. */
+  truncatedChecks?: { checkId: string; stored: number; totalFound: number }[];
   top: any[];
   elapsedMs?: number; // wall-clock for the audit run (performance instrumentation)
   indexability?: Record<string, number>; // reason → count (indexable, http-404, noindex-meta, robots-disallowed, …)
@@ -116,10 +119,17 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
     const bySeverity: Record<string, number> = {};
     const byCategory: Record<string, number> = {};
 
+    const truncated = new Map<string, number>(); // checkId → true finding count before the cap
+
     const tx = db.db.transaction(() => {
       for (const chk of checks) {
-        const findings = chk.run(ctx).slice(0, MAX_PER_CHECK);
-        const scale = effortScale(chk.fixType, findings.length);
+        const all = chk.run(ctx);
+        // Effort scales with the REAL number of affected pages, not the stored sample. Scaling on
+        // the capped length understates E (log10(509) vs log10(5009)) and therefore INFLATES
+        // priority = (T×Y×C)/E on exactly the biggest checks — the cap was reordering the report.
+        const scale = effortScale(chk.fixType, all.length);
+        const findings = all.slice(0, MAX_PER_CHECK);
+        if (all.length > MAX_PER_CHECK) truncated.set(chk.id, all.length);
         const E = Math.max(chk.effortBase * scale, 0.0001); // effort in ~hours
         const Y = yieldOf(chk);
         for (const f of findings) {
@@ -181,9 +191,18 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
 
     db.db.prepare(`UPDATE audit_runs SET finished_at=datetime('now'), finding_count=? WHERE run_id=?`).run(total, runId);
 
-    const byCheck = db.db
+    // Stored counts, annotated with the true total wherever the per-check cap bit — a bare
+    // "count: 500" reads as "that's all there was" when it may be 5,000.
+    const byCheck = (db.db
       .prepare(`SELECT check_id checkId, category, severity, COUNT(*) count, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC`)
-      .all(runId) as AuditResult['byCheck'];
+      .all(runId) as AuditResult['byCheck'])
+      .map(r => {
+        const t = truncated.get(r.checkId);
+        return t ? { ...r, totalFound: t, truncated: true } : r;
+      });
+    const truncatedChecks = [...truncated.entries()]
+      .map(([checkId, totalFound]) => ({ checkId, stored: MAX_PER_CHECK, totalFound }))
+      .sort((a, b) => b.totalFound - a.totalFound);
     const top = db.db
       .prepare(`SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 25`)
       .all(runId);
@@ -192,7 +211,11 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       (db.db.prepare(`SELECT COALESCE(indexable_reason,'indexable') reason, COUNT(*) n FROM pages WHERE is_internal IS NOT 0 GROUP BY reason ORDER BY n DESC`).all() as { reason: string; n: number }[])
         .map(r => [r.reason, r.n]),
     );
-    return { runId, siteUrl, integrityOk: pageCount > 0, total, bySeverity, byCategory, byCheck, top, elapsedMs: Date.now() - t0, indexability };
+    return {
+      runId, siteUrl, integrityOk: pageCount > 0, total, bySeverity, byCategory, byCheck, top,
+      ...(truncatedChecks.length ? { truncatedChecks } : {}),
+      elapsedMs: Date.now() - t0, indexability,
+    };
   } finally {
     db.close();
   }

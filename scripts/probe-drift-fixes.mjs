@@ -15,9 +15,10 @@
  */
 import Database from 'better-sqlite3';
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { diffLatest, buildDriftMarkdown } from '../dist/audit/drift.js';
+import { dbPathFor, sanitizeProperty } from '../dist/core/paths.js';
 
 const DIR = process.env.SAC_DATA_DIR ?? join(homedir(), 'Documents', 'seo-audit-console');
 const args = process.argv.slice(2);
@@ -88,6 +89,33 @@ for (const p of PROPS) {
     console.log('  (no audit run yet — re-run run_audit to exercise the url_key assertions)');
   }
   db.close();
+}
+
+// ---- 3. property → database mapping (collision + no-orphan) ----
+// A sc-domain: property and an https:// property for the same host are different GSC properties.
+// They used to share one file, so a crawl of one wiped the other's pages.
+console.log('\n=== property → database mapping ===');
+{
+  const forms = ['sc-domain:example.com', 'https://example.com/', 'http://example.com/', 'https://www.example.com/', 'http://www.example.com/'];
+  const stems = forms.map(sanitizeProperty);
+  ok(new Set(stems).size === forms.length, `all ${forms.length} property forms map to distinct files (${new Set(stems).size} distinct)`);
+  ok(sanitizeProperty('sc-domain:example.com') === 'example.com', 'sc-domain: stem unchanged (existing databases must keep resolving)');
+  ok(!sanitizeProperty('https://evil.com/../../etc/passwd').includes('/'), 'path separators never survive the stem');
+
+  // Every database on disk must still be reachable from the property that owns it.
+  let moved = 0, checked = 0;
+  for (const f of readdirSync(DIR).filter(f => f.endsWith('.db') && !f.includes('cache'))) {
+    let owner = null;
+    try {
+      const db = new Database(join(DIR, f), { readonly: true });
+      owner = (db.prepare(`SELECT site_url FROM property_meta ORDER BY COALESCE(last_synced_at,'') DESC, id ASC LIMIT 1`).get() ?? {}).site_url ?? null;
+      db.close();
+    } catch { /* not a property database */ }
+    if (!owner) continue;
+    checked++;
+    if (basename(dbPathFor(DIR, owner)) !== f) { moved++; console.log(`    would orphan ${f} (owner ${owner})`); }
+  }
+  ok(moved === 0, `no existing database orphaned (${checked} checked, ${moved} would move)`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

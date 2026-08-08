@@ -25,6 +25,8 @@ export interface PropertyStorage {
   findings: number;
   lastSynced: string | null;
   lastCrawl: string | null;
+  /** Other properties sharing this file (pre-per-form-filename databases) — their data is mixed in. */
+  sharedWith?: string[];
 }
 
 export interface StorageSummary {
@@ -77,8 +79,15 @@ export function storageSummary(dataDir: string, siteUrl?: string): StorageSummar
       db = new Database(full, { readonly: true, fileMustExist: true });
       const isProperty = !!db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='property_meta'`).get();
       if (!isProperty) { other.push({ file, bytes }); continue; }
-      const meta = db.prepare('SELECT site_url, last_synced_at FROM property_meta ORDER BY id LIMIT 1').get() as
-        | { site_url: string; last_synced_at: string | null } | undefined;
+      // The ACTIVE property (most recently synced) owns the data. Ordering by id reported the
+      // first property ever created, which on a legacy collided database is the wrong one.
+      const metaRows = db.prepare(
+        `SELECT site_url, last_synced_at FROM property_meta ORDER BY COALESCE(last_synced_at,'') DESC, id ASC`,
+      ).all() as { site_url: string; last_synced_at: string | null }[];
+      const meta = metaRows[0];
+      // >1 property in one file = a database created before per-form filenames. Say so rather than
+      // silently attributing every row to one of them.
+      const sharedWith = metaRows.length > 1 ? metaRows.slice(1).map(r => r.site_url) : undefined;
       if (wantStem && file !== `${wantStem}.db`) continue;
       let lastCrawl: string | null = null;
       try {
@@ -94,6 +103,7 @@ export function storageSummary(dataDir: string, siteUrl?: string): StorageSummar
         pageSnapshots: safeCount(db, 'page_snapshots'),
         findings: safeCount(db, 'findings'),
         lastSynced: meta?.last_synced_at ?? null,
+        ...(sharedWith ? { sharedWith } : {}),
         lastCrawl,
       });
     } catch {

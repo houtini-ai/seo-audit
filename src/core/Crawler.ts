@@ -563,7 +563,13 @@ export class Crawler {
     // the runAudit call stays as a self-heal for legacy/killed crawls.
     // Skipped on cancel: a partial page set would read as hundreds of pages "removed" next diff.
     if (!signal.aborted) {
-      try { snapshotCrawl(db.db, crawlId, finishedAt); } catch { /* never fail a good crawl over history */ }
+      // Never fail a good crawl over its history — but say so, because a silently missing
+      // snapshot is the exact failure this fix exists to remove. diffLatest also reports the gap.
+      try {
+        snapshotCrawl(db.db, crawlId, finishedAt);
+      } catch (e) {
+        console.error(`[crawl ${crawlId}] snapshot failed (change-detection will report this crawl as missing):`, e);
+      }
     }
     return { crawlId, siteUrl, crawled, failed, skipped };
     } catch (err) {

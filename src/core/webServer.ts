@@ -44,7 +44,11 @@ export function listLocalProperties(dataDir: string): { siteUrl: string; file: s
     let db: Database.Database | null = null;
     try {
       db = new Database(path.join(dataDir, file), { readonly: true, fileMustExist: true });
-      const meta = db.prepare(`SELECT site_url FROM property_meta ORDER BY id LIMIT 1`).get() as { site_url: string } | undefined;
+      // Legacy collided databases hold a row per property; the ACTIVE one (most recently synced)
+      // owns the data, so ordering by id would name the wrong property in the switcher.
+      const meta = db.prepare(
+        `SELECT site_url FROM property_meta ORDER BY COALESCE(last_synced_at,'') DESC, id ASC LIMIT 1`,
+      ).get() as { site_url: string } | undefined;
       if (meta?.site_url) out.push({ siteUrl: meta.site_url, file });
     } catch { /* not a property DB */ } finally { db?.close(); }
   }
