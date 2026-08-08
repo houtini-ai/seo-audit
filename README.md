@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/logo.png" width="120" height="120" alt="SEO Audit Console" />
+</p>
+
 # SEO Audit Console - the technical SEO audit MCP server for Claude
 
 **A technical SEO audit you can hold a conversation with - built from your own Search Console data and a live crawl of your site, run inside Claude.**

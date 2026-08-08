@@ -63,6 +63,8 @@ rmSync(staging, { recursive: true, force: true });
 mkdirSync(staging, { recursive: true });
 cpSync(join(root, 'mcpb', 'manifest.json'), join(staging, 'manifest.json'));
 cpSync(join(root, 'dist'), join(staging, 'dist'), { recursive: true });
+// manifest.icon points at this filename at the bundle root — the directory listing uses it.
+if (existsSync(join(root, 'assets', 'icon.png'))) cpSync(join(root, 'assets', 'icon.png'), join(staging, 'icon.png'));
 for (const f of ['package.json', 'package-lock.json', 'README.md', 'LICENSE']) {
   if (existsSync(join(root, f))) cpSync(join(root, f), join(staging, f));
 }

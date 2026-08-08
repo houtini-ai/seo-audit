@@ -6,12 +6,12 @@
     "url": "https://github.com/houtini-ai/seo-audit",
     "source": "github"
   },
-  "version": "0.4.8",
+  "version": "0.4.9",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@houtini/seo-audit-console",
-      "version": "0.4.8",
+      "version": "0.4.9",
       "transport": {
         "type": "stdio"
       },
