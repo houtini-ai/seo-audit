@@ -1192,7 +1192,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
               return note;
             })() +
             `\n\nNext: research the competitors (transcribe the videos, read the reachable pages), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
-          return { siteUrl, cost, window: gscWindow, serpDepth: SERP_DEPTH, targets: results, summary: md };
+          // The poll (check_sync_status) injects this result into the model's context, which the
+          // host caps (~25k tokens). The full per-page detail (heading lists, competitor URL arrays,
+          // full to-do objects, cannibalisation clusters) is already persisted to the ledger and read
+          // back via recon_todos, so the job result returns the readable `summary` plus a SLIM per-page
+          // view — verdict, ranks, opportunity — and keeps only competitorContent (the scraped research
+          // payload, which lives nowhere else). This keeps a 10-page poll well under the cap.
+          const slimTargets = results.map(r => ({
+            urlKey: r.urlKey, query: r.query, window: r.window,
+            impressions: r.impressions, gscPosition: r.gscPosition, priorPosition: r.priorPosition, slipped: r.slipped,
+            organicRank: r.organicRank, serpDepth: r.serpDepth, organicRankNote: r.organicRankNote,
+            aioPresent: r.aioPresent, aioCitesUs: r.aioCitesUs, aioResolved: r.aioResolved, aioNote: r.aioNote, videoPresent: r.videoPresent,
+            verdict: r.verdict, verdictNote: r.verdictNote,
+            opportunityClicks: r.priorityBasis?.opportunityClicks, positionSource: r.priorityBasis?.positionSource, targetPosition: r.priorityBasis?.targetPosition,
+            hasProductSchema: r.hasProductSchema, dateModified: r.dateModified, todosInserted: r.todosInserted,
+            ...(r.competitorContent ? { competitorContent: r.competitorContent, competitorFetch: r.competitorFetch } : {}),
+          }));
+          return { siteUrl, cost, window: gscWindow, serpDepth: SERP_DEPTH, targets: slimTargets, summary: md };
         } finally { db.close(); }
       });
       return {
