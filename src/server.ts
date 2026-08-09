@@ -50,6 +50,8 @@ import { Refresh } from './core/Refresh.js';
 import { DataForSeoClient } from './core/DataForSeoClient.js';
 import { RankTracker } from './core/RankTracker.js';
 import { Backlinks } from './core/Backlinks.js';
+import { LinkIntersect } from './core/LinkIntersect.js';
+import { MajesticClient } from './core/MajesticClient.js';
 import { WikidataClient } from './core/WikidataClient.js';
 import { Entities } from './core/Entities.js';
 import { JobManager } from './core/JobManager.js';
@@ -147,6 +149,7 @@ This server's value is composition: joining Search Console, the crawl, URL Inspe
 | sitemap_urls | one row per sitemap URL | lastmod | url_key | captured at crawl time | free |
 | rank_history | month × domain | rank distribution (1–3/4–10/11–20/21–100), ETV | period | track_ranks | paid, 20-day cache |
 | page_backlinks | one row per backlinked URL | backlinks, referring_domains, live status_code | url_key, domain | pull_backlinks (needs the DataForSEO Backlinks subscription) | paid, 20-day cache |
+| link_prospects | one row per prospect domain (links to competitors, not you) | intersections, domain_trust, spam_score, dofollow, trust_flow, topical_trust_flow | domain | link_intersect (needs the DataForSEO Backlinks subscription; Majestic optional) | paid, 20-day cache |
 | keyword_intent | one row per keyword | intent + probability | query | search_intent (pass siteUrl to persist) | paid (cheap), cached |
 | page_cwv | one row per audited URL | performance, LCP, CLS, TBT | url_key | page_lighthouse (pass siteUrl to persist) | paid, cached |
 | page_entity + entity_edge | one row per page / edge per relation | QID, label, subclass-of / part-of | url_key, qid | resolve_entities (free Wikidata) | free |
@@ -166,6 +169,7 @@ Raw access: query_audit runs any single check with full evidence; every table ab
 7. **Migration signal transfer.** pages.redirects (recorded chains) → url_inspection.google_canonical of the target (has Google accepted the move?) → search_analytics clicks by page_key before/after the migration date. Equity that didn't follow the 301 shows up as a target with no canonical adoption and no click recovery.
 8. **404s with backlinks.** pages.status_code = 404 joined to page_backlinks.backlinks (run pull_backlinks first) → run_audit surfaces backlinks-to-404; fix_finding generates the 301 that recovers the equity.
 9. **Competitor topic gap.** topic_gaps (bounded + cached: competitor ranked_keywords minus your GSC queries and page titles/H1s, clustered and scored) — or do it manually with ranked_keywords per competitor when you want the raw rows.
+10. **Link gap (what links do rivals have that we don't).** link_intersect over the competitor set (or a single company) → link_prospects: domains linking to them but not you, followed-first and sorted by domain trust. DataForSEO domain rank surfaces spam directories at the top; MAJESTIC_API_KEY re-sorts by Trust Flow (a rank-227 domain is often TF 0) and Topical Trust Flow shows whether that authority is on-topic. data_storage flags when a property's prospect set is going stale (competitors keep earning links).
 
 ## Novel combinations (nothing else surfaces these)
 
@@ -224,6 +228,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 
 ## 4. Backlinks, keywords & competitive (DataForSEO, on-demand, cached 20 days)
 - **pull_backlinks** — backlink profile + per-page counts + live status → unlocks **backlinks-to-404** (recover lost equity), top-linked pages, true orphans. _"Pull backlinks for example.com"_
+- **link_intersect** — the links your competitors have that you don't - a prioritised outreach prospect list (followed-first, then domain trust, spam filtered). Also answers "what links does company X have that we don't?" for a single company. Set MAJESTIC_API_KEY to re-sort by Trust Flow + Topical Trust Flow (kills directory noise). _"Link intersect for example.com vs rival1.com, rival2.com"_
 - **keyword_volume / related_terms** — volume/CPC, and People-Also-Ask + related searches. _"Search volume for [\\"best widgets\\"]"_
 - **search_intent** — informational/navigational/commercial/transactional per keyword → spot intent mismatch behind low CTR. _"Classify intent for [\\"buy running shoes\\", \\"how to clean shoes\\"]"_
 - **page_lighthouse** — lab Core Web Vitals + opportunities for one URL (~20–120s). _"Run Lighthouse on https://example.com/slow-page"_
@@ -268,6 +273,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     : null;
   const rankTracker = dfs ? new RankTracker(dfs, dataDir()) : null;
   const backlinks = dfs ? new Backlinks(dfs, dataDir()) : null;
+  const linkIntersect = dfs ? new LinkIntersect(dfs, dataDir()) : null;
+  // Majestic (Trust Flow / Topical Trust Flow) — optional link_intersect enrichment tier.
+  const majesticKey = process.env.MAJESTIC_API_KEY;
+  const majesticCacheDays = Number(process.env.MAJESTIC_CACHE_DAYS) || 20;
+  const majestic = majesticKey ? new MajesticClient(majesticKey, path.join(dataDir(), 'majestic-cache.db'), majesticCacheDays) : null;
   // Firecrawl (competitor-page scraping for content recon) — optional; degrades gracefully.
   const firecrawlKey = process.env.FIRECRAWL_API_KEY;
   const firecrawl = firecrawlKey ? new FirecrawlClient(firecrawlKey, path.join(dataDir(), 'firecrawl-cache.db')) : null;
@@ -370,7 +380,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'data_storage',
     {
       title: 'Data storage summary + pruning',
-      description: 'Data hygiene. No args: list every per-property database in the data dir — size (incl. WAL), key row counts (search_analytics, pages, links, page_snapshots, findings), last sync and last crawl — plus the DataForSEO cache and reports folder sizes. Optional siteUrl narrows to one property. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (delete page_snapshots + audit runs/findings older than the 5 most recent, then vacuum), "delete-property" (remove the DB files entirely). Destructive actions (clear-crawl-history, delete-property) REQUIRE confirm:true and refuse loudly without it, naming what would be deleted. Refuses to prune while any job is running.',
+      description: 'Data hygiene. No args: list every per-property database in the data dir — size (incl. WAL), key row counts (search_analytics, pages, links, page_snapshots, findings), last sync and last crawl, and any link_intersect prospect set with its capture date (flagged when it is going stale) — plus the DataForSEO/Majestic caches and reports folder sizes. Optional siteUrl narrows to one property. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (delete page_snapshots + audit runs/findings older than the 5 most recent, then vacuum), "delete-property" (remove the DB files entirely). Destructive actions (clear-crawl-history, delete-property) REQUIRE confirm:true and refuse loudly without it, naming what would be deleted. Refuses to prune while any job is running.',
       inputSchema: {
         siteUrl: z.string().optional(),
         prune: z.object({
@@ -403,8 +413,21 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         `| ${p.siteUrl ?? p.file} | ${fmtBytes(p.bytes)} | ${p.searchAnalytics.toLocaleString('en-US')} | ${p.pages.toLocaleString('en-US')} | ${p.links.toLocaleString('en-US')} | ${p.pageSnapshots.toLocaleString('en-US')} | ${p.findings.toLocaleString('en-US')} | ${p.lastSynced?.slice(0, 10) ?? '—'} | ${p.lastCrawl?.slice(0, 10) ?? '—'} |`,
       ).join('\n');
       const cacheLines = s.caches.map(c => `- ${c.file}: ${fmtBytes(c.bytes)}`).join('\n');
+      // Link-intersect freshness: prospect data ages as competitors keep earning links, so
+      // flag properties that HAVE link_prospects and roughly how stale it is — a re-run of
+      // link_intersect updates it. (The DataForSEO call is 20-day cached; older than that a
+      // re-run genuinely refetches.)
+      const nowMs = Date.now();
+      const liProps = s.properties.filter(p => (p.linkProspects ?? 0) > 0);
+      const liLines = liProps.map(p => {
+        const fetched = p.linkProspectsFetched;
+        const ageDays = fetched ? Math.floor((nowMs - Date.parse(fetched)) / 86400000) : null;
+        const stale = ageDays != null && ageDays > 20;
+        return `- ${p.siteUrl ?? p.file}: ${p.linkProspects} prospects, captured ${fetched?.slice(0, 10) ?? '—'}${ageDays != null ? ` (${ageDays}d ago${stale ? ' — likely stale, re-run link_intersect to update' : ''})` : ''}`;
+      }).join('\n');
       const md = `**Data dir:** ${s.dataDir} — total ${fmtBytes(s.totalBytes)}\n\n` +
         `| Property | Size | GSC rows | Pages | Links | Snapshots | Findings | Last sync | Last crawl |\n|---|---|---|---|---|---|---|---|---|\n${rows}\n\n` +
+        `${liLines ? `Link-intersect prospects (may be stale — competitors keep earning links):\n${liLines}\n\n` : ''}` +
         `${cacheLines ? `Caches:\n${cacheLines}\n` : ''}Reports folder: ${fmtBytes(s.reportsBytes)}` +
         `${s.other.length ? `\nOther .db files: ${s.other.map(o => `${o.file} (${fmtBytes(o.bytes)})`).join(', ')}` : ''}\n\n` +
         `Prune with data_storage prune:{siteUrl, action:"vacuum" | "clear-crawl-history" | "delete-property"} (destructive actions need confirm:true).`;
@@ -2122,6 +2145,102 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: `Backlink pull started for ${siteUrl} (job ${jobId}). Poll check_sync_status, then run_audit for backlinks-to-404.` }],
         structuredContent: { jobId, status: 'running', siteUrl },
+      };
+    },
+  );
+
+  // link_intersect — "what links do our competitors have that we don't?". One DataForSEO
+  // backlinks/domain_intersection call (paid, ~$0.024, 20-day cached), aggregated + prioritised
+  // client-side. Default sort = the link-builder's: followed links first, then domain trust.
+  server.registerTool(
+    'link_intersect',
+    {
+      title: 'Link intersect — links your competitors have that you don’t (DataForSEO + Majestic)',
+      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), one cached call ~$0.024 | Use for: prospect list for link outreach] Answers "what links do our competitors have that we don’t?" - and for a SINGLE company, "what links does company X have that we don’t?" (pass competitors:["companyx.com"]). One DataForSEO domain_intersection call over the target set (excluding your domain), aggregated per prospect domain: how many of the targets it links to, its DataForSEO domain trust (rank 0-1000), worst spam score, whether the link is followed, the anchor/link-type mix. Default sort is the link-builder’s view - FOLLOWED links first, then domain trust - with spam filtered out. When MAJESTIC_API_KEY is set, prospects are enriched with Majestic Trust Flow + Topical Trust Flow and RE-SORTED by Trust Flow (the directory-killer: a DataForSEO rank-227 domain is often Trust Flow 0). Results persist to link_prospects. Pass targets explicitly (max 20) or let it derive the top few via competitors_domain. Grain: one row per prospect domain. Join: domain.',
+      inputSchema: {
+        siteUrl: z.string(),
+        competitors: z.array(z.string()).max(20).optional().describe('Target domains - your competitors, or a single company (max 20, e.g. ["rival.com"]). Omitted → top few derived via competitors_domain'),
+        location: z.union([z.string(), z.number()]).optional().describe('For competitor derivation only (e.g. "United Kingdom")'),
+        poolLimit: z.number().int().min(10).max(1000).optional().describe('Prospect rows to pull from DataForSEO (default 300)'),
+        minIntersections: z.number().int().min(1).max(20).optional().describe('Keep domains linking to >= this many targets (default 1)'),
+        maxSpamScore: z.number().int().min(0).max(100).optional().describe('Drop domains whose worst spam score exceeds this (default 30)'),
+        dofollowOnly: z.boolean().optional().describe('Keep only domains with a followed link (default false)'),
+        topN: z.number().int().min(1).max(1000).optional().describe('Prospects to return + persist (default 100)'),
+        sort: z.enum(['trust', 'intersections']).optional().describe('trust (default: followed-first, then domain/Trust Flow) | intersections (broadest overlap first)'),
+        enrichLimit: z.number().int().min(1).max(500).optional().describe('Max prospects sent to Majestic for Trust Flow (default 100; batched by 100, ~1 unit each)'),
+      },
+    },
+    async ({ siteUrl, competitors, location, poolLimit, minIntersections, maxSpamScore, dofollowOnly, topN, sort, enrichLimit }) => {
+      const li = requireDfs(linkIntersect);
+      const ownHost = dfsHost(siteUrl);
+
+      // Prior-run awareness: if this property already has link_prospects, frame the run as an
+      // update (the previous set ages as competitors keep earning links). Read-only, cheap.
+      let priorNote = '';
+      {
+        const d = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+        try {
+          const prior = d.db.prepare('SELECT COUNT(*) n, MAX(fetched_at) t FROM link_prospects').get() as { n: number; t: string | null };
+          if (prior?.n > 0 && prior.t) {
+            const ageDays = Math.floor((Date.now() - Date.parse(prior.t)) / 86400000);
+            priorNote = ` _(updating a prior intersect of ${prior.n} prospects from ${prior.t.slice(0, 10)}, ${ageDays}d ago)_`;
+          }
+        } catch { /* pre-link_intersect DB */ } finally { d.close(); }
+      }
+
+      // Competitors: explicit (deduped, minus self) or derived top few by keyword overlap.
+      let comps = [...new Set((competitors ?? []).map(dfsHost).filter(c => c && c !== ownHost))];
+      let derived = false;
+      let deriveCost = 0;
+      if (!comps.length) {
+        const client = requireDfs(dfs);
+        const loc = location ?? (() => { const d = new AuditDatabase(dbPathFor(dataDir(), siteUrl)); try { return d.getDfsLocation(siteUrl) ?? undefined; } finally { d.close(); } })();
+        const r = await client.competitorsDomain(ownHost, loc, 'en', 10);
+        deriveCost = r.cost;
+        comps = ((r.tasks[0]?.result?.[0]?.items ?? []) as any[])
+          .map(it => dfsHost(String(it.domain ?? '')))
+          .filter(d => d && d !== ownHost)
+          .slice(0, 5);
+        derived = true;
+        if (!comps.length) {
+          return {
+            content: [{ type: 'text', text: `No competitor domains derivable for ${ownHost} - pass competitors explicitly (e.g. competitors:["rival.com"]).` }],
+            structuredContent: { error: 'no_competitors', target: ownHost },
+          };
+        }
+      }
+
+      const result = await li.run(siteUrl, {
+        competitors: comps,
+        ...(poolLimit != null ? { poolLimit } : {}),
+        ...(minIntersections != null ? { minIntersections } : {}),
+        ...(maxSpamScore != null ? { maxSpamScore } : {}),
+        ...(dofollowOnly != null ? { dofollowOnly } : {}),
+        ...(topN != null ? { topN } : {}),
+        ...(sort ? { sort } : {}),
+        ...(enrichLimit != null ? { enrichLimit } : {}),
+      }, majestic);
+
+      const enriched = result.majesticEnriched > 0;
+      // With Majestic: show Trust Flow (0-100) + the domain's top topic. Without: DataForSEO domain rank.
+      const trustHead = enriched ? 'Trust Flow' : 'Domain trust';
+      const rows = result.prospects.map(p => {
+        const trust = enriched ? (p.trustFlow ?? '–') : (p.domainTrust ?? '–');
+        const topic = enriched ? ` | ${p.topicalTrustFlow?.[0]?.topic ?? '–'}` : '';
+        return `| ${p.domain} | ${p.intersections}/${result.competitors.length} | ${trust} | ${p.dofollow ? 'follow' : 'nofollow'} | ${p.spamScore ?? '–'} | ${fmtNum(p.backlinks)}${topic} |`;
+      });
+      const totalCost = result.cost + deriveCost;
+      const topicCol = enriched ? ' | Top topic (Topical Trust Flow)' : '';
+      const topicSep = enriched ? '|---' : '';
+      const header = `**Link intersect for ${result.ownDomain}** vs ${result.competitors.join(', ')}${derived ? ' _(competitors derived)_' : ''}${priorNote}\n\n` +
+        `${fmtNum(result.totalCount)} domains link to the target set; pulled ${result.poolFetched}, ${result.kept} passed filters, showing top ${result.prospects.length}. Sorted by ${result.sortedBy} (followed-first).` +
+        `${enriched ? ` Majestic-enriched ${result.majesticEnriched}${result.enrichCapped ? ` (top by domain rank; ${result.kept - result.majesticEnriched} more qualified but weren’t enriched — raise enrichLimit or topN)` : ''}.` : ''}\n\n` +
+        `| Prospect domain | Links to | ${trustHead} | Link | Spam | Backlinks${topicCol} |\n|---|---|---|---|---|---${topicSep} |`;
+      const footer = `\n\n${enriched ? 'Trust Flow = Majestic (0-100); Topical Trust Flow shows whether that authority is on-topic.' : `Domain trust = DataForSEO domain rank (0-1000). Set MAJESTIC_API_KEY to re-sort by Trust Flow + Topical Trust Flow (the directory-killer signal).`} ` +
+        `${result.cached ? 'DataForSEO cached.' : `Live cost $${totalCost.toFixed(4)}.`} Persisted to link_prospects.` + browserLink(siteUrl);
+      return {
+        content: [{ type: 'text', text: capMdRows(header, rows, footer) }],
+        structuredContent: result as unknown as Record<string, unknown>,
       };
     },
   );

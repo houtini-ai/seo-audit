@@ -6,12 +6,12 @@
     "url": "https://github.com/houtini-ai/seo-audit",
     "source": "github"
   },
-  "version": "0.4.9",
+  "version": "0.5.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@houtini/seo-audit-console",
-      "version": "0.4.9",
+      "version": "0.5.0",
       "transport": {
         "type": "stdio"
       },
@@ -61,6 +61,13 @@
         {
           "name": "SUPADATA_API_KEY",
           "description": "Supadata API key (optional). Lets content recon transcribe the ranking videos (YouTube/TikTok/X).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "MAJESTIC_API_KEY",
+          "description": "Majestic API key (optional). Enriches link_intersect with Trust Flow + Topical Trust Flow and re-sorts prospects by real authority.",
           "isRequired": false,
           "format": "string",
           "isSecret": true

@@ -12,7 +12,9 @@ import { dbPathFor, sanitizeProperty } from './paths.js';
 /** How many recent audit runs / crawl snapshots clear-crawl-history keeps. */
 export const KEEP_RECENT = 5;
 
-const CACHE_DB_NAMES = new Set(['dataforseo-cache.db', 'wikidata-cache.db']);
+const CACHE_DB_NAMES = new Set([
+  'dataforseo-cache.db', 'wikidata-cache.db', 'majestic-cache.db', 'firecrawl-cache.db', 'supadata-cache.db',
+]);
 
 export interface PropertyStorage {
   file: string;
@@ -25,6 +27,8 @@ export interface PropertyStorage {
   findings: number;
   lastSynced: string | null;
   lastCrawl: string | null;
+  linkProspects: number;         // rows in link_prospects (0 = link_intersect never run)
+  linkProspectsFetched: string | null; // MAX(fetched_at) — freshness of the intersect (may be stale)
   /** Other properties sharing this file (pre-per-form-filename databases) — their data is mixed in. */
   sharedWith?: string[];
 }
@@ -93,6 +97,10 @@ export function storageSummary(dataDir: string, siteUrl?: string): StorageSummar
       try {
         lastCrawl = (db.prepare(`SELECT MAX(COALESCE(finished_at, started_at)) t FROM crawl_metadata`).get() as { t: string | null }).t;
       } catch { /* no crawl table */ }
+      let linkProspectsFetched: string | null = null;
+      try {
+        linkProspectsFetched = (db.prepare(`SELECT MAX(fetched_at) t FROM link_prospects`).get() as { t: string | null }).t;
+      } catch { /* no link_prospects table (pre-link_intersect DB) */ }
       properties.push({
         file,
         siteUrl: meta?.site_url ?? null,
@@ -103,6 +111,8 @@ export function storageSummary(dataDir: string, siteUrl?: string): StorageSummar
         pageSnapshots: safeCount(db, 'page_snapshots'),
         findings: safeCount(db, 'findings'),
         lastSynced: meta?.last_synced_at ?? null,
+        linkProspects: safeCount(db, 'link_prospects'),
+        linkProspectsFetched,
         ...(sharedWith ? { sharedWith } : {}),
         lastCrawl,
       });

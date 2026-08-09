@@ -76,4 +76,5 @@ scripts/*
 !scripts/probe-templates.mjs
 !scripts/probe-migrate.mjs
 !scripts/probe-boot.mjs
+!scripts/probe-majestic.mjs
 !scripts/build-mcpb.mjs

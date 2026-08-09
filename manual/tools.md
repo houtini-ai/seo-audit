@@ -148,6 +148,10 @@ The bigger question: what should this site cover to be seen as expert in its spa
 Your backlink profile - summary metrics plus per-page backlink and referring-domain counts - with a live HTTP status check on each linked page, so backlinks pointing at 404s get caught (`backlinks-to-404` in the next audit). One gotcha: Backlinks is a **separate DataForSEO subscription** from SERP/Keywords/Labs; if it isn't activated the tool says so plainly. Runs as a background job.
 > Pull the backlinks for mysite.com
 
+### `link_intersect`
+The links your competitors have that you don't - the classic outreach prospect list. One DataForSEO `domain_intersection` call over the competitor set (excluding your domain) returns every domain linking to your rivals but not to you, aggregated per prospect: how many of them it links to, its domain trust, worst spam score, whether the link is followed, the anchor mix. Sorted the way a link builder works - **followed links first, then domain trust**, spam filtered. Pass a single company (`competitors:["companyx.com"]`) to answer "what links does company X have that we don't?". Needs the separate Backlinks subscription. **Optional Majestic tier:** set `MAJESTIC_API_KEY` and each prospect is enriched with Trust Flow + Topical Trust Flow and re-sorted by real authority - a domain with a high DataForSEO rank can still be Trust Flow 0, pure directory noise. Results persist to `link_prospects`; `data_storage` flags when the set is going stale (rivals keep earning links). Pass competitors explicitly (max 20) or let it derive them.
+> Link intersect for mysite.com vs rival1.com, rival2.com
+
 ### `market_sizing`
 Market Sizing and Prioritisation: your domain plus up to four named competitors, one cached Labs pull each, unioned into a keyword universe. Returns total monthly demand (deduplicated volume), each domain's share of voice (ETV share) overall and per topic cluster, and the leader per cluster - the "here's the market, here's who owns it, here's where to attack" table that opens an engagement.
 > Size the market: mysite.com vs rival1.com and rival2.com

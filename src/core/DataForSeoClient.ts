@@ -243,6 +243,28 @@ export class DataForSeoClient {
   }
 
   /**
+   * Backlinks — LINK INTERSECT: domains that link to a set of competitor `targets`, minus
+   * anything already linking to `excludeTarget` (our own domain). Each returned item is a
+   * referring domain with a `domain_intersection.{N}` entry per competitor it links to
+   * (N maps back to the `targets` array position) plus `summary.intersections_count`.
+   * Server-side `order_by: intersections_count,desc` is target-agnostic (the union), so a
+   * generous limit captures the true multi-competitor intersect; priority (followed +
+   * domain trust) and spam filtering are applied client-side in LinkIntersect. ~$0.024/call.
+   */
+  async domainIntersection(targets: string[], excludeTarget?: string, limit = 300): Promise<DfsResponse> {
+    const targetMap: Record<string, string> = {};
+    targets.slice(0, 20).forEach((t, i) => { targetMap[String(i + 1)] = t; });
+    const body: Record<string, unknown> = {
+      targets: targetMap,
+      order_by: ['intersections_count,desc'],
+      limit: Math.min(limit, 1000),
+      backlinks_status_type: 'live',
+    };
+    if (excludeTarget) body.exclude_targets = [excludeTarget];
+    return this.call('/v3/backlinks/domain_intersection/live', [body]);
+  }
+
+  /**
    * Labs — classify the search intent of keywords (informational / navigational /
    * commercial / transactional) with a probability + secondary intents. Language-only
    * (no location), up to 1000 keywords per call. Cheap (~50 credits).

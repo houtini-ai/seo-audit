@@ -82,6 +82,7 @@ Where `suggest_pages` (free, GSC-only) mines demand Google has already shown you
 - **`search_intent`** - informational / navigational / commercial / transactional per keyword. Pass your `siteUrl` to persist the labels, which switches on the intent-vs-pagetype-mismatch audit check.
 - **`page_lighthouse`** - lab Core Web Vitals for one URL. Pass `siteUrl` to persist, which switches on high-yield-cwv-fail.
 - **`pull_backlinks`** - your backlink profile with a live status check on every linked page, so backlinks pointing at 404s become findings with ready-made 301s. Needs the separate Backlinks subscription, as above.
+- **`link_intersect`** - the links your competitors have that you don't. One `domain_intersection` call over the rival set (or a single company), returning every domain that links to them but not you, sorted followed-first then by domain trust, spam filtered. Needs the separate Backlinks subscription. Covered in full below.
 - **`track_ranks`** - the monthly rank-distribution history that gives the dashboard's visibility chart its time axis. Runs as part of `refresh_property` when credentials are present.
 
 ## Market sizing: `market_sizing` and `serp_features`
@@ -90,6 +91,17 @@ Two views that open an engagement. **`market_sizing`** takes your domain plus up
 
 > Size the market: mysite.com vs rival1.com and rival2.com
 > What's our AI Overview exposure?
+
+## Link intersect: `link_intersect`
+
+The classic outreach question - *what links do our competitors have that we don't?* - and, for a single company, *what links does company X have that we don't?* One DataForSEO `domain_intersection` call over the target set (with your own domain excluded) returns every domain that links to your rivals but not to you. Each prospect is aggregated: how many of the targets it links to, its domain trust, its worst spam score, whether the link is followed, the anchor mix. The default sort is the link builder's - **followed links first, then domain trust** - with spam filtered out.
+
+> Link intersect for mysite.com vs rival1.com, rival2.com
+> What links does rival.com have that we don't?
+
+**The directory problem, and the Majestic fix.** DataForSEO's domain rank is a link-volume metric, so directories and syndicated-press domains float to the top - technically high-authority, useless for outreach. Set an optional **`MAJESTIC_API_KEY`** and each prospect is enriched with Majestic **Trust Flow** (editorial authority) and **Topical Trust Flow** (whether that authority is *on your topic*), and the list is re-sorted by Trust Flow. The difference is stark: in testing, a domain DataForSEO ranked 227 came back Trust Flow 0 - pure noise the volume metric couldn't see. Majestic is entirely optional; the tool works without it, the key just makes the priority order defensible to a client. `MAJESTIC_CACHE_DAYS` (default 20) controls the cache; add the key to your MCP config's `env` block alongside the DataForSEO ones.
+
+**Freshness.** Results persist to a `link_prospects` table per property. Because rivals keep earning links, that set ages - `data_storage` shows each property's prospect count and capture date and flags when it's likely stale, and re-running `link_intersect` supersedes it. The DataForSEO call itself is 20-day cached.
 
 ## Content recon: why a page is losing
 

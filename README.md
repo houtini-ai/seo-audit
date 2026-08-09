@@ -141,6 +141,8 @@ It unlocks the Semrush-replacement layer: the organic visibility overview for an
 
 **Two more optional keys, for content recon only.** When you ask recon to fetch the competitors it finds, it routes each by source: videos to [Supadata](https://supadata.ai) (`SUPADATA_API_KEY`) for transcripts, and competitor pages to [Firecrawl](https://firecrawl.link/2d1PLD8) (`FIRECRAWL_API_KEY`) for clean markdown, with a free browser-profile fetch behind it. Both are pay-as-you-go and entirely optional - recon still classifies the page and lists the competitors without them. Grab a Firecrawl key here: **https://firecrawl.link/2d1PLD8**.
 
+**Link intersect - and an optional Majestic key.** `link_intersect` answers the classic outreach question: the domains that link to your competitors but not to you (or, for a single company, the links they have that you don't). It runs on DataForSEO's backlink data alone, sorted the way a link builder works - followed links first, then domain trust, with spam filtered out. DataForSEO's domain rank, though, can push directories to the top; set `MAJESTIC_API_KEY` and each prospect is enriched with Majestic **Trust Flow** and **Topical Trust Flow** and the list is re-sorted by real authority (a domain with a high DataForSEO rank can still be Trust Flow 0 - pure directory noise the volume metric can't see). Optional - the tool works without it, Majestic just makes the priority order defensible. `MAJESTIC_CACHE_DAYS` (default 20) controls the cache.
+
 ---
 
 ## Installation, in brief
@@ -176,6 +178,7 @@ The one-line version - full descriptions, inputs and example prompts for every t
 | `competitors_domain` · `page_intersection` · `topic_gaps` | Competitors · content gap · topic gaps |
 | `domain_visibility` · `top_pages` · `ranked_keywords` | The Semrush-style views, any domain (+ `aioOnly` for AI Overview citations) |
 | `page_lighthouse` · `pull_backlinks` | Lab CWV · backlink profile with live status |
+| `link_intersect` | The links your competitors have that you don't - a prioritised outreach list (followed-first, sorted by domain trust; optional Majestic Trust Flow re-sort kills directory noise) |
 | `market_sizing` · `serp_features` | Share of voice vs named competitors · AI-Overview / snippet / video exposure by volume |
 | `keyword_list` · `content_opportunities` | Cluster a keyword list (own / weak / absent) · the content marketer's report |
 | `recon_targets` · `save_recon_todo` · `recon_todos` | **Content recon:** why a page is losing (live SERP + AI Overview) → a tracked, annotatable to-do board |

@@ -456,6 +456,39 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_recon_todo_status ON recon_todo(status);
     `);
 
+    // ── Link intersect (link_intersect) — domains that link to our competitors but not
+    //    to us, the classic "what links do our rivals have that we don't" prospect list.
+    //    DataForSEO backlinks/domain_intersection fills the core columns; MajesticClient
+    //    fills trust_flow/topical_trust_flow when MAJESTIC_API_KEY is set (the directory-
+    //    killer re-sort); the contact_* columns are the later owned-page capture tier.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS link_prospects (
+        domain TEXT PRIMARY KEY,           -- the prospect (referring) domain we'd pursue a link from
+        intersections INTEGER DEFAULT 0,   -- how many of our competitors it links to
+        linked_targets TEXT,               -- JSON string[] of the competitor domains it links to
+        domain_trust INTEGER,              -- DataForSEO domain rank 0-1000 (max across intersections)
+        spam_score INTEGER,                -- worst backlinks_spam_score across intersections (0-100)
+        dofollow INTEGER DEFAULT 0,        -- 1 if it has at least one followed link to the set
+        backlinks INTEGER DEFAULT 0,       -- total backlinks it points at the competitor set
+        referring_domains INTEGER DEFAULT 0,
+        first_seen TEXT,                   -- earliest first_seen across intersections
+        link_types TEXT,                   -- JSON of aggregated referring_links_types (anchor/image/redirect)
+        -- Majestic enrichment (filled when MAJESTIC_API_KEY is set) --
+        trust_flow INTEGER,                -- Majestic Trust Flow 0-100
+        citation_flow INTEGER,             -- Majestic Citation Flow 0-100
+        topical_trust_flow TEXT,           -- JSON [{topic, value}] sorted desc
+        -- contact capture (later lightweight owned-page scrape tier) --
+        contact_email TEXT,
+        contact_source TEXT,               -- how it was found (page URL / decoded obfuscation / social)
+        contact_socials TEXT,              -- JSON { linkedin, twitter, ... }
+        contact_status TEXT,               -- found | form-only | none
+        competitors_set TEXT,              -- JSON of the exact competitor set this row was computed against
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_link_prospects_trust ON link_prospects(domain_trust DESC);
+      CREATE INDEX IF NOT EXISTS idx_link_prospects_intersections ON link_prospects(intersections DESC);
+    `);
+
     this.migrate();
   }
 
