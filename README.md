@@ -221,6 +221,17 @@ Got a weird edge case you wish a tool caught? Tell me - that's exactly how the m
 
 Questions, licensing, or something you'd like automated: **hello@houtini.com**
 
+## Credits
+
+SEO Audit Console stands on a few third-party services - all optional except your own Search Console access, and each called only with a key *you* provide:
+
+- **[Google Search Console](https://search.google.com/search-console)** - your own search-performance history (the one required credential).
+- **[DataForSEO](https://dataforseo.com/?aff=213701)** - SERP, keyword, Labs and backlink data: keyword volumes, competitor footprints, rank history, and the `link_intersect` domain intersection. Pay-as-you-go, optional.
+- **[Majestic](https://majestic.com)** - **Trust Flow** and **Topical Trust Flow** for the `link_intersect` enrichment tier, which re-sorts link prospects by real editorial authority. Trust Flow and Topical Trust Flow are trademarks of Majestic (Majestic-12 Ltd). Optional; get a key on their [plans page](https://majestic.com/plans-pricing).
+- **[Firecrawl](https://firecrawl.link/2d1PLD8)** and **[Supadata](https://supadata.ai)** - competitor-page and ranking-video fetching for content recon. Optional.
+
+Built with [better-sqlite3](https://github.com/WiseLibs/better-sqlite3), [cheerio](https://cheerio.js.org), [Apache ECharts](https://echarts.apache.org), and a local [ms-marco cross-encoder](https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2) (via [Transformers.js](https://github.com/huggingface/transformers.js)) for on-device passage scoring - no data leaves your machine for that.
+
 ## Contributing
 
 Issues and PRs welcome. The check registry (`src/audit/checks.ts`) is built to be extended - each check is a pure read over the joined data that returns findings with evidence, so adding one is fairly self-contained. There's an end-to-end smoke test (`npm run smoke`) and per-feature probes (`npm run probe:*`) to keep you honest. By submitting a PR you grant the licence set out in the [LICENSE](./LICENSE) contributions clause.
