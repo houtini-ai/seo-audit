@@ -14,7 +14,7 @@ Everything joins on one of three keys. Once you know them, you can predict which
 
 - **`url_key`** - one normalised URL form: forced https, www and apex unified, tracking params stripped, params sorted, no fragments. Joins the crawl (`pages`, `links`) to GSC (`search_analytics.page_key`) to `url_inspection`, `page_backlinks`, `page_cwv` and `page_entity`. `normalize_url` shows you the key for any URL.
 - **`query`** - the literal search term. Joins GSC history to the DataForSEO keyword tools (`keyword_volume`, `search_intent`, `ranked_keywords` rows) and the persisted `keyword_intent` table.
-- **`domain`** - a bare host, no scheme, no www. Joins the Labs tools (`ranked_keywords`, `domain_visibility`, `top_pages`, `competitors_domain`, `topic_gaps`) and the backlinks summary.
+- **`domain`** - a bare host, no scheme, no www. Joins the Labs tools (`ranked_keywords`, `domain_visibility`, `top_pages`, `competitors_domain`, `topic_gaps`), the backlinks summary, and the `link_prospects` table that `link_intersect` writes.
 
 ## The grain of each source
 
@@ -28,6 +28,7 @@ Grain is the thing that trips people up when composing - what one row means, per
 | `sitemap_urls` | one sitemap URL | With its declared lastmod, captured at crawl time. |
 | `rank_history` | month × domain | DataForSEO rank distribution plus estimated traffic value. |
 | `page_backlinks` | one backlinked URL | Counts plus a live HTTP status. |
+| `link_prospects` | one prospect domain (links to your rivals, not to you) | Intersections, DataForSEO domain trust, worst spam score, followed flag, anchor mix - plus **Trust Flow**, Citation Flow and **Topical Trust Flow** when `MAJESTIC_API_KEY` is set. Captured per `link_intersect` run and dated, so treat it as a snapshot: rivals keep earning links. |
 | `keyword_intent` / `page_cwv` | one keyword / one URL | Persisted when you pass `siteUrl` to `search_intent` / `page_lighthouse`. |
 | Labs tools | keyword × target, or month × target | Cached 20 days; each live call costs money, so plan the fewest calls that answer the question. |
 | `findings` | one finding per check × URL | With priority and evidence JSON, per audit run. |
@@ -50,9 +51,9 @@ Most composition questions are one of three shapes:
 2. **Authority → waste.** Internal PageRank or backlinks flowing into non-200, redirected or orphaned URLs → recover the equity with 301s or internal links (`fix_finding` generates both).
 3. **Competitor → gap.** Competitor keyword footprints minus your GSC and crawled-page footprint → topics to cover, each tied to your nearest existing page.
 
-## The thirteen recipes
+## The fourteen recipes
 
-Each of these is a real multi-source question, with the join spelled out and a prompt to copy. The first nine are worked recipes; the last four are combinations I've not seen any other tool surface.
+Each of these is a real multi-source question, with the join spelled out and a prompt to copy. The first nine are worked recipes; the last five are combinations I've not seen any other tool surface.
 
 ### 1. AI Overview citation loss
 
@@ -131,6 +132,12 @@ The AI Overview items in a SERP call, against your page's body sections: is the 
 `url_inspection.crawled_as` (which agent Google uses on you, mobile or desktop) × the crawl's response times - slow responses specifically on the agent Google measures you with.
 
 > Is my site slower for the crawler agent Google uses on me?
+
+### 14. Link prospects that match the pages you're trying to move
+
+`link_intersect` fills `link_prospects` with the domains linking to your rivals and not to you; with `MAJESTIC_API_KEY` set, each one carries **Trust Flow** and a ranked **Topical Trust Flow**. That topic column is the join nobody makes: instead of pitching the list top-down, match each prospect's leading topic to the cluster you actually need links into - your striking-distance pages from the audit, or your highest-iPR money pages. A Trust Flow 45 domain in your topic is worth more than a Trust Flow 60 domain in someone else's, and this is the only way to see the difference before you write the email. Check the set's age with `data_storage` first; a prospect list from three months ago is a list of links your rivals have already had for three months.
+
+> Show my link prospects whose Topical Trust Flow matches the topics of my striking-distance pages, sorted by Trust Flow
 
 ## Planning your own
 

@@ -9,6 +9,8 @@ This page takes you from nothing to your first audit: install, connect Google Se
 - **Claude Desktop** or **Claude Code** (any MCP client works; these are the two I test on)
 - A **Google Search Console property you own**. If your site isn't verified there yet, do that first - it's free, takes ten minutes, and you should have it regardless of this tool.
 - *Optional:* a **DataForSEO** account, for keyword volumes, competitor data and backlinks. Everything else works without it. See [competitive.md](competitive.md) for what it adds and what it costs.
+- *Optional, and only if you do link building:* a **[Majestic](https://majestic.com/plans-pricing)** API key. It enriches the `link_intersect` prospect list with **Trust Flow** and **Topical Trust Flow** and re-sorts it by real editorial authority, which is what stops directories sitting at the top of your outreach list. `link_intersect` runs fine without it.
+- *Optional, for content recon only:* **[Firecrawl](https://firecrawl.link/2d1PLD8)** and **[Supadata](https://supadata.ai)** keys, for fetching competitor pages and transcribing ranking videos.
 
 ## The quick route: npx (no clone, no build)
 
@@ -28,11 +30,13 @@ The tool is on npm, so you can skip Git and the build entirely - you still need 
 }
 ```
 
+That's the minimum config - one env var. Every optional service (DataForSEO, Majestic, Firecrawl, Supadata) is another line in the same `env` block; the full list is [in step 3a](#environment-variables) below.
+
 npx downloads and runs the published build on first launch, and you pick up new versions without ever touching a terminal again. The clone-and-build route below is for anyone who wants the source - to read it, extend it, or run ahead of releases. Everything from step 2 (Search Console) onwards is identical for both routes.
 
 ## One-click install (Claude Desktop extension)
 
-There's also a packaged Claude Desktop extension - a `.mcpb` bundle you double-click (or drag into Claude Desktop's Settings → Extensions) and it installs itself, Node runtime included. Claude Desktop then prompts you for the settings instead of you editing JSON: a file picker for the Google service-account key, an optional data directory, and the optional DataForSEO credentials.
+There's also a packaged Claude Desktop extension - a `.mcpb` bundle you double-click (or drag into Claude Desktop's Settings → Extensions) and it installs itself, Node runtime included. Claude Desktop then prompts you for the settings instead of you editing JSON: a file picker for the Google service-account key, an optional data directory, the optional DataForSEO credentials, and the optional Majestic API key (the Trust Flow tier for `link_intersect`).
 
 Honest status: the bundle is **available from our [GitHub releases](https://github.com/houtini-ai/seo-audit/releases), pending review for the Claude extension directory** - so for now it's a download, not an in-app search result. You still need the Search Console service account from step 2 below; the extension only removes the Node/JSON-editing steps. Note the bundle is built per-platform (native SQLite/ONNX modules), so grab the one matching your OS.
 
@@ -138,14 +142,19 @@ Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config
         "GOOGLE_APPLICATION_CREDENTIALS": "C:/path/to/service-account.json",
         "SAC_DATA_DIR": "C:/path/to/where/audits/are/stored",
         "DATAFORSEO_USERNAME": "you@example.com",
-        "DATAFORSEO_PASSWORD": "your-dataforseo-password"
+        "DATAFORSEO_PASSWORD": "your-dataforseo-password",
+        "DATAFORSEO_CACHE_DAYS": "20",
+        "MAJESTIC_API_KEY": "your-majestic-api-key",
+        "MAJESTIC_CACHE_DAYS": "20",
+        "FIRECRAWL_API_KEY": "your-firecrawl-key",
+        "SUPADATA_API_KEY": "your-supadata-key"
       }
     }
   }
 }
 ```
 
-Only `GOOGLE_APPLICATION_CREDENTIALS` is required. Then **fully restart Claude Desktop** - quit it from the system tray, not just the window. Claude Desktop keeps the old server process running until you do, which catches people out constantly.
+That's the everything block - every variable the server reads, so you can see the shape. Delete the lines for services you don't have; only `GOOGLE_APPLICATION_CREDENTIALS` is required, and each optional key just switches its own tier on (`MAJESTIC_API_KEY`, for instance, only ever does anything when you run `link_intersect`). Then **fully restart Claude Desktop** - quit it from the system tray, not just the window. Claude Desktop keeps the old server process running until you do, which catches people out constantly.
 
 ## 3b. Configure Claude Code
 
@@ -156,8 +165,13 @@ Claude Code is, in my view, the best home for this tool - the audit finds the is
 ```bash
 claude mcp add seo-audit-console \
   --env GOOGLE_APPLICATION_CREDENTIALS=C:/path/to/service-account.json \
+  --env DATAFORSEO_USERNAME=you@example.com \
+  --env DATAFORSEO_PASSWORD=your-dataforseo-password \
+  --env MAJESTIC_API_KEY=your-majestic-api-key \
   -- node C:/path/to/seo-audit-console/dist/index.js
 ```
+
+(Drop any `--env` line you don't need - the first one is the only one that's required.)
 
 **Or a project-level `.mcp.json`** (checked into your site's repo, so the whole team gets it):
 
@@ -185,8 +199,19 @@ Don't commit real credential paths to a shared repo unless the team shares the s
 | `SAC_DATA_DIR` | optional | Where per-property SQLite databases and reports live (default: `~/Documents/seo-audit-console`) |
 | `DATAFORSEO_USERNAME` / `DATAFORSEO_PASSWORD` | optional | Switches on the keyword / SERP / competitor / CWV / backlink tools |
 | `DATAFORSEO_CACHE_DAYS` | optional | DataForSEO response cache TTL (default 20 days) |
+| `MAJESTIC_API_KEY` | optional | Switches on the **Majestic** tier in `link_intersect`: every prospect gains **Trust Flow** and **Topical Trust Flow**, and the list re-sorts by real editorial authority instead of DataForSEO's link-volume rank. Get a key on [Majestic's plans page](https://majestic.com/plans-pricing). `link_intersect` works without it. |
+| `MAJESTIC_CACHE_DAYS` | optional | Majestic response cache TTL (default 20 days). Cache hits cost no Majestic units, so leave this generous. |
 | `FIRECRAWL_API_KEY` | optional | Lets content recon scrape competitor pages to markdown (`recon_targets scrapeCompetitors:true`). Get a key at [firecrawl.link/2d1PLD8](https://firecrawl.link/2d1PLD8). Everything else works without it. |
 | `SUPADATA_API_KEY` | optional | Lets content recon transcribe the ranking videos (YouTube/TikTok/X). Get a key at [supadata.ai](https://supadata.ai). Recon works without it - it just skips video. |
+
+Two more exist for people who need them, and you almost certainly don't:
+
+| Env var | Required | Purpose |
+|---|---|---|
+| `SAC_RERANK_DEVICE` | optional | Pins the local passage-scoring model to a device: `dml` (any DirectX 12 GPU on Windows) or `cpu`. Unset, it tries the GPU and falls back to CPU on its own - set it only if that fallback misbehaves. |
+| `MAJESTIC_API_HOST` | optional | Points the Majestic client at a different host. The default is the live API (`api.majestic.com`); Majestic's developer sandbox is a frozen 2015 subset, useful for testing the wiring without spending units. |
+
+Each optional key only affects its own tier, and none of those services is called until you ask a question that needs it.
 
 You can also move the data directory later without touching config - ask *"where is my audit data stored?"* or *"set the data location to D:/seo-data"* (the `data_location` tool persists the choice).
 
@@ -228,6 +253,8 @@ Refresh weekly, run *"detect changes"* right after (it diffs your two most recen
 - **The audit says there's no data.** Run the refresh first and let it finish. The audit reads the local database; it doesn't fetch anything itself.
 - **A large site feels slow.** That's the crawl, and it's normal. It backs off when your server rate-limits, so it stays gentle. Carry on when the progress panel says it's done.
 - **A keyword or competitor tool says it needs credentials.** Those are the optional DataForSEO tools. Everything in the core flow works without them.
+- **`link_intersect` shows a "Domain trust" column, not "Trust Flow".** That's the tool telling you the Majestic tier is off - either `MAJESTIC_API_KEY` isn't in your config's `env` block, or the client hasn't been restarted since you added it. The footer under the table says the same thing in words.
+- **Majestic errors instead of enriching.** The message comes straight from Majestic and names the cause - a bad key, or an allowance with nothing left in it. Enrichment costs roughly one unit per prospect (batched 100 per call, capped by `enrichLimit`), so a big `topN` on a small plan runs the balance down; results are cached for `MAJESTIC_CACHE_DAYS` (20 by default), so re-running the same intersect inside that window costs nothing.
 - **`pull_backlinks` errors even though DataForSEO works.** Backlinks is a separate DataForSEO subscription from SERP/Keywords/Labs - a 40204 error means it isn't activated on your account. The tool says so plainly when that's the cause.
 - **You changed the code and nothing changed.** The running MCP server holds the previous build. `npm run build`, then fully restart the client.
 
@@ -235,6 +262,8 @@ Forget what's possible at any point? Ask *"run seo_audit_help"* - it returns the
 
 ## Where your data lives
 
-One SQLite database per property, under `SAC_DATA_DIR` (default `~/Documents/seo-audit-console`). Your Search Console history and crawl stay on your machine; the passage-scoring model runs locally too. Nothing leaves except the API calls you trigger yourself - Google (your own GSC) and, if configured, DataForSEO. No telemetry.
+One SQLite database per property, under `SAC_DATA_DIR` (default `~/Documents/seo-audit-console`), alongside a small cache database per external service (`dataforseo-cache.db`, `majestic-cache.db`, `firecrawl-cache.db`, `supadata-cache.db`, `wikidata-cache.db`) - that's what stops the same question being paid for twice. `data_storage` shows you the lot with sizes.
+
+Your Search Console history and crawl stay on your machine; the passage-scoring model runs locally too. Nothing leaves except the API calls you trigger yourself - Google (your own GSC) and, if configured, DataForSEO, Majestic (`link_intersect` sends prospect domain names and nothing else), and Firecrawl/Supadata during content recon. No telemetry.
 
 Next: [tools.md](tools.md) for the full tool reference, or [composition.md](composition.md) for asking your own bespoke questions across the data.

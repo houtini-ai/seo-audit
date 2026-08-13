@@ -2,7 +2,7 @@
 
 Everything in the core audit runs on your own Search Console data and your own crawl. But GSC can only describe searches where **you already appear**. The moment the question becomes "how big is this market?", "who do I compete with?" or "what do they rank for that I don't?", you need third-party data.
 
-That's what the DataForSEO integration is for. Together these tools cover most of what I used to open Semrush for - the organic overview, top pages, ranked keywords, the content gap - inside the same conversation as your audit, joined to your own data.
+That's what the DataForSEO integration is for. Together these tools cover most of what I used to open Semrush for - the organic overview, top pages, ranked keywords, the content gap - inside the same conversation as your audit, joined to your own data. One workflow, [link intersect](#link-intersect-link_intersect), has a second optional service behind it - **Majestic**, for Trust Flow and Topical Trust Flow - because link prospecting is the one place where DataForSEO's authority metric isn't the right one to sort on.
 
 ## Setting up DataForSEO
 
@@ -22,6 +22,7 @@ That's what the DataForSEO integration is for. Together these tools cover most o
 - Calls happen **on demand only** - one per question you ask. Nothing loops, nothing runs in bulk behind your back, and there are no scheduled pulls.
 - Every response is **cached for 20 days** (configurable via `DATAFORSEO_CACHE_DAYS`). Ask the same question twice in a fortnight and the second answer is free.
 - Live tool responses show the actual cost of the call; cached ones say "cached". `topic_gaps` is the biggest spender and it's bounded at four Labs calls maximum.
+- **Majestic bills separately**, in its own resource units rather than dollars per call, and only when you run `link_intersect` with `MAJESTIC_API_KEY` set - roughly one unit per prospect enriched, capped at 100 by default, cached 20 days. Details in [the Majestic section](#the-directory-problem-and-the-majestic-fix) below.
 - `page_lighthouse` is the priciest single call (a full Lighthouse run on DataForSEO's infrastructure) and also the slowest (20-120s), which is why it's strictly one URL per request.
 
 My own usage across several properties runs to a few dollars a month. Your mileage depends on how curious you are, but the design intent is that you can't accidentally spend real money.
@@ -99,11 +100,35 @@ The classic outreach question - *what links do our competitors have that we don'
 > Link intersect for mysite.com vs rival1.com, rival2.com
 > What links does rival.com have that we don't?
 
-**The directory problem, and the Majestic fix.** DataForSEO's domain rank is a link-volume metric, so directories and syndicated-press domains float to the top - technically high-authority, useless for outreach. Set an optional **`MAJESTIC_API_KEY`** and each prospect is enriched with **Trust Flow** (editorial authority) and **Topical Trust Flow** (whether that authority is *on your topic*) from [Majestic](https://majestic.com), and the list is re-sorted by Trust Flow. The difference is stark: in testing, a domain DataForSEO ranked 227 came back Trust Flow 0 - pure noise the volume metric couldn't see. Majestic is entirely optional; the tool works without it, the key just makes the priority order defensible to a client. `MAJESTIC_CACHE_DAYS` (default 20) controls the cache; add the key to your MCP config's `env` block alongside the DataForSEO ones.
+**Freshness.** Results persist to a `link_prospects` table per property. Because rivals keep earning links, that set ages - `data_storage` shows each property's prospect count and capture date and flags it as likely stale past 20 days, and re-running `link_intersect` supersedes it. The DataForSEO call itself is 20-day cached.
 
-> Trust Flow and Topical Trust Flow are trademarks of [Majestic](https://majestic.com) (Majestic-12 Ltd). This tier calls the Majestic API with your own key; get one from their [plans and pricing](https://majestic.com/plans-pricing).
+### The directory problem, and the Majestic fix
 
-**Freshness.** Results persist to a `link_prospects` table per property. Because rivals keep earning links, that set ages - `data_storage` shows each property's prospect count and capture date and flags when it's likely stale, and re-running `link_intersect` supersedes it. The DataForSEO call itself is 20-day cached.
+Here's the thing that ruins most prospect lists. DataForSEO's domain rank is a link-**volume** metric, so directories, aggregators and syndicated-press domains float straight to the top: technically high-authority, useless to pitch. Sort by it and the first page of your outreach list is the part you should have thrown away.
+
+Set an optional **`MAJESTIC_API_KEY`** and every qualifying prospect is enriched from [Majestic](https://majestic.com) - a link index that's been crawling and scoring the web's link graph for the better part of two decades - with the two metrics that fix the order:
+
+- **Trust Flow (0-100)** - editorial authority, propagated from a seed set of trusted sites. It answers "who *vouches* for this domain?" rather than "how many links has it accumulated?" The difference is stark: in testing, a domain DataForSEO ranked 227 came back **Trust Flow 0**. Pure noise the volume metric couldn't see.
+- **Topical Trust Flow** - what that authority is *about*, as ranked topics (`Recreation/Autos`, `Computers/Internet`, and so on). This is the one that changes how you work: a Trust Flow 45 domain in your topic beats a Trust Flow 60 domain in someone else's, every time, and now you can see which is which before you write the email.
+
+With the key set the whole list **re-sorts by Trust Flow**, the `Domain trust` column becomes `Trust Flow`, and a `Top topic` column appears carrying each prospect's leading Topical Trust Flow. That's also how you tell the tier is live at a glance - if you're still looking at a `Domain trust` column, the key isn't reaching the server (add it to the `env` block, then fully restart the client).
+
+```json
+"env": {
+  "DATAFORSEO_USERNAME": "you@example.com",
+  "DATAFORSEO_PASSWORD": "your-dataforseo-password",
+  "MAJESTIC_API_KEY": "your-majestic-api-key"
+}
+```
+
+**What it costs, and how it's kept cheap.** Majestic bills resource units per item looked up, so the tier is deliberately frugal: only prospects that survived the spam and intersection filters are enriched, top-down by domain trust; they go up in batches of 100 (one call, roughly one unit each); requests are serialised so nothing runs away; and `enrichLimit` caps the whole thing at 100 by default. If more prospects qualified than got enriched, the response says so explicitly and tells you to raise `enrichLimit` - it won't quietly hand you a half-scored list. (Anything left unenriched sinks to the bottom of a Trust Flow sort, which is the honest place for a domain with no score yet, so raise the limit if your filters kept more than 100 and you want the full picture.) Everything is cached for `MAJESTIC_CACHE_DAYS` (default 20) in `majestic-cache.db`, keyed per domain, so re-running the same intersect inside that window spends nothing.
+
+> Link intersect for mysite.com vs rival1.com, rival2.com, enrich the top 200
+> Which of those prospects have Topical Trust Flow in our category?
+
+Majestic is entirely optional - the tool works without it, and `link_intersect` still returns a sensible followed-first list. The key is what makes the priority order defensible to a client.
+
+> Trust Flow and Topical Trust Flow are trademarks of [Majestic](https://majestic.com) (Majestic-12 Ltd). This tier calls the Majestic API with your own key, sending only the prospect domain names it needs scoring; get a key from their [plans and pricing](https://majestic.com/plans-pricing).
 
 ## Content recon: why a page is losing
 
