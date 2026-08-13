@@ -36,7 +36,7 @@ npx downloads and runs the published build on first launch, and you pick up new 
 
 ## One-click install (Claude Desktop extension)
 
-There's also a packaged Claude Desktop extension - a `.mcpb` bundle you double-click (or drag into Claude Desktop's Settings → Extensions) and it installs itself, Node runtime included. Claude Desktop then prompts you for the settings instead of you editing JSON: a file picker for the Google service-account key, an optional data directory, the optional DataForSEO credentials, and the optional Majestic API key (the Trust Flow tier for `link_intersect`).
+There's also a packaged Claude Desktop extension - a `.mcpb` bundle you double-click (or drag into Claude Desktop's Settings → Extensions) and it installs itself, Node runtime included. Claude Desktop then prompts you for the settings instead of you editing JSON: a file picker for the Google service-account key, an optional data directory, and then the optional keys - DataForSEO, Majestic (the Trust Flow tier for `link_intersect`), Firecrawl and Supadata - each safe to leave blank, because a blank one simply leaves its tier switched off.
 
 Honest status: the bundle is **available from our [GitHub releases](https://github.com/houtini-ai/seo-audit/releases), pending review for the Claude extension directory** - so for now it's a download, not an in-app search result. You still need the Search Console service account from step 2 below; the extension only removes the Node/JSON-editing steps. Note the bundle is built per-platform (native SQLite/ONNX modules), so grab the one matching your OS.
 

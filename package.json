@@ -55,6 +55,7 @@
     "probe:gsc": "node scripts/probe-gsc.mjs",
     "probe:fixfinding": "node scripts/probe-fixfinding.mjs",
     "probe:schema": "node scripts/probe-schema.mjs",
+    "probe:schema-rules": "node scripts/probe-schema-rules.mjs",
     "probe:extract": "node scripts/probe-extract.mjs",
     "probe:extract2": "node scripts/probe-extract2.mjs",
     "probe:backlinks": "node scripts/probe-backlinks.mjs",
@@ -67,6 +68,8 @@
     "probe:6d": "node scripts/probe-6d.mjs",
     "probe:migrate": "node scripts/probe-migrate.mjs",
     "probe:boot": "node scripts/probe-boot.mjs",
+    "probe:drift-fixes": "node scripts/probe-drift-fixes.mjs",
+    "probe:majestic": "node scripts/probe-majestic.mjs",
     "clean": "rimraf dist",
     "prepublishOnly": "npm run clean && npm run build"
   },

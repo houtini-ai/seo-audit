@@ -71,6 +71,13 @@
           "isRequired": false,
           "format": "string",
           "isSecret": true
+        },
+        {
+          "name": "MAJESTIC_CACHE_DAYS",
+          "description": "TTL for the Majestic response cache. Default 20.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
         }
       ]
     }
