@@ -11,7 +11,7 @@
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-server-purple?style=flat-square)](https://modelcontextprotocol.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
-**The complete technical SEO audit, at conversation speed.** SEO Audit Console is an SEO MCP server that merges your **Google Search Console** history, a **first-party crawl** of your site, and on-demand **DataForSEO** market data into one prioritised audit inside Claude - from crawlability, indexation, canonicalisation, structured data, Core Web Vitals and hreflang right through to keyword cannibalisation, striking-distance queries, content gaps, competitor analysis and AI-search readiness. Ninety-three checks, every finding ranked by the clicks it could recover, every fix written for you: paste-ready redirects, JSON-LD, internal links and grounded content briefs. What used to be a fortnight of crawling, exporting and cross-referencing spreadsheets is twenty minutes and a prompt - and your data never leaves your machine.
+**The complete technical SEO audit, at conversation speed.** SEO Audit Console is an SEO MCP server that merges your **Google Search Console** history, a **first-party crawl** of your site, and on-demand **DataForSEO** market data into one prioritised audit inside Claude - from crawlability, indexation, canonicalisation, structured data, Core Web Vitals and hreflang right through to keyword cannibalisation, striking-distance queries, content gaps, competitor analysis, link prospecting (with **Majestic** Trust Flow) and AI-search readiness. Ninety-three checks, every finding ranked by the clicks it could recover, every fix written for you: paste-ready redirects, JSON-LD, internal links and grounded content briefs. What used to be a fortnight of crawling, exporting and cross-referencing spreadsheets is twenty minutes and a prompt - and your data never leaves your machine.
 
 **Built by [Houtini](https://houtini.com).** We build automation for the grunt work of digital marketing - the data collection, the crawling, the merging, the checking - so your team's time goes on the thinking, the strategy and the client work that needs a human. This plugin is that idea applied to the technical SEO audit.
 
@@ -45,7 +45,7 @@ This README is the story and the quick start. The detail lives in the manual:
 | [Tool reference](manual/tools.md) | Every tool: what it does, inputs, joins, an example prompt |
 | [The check registry](manual/checks.md) | All 93 checks with what each catches, its D/N label, and the fix |
 | [Composition](manual/composition.md) | The join keys, the grains, and thirteen worked recipes for asking your own questions across the data |
-| [Competitive analysis](manual/competitive.md) | The Semrush-replacement workflows, DataForSEO setup, and the real costs |
+| [Competitive analysis](manual/competitive.md) | The Semrush-replacement workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
 | [Dashboard & reports](manual/dashboard.md) | The six tabs, what each chart shows, and the shareable export |
 
 ## Surprisingly little has changed in twenty years
@@ -128,6 +128,7 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 10. **The content opportunity report.** If you write for a living, this is your page one: *"Content opportunities for mysite.com"* returns what to WRITE next (demand you already earn impressions for with no winning page), what to REFRESH (pages bleeding clicks), which SNIPPETS to rewrite (ranking well, under-clicked), and which clusters to STRENGTHEN (position 4-20, one push from the money). Every row traces to your own Search Console data - no invented keyword ideas - and *"draft the brief for row 1"* turns any of them into a grounded outline. → [competitive.md](manual/competitive.md)
 11. **Market Sizing and Prioritisation.** *"Size the market: mysite.com vs rival1.com and rival2.com"* - the keyword universe, total monthly demand, and share of voice per topic cluster, from one cached call per domain. The engagement-opening read that used to need a Semrush subscription. → [competitive.md](manual/competitive.md)
 12. **Content recon - why is this page losing?** *"Run content recon on mysite.com"* takes your worst declining pages, pulls the live Google SERP for each, and reads whether the **AI Overview** cites you. The verdict is the honest bit: *rank but not cited* is a data-accuracy or freshness problem, not a rewrite. It transcribes the ranking videos (Supadata), reads the reachable competitors (Firecrawl, plus a free browser-profile fetch that even gets Reddit), and writes the gaps into a tracked to-do board you can annotate and re-measure. → [competitive.md](manual/competitive.md)
+13. **Link prospecting, sorted by authority that's real.** *"Link intersect for mysite.com vs rival1.com, rival2.com"* returns the domains linking to your rivals and not to you - the outreach list, followed-first and spam-filtered. Add a **Majestic** key and it re-sorts on **Trust Flow** and shows each prospect's **Topical Trust Flow**, so the directories drop out and what's left is authority that's actually on your topic. → [Majestic, below](#link-intersect-and-the-majestic-trust-flow-tier)
 
 ![Ranking distribution over time - impressions by position bucket](assets/search-performance.png)
 
@@ -141,7 +142,41 @@ It unlocks the Semrush-replacement layer: the organic visibility overview for an
 
 **Two more optional keys, for content recon only.** When you ask recon to fetch the competitors it finds, it routes each by source: videos to [Supadata](https://supadata.ai) (`SUPADATA_API_KEY`) for transcripts, and competitor pages to [Firecrawl](https://firecrawl.link/2d1PLD8) (`FIRECRAWL_API_KEY`) for clean markdown, with a free browser-profile fetch behind it. Both are pay-as-you-go and entirely optional - recon still classifies the page and lists the competitors without them. Grab a Firecrawl key here: **https://firecrawl.link/2d1PLD8**.
 
-**Link intersect - and an optional Majestic key.** `link_intersect` answers the classic outreach question: the domains that link to your competitors but not to you (or, for a single company, the links they have that you don't). It runs on DataForSEO's backlink data alone, sorted the way a link builder works - followed links first, then domain trust, with spam filtered out. DataForSEO's domain rank, though, can push directories to the top; set `MAJESTIC_API_KEY` and each prospect is enriched with **Trust Flow** and **Topical Trust Flow** from [Majestic](https://majestic.com) and the list is re-sorted by real authority (a domain with a high DataForSEO rank can still be Trust Flow 0 - pure directory noise the volume metric can't see). Optional - the tool works without it, Majestic just makes the priority order defensible. `MAJESTIC_CACHE_DAYS` (default 20) controls the cache. Trust Flow and Topical Trust Flow are trademarks of [Majestic](https://majestic.com); grab an API key on their [plans page](https://majestic.com/plans-pricing).
+One more thing DataForSEO unlocks gets a section of its own, because the link work has a second, optional service behind it.
+
+---
+
+## Link intersect, and the Majestic Trust Flow tier
+
+Link building is the one discipline where the prospect list *is* the strategy, so `link_intersect` builds it from evidence rather than a hunch. One DataForSEO `domain_intersection` call over your competitor set - yours excluded - returns every domain that links to them and not to you, aggregated per prospect: how many of your rivals it links to, whether the link is followed, its worst spam score, the anchor mix. Point it at a single company instead of a set and it answers the other classic, *what links does company X have that we don't?*
+
+That gets you a list. It doesn't get you a priority order, and this is where link prospecting has always gone wrong. DataForSEO sorts on domain rank, which is a link-**volume** metric, so directories, aggregators and syndicated-press domains float straight to the top - technically authoritative, worthless to pitch. Every link builder I know has lost a week to that list.
+
+**Set `MAJESTIC_API_KEY` and the order changes to one you can defend.** [Majestic](https://majestic.com) has been crawling and scoring the web's link graph since before most of today's SEO tools existed, and its two flagship metrics are exactly the ones that fix this:
+
+- **Trust Flow (0-100)** - editorial authority, propagated from a seed set of trusted sites. It measures who *vouches* for a domain rather than how many links it has managed to accumulate. That's the directory killer: in testing, a domain DataForSEO ranked **227** came back **Trust Flow 0**. A volume metric simply cannot see that.
+- **Topical Trust Flow** - what that authority is *about*, as ranked topics. A Trust Flow 45 domain is a brilliant link when its top topic is `Recreation/Autos` and you sell car parts, and a wasted pitch when it's `Health/Nutrition`. It's the difference between a strong link and a relevant one, and it's the column that makes an outreach list survive contact with a client.
+
+With the key set, every qualifying prospect is enriched, the table gains a Trust Flow column and each domain's leading topic, and the whole list is **re-sorted by Trust Flow**:
+
+```console
+you  › link intersect for mysite.com vs rival1.com, rival2.com
+
+     Prospect domain     Links to  Trust Flow  Link    Spam  Backlinks  Top topic
+     enthusiast-mag.com  2/2       54          follow  2     31         Recreation/Autos
+     club-forum.org      2/2       41          follow  0     12         Recreation/Autos
+     free-link-list.net  2/2       0           follow  28    904        –
+```
+
+(Shape of the output, names invented.) Same three prospects, same DataForSEO data underneath - and note which one has the most backlinks. Sorted DataForSEO's way, the directory is the one you'd have emailed first.
+
+`link_intersect` needs DataForSEO's Backlinks subscription, which is separate from their SERP/Keywords/Labs APIs; if it isn't activated the tool says so in plain English rather than throwing a code at you.
+
+The tier is careful with your allowance: enrichment is batched 100 domains per call (about one unit each), capped by `enrichLimit` (default 100 - and when more prospects qualify than get enriched, the response says so and tells you to raise it, rather than handing you a half-scored list), requests are serialised, and every response is cached for 20 days via `MAJESTIC_CACHE_DAYS`. Ask the same question twice in a fortnight and the second answer costs nothing.
+
+Optional, genuinely optional: with no key, `link_intersect` still runs and still sorts followed-first by domain trust. Majestic is what turns "here are 100 domains" into "here are the 20 worth an email, and here's why". Grab a key on their [plans and pricing](https://majestic.com/plans-pricing) page; the full workflow is in [competitive.md](manual/competitive.md#link-intersect-link_intersect).
+
+> Trust Flow and Topical Trust Flow are trademarks of [Majestic](https://majestic.com) (Majestic-12 Ltd). This tier calls the Majestic API with your own key, only when you run `link_intersect`, and nothing else in the tool touches it.
 
 ---
 
@@ -152,6 +187,32 @@ Three steps - the full walkthrough with the gotchas is [getting-started.md](manu
 1. **Get it:** the quick route is npx - point your MCP config at `npx -y @houtini/seo-audit-console` and there's nothing to build. Or clone this repo, `npm install`, `npm run build` if you want the source. Either way, Node ≥ 20.
 2. **Connect Search Console:** create a Google Cloud service account, download its JSON key, and - the step everyone misses - **add the service account's email as a user on your property** in Search Console. Prefer a walkthrough with pictures? [Setting it up from scratch](https://houtini.com/articles/better-search-console/#setting-it-up-from-scratch) covers the whole flow.
 3. **Point your MCP client at `dist/index.js`** with `GOOGLE_APPLICATION_CREDENTIALS` set. Works in Claude Desktop and Claude Code; only the one env var is required.
+
+Every environment variable the server reads, in one block - the first is required and everything below it is optional, so delete the lines for services you don't use:
+
+```json
+{
+  "mcpServers": {
+    "seo-audit-console": {
+      "command": "node",
+      "args": ["C:/path/to/seo-audit-console/dist/index.js"],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "C:/path/to/service-account.json",
+        "SAC_DATA_DIR": "C:/path/to/where/audits/are/stored",
+        "DATAFORSEO_USERNAME": "you@example.com",
+        "DATAFORSEO_PASSWORD": "your-dataforseo-password",
+        "DATAFORSEO_CACHE_DAYS": "20",
+        "MAJESTIC_API_KEY": "your-majestic-api-key",
+        "MAJESTIC_CACHE_DAYS": "20",
+        "FIRECRAWL_API_KEY": "your-firecrawl-key",
+        "SUPADATA_API_KEY": "your-supadata-key"
+      }
+    }
+  }
+}
+```
+
+`GOOGLE_APPLICATION_CREDENTIALS` gets you the whole core audit. DataForSEO adds the market layer, `MAJESTIC_API_KEY` adds the Trust Flow re-sort to `link_intersect`, and Firecrawl and Supadata are content recon's fetchers. Line-by-line, including the two advanced ones you'll probably never need: [getting-started.md](manual/getting-started.md#environment-variables).
 
 Then: *"list properties"* to check it's connected, *"refresh"*, *"run an SEO audit"*.
 
@@ -199,7 +260,7 @@ The one-line version - full descriptions, inputs and example prompts for every t
 
 ## Privacy and data
 
-Your Search Console data and the crawl live in local SQLite files under `SAC_DATA_DIR`. The passage-scoring model runs locally too. Nothing leaves your machine except the API calls *you* trigger - Google (your own GSC) and, if you've set it up, DataForSEO. No telemetry. None.
+Your Search Console data and the crawl live in local SQLite files under `SAC_DATA_DIR`. The passage-scoring model runs locally too. Nothing leaves your machine except the API calls *you* trigger - Google (your own GSC) and, if you've set them up, DataForSEO, Majestic (`link_intersect` sends prospect domain names, nothing else), and Firecrawl/Supadata (content recon sends the competitor URLs it found). Every one of those is keyed by you, called on demand, and cached locally so it isn't called twice. No telemetry. None.
 
 ---
 
