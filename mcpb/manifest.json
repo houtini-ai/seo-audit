@@ -44,7 +44,10 @@
         "DATAFORSEO_USERNAME": "${user_config.dataforseo_username}",
         "DATAFORSEO_PASSWORD": "${user_config.dataforseo_password}",
         "DATAFORSEO_CACHE_DAYS": "${user_config.dataforseo_cache_days}",
-        "MAJESTIC_API_KEY": "${user_config.majestic_api_key}"
+        "MAJESTIC_API_KEY": "${user_config.majestic_api_key}",
+        "MAJESTIC_CACHE_DAYS": "${user_config.majestic_cache_days}",
+        "FIRECRAWL_API_KEY": "${user_config.firecrawl_api_key}",
+        "SUPADATA_API_KEY": "${user_config.supadata_api_key}"
       }
     }
   },
@@ -87,6 +90,29 @@
       "type": "string",
       "title": "Majestic API key (optional)",
       "description": "Majestic API key. Optional - enriches link_intersect prospects with Trust Flow + Topical Trust Flow and re-sorts by real authority. link_intersect works without it (DataForSEO domain rank).",
+      "sensitive": true,
+      "required": false
+    },
+    "majestic_cache_days": {
+      "type": "number",
+      "title": "Majestic cache days",
+      "description": "How many days to cache Majestic responses locally. Cache hits cost no Majestic resource units.",
+      "default": 20,
+      "min": 1,
+      "max": 90,
+      "required": false
+    },
+    "firecrawl_api_key": {
+      "type": "string",
+      "title": "Firecrawl API key (optional)",
+      "description": "Firecrawl API key. Optional - lets content recon scrape competitor pages to clean markdown. Recon works without it.",
+      "sensitive": true,
+      "required": false
+    },
+    "supadata_api_key": {
+      "type": "string",
+      "title": "Supadata API key (optional)",
+      "description": "Supadata API key. Optional - lets content recon transcribe the ranking videos (YouTube/TikTok/X). Recon works without it, it just skips video.",
       "sensitive": true,
       "required": false
     }
