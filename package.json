@@ -15,7 +15,7 @@
     "LICENSE"
   ],
   "author": "Richard Baxter <hello@houtini.com>",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/houtini-ai/seo-audit.git"
