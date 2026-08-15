@@ -78,3 +78,11 @@ scripts/*
 !scripts/probe-boot.mjs
 !scripts/probe-majestic.mjs
 !scripts/build-mcpb.mjs
+
+# --- secrets hardening (never commit) ---
+*.pem
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+gsc*.json
