@@ -46,6 +46,8 @@ This README is the story and the quick start. The detail lives in the manual:
 | [The check registry](manual/checks.md) | All 93 checks with what each catches, its D/N label, and the fix |
 | [Composition](manual/composition.md) | The join keys, the grains, and thirteen worked recipes for asking your own questions across the data |
 | [Competitive analysis](manual/competitive.md) | The Semrush-replacement workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
+| [DataForSEO functions](manual/dataforseo.md) | Every DataForSEO-backed tool grouped by API module — Keywords, SERP, Labs, Backlinks, OnPage — each with its endpoint and cost |
+| [Majestic functions](manual/majestic.md) | The optional Trust Flow tier — what it adds and how `link_intersect` uses it |
 | [Dashboard & reports](manual/dashboard.md) | The six tabs, what each chart shows, and the shareable export |
 
 ## Surprisingly little has changed in twenty years
