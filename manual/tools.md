@@ -115,6 +115,18 @@ People Also Ask questions and related searches for a keyword, from a live SERP c
 Classifies keywords as informational / navigational / commercial / transactional, with probabilities. Pass your `siteUrl` to persist the intents - that's what unlocks the intent-vs-pagetype-mismatch check (a product page ranking for a how-to query, and the reverse).
 > Classify the intent of my top 50 queries and save them for mysite.com
 
+### `youtube_discovery`
+The YouTube videos ranking for a keyword, from a live DataForSEO YouTube SERP: title, channel, views, publish date, duration and shorts/live flags, in rank order. The video-research step - find what's winning, then transcribe the top few (Supadata) to mine what they actually say.
+> Which YouTube videos rank for "sim racing cockpit setup"?
+
+### `news_discovery`
+Recent news articles ranking for a keyword (live Google News SERP): title, source, snippet and publish timestamp, in rank order. Answers "what's been published on this since {date}" - the freshness / what-changed check before an update.
+> What news is there on "direct drive wheelbase" this month?
+
+### `topic_trend`
+Google Trends relative interest (0-100) over time for up to five keywords, with a rising / falling / flat read. Answers "is this topic growing or fading, and is it seasonal" - whether a page is worth updating now, and when to publish. timeRange presets run from past_7_days to 2004_present; type can be web, news or youtube.
+> Is interest in "sim racing" rising or falling over the last 5 years?
+
 ### `page_lighthouse`
 A live Lighthouse run for one URL: lab Core Web Vitals, category scores and the top time-saving opportunities. Slow (20-120s) and one of the pricier calls, so it's strictly per-URL on request. Pass `siteUrl` to persist the CWV, which unlocks the high-yield-cwv-fail check.
 > Run Lighthouse on https://mysite.com/slow-page and save it for mysite.com

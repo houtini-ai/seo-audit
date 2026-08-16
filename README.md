@@ -236,6 +236,7 @@ The one-line version - full descriptions, inputs and example prompts for every t
 | `score_passages` · `draft_content` | Local relevance scoring · grounded writing briefs |
 | `resolve_entities` | Wikidata entities and the link gaps between them |
 | `keyword_volume` · `related_terms` · `search_intent` | DataForSEO keyword data |
+| `youtube_discovery` · `news_discovery` · `topic_trend` | Content research: the videos ranking for a topic (pair with a transcript tool) · recent news coverage / freshness · Google Trends interest-over-time (rising / falling / seasonal) |
 | `competitors_domain` · `page_intersection` · `topic_gaps` | Competitors · content gap · topic gaps |
 | `domain_visibility` · `top_pages` · `ranked_keywords` | The Semrush-style views, any domain (+ `aioOnly` for AI Overview citations) |
 | `page_lighthouse` · `pull_backlinks` | Lab CWV · backlink profile with live status |

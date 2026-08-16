@@ -122,8 +122,9 @@ ARCHETYPE CHAINS (compose along these lines):
 
 COST DISCIPLINE (behave like a strategist who knows the margins):
 - Free and instant, use liberally: everything on synced data — query_data, run_audit, query_audit, suggest_pages, list_templates, detect_changes, get_dashboard, serve_dashboard, export_report.
-- Paid but CHEAP and 20-day cached (Labs/Keywords, ~$0.01–0.13 a call): keyword_volume, search_intent, ranked_keywords, serp_features, domain_visibility, top_pages, competitors_domain, page_intersection, topic_gaps. Top-down pulls only — ONE ranked_keywords call answers "what does this domain rank for"; NEVER loop keywords through SERP endpoints to reconstruct what a Labs call returns.
-- Paid per-keyword (SERP): related_terms and AI-Overview CITATION checks. On-demand for a handful of clicked/explicit keywords, never a list.
+- Paid but CHEAP and 20-day cached (Labs/Keywords, ~$0.01–0.13 a call): keyword_volume, topic_trend, search_intent, ranked_keywords, serp_features, domain_visibility, top_pages, competitors_domain, page_intersection, topic_gaps. Top-down pulls only — ONE ranked_keywords call answers "what does this domain rank for"; NEVER loop keywords through SERP endpoints to reconstruct what a Labs call returns.
+- Paid per-keyword (SERP): related_terms, youtube_discovery (ranking videos for a topic — pair with a transcript tool), news_discovery (recent coverage / freshness), and AI-Overview CITATION checks. On-demand for a handful of clicked/explicit keywords, never a list.
+- Content research (what to write / what changed): topic_trend (is a topic rising/seasonal) → youtube_discovery + news_discovery (what the winning videos/articles cover) → draft_content.
 - Separate subscription: pull_backlinks (DataForSEO Backlinks — a 40204 error means it isn't activated).
 
 AGENCY MACRO-WORKFLOWS (the engagement arc — each stage feeds the next):
@@ -967,6 +968,87 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text: `PAA: ${r.peopleAlsoAsk.length}, related: ${r.relatedSearches.length}${r.cached ? ' (cached)' : ` ($${r.cost.toFixed(4)})`}` }],
         structuredContent: r as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    'youtube_discovery',
+    {
+      title: 'YouTube video discovery (DataForSEO SERP)',
+      description: '[Paid: SERP call PER KEYWORD, cached 20d | Use for: finding the videos that rank for a topic — content research, competitor video scan, freshness] The ranking YouTube videos for a keyword (DataForSEO YouTube organic SERP). Returns title, URL, channel, view count, publish date, duration and shorts/live flags, in rank order. Pair with a transcript tool (Supadata) to read what the winning videos actually say. SERP scope, 20-day cache. Default location: United States (2840).',
+      inputSchema: {
+        keyword: z.string(),
+        location: z.union([z.string(), z.number()]).optional(),
+        languageCode: z.string().optional(),
+        blockDepth: z.number().int().min(1).max(200).optional().describe('How many ranking videos to collect (default 20)'),
+      },
+    },
+    async ({ keyword, location, languageCode, blockDepth }) => {
+      const client = requireDfs(dfs);
+      const r = await client.serpYoutube(keyword, location, languageCode, blockDepth ?? 20);
+      const top = r.videos.slice(0, 15).map(v =>
+        `• ${v.title ?? '(untitled)'}${v.channel ? ` — ${v.channel}` : ''}${v.views != null ? `, ${v.views.toLocaleString()} views` : ''}${v.published ? `, ${v.published}` : ''}\n  ${v.url ?? ''}`).join('\n');
+      return {
+        content: [{ type: 'text', text: `${r.videos.length} YouTube videos for "${keyword}"${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}${r.videos.length ? `:\n${top}` : ''}` }],
+        structuredContent: { keyword, videos: r.videos, cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  server.registerTool(
+    'news_discovery',
+    {
+      title: 'Google News discovery (DataForSEO SERP)',
+      description: '[Paid: SERP call PER KEYWORD, cached 20d | Use for: what has been PUBLISHED on a topic — freshness, "what changed since {date}", competitor coverage] Recent news articles ranking for a keyword (DataForSEO Google News SERP): title, source, snippet, publish timestamp and URL, in rank order (flattens both news results and top-stories). Feeds the "what\'s new / what changed" research step. SERP scope, 20-day cache. Default location: United States (2840).',
+      inputSchema: {
+        keyword: z.string(),
+        location: z.union([z.string(), z.number()]).optional(),
+        languageCode: z.string().optional(),
+        depth: z.number().int().min(1).max(200).optional().describe('How many news results (default 20)'),
+      },
+    },
+    async ({ keyword, location, languageCode, depth }) => {
+      const client = requireDfs(dfs);
+      const r = await client.serpNews(keyword, location, languageCode, depth ?? 20);
+      const top = r.articles.slice(0, 15).map(a =>
+        `• ${a.title ?? '(untitled)'}${a.source ? ` — ${a.source}` : ''}${a.timestamp ? `, ${a.timestamp}` : ''}\n  ${a.url ?? ''}`).join('\n');
+      return {
+        content: [{ type: 'text', text: `${r.articles.length} news results for "${keyword}"${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}${r.articles.length ? `:\n${top}` : ''}` }],
+        structuredContent: { keyword, articles: r.articles, cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  server.registerTool(
+    'topic_trend',
+    {
+      title: 'Google Trends interest over time (DataForSEO)',
+      description: '[Paid: Keywords API, cheap, cached 20d | Use for: seasonality + "is this rising or fading" — should we update now, when to publish] Google Trends relative interest (0–100) over time for up to 5 keywords (DataForSEO KEYWORDS_DATA / google_trends). Returns a per-keyword time series plus a rising/falling/flat read, so you can see direction and seasonality. timeRange: past_7_days | past_30_days | past_90_days | past_12_months (default) | past_5_years | 2004_present. type: web (default) | news | youtube | images. Default location: United States.',
+      inputSchema: {
+        keywords: z.array(z.string()).min(1).max(5),
+        location: z.union([z.string(), z.number()]).optional(),
+        languageCode: z.string().optional(),
+        timeRange: z.enum(['past_7_days', 'past_30_days', 'past_90_days', 'past_12_months', 'past_5_years', '2004_present']).optional(),
+        type: z.enum(['web', 'news', 'youtube', 'images', 'froogle']).optional(),
+      },
+    },
+    async ({ keywords, location, languageCode, timeRange, type }) => {
+      const client = requireDfs(dfs);
+      const r = await client.googleTrends(keywords, location, languageCode, { ...(timeRange ? { timeRange } : {}), ...(type ? { type } : {}) });
+      const summarise = (k: string) => {
+        const vals = r.series.map(s => s.values[k]).filter((v): v is number => typeof v === 'number');
+        if (!vals.length) return `${k}: no data`;
+        const win = Math.max(1, Math.floor(vals.length / 4));
+        const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+        const first = avg(vals.slice(0, win)), last = avg(vals.slice(-win));
+        const dir = last > first * 1.1 ? 'rising' : last < first * 0.9 ? 'falling' : 'flat';
+        return `${k}: ${dir} (${Math.round(first)}→${Math.round(last)}, peak ${Math.max(...vals)})`;
+      };
+      const txt = r.keywords.map(summarise).join('\n');
+      return {
+        content: [{ type: 'text', text: `Trend, ${r.series.length} points${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}:\n${txt}` }],
+        structuredContent: { keywords: r.keywords, series: r.series, cached: r.cached, cost: r.cost },
       };
     },
   );

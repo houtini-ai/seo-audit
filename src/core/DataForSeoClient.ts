@@ -156,6 +156,99 @@ export class DataForSeoClient {
     ]);
   }
 
+  /** SERP — live YouTube organic results for a keyword (video discovery). Same SERP
+   * scope + 20-day cache as serpOrganic. Returns the ranking videos shaped for content
+   * research: title, url, channel, views, publish date, duration. `blockDepth` = how many
+   * videos to collect (YouTube SERP uses block_depth, default 20, max 200). */
+  async serpYoutube(
+    keyword: string, location?: string | number, languageCode = 'en', blockDepth = 20,
+  ): Promise<{
+    videos: Array<{
+      rank: number | null; title: string | null; url: string | null; videoId: string | null;
+      channel: string | null; channelUrl: string | null; views: number | null;
+      published: string | null; durationSeconds: number | null; isShorts: boolean | null; isLive: boolean | null;
+    }>;
+    cached: boolean; cost: number;
+  }> {
+    const r = await this.call('/v3/serp/youtube/organic/live/advanced', [
+      { keyword, ...this.loc(location), language_code: languageCode, block_depth: blockDepth },
+    ]);
+    const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
+    const videos = items
+      .filter((it) => it.type === 'youtube_video')
+      .map((it) => ({
+        rank: it.rank_absolute ?? null,
+        title: it.title ?? null,
+        url: it.url ?? (it.video_id ? `https://www.youtube.com/watch?v=${it.video_id}` : null),
+        videoId: it.video_id ?? null,
+        channel: it.channel_name ?? null,
+        channelUrl: it.channel_url ?? null,
+        views: it.views_count ?? null,
+        published: it.publication_date ?? it.timestamp ?? null,
+        durationSeconds: it.duration_time_seconds ?? null,
+        isShorts: it.is_shorts ?? null,
+        isLive: it.is_live ?? null,
+      }));
+    return { videos, cached: r.cached, cost: r.cost };
+  }
+
+  /** SERP — live Google News results for a keyword (what's been PUBLISHED / freshness).
+   * Same SERP scope + 20-day cache. Flattens both `news_search` items and `top_stories`
+   * groups into one ranked list: title, url, source, snippet, timestamp. */
+  async serpNews(
+    keyword: string, location?: string | number, languageCode = 'en', depth = 20,
+  ): Promise<{
+    articles: Array<{ rank: number | null; title: string | null; url: string | null; source: string | null; snippet: string | null; timestamp: string | null; imageUrl: string | null }>;
+    cached: boolean; cost: number;
+  }> {
+    const r = await this.call('/v3/serp/google/news/live/advanced', [
+      { keyword, ...this.loc(location), language_code: languageCode, depth },
+    ]);
+    const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
+    const articles: Array<{ rank: number | null; title: string | null; url: string | null; source: string | null; snippet: string | null; timestamp: string | null; imageUrl: string | null }> = [];
+    for (const it of items) {
+      if (it.type === 'news_search') {
+        articles.push({ rank: it.rank_absolute ?? null, title: it.title ?? null, url: it.url ?? null, source: it.domain ?? null, snippet: it.snippet ?? null, timestamp: it.timestamp ?? null, imageUrl: it.image_url ?? null });
+      } else if (it.type === 'top_stories' && Array.isArray(it.items)) {
+        for (const s of it.items) {
+          articles.push({ rank: it.rank_absolute ?? null, title: s.title ?? null, url: s.url ?? null, source: s.source ?? s.domain ?? null, snippet: null, timestamp: s.timestamp ?? s.date ?? null, imageUrl: s.image_url ?? null });
+        }
+      }
+    }
+    return { articles, cached: r.cached, cost: r.cost };
+  }
+
+  /** KEYWORDS_DATA — Google Trends relative interest (0–100) over time for up to 5
+   * keywords, for seasonality / "is this rising or fading". Returns the time series per
+   * keyword (values aligned to the queried keywords). `timeRange` presets: past_7_days,
+   * past_30_days, past_90_days, past_12_months (default), past_5_years, 2004_present.
+   * `type`: web (default), news, youtube, images, froogle. Cached 20 days. */
+  async googleTrends(
+    keywords: string[], location?: string | number, languageCode = 'en',
+    opts: { timeRange?: string; type?: string } = {},
+  ): Promise<{
+    series: Array<{ dateFrom: string | null; dateTo: string | null; values: Record<string, number | null> }>;
+    keywords: string[]; cached: boolean; cost: number;
+  }> {
+    const kwIn = keywords.slice(0, 5);
+    const r = await this.call('/v3/keywords_data/google_trends/explore/live', [
+      {
+        keywords: kwIn, ...this.loc(location), language_code: languageCode,
+        type: opts.type ?? 'web', time_range: opts.timeRange ?? 'past_12_months',
+        item_types: ['google_trends_graph'],
+      },
+    ]);
+    const result: any = r.tasks[0]?.result?.[0];
+    const kw: string[] = Array.isArray(result?.keywords) ? result.keywords : kwIn;
+    const graph = (result?.items ?? []).find((it: any) => it.type === 'google_trends_graph');
+    const series = (graph?.data ?? []).map((d: any) => ({
+      dateFrom: d.date_from ?? null,
+      dateTo: d.date_to ?? null,
+      values: Object.fromEntries(kw.map((k, i) => [k, d.values?.[i] ?? null])),
+    }));
+    return { series, keywords: kw, cached: r.cached, cost: r.cost };
+  }
+
   /**
    * Related terms for a keyword — People Also Ask questions + related searches,
    * parsed from the SERP advanced response. Powers the click-through "related
