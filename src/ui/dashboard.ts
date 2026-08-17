@@ -12,6 +12,7 @@ interface DashboardData {
   empty?: boolean;
   linkProspects?: { domain: string; intersections: number; linkedTargets: string[]; domainTrust: number | null; spamScore: number | null; dofollow: boolean; trustFlow: number | null; citationFlow: number | null; topTopic: string | null; competitors: string[]; fetchedAt: string | null }[];
   apiKeys?: { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean };
+  trappedAuthority?: { url: string; referringDomains: number; backlinks: number; clickDepth: number | null; ipr: number }[];
   dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number };
   summary?: { current: Totals; prior: Totals };
   rankTrend?: { date: string; clicks: number; impressions: number; position: number }[];
@@ -1027,6 +1028,7 @@ function render(data: DashboardData): void {
   renderHub(data);
   renderLinks(data);
   renderResearch(data);
+  renderTrapped(data);
   setupTabs();
 }
 
@@ -1205,6 +1207,19 @@ async function runResearch(kind: string, keyword: string, out: HTMLElement): Pro
   } catch {
     out.innerHTML = `<div class="empty-state">Lookup failed — a DataForSEO key is required for live research.</div>`;
   }
+}
+
+// Trapped authority (Architecture tab): external authority (referring domains) buried deep
+// internally — the fix is to link to these pages from higher up. Needs pull_backlinks.
+function renderTrapped(data: DashboardData): void {
+  const el = document.getElementById('trappedTable');
+  if (!el) return;
+  const rows = data.trappedAuthority ?? [];
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty-state">No trapped-authority pages found${data.apiKeys && !data.apiKeys.dataforseo ? ' — DataForSEO backlink data isn’t connected.' : ' — run pull_backlinks to bring in referring-domain counts, then re-open the dashboard.'}</div>`;
+    return;
+  }
+  el.innerHTML = `<table><thead><tr><th>Page</th><th class="num">Ref domains</th><th class="num">Backlinks</th><th class="num">Click depth</th><th class="num">iPR</th></tr></thead><tbody>${rows.map(r => `<tr><td class="url">${esc(r.url)}</td><td class="num">${r.referringDomains}</td><td class="num">${r.backlinks.toLocaleString()}</td><td class="num">${r.clickDepth == null ? '∞' : r.clickDepth}</td><td class="num">${r.ipr}</td></tr>`).join('')}</tbody></table>`;
 }
 
 // On-demand only: fetch DataForSEO data for the ONE clicked keyword (never bulk -

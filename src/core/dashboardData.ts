@@ -101,13 +101,16 @@ export interface DashboardData {
   // Which optional integrations have a key set (drives the key-gated tabs + upsell CTAs).
   // Injected by the server layer (the data layer has no env access).
   apiKeys?: { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean };
+  // Trapped authority — pages with real external authority (referring domains) buried deep
+  // internally (high click depth / low iPR), so their link equity isn't reaching money pages.
+  trappedAuthority?: { url: string; referringDomains: number; backlinks: number; clickDepth: number | null; ipr: number }[];
 }
 
 interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '9';
+const PAYLOAD_VERSION = '10';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -636,9 +639,29 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       }));
     } catch { /* no link_prospects table yet */ }
 
+    // Trapped authority: pages with real external authority (referring domains) buried deep
+    // internally (click depth 3+ from home via body links, or unreachable) — equity not reaching
+    // money pages. Needs pull_backlinks (page_backlinks); empty otherwise.
+    let trappedAuthority: DashboardData['trappedAuthority'] = [];
+    try {
+      const taRows = db.db.prepare(
+        `SELECT p.url_key url, COALESCE(p.ipr,0) ipr, p.click_depth cd,
+                COALESCE(b.referring_domains,0) rd, COALESCE(b.backlinks,0) bl
+         FROM page_backlinks b JOIN pages p ON p.url_key = b.url_key
+         WHERE p.status_code = 200 AND COALESCE(b.referring_domains,0) >= 2
+           AND (p.click_depth IS NULL OR p.click_depth >= 3)`,
+      ).all() as { url: string; ipr: number; cd: number | null; rd: number; bl: number }[];
+      trappedAuthority = taRows
+        .map(r => ({ url: r.url, referringDomains: r.rd, backlinks: r.bl, clickDepth: r.cd, ipr: Math.round(r.ipr), _s: r.rd * (r.cd ?? 6) }))
+        .sort((a, b) => b._s - a._s)
+        .slice(0, 20)
+        .map(({ _s, ...rest }) => rest);
+    } catch { /* no page_backlinks / no crawl */ }
+
     const payload: DashboardData = {
       siteUrl,
       linkProspects,
+      trappedAuthority,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate, rawMaxDate: fresh.rawMax ?? maxDate, trimmedDays: fresh.trimmedDays },
       equityScatter,
       templateMismatch,
