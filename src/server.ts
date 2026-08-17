@@ -55,6 +55,7 @@ import { RankTracker } from './core/RankTracker.js';
 import { Backlinks } from './core/Backlinks.js';
 import { LinkIntersect } from './core/LinkIntersect.js';
 import { MajesticClient } from './core/MajesticClient.js';
+import { fetchGoogleNews } from './core/googleNews.js';
 import { WikidataClient } from './core/WikidataClient.js';
 import { Entities } from './core/Entities.js';
 import { JobManager } from './core/JobManager.js';
@@ -1008,23 +1009,43 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   server.registerTool(
     'news_discovery',
     {
-      title: 'Google News discovery (DataForSEO SERP)',
-      description: '[Paid: SERP call PER KEYWORD, cached 20d | Use for: what has been PUBLISHED on a topic — freshness, "what changed since {date}", competitor coverage] Recent news articles ranking for a keyword (DataForSEO Google News SERP): title, source, snippet, publish timestamp and URL, in rank order (flattens both news results and top-stories). Feeds the "what\'s new / what changed" research step. SERP scope, 20-day cache. Default location: United States (2840).',
+      title: 'News discovery (Google News RSS + DataForSEO)',
+      description: '[Google News is FREE (no key); DataForSEO adds a paid, richer Google News SERP | Use for: what has been PUBLISHED on a topic — freshness, "what changed since {date}", competitor coverage] Recent news for a keyword from Google News (the free RSS search feed — Google\'s old News API is retired) and/or the DataForSEO Google News SERP. Returns title, source, publish time, URL. Default source "both" merges + dedupes; pass source:"google" for a free keyless lookup, "dataforseo" for the paid SERP only. Default location: United States.',
       inputSchema: {
         keyword: z.string(),
         location: z.union([z.string(), z.number()]).optional(),
         languageCode: z.string().optional(),
         depth: z.number().int().min(1).max(200).optional().describe('How many news results (default 20)'),
+        source: z.enum(['google', 'dataforseo', 'both']).optional().describe('google = free Google News RSS; dataforseo = paid Google News SERP; both (default) merges + dedupes'),
       },
     },
-    async ({ keyword, location, languageCode, depth }) => {
-      const client = requireDfs(dfs);
-      const r = await client.serpNews(keyword, location, languageCode, depth ?? 20);
-      const top = r.articles.slice(0, 15).map(a =>
+    async ({ keyword, location, languageCode, depth, source }) => {
+      const src = source ?? 'both';
+      const n = depth ?? 20;
+      const seen = new Set<string>();
+      const articles: any[] = [];
+      const add = (a: any): void => { const k = String(a.url || a.title || '').toLowerCase(); if (k && !seen.has(k)) { seen.add(k); articles.push(a); } };
+      let cost = 0, cached = true, googleCount = 0, dfsCount = 0, googleError: string | null = null;
+      // Free Google News RSS.
+      if (src === 'google' || src === 'both') {
+        try {
+          const g = await fetchGoogleNews(keyword, { limit: n });
+          googleCount = g.articles.length;
+          for (const a of g.articles) add({ title: a.title, source: a.source, timestamp: a.timestamp, url: a.url, via: 'google-news' });
+        } catch (e) { googleError = e instanceof Error ? e.message : 'failed'; }
+      }
+      // Paid DataForSEO Google News SERP (only when explicitly asked, or 'both' AND a key is set).
+      if (src === 'dataforseo' || (src === 'both' && !!dfs)) {
+        const r = await requireDfs(dfs).serpNews(keyword, location, languageCode, n);
+        cost += r.cost; cached = cached && r.cached; dfsCount = r.articles.length;
+        for (const a of r.articles) add({ ...a, via: 'dataforseo' });
+      }
+      const top = articles.slice(0, 15).map(a =>
         `• ${a.title ?? '(untitled)'}${a.source ? ` — ${a.source}` : ''}${a.timestamp ? `, ${a.timestamp}` : ''}\n  ${a.url ?? ''}`).join('\n');
+      const srcNote = [googleCount ? `${googleCount} Google News` : '', dfsCount ? `${dfsCount} DataForSEO` : ''].filter(Boolean).join(' + ') || 'no results';
       return {
-        content: [{ type: 'text', text: `${r.articles.length} news results for "${keyword}"${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}${r.articles.length ? `:\n${top}` : ''}` }],
-        structuredContent: { keyword, articles: r.articles, cached: r.cached, cost: r.cost },
+        content: [{ type: 'text', text: `${articles.length} news results for "${keyword}" (${srcNote}${cost ? `, $${cost.toFixed(4)}` : ', free'})${googleError ? ` [Google News error: ${googleError}]` : ''}${articles.length ? `:\n${top}` : ''}` }],
+        structuredContent: { keyword, articles, cached, cost, sources: { googleNews: googleCount, dataforseo: dfsCount }, googleError },
       };
     },
   );
@@ -2200,10 +2221,14 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             const r = await requireDfs(dfs).relatedTerms(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined);
             return r as unknown as Record<string, unknown>;
           },
-          // Content research (on-demand, gated on a DataForSEO key) — News / Videos / Trends.
+          // Content research (on-demand) — News (free Google News + paid DFS) / Videos / Trends.
           news_discovery: async (a) => {
-            const r = await requireDfs(dfs).serpNews(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined, a.depth as number | undefined);
-            return r as unknown as Record<string, unknown>;
+            const kw = String(a.keyword ?? '');
+            const seen = new Set<string>(); const articles: any[] = [];
+            const add = (x: any): void => { const k = String(x.url || x.title || '').toLowerCase(); if (k && !seen.has(k)) { seen.add(k); articles.push(x); } };
+            try { const g = await fetchGoogleNews(kw, { limit: 20 }); for (const x of g.articles) add({ ...x, via: 'google-news' }); } catch { /* free source optional */ }
+            if (dfs) { try { const r = await dfs.serpNews(kw, a.location as string | number | undefined, a.languageCode as string | undefined); for (const x of r.articles) add({ ...x, via: 'dataforseo' }); } catch { /* paid optional */ } }
+            return { articles } as unknown as Record<string, unknown>;
           },
           youtube_discovery: async (a) => {
             const r = await requireDfs(dfs).serpYoutube(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined, a.blockDepth as number | undefined);
