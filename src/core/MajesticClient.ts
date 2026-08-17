@@ -14,7 +14,7 @@ import { dirname } from 'node:path';
  *
  * Cost control mirrors DataForSeoClient:
  *  - SINGULAR WORKER: live requests serialised (Majestic decrements resource units per item).
- *  - CACHE (default 20 days): per (item, datasource); a hit costs nothing and skips the worker.
+ *  - CACHE (default 30 days, MAJESTIC_CACHE_DAYS): per (item, datasource); a hit costs nothing and skips the worker.
  *
  * Host: LIVE is api.majestic.com (real, current index, consumes units). The dev sandbox
  * developer.majestic.com is a frozen 2015 Historic subset (schema-only) — override via
@@ -65,7 +65,7 @@ export class MajesticClient {
   private readonly cache: Database.Database;
   private chain: Promise<unknown> = Promise.resolve();
 
-  constructor(apiKey: string, cacheDbPath: string, ttlDays = 20, host = process.env.MAJESTIC_API_HOST || DEFAULT_HOST) {
+  constructor(apiKey: string, cacheDbPath: string, ttlDays = 30, host = process.env.MAJESTIC_API_HOST || DEFAULT_HOST) {
     this.key = apiKey;
     this.host = host.replace(/\/+$/, '');
     this.ttlMs = ttlDays * 86400000;

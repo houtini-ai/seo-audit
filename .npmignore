@@ -4,6 +4,12 @@ scripts/
 research/
 plan/
 docs/
+manual/
+assets/
+mcpb/
+.github/
+.dockerignore
+Dockerfile
 audit/
 findings/
 crawl-tests/
