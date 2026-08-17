@@ -23,8 +23,11 @@ import { selectReconTargets, deterministicTodos, persistReconPage, insertTodos, 
  * know the full interactive report is one click away (or one serve_dashboard call away). */
 function browserLink(siteUrl?: string): string {
   const base = dashboardServerUrl();
-  if (base) return `\n\nBrowser dashboard: ${base}/dashboard${siteUrl ? `?siteUrl=${encodeURIComponent(siteUrl)}` : ''}`;
-  return `\n\nTip: run serve_dashboard to open the full interactive dashboard in your browser.`;
+  if (base) return `\n\n📊 Browser dashboard: ${base}/dashboard${siteUrl ? `?siteUrl=${encodeURIComponent(siteUrl)}` : ''}`;
+  // No live server: point at the dashboard surfaces that always work. get_dashboard renders the
+  // interactive dashboard in chat (works through the Docker gateway where a served port would not);
+  // serve_dashboard opens a browser tab locally; export_report writes a shareable HTML file.
+  return `\n\n📊 See it in the dashboard — run get_dashboard${siteUrl ? ` for ${siteUrl}` : ''} (interactive, in chat), serve_dashboard (browser tab), or export_report (shareable HTML).`;
 }
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 import { buildAuditMarkdown } from './audit/report.js';
@@ -295,6 +298,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     if (!v) throw new Error('DATAFORSEO_USERNAME / DATAFORSEO_PASSWORD not set — required for DataForSEO.');
     return v;
   };
+  // Which optional integrations have a key set — drives the dashboard's key-gated tabs
+  // (Links, Content research) and their affiliate-linked upsell states. The data layer has
+  // no env access, so it's injected here onto every dashboard payload surface.
+  const apiKeysStatus = (): { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean } =>
+    ({ dataforseo: !!dfs, majestic: !!majestic, firecrawl: !!firecrawl, supadata: !!supadata });
 
   // ── Introspection (no data / creds required) ────────────────────────────
   server.registerTool(
@@ -2121,7 +2129,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       _meta: { ui: { visibility: ['app'] } },
     },
     async ({ siteUrl }) => {
-      const data = getDashboardData(dataDir(), siteUrl);
+      const data = { ...getDashboardData(dataDir(), siteUrl), apiKeys: apiKeysStatus() };
       return { content: [{ type: 'text', text: 'ok' }], structuredContent: data as unknown as Record<string, unknown> };
     },
   );
@@ -2137,7 +2145,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       inputSchema: { siteUrl: z.string(), theme: z.enum(['light', 'dark']).optional() },
     },
     async ({ siteUrl, theme }) => {
-      const data = getDashboardData(dataDir(), siteUrl);
+      const data = { ...getDashboardData(dataDir(), siteUrl), apiKeys: apiKeysStatus() };
       if (data.empty) {
         return { content: [{ type: 'text', text: `No synced data for ${siteUrl} — run refresh_property first.` }], structuredContent: { error: 'empty', siteUrl } };
       }
@@ -2185,10 +2193,24 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
             // Only serve properties that actually exist locally — getDashboardData would
             // otherwise CREATE an empty DB file for any bogus siteUrl posted at the API.
             if (!listLocalProperties(dataDir()).some(p => p.siteUrl === want)) throw new Error(`unknown property ${want}`);
-            return getDashboardData(dataDir(), want) as unknown as Record<string, unknown>;
+            return { ...getDashboardData(dataDir(), want), apiKeys: apiKeysStatus() } as unknown as Record<string, unknown>;
           },
           related_terms: async (a) => {
             const r = await requireDfs(dfs).relatedTerms(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined);
+            return r as unknown as Record<string, unknown>;
+          },
+          // Content research (on-demand, gated on a DataForSEO key) — News / Videos / Trends.
+          news_discovery: async (a) => {
+            const r = await requireDfs(dfs).serpNews(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined, a.depth as number | undefined);
+            return r as unknown as Record<string, unknown>;
+          },
+          youtube_discovery: async (a) => {
+            const r = await requireDfs(dfs).serpYoutube(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined, a.blockDepth as number | undefined);
+            return r as unknown as Record<string, unknown>;
+          },
+          topic_trend: async (a) => {
+            const kws = Array.isArray(a.keywords) ? (a.keywords as string[]) : [String(a.keyword ?? '')].filter(Boolean);
+            const r = await requireDfs(dfs).googleTrends(kws, a.location as string | number | undefined, a.languageCode as string | undefined, {});
             return r as unknown as Record<string, unknown>;
           },
           keyword_volume: async (a) => {

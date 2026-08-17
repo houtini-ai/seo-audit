@@ -1,0 +1,34 @@
+# Keep the Docker build context tiny — the image rebuilds node_modules/dist from
+# source (see Dockerfile), so none of the regenerable or local-only trees belong in it.
+node_modules
+dist
+mcpb-dist
+mcpb-staging
+.git
+.github
+
+# Local data + secrets — must never enter an image
+*.db
+*.db-wal
+*.db-shm
+.secrets
+.claude
+.env
+.env.*
+
+# Build caches / logs
+*.tsbuildinfo
+*.log
+.vite
+.preview
+
+# Not needed to build or run the server
+scripts
+research
+plan
+manual
+docs
+crawl-tests
+findings
+assets
+images

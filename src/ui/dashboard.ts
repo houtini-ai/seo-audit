@@ -10,6 +10,8 @@ interface Totals { clicks: number; impressions: number; ctr: number; position: n
 interface DashboardData {
   siteUrl: string;
   empty?: boolean;
+  linkProspects?: { domain: string; intersections: number; linkedTargets: string[]; domainTrust: number | null; spamScore: number | null; dofollow: boolean; trustFlow: number | null; citationFlow: number | null; topTopic: string | null; competitors: string[]; fetchedAt: string | null }[];
+  apiKeys?: { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean };
   dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number };
   summary?: { current: Totals; prior: Totals };
   rankTrend?: { date: string; clicks: number; impressions: number; position: number }[];
@@ -1022,6 +1024,9 @@ function render(data: DashboardData): void {
   // in expand/detail pairs that re-ordering would break).
   ['quickWinsTable', 'contentDecayTable', 'pagePerfTable', 'movementTable', 'deviceTable', 'countryTable'].forEach(id => attachSort($(id)));
 
+  renderHub(data);
+  renderLinks(data);
+  renderResearch(data);
   setupTabs();
 }
 
@@ -1097,6 +1102,111 @@ function buildExportBar(data: DashboardData): void {
   }
 }
 
+// ── Phase 2: the Overview report hub + the two key-gated tabs (Links, Content research) ──
+// Affiliate links for the upsell states (Richard's).
+const AFFILIATE: Record<string, string> = {
+  dataforseo: 'https://dataforseo.com/?aff=213701',
+  majestic: 'https://majestic.com/plans-pricing',
+  firecrawl: 'https://firecrawl.link/2d1PLD8',
+  supadata: 'https://supadata.ai',
+};
+function upsellCard(o: { title: string; lead: string; provider: keyof typeof AFFILIATE; cta: string }): string {
+  return `<div class="chart-card upsell">
+    <div class="upsell-badge">API key needed</div>
+    <h3>${esc(o.title)}</h3>
+    <div class="hint">${esc(o.lead)}</div>
+    <a class="btn btn-primary" href="${AFFILIATE[o.provider]}" target="_blank" rel="noopener noreferrer">${esc(o.cta)} →</a>
+  </div>`;
+}
+
+// Overview hub: a card per report, each with a live stat preview, click to jump to that tab.
+function renderHub(data: DashboardData): void {
+  const el = document.getElementById('reportNav');
+  if (!el) return;
+  const nf = (n: number | undefined): string => (n ?? 0).toLocaleString();
+  const noKey = !!(data.apiKeys && !data.apiKeys.dataforseo);
+  const cards = [
+    { panel: 'issues', title: 'Issues & fixes', sub: data.findings?.total ? `${nf(data.findings.total)} findings, ranked` : 'Run run_audit' },
+    { panel: 'health', title: 'Site health', sub: data.crawlHealth?.totalPages ? `${nf(data.crawlHealth.totalPages)} pages crawled` : 'Run a crawl' },
+    { panel: 'opportunities', title: 'Opportunities', sub: data.quickWins?.length ? `${data.quickWins.length} quick wins` : 'Striking distance + decay' },
+    { panel: 'search', title: 'Search performance', sub: data.summary ? `${nf(data.summary.current.clicks)} clicks · 28d` : 'GSC trends' },
+    { panel: 'architecture', title: 'Architecture', sub: 'Internal equity + agent readiness' },
+    { panel: 'links', title: 'Links', sub: data.linkProspects?.length ? `${data.linkProspects.length} prospects` : (noKey ? 'Needs DataForSEO' : 'Run link_intersect') },
+    { panel: 'research', title: 'Content research', sub: noKey ? 'Needs DataForSEO' : 'News · Videos · Trends' },
+  ];
+  el.innerHTML = `<div class="hub-grid">${cards.map(c =>
+    `<button class="hub-card" data-goto="${c.panel}"><span class="hub-title">${esc(c.title)}</span><span class="hub-sub">${esc(c.sub)}</span></button>`).join('')}</div>`;
+  el.querySelectorAll<HTMLButtonElement>('[data-goto]').forEach(b => {
+    b.onclick = (): void => (document.querySelector(`.tab-btn[data-panel="${b.dataset.goto}"]`) as HTMLButtonElement | null)?.click();
+  });
+}
+
+// Links tab: render the stored link_prospects, or the DataForSEO upsell / a run-it prompt.
+function renderLinks(data: DashboardData): void {
+  const el = document.getElementById('linksPanel');
+  if (!el) return;
+  if (data.apiKeys && !data.apiKeys.dataforseo) {
+    el.innerHTML = upsellCard({ title: 'Link intersect — the links your competitors have that you don’t', lead: 'Find the domains linking to your competitors but not to you, ranked by authority — a ready-made outreach list. Needs a DataForSEO account (with the Backlinks subscription). An optional Majestic key re-sorts by Trust Flow.', provider: 'dataforseo', cta: 'Get DataForSEO' });
+    return;
+  }
+  const rows = data.linkProspects ?? [];
+  if (!rows.length) {
+    el.innerHTML = `<div class="chart-card"><h3>Link intersect</h3><div class="hint">No prospects captured yet. Ask Claude to run <code>link_intersect for ${esc(data.siteUrl)} vs your competitors</code> — it finds domains linking to your rivals but not you, sorted followed-first then by domain trust (or Majestic Trust Flow when a key is set).</div></div>`;
+    return;
+  }
+  const enriched = rows.some(r => r.trustFlow != null);
+  const trustHead = enriched ? 'Trust Flow' : 'Domain trust';
+  const trs = rows.map(r => `<tr><td>${esc(r.domain)}</td><td class="num">${r.intersections}</td><td class="num">${enriched ? (r.trustFlow ?? '–') : (r.domainTrust ?? '–')}</td><td>${r.dofollow ? 'follow' : 'nofollow'}</td><td class="num">${r.spamScore ?? '–'}</td>${enriched ? `<td>${esc(r.topTopic ?? '–')}</td>` : ''}</tr>`).join('');
+  const comps = rows[0]?.competitors ?? [];
+  el.innerHTML = `<div class="chart-card"><h3>Link intersect — competitors’ links you don’t have</h3>
+    <div class="hint">Domains linking to ${comps.length ? esc(comps.join(', ')) : 'your competitor set'} but not to you. ${enriched ? 'Sorted by Majestic Trust Flow (kills directory noise).' : 'Sorted by DataForSEO domain trust — set a Majestic key to re-sort by Trust Flow.'} ${rows.length} prospects${rows[0]?.fetchedAt ? `, captured ${esc(String(rows[0].fetchedAt).slice(0, 10))}` : ''}.</div>
+    <div class="findings-table"><table><thead><tr><th>Prospect domain</th><th class="num">Links to</th><th class="num">${trustHead}</th><th>Link</th><th class="num">Spam</th>${enriched ? '<th>Top topic</th>' : ''}</tr></thead><tbody>${trs}</tbody></table></div></div>`;
+}
+
+// Content research tab: interactive News / Videos / Trends (on-demand), or the DataForSEO upsell.
+function renderResearch(data: DashboardData): void {
+  const el = document.getElementById('researchPanel');
+  if (!el) return;
+  if (data.apiKeys && !data.apiKeys.dataforseo) {
+    el.innerHTML = upsellCard({ title: 'Content research — News, Videos & Trends', lead: 'The news articles, YouTube videos and Google-Trends interest behind any topic — the freshness and query-fan-out signals that feed AI answers. Needs a DataForSEO account.', provider: 'dataforseo', cta: 'Get DataForSEO' });
+    return;
+  }
+  el.innerHTML = `<div class="chart-card"><h3>Content research</h3>
+    <div class="hint">On-demand DataForSEO — the news, videos and trend interest for a topic. Each is a live, 20-day-cached SERP call.</div>
+    <div class="research-bar"><input id="researchKw" type="text" placeholder="Enter a topic or keyword…" aria-label="Research keyword" /><button class="btn" data-research="news">News</button><button class="btn" data-research="youtube">Videos</button><button class="btn" data-research="topic_trend">Trend</button></div>
+    <div id="researchOut" class="research-out"></div></div>`;
+  const out = document.getElementById('researchOut') as HTMLElement;
+  const kw = document.getElementById('researchKw') as HTMLInputElement;
+  if ((window as any).__DASH_FIXTURE__ && !__sacWeb) out.innerHTML = `<div class="empty-state">This is a static export — open the live dashboard (<code>get_dashboard</code> or <code>serve_dashboard</code>) to run research.</div>`;
+  el.querySelectorAll<HTMLButtonElement>('[data-research]').forEach(b => { b.onclick = (): void => { void runResearch(b.dataset.research!, kw.value.trim(), out); }; });
+  kw.addEventListener('keydown', e => { if (e.key === 'Enter') void runResearch('news', kw.value.trim(), out); });
+}
+
+async function runResearch(kind: string, keyword: string, out: HTMLElement): Promise<void> {
+  if (!keyword) { out.innerHTML = `<div class="empty-state">Enter a topic first.</div>`; return; }
+  out.innerHTML = `<div class="empty-state">Looking up “${esc(keyword)}”…</div>`;
+  const tbl = (head: string, body: string): string => `<div class="findings-table"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  try {
+    if (kind === 'youtube') {
+      const vids: any[] = ((await callServer('youtube_discovery', { keyword })) as any)?.structuredContent?.videos ?? [];
+      out.innerHTML = vids.length ? tbl('<tr><th>Video</th><th>Channel</th><th class="num">Views</th><th>Published</th></tr>', vids.slice(0, 20).map(v => `<tr><td><a class="rec-url" href="${esc(v.url ?? '#')}" target="_blank" rel="noopener">${esc(v.title ?? '(untitled)')}</a></td><td>${esc(v.channel ?? '–')}</td><td class="num">${v.views != null ? Number(v.views).toLocaleString() : '–'}</td><td>${esc(v.published ?? '–')}</td></tr>`).join('')) : `<div class="empty-state">No videos for “${esc(keyword)}”.</div>`;
+    } else if (kind === 'topic_trend') {
+      const series: any[] = ((await callServer('topic_trend', { keywords: [keyword] })) as any)?.structuredContent?.series ?? [];
+      const vals = series.map(s => s.values?.[keyword]).filter((v: any): v is number => typeof v === 'number');
+      if (!vals.length) { out.innerHTML = `<div class="empty-state">No trend data for “${esc(keyword)}”.</div>`; return; }
+      const w = Math.max(1, Math.floor(vals.length / 4)), avg = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+      const first = avg(vals.slice(0, w)), last = avg(vals.slice(-w));
+      const dir = last > first * 1.1 ? 'rising' : last < first * 0.9 ? 'falling' : 'flat';
+      out.innerHTML = `<div class="metric-card" style="max-width:340px"><div class="label">Google Trends — “${esc(keyword)}”</div><div class="value">${dir}</div><div class="hint">${series.length} points · ${Math.round(first)}→${Math.round(last)}, peak ${Math.max(...vals)}</div></div>`;
+    } else {
+      const arts: any[] = ((await callServer('news_discovery', { keyword })) as any)?.structuredContent?.articles ?? [];
+      out.innerHTML = arts.length ? tbl('<tr><th>Article</th><th>Source</th><th>When</th></tr>', arts.slice(0, 20).map(a => `<tr><td><a class="rec-url" href="${esc(a.url ?? '#')}" target="_blank" rel="noopener">${esc(a.title ?? '(untitled)')}</a></td><td>${esc(a.source ?? '–')}</td><td>${esc(a.timestamp ?? '–')}</td></tr>`).join('')) : `<div class="empty-state">No news for “${esc(keyword)}”.</div>`;
+    }
+  } catch {
+    out.innerHTML = `<div class="empty-state">Lookup failed — a DataForSEO key is required for live research.</div>`;
+  }
+}
+
 // On-demand only: fetch DataForSEO data for the ONE clicked keyword (never bulk -
 // a site can have a million keywords; we enrich what's on screen / clicked).
 async function loadRelated(keyword: string): Promise<void> {
@@ -1122,6 +1232,36 @@ async function loadRelated(keyword: string): Promise<void> {
   }
 }
 
+// Light/dark toggle (pricemonitor ◐). Reuses the existing theme path: applyHostContext
+// stamps data-theme + the .dark class, then render(currentData) re-tints the ECharts
+// (they read CSS custom properties at build time). Persisted per-origin in localStorage.
+const THEME_KEY = 'sac-theme';
+const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+const themeName = (): 'light' | 'dark' => document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+const savedTheme = (): 'light' | 'dark' | null => {
+  try { const t = localStorage.getItem(THEME_KEY); return t === 'dark' || t === 'light' ? t : null; } catch { return null; }
+};
+function paintThemeToggle(): void {
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+  const dark = themeName() === 'dark';
+  btn.innerHTML = dark ? ICON_SUN : ICON_MOON; // shows the mode you'll switch TO
+  btn.setAttribute('aria-pressed', String(dark));
+}
+function setupThemeToggle(): void {
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+  paintThemeToggle();
+  btn.onclick = (): void => {
+    const next = themeName() === 'dark' ? 'light' : 'dark';
+    applyHostContext({ theme: next });
+    try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode */ }
+    paintThemeToggle();
+    if (currentData) render(currentData); // re-tint charts for the new theme
+  };
+}
+
 // Boot: connect to the host. Production-inert preview hook - a screenshot harness can
 // set window.__DASH_FIXTURE__ to render real data with no host. Placed last so every
 // definition (incl. SEV_ORDER/renderFindings) is initialised before render() runs.
@@ -1130,8 +1270,8 @@ if (__fixture) {
   applyHostContext({ theme: (window as any).__DASH_THEME__ ?? 'light' });
   currentData = __fixture; render(__fixture);
 } else if (__sacWeb) {
-  // Web mode: honour the browser's colour scheme, load over HTTP, offer a property switcher.
-  applyHostContext({ theme: window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' });
+  // Web mode: honour a saved choice, else the browser's colour scheme; load over HTTP, offer a property switcher.
+  applyHostContext({ theme: savedTheme() ?? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') });
   if ((__sacWeb.properties?.length ?? 0) > 1) {
     const header = document.querySelector('.header');
     if (header) {
@@ -1151,3 +1291,6 @@ if (__fixture) {
 } else {
   app.connect().then(() => applyHostContext(app.getHostContext() as any));
 }
+
+// Wire the light/dark toggle in every mode (the button is static in dashboard.html).
+setupThemeToggle();

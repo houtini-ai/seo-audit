@@ -91,13 +91,23 @@ export interface DashboardData {
       }[];
     }[];
   } | null;
+  // Link intersect (from link_intersect) — domains linking to competitors but not us.
+  linkProspects?: {
+    domain: string; intersections: number; linkedTargets: string[];
+    domainTrust: number | null; spamScore: number | null; dofollow: boolean;
+    trustFlow: number | null; citationFlow: number | null; topTopic: string | null;
+    competitors: string[]; fetchedAt: string | null;
+  }[];
+  // Which optional integrations have a key set (drives the key-gated tabs + upsell CTAs).
+  // Injected by the server layer (the data layer has no env access).
+  apiKeys?: { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean };
 }
 
 interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '8';
+const PAYLOAD_VERSION = '9';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -600,8 +610,35 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       (b.totalImpressions - a.totalImpressions),                                       // then by reach
     ).slice(0, 40);
 
+    // Link intersect (link_intersect) — followed-first, then Trust Flow / domain trust. Absent
+    // table (pre-link_intersect DB) is fine; the tab shows a run/upsell state instead.
+    let linkProspects: DashboardData['linkProspects'] = [];
+    try {
+      const lpRows = db.db.prepare(
+        `SELECT domain, intersections, linked_targets, domain_trust, spam_score, dofollow,
+                trust_flow, citation_flow, topical_trust_flow, competitors_set, fetched_at
+         FROM link_prospects
+         ORDER BY dofollow DESC, COALESCE(trust_flow, domain_trust, 0) DESC LIMIT 100`,
+      ).all() as any[];
+      const pj = (s: string): any => { try { return JSON.parse(s || '[]'); } catch { return []; } };
+      linkProspects = lpRows.map(r => ({
+        domain: r.domain,
+        intersections: r.intersections || 0,
+        linkedTargets: pj(r.linked_targets),
+        domainTrust: r.domain_trust ?? null,
+        spamScore: r.spam_score ?? null,
+        dofollow: !!r.dofollow,
+        trustFlow: r.trust_flow ?? null,
+        citationFlow: r.citation_flow ?? null,
+        topTopic: pj(r.topical_trust_flow)[0]?.topic ?? null,
+        competitors: pj(r.competitors_set),
+        fetchedAt: r.fetched_at ?? null,
+      }));
+    } catch { /* no link_prospects table yet */ }
+
     const payload: DashboardData = {
       siteUrl,
+      linkProspects,
       dateRange: { current: `last 28d to ${maxDate}`, prior: 'prior 28d', maxDate, rawMaxDate: fresh.rawMax ?? maxDate, trimmedDays: fresh.trimmedDays },
       equityScatter,
       templateMismatch,

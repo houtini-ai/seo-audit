@@ -14,9 +14,22 @@ body {
 
 .dashboard { padding: 20px; max-width: 1100px; margin: 0 auto; }
 
-.header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--space-standard-2); gap: var(--space-standard-1); flex-wrap: wrap; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-standard-2); gap: var(--space-standard-1); flex-wrap: wrap; }
 .site { font-family: var(--font-display); font-size: 19px; font-weight: 700; letter-spacing: -0.01em; color: var(--text-primary); }
+.header-right { display: flex; align-items: center; gap: 12px; }
 .range { font-size: 12px; color: var(--text-muted); }
+
+/* Light/dark toggle - pricemonitor icon button */
+.theme-toggle {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0; cursor: pointer;
+  color: var(--text-muted); background: var(--bg-surface);
+  border: 1px solid var(--border-standard); border-radius: var(--radius-sm);
+  transition: color .14s var(--ease), border-color .14s var(--ease), box-shadow .14s var(--ease);
+}
+.theme-toggle:hover { color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.theme-toggle:active { transform: translateY(1px); }
+.theme-toggle svg { width: 17px; height: 17px; }
 
 /* Icons (inline Lucide glyphs from lib/icons.ts) */
 .icon { vertical-align: -2px; flex: 0 0 auto; }
@@ -43,10 +56,9 @@ body {
   border: 1px solid var(--border-standard);
   border-radius: var(--radius);
   padding: 15px 18px;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow .18s var(--ease);
+  transition: box-shadow .18s var(--ease), border-color .18s var(--ease);
 }
-.metric-card:hover { box-shadow: var(--shadow); }
+.metric-card:hover { box-shadow: var(--shadow-sm); border-color: var(--border-standard); }
 .metric-card .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 700; margin-bottom: 4px; }
 .metric-card .value { font-size: var(--fs-kpi); font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; color: var(--text-primary); }
 .chg { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; }
@@ -63,10 +75,7 @@ body {
   border-radius: var(--radius);
   padding: var(--space-standard-2) 18px;
   margin-bottom: 20px;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow .18s var(--ease);
 }
-.chart-card:hover { box-shadow: var(--shadow); }
 .chart-card h3 { font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--text-primary); margin-bottom: 4px; }
 .chart-card h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 700; margin-bottom: 8px; }
 .hint { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.5; }
@@ -356,3 +365,49 @@ select, select.sel, #cannSelect {
   border-radius: var(--radius-sm); padding: 8px 9px; font-size: 12.5px; cursor: pointer; font-family: var(--font);
   max-width: 100%; margin-bottom: 8px;
 }
+
+/* Report footer - attribution */
+.app-footer {
+  margin-top: var(--space-relaxed-1);
+  padding-top: var(--space-standard-2);
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-faint);
+}
+.app-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 700;
+  transition: color .14s var(--ease);
+}
+.app-footer a:hover { color: var(--accent); }
+
+/* Phase 2 — Overview report hub */
+.report-nav { margin-bottom: 20px; }
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.hub-card {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; cursor: pointer;
+  background: var(--bg-surface); border: 1px solid var(--border-standard); border-radius: var(--radius);
+  padding: 13px 15px; font-family: var(--font);
+  transition: border-color .14s var(--ease), box-shadow .14s var(--ease), transform .1s var(--ease);
+}
+.hub-card:hover { border-color: var(--text-faint); box-shadow: var(--shadow-sm); }
+.hub-card:active { transform: translateY(1px); }
+.hub-title { font-size: 13.5px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.005em; }
+.hub-sub { font-size: 11px; color: var(--text-muted); }
+@media (max-width: 760px) { .hub-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* Key-gated upsell (missing API key) */
+.chart-card.upsell { border-style: dashed; }
+.upsell-badge { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--intent-warning); background: var(--intent-warning-bg); padding: 2px 8px; border-radius: 5px; margin-bottom: 8px; }
+.btn-primary { color: var(--accent-on); background: var(--accent); border-color: var(--accent); margin-top: 12px; text-decoration: none; }
+.btn-primary:hover { color: var(--accent-on); background: var(--accent-strong); border-color: var(--accent-strong); }
+
+/* Content research bar */
+.research-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; }
+.research-bar input { flex: 1 1 240px; min-width: 200px; border: 1px solid var(--border-standard); background: var(--bg-inset); color: var(--text-primary); border-radius: var(--radius-sm); padding: 8px 11px; font-size: 13px; font-family: var(--font); }
+.research-bar input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.research-out { margin-top: 10px; }

@@ -12,7 +12,10 @@
     <div id="content" style="display:none">
       <div class="header">
         <div class="site" id="site"></div>
-        <div class="range" id="range"></div>
+        <div class="header-right">
+          <div class="range" id="range"></div>
+          <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light or dark theme" title="Toggle light / dark"></button>
+        </div>
       </div>
       <nav class="tabs" id="tabs" role="tablist">
         <button class="tab-btn active" data-panel="overview" role="tab">Overview</button>
@@ -21,9 +24,12 @@
         <button class="tab-btn" data-panel="opportunities" role="tab">Opportunities</button>
         <button class="tab-btn" data-panel="search" role="tab">Search performance</button>
         <button class="tab-btn" data-panel="architecture" role="tab">Architecture</button>
+        <button class="tab-btn" data-panel="links" role="tab">Links</button>
+        <button class="tab-btn" data-panel="research" role="tab">Content research</button>
       </nav>
 
       <section class="tab-panel active" data-panel="overview" role="tabpanel">
+        <div id="reportNav" class="report-nav"></div>
         <div class="chart-card" id="execCard">
           <h3>Executive summary</h3>
           <div class="hint">An at-a-glance read of performance, the biggest opportunities, and what to fix first - in plain language.</div>
@@ -211,8 +217,19 @@
           <div id="agentPanel"></div>
         </div>
       </section>
+
+      <section class="tab-panel" data-panel="links" role="tabpanel">
+        <div id="linksPanel"></div>
+      </section>
+
+      <section class="tab-panel" data-panel="research" role="tabpanel">
+        <div id="researchPanel"></div>
+      </section>
     </div>
     <div class="empty" id="empty" style="display:none">No data yet - run <code>refresh_property</code> or <code>sync_gsc</code> for this property first.</div>
+    <footer class="app-footer">
+      <a href="https://houtini.com" target="_blank" rel="noopener noreferrer">By Houtini.com</a>
+    </footer>
   </div>
   <script type="module" src="./dashboard.ts"></script>
 </body>
