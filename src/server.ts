@@ -1040,12 +1040,19 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         cost += r.cost; cached = cached && r.cached; dfsCount = r.articles.length;
         for (const a of r.articles) add({ ...a, via: 'dataforseo' });
       }
+      // Top sources: which publishers are covering this topic, ranked by article count — the
+      // "who is talking about X" read. Powers "trending news + sources for X" in one call.
+      const sourceCount = new Map<string, number>();
+      for (const a of articles) { const s = String(a.source ?? '').trim(); if (s) sourceCount.set(s, (sourceCount.get(s) ?? 0) + 1); }
+      const topSources = [...sourceCount.entries()].sort((x, y) => y[1] - x[1]).slice(0, 12).map(([source, count]) => ({ source, count }));
+
       const top = articles.slice(0, 15).map(a =>
         `• ${a.title ?? '(untitled)'}${a.source ? ` — ${a.source}` : ''}${a.timestamp ? `, ${a.timestamp}` : ''}\n  ${a.url ?? ''}`).join('\n');
       const srcNote = [googleCount ? `${googleCount} Google News` : '', dfsCount ? `${dfsCount} DataForSEO` : ''].filter(Boolean).join(' + ') || 'no results';
+      const sourcesLine = topSources.length ? `\n\nTop sources: ${topSources.map(s => `${s.source} (${s.count})`).join(', ')}` : '';
       return {
-        content: [{ type: 'text', text: `${articles.length} news results for "${keyword}" (${srcNote}${cost ? `, $${cost.toFixed(4)}` : ', free'})${googleError ? ` [Google News error: ${googleError}]` : ''}${articles.length ? `:\n${top}` : ''}` }],
-        structuredContent: { keyword, articles, cached, cost, sources: { googleNews: googleCount, dataforseo: dfsCount }, googleError },
+        content: [{ type: 'text', text: `${articles.length} news results for "${keyword}" (${srcNote}${cost ? `, $${cost.toFixed(4)}` : ', free'})${googleError ? ` [Google News error: ${googleError}]` : ''}${sourcesLine}${articles.length ? `\n\n${top}` : ''}\n\nCompose with topic_trend for direction (rising/falling); schedule this call daily/hourly for a topic radar.` }],
+        structuredContent: { keyword, articles, topSources, cached, cost, sources: { googleNews: googleCount, dataforseo: dfsCount }, googleError },
       };
     },
   );
