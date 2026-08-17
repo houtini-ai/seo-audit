@@ -110,7 +110,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '10';
+const PAYLOAD_VERSION = '11';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -130,8 +130,10 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
               (SELECT COALESCE(MAX(checked_at),'') FROM agent_readiness) ar,
               (SELECT COUNT(*)||':'||COALESCE(MAX(period),'') FROM rank_history) rh,
               (SELECT COALESCE(MAX(id),0) FROM serp_footprint) sf,
-              (SELECT COALESCE(MAX(id),0) FROM market_sizing) ms`).get() as { sa: string | null; run: string | null; pg: number; ar: string | null; rh: string | null; sf: number; ms: number };
-    const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}|${ver.ar ?? ''}|${ver.rh ?? ''}|${ver.sf}|${ver.ms}`;
+              (SELECT COALESCE(MAX(id),0) FROM market_sizing) ms,
+              (SELECT COUNT(*)||':'||COALESCE(MAX(fetched_at),'')||':'||COALESCE(MAX(majestic_at),'') FROM page_backlinks) pb,
+              (SELECT COUNT(*)||':'||COALESCE(MAX(fetched_at),'') FROM link_prospects) lp`).get() as { sa: string | null; run: string | null; pg: number; ar: string | null; rh: string | null; sf: number; ms: number; pb: string | null; lp: string | null };
+    const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}|${ver.ar ?? ''}|${ver.rh ?? ''}|${ver.sf}|${ver.ms}|${ver.pb ?? ''}|${ver.lp ?? ''}`;
     const hit = db.db.prepare('SELECT payload FROM dashboard_cache WHERE id=1 AND version=?').get(version) as { payload: string } | undefined;
     // A corrupt/truncated cache row must fall through to a rebuild, not throw forever.
     if (hit) { try { return JSON.parse(hit.payload) as DashboardData; } catch { /* rebuild below */ } }
