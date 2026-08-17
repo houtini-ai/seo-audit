@@ -1,5 +1,6 @@
 import { AuditDatabase } from './AuditDatabase.js';
 import { DataForSeoClient } from './DataForSeoClient.js';
+import { MajesticClient } from './MajesticClient.js';
 import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty } from './url-key.js';
 
@@ -25,6 +26,7 @@ export interface BacklinksResult {
   domainRank: number | null;          // DataForSEO Domain Rank (0–1000)
   brokenBacklinks: number; brokenPages: number;
   nofollowPct: number | null;         // share of referring links marked nofollow (0–1)
+  majesticEnriched: number;           // per-URL pages given Majestic Trust Flow (0 = tier off)
   cached: boolean; cost: number;
 }
 
@@ -36,11 +38,11 @@ export interface BacklinksResult {
  * Never auto-run (the user's rule: backlinks are paid + on-demand); 20-day cached.
  */
 export class Backlinks {
-  constructor(private readonly dfs: DataForSeoClient, private readonly dataDir: string) {}
+  constructor(private readonly dfs: DataForSeoClient, private readonly dataDir: string, private readonly majestic: MajesticClient | null = null) {}
 
   async run(
     siteUrl: string,
-    opts: { limit?: number; statusLimit?: number; userAgent?: string },
+    opts: { limit?: number; statusLimit?: number; userAgent?: string; majesticLimit?: number },
     update: (p: Record<string, unknown>) => void,
     signal: AbortSignal,
   ): Promise<BacklinksResult> {
@@ -121,12 +123,37 @@ export class Backlinks {
         for (const r of rows) upsert.run({ ...r, status_code: crawlStatus.get(r.url_key) ?? fetched.get(r.url_key) ?? null });
       })();
 
+      // Majestic per-URL Trust Flow (trapped-authority v2). GetIndexItemInfo batches ≤100 items
+      // per call and MajesticClient slices internally, so this is ceil(N/100) calls, not N. Bounded
+      // to the most-backlinked URLs, only when a Majestic key is set, and never fails the pull.
+      let majesticEnriched = 0;
+      if (this.majestic && rows.length && !signal.aborted) {
+        const cand = [...rows].sort((a, b) => b.backlinks - a.backlinks).slice(0, Math.min(rows.length, opts.majesticLimit ?? 100));
+        const byUrl = new Map(cand.map(r => [r.url, r.url_key]));
+        try {
+          update({ phase: 'majestic', total: cand.length });
+          const metrics = await this.majestic.getIndexItemInfo(cand.map(c => c.url), { datasource: 'historic', desiredTopics: 5 });
+          const upd = db.db.prepare(
+            `UPDATE page_backlinks SET trust_flow=?, citation_flow=?, topical_trust_flow=?, majestic_at=datetime('now') WHERE url_key=?`,
+          );
+          db.db.transaction(() => {
+            for (const m of metrics) {
+              const uk = byUrl.get(m.item);
+              if (!uk) continue;
+              upd.run(m.trustFlow ?? null, m.citationFlow ?? null, m.topicalTrustFlow.length ? JSON.stringify(m.topicalTrustFlow) : null, uk);
+              majesticEnriched++;
+            }
+          })();
+        } catch { /* Majestic optional — never fail the backlink pull on it */ }
+      }
+
       return {
         siteUrl, target, pages: rows.length, statusChecked: fetched.size,
         totalBacklinks: n(s.backlinks), referringDomains: n(s.referring_domains),
         domainRank: s.rank != null ? n(s.rank) : null,
         brokenBacklinks: n(s.broken_backlinks), brokenPages: n(s.broken_pages),
         nofollowPct: nofollowPct != null ? Math.round(nofollowPct * 1000) / 1000 : null,
+        majesticEnriched,
         cached: sum.cached && res.cached, cost: sum.cost + res.cost,
       };
     } finally {

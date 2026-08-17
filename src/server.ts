@@ -271,17 +271,18 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
 
   const dfsUser = process.env.DATAFORSEO_USERNAME;
   const dfsPass = process.env.DATAFORSEO_PASSWORD;
-  const dfsCacheDays = Number(process.env.DATAFORSEO_CACHE_DAYS) || 20;
+  const dfsCacheDays = Number(process.env.DATAFORSEO_CACHE_DAYS) || 7;
   const dfs = dfsUser && dfsPass
     ? new DataForSeoClient(dfsUser, dfsPass, path.join(dataDir(), 'dataforseo-cache.db'), dfsCacheDays)
     : null;
   const rankTracker = dfs ? new RankTracker(dfs, dataDir()) : null;
-  const backlinks = dfs ? new Backlinks(dfs, dataDir()) : null;
   const linkIntersect = dfs ? new LinkIntersect(dfs, dataDir()) : null;
-  // Majestic (Trust Flow / Topical Trust Flow) — optional link_intersect enrichment tier.
+  // Majestic (Trust Flow / Topical Trust Flow) — optional link_intersect + trapped-authority tier.
   const majesticKey = process.env.MAJESTIC_API_KEY;
-  const majesticCacheDays = Number(process.env.MAJESTIC_CACHE_DAYS) || 20;
+  const majesticCacheDays = Number(process.env.MAJESTIC_CACHE_DAYS) || 30;
   const majestic = majesticKey ? new MajesticClient(majesticKey, path.join(dataDir(), 'majestic-cache.db'), majesticCacheDays) : null;
+  // Backlinks after Majestic, so pull_backlinks can enrich per-URL pages with Trust Flow.
+  const backlinks = dfs ? new Backlinks(dfs, dataDir(), majestic) : null;
   // Firecrawl (competitor-page scraping for content recon) — optional; degrades gracefully.
   const firecrawlKey = process.env.FIRECRAWL_API_KEY;
   const firecrawl = firecrawlKey ? new FirecrawlClient(firecrawlKey, path.join(dataDir(), 'firecrawl-cache.db')) : null;

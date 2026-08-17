@@ -524,6 +524,12 @@ export class AuditDatabase {
     ensure('pages', 'max_passage_at', 'max_passage_at TEXT');
     ensure('pages', 'click_depth', 'click_depth INTEGER');
     ensure('pages', 'indexable_reason', 'indexable_reason TEXT');
+    // Majestic per-URL authority on backlinked pages (trapped-authority v2) — filled by
+    // pull_backlinks when MAJESTIC_API_KEY is set. topical_trust_flow is JSON [{topic,value}].
+    ensure('page_backlinks', 'trust_flow', 'trust_flow INTEGER');
+    ensure('page_backlinks', 'citation_flow', 'citation_flow INTEGER');
+    ensure('page_backlinks', 'topical_trust_flow', 'topical_trust_flow TEXT');
+    ensure('page_backlinks', 'majestic_at', 'majestic_at TEXT');
     // property-level backlink profile summary (from DataForSEO backlinks/summary)
     ensure('property_meta', 'total_backlinks', 'total_backlinks INTEGER');
     ensure('property_meta', 'referring_domains', 'referring_domains INTEGER');

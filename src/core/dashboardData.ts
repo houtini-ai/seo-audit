@@ -103,7 +103,7 @@ export interface DashboardData {
   apiKeys?: { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean };
   // Trapped authority — pages with real external authority (referring domains) buried deep
   // internally (high click depth / low iPR), so their link equity isn't reaching money pages.
-  trappedAuthority?: { url: string; referringDomains: number; backlinks: number; clickDepth: number | null; ipr: number }[];
+  trappedAuthority?: { url: string; referringDomains: number; backlinks: number; clickDepth: number | null; ipr: number; trustFlow: number | null; topTopic: string | null }[];
 }
 
 interface Totals { clicks: number; impressions: number; position: number }
@@ -646,13 +646,21 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     try {
       const taRows = db.db.prepare(
         `SELECT p.url_key url, COALESCE(p.ipr,0) ipr, p.click_depth cd,
-                COALESCE(b.referring_domains,0) rd, COALESCE(b.backlinks,0) bl
+                COALESCE(b.referring_domains,0) rd, COALESCE(b.backlinks,0) bl,
+                b.trust_flow tf, b.topical_trust_flow ttf
          FROM page_backlinks b JOIN pages p ON p.url_key = b.url_key
          WHERE p.status_code = 200 AND COALESCE(b.referring_domains,0) >= 2
            AND (p.click_depth IS NULL OR p.click_depth >= 3)`,
-      ).all() as { url: string; ipr: number; cd: number | null; rd: number; bl: number }[];
+      ).all() as { url: string; ipr: number; cd: number | null; rd: number; bl: number; tf: number | null; ttf: string | null }[];
       trappedAuthority = taRows
-        .map(r => ({ url: r.url, referringDomains: r.rd, backlinks: r.bl, clickDepth: r.cd, ipr: Math.round(r.ipr), _s: r.rd * (r.cd ?? 6) }))
+        .map(r => {
+          let topTopic: string | null = null;
+          try { topTopic = (JSON.parse(r.ttf || '[]')[0]?.topic) ?? null; } catch { /* not enriched */ }
+          // Rank by real authority buried deep: Majestic Trust Flow (0-100) when enriched, else the
+          // referring-domains count (capped) as a proxy, weighted by how deep the page sits.
+          const authority = r.tf != null ? r.tf : Math.min(r.rd, 100);
+          return { url: r.url, referringDomains: r.rd, backlinks: r.bl, clickDepth: r.cd, ipr: Math.round(r.ipr), trustFlow: r.tf ?? null, topTopic, _s: authority * (r.cd ?? 6) };
+        })
         .sort((a, b) => b._s - a._s)
         .slice(0, 20)
         .map(({ _s, ...rest }) => rest);
