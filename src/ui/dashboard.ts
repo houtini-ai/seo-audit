@@ -1030,6 +1030,9 @@ function render(data: DashboardData): void {
   renderResearch(data);
   renderTrapped(data);
   setupTabs();
+  // Deep-link a tab (?tab=links) so a headless capture / shared link opens that panel on load.
+  const wantTab = new URLSearchParams(location.search).get('tab');
+  if (wantTab) (document.querySelector(`.tab-btn[data-panel="${wantTab}"]`) as HTMLButtonElement | null)?.click();
 }
 
 // Table sorting lives in the display library (lib/data-grid.ts: attachSort).
