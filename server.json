@@ -46,7 +46,7 @@
         },
         {
           "name": "DATAFORSEO_CACHE_DAYS",
-          "description": "TTL for the DataForSEO response cache. Default 20.",
+          "description": "TTL for the DataForSEO response cache, in days. Default 7.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -74,7 +74,7 @@
         },
         {
           "name": "MAJESTIC_CACHE_DAYS",
-          "description": "TTL for the Majestic response cache. Default 20.",
+          "description": "TTL for the Majestic response cache, in days. Default 30.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
