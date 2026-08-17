@@ -128,7 +128,11 @@ export class Backlinks {
       // to the most-backlinked URLs, only when a Majestic key is set, and never fails the pull.
       let majesticEnriched = 0;
       if (this.majestic && rows.length && !signal.aborted) {
-        const cand = [...rows].sort((a, b) => b.backlinks - a.backlinks).slice(0, Math.min(rows.length, opts.majesticLimit ?? 100));
+        // Enrich a BROAD set, not just the most-linked: trapped-authority pages are deep pages
+        // with only a few referring domains, so a top-N-by-backlinks slice misses exactly the
+        // pages that matter. Cap high (batched ≤100/call, cached 30d); sort only decides which
+        // survive the cap on very large sites.
+        const cand = [...rows].sort((a, b) => b.backlinks - a.backlinks).slice(0, Math.min(rows.length, opts.majesticLimit ?? 500));
         const byUrl = new Map(cand.map(r => [r.url, r.url_key]));
         try {
           update({ phase: 'majestic', total: cand.length });

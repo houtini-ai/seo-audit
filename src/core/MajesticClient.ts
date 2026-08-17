@@ -189,7 +189,16 @@ export class MajesticClient {
     p.set('datasource', datasource);
     p.set('DesiredTopics', String(desiredTopics));
 
-    const res = await fetch(`${this.host}/api/json?${p.toString()}`, { signal: AbortSignal.timeout(60000) });
+    // POST, not GET: a batch of up to 100 full URLs (item0..item99) overflows the query-string
+    // length limit and the request fails silently. The body carries the same params (verified
+    // live: URL-level GetIndexItemInfo returns Trust Flow over POST). Domains are short so the
+    // old GET worked for link_intersect; per-URL trapped-authority needs POST.
+    const res = await fetch(`${this.host}/api/json`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: p.toString(),
+      signal: AbortSignal.timeout(60000),
+    });
     const json: any = await res.json();
     if (!res.ok) throw new Error(`Majestic HTTP ${res.status}`);
     // Message-level Code must be OK; anything else (e.g. auth/units) is surfaced loudly, not stored.
