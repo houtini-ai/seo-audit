@@ -33,7 +33,7 @@ you  › run an SEO audit on simracingcockpit.gg
 you  › generate the fix for #1 ▍
 ```
 
-![The dashboard overview - executive summary, critical issues, recoverable clicks](assets/dashboard-overview.png)
+![The dashboard overview - a report hub, executive summary, critical issues and recoverable clicks](assets/dashboard-overview.png)
 
 ## The manual
 

@@ -1,8 +1,8 @@
 # The dashboard and reports
 
-Two ways to look at everything at once: the interactive dashboard rendered right in the chat (*"show me the dashboard for mysite.com"*), and the same thing exported as a single shareable HTML file (*"export the report"*). Both are built from your synced data, both are organised into six tabs, and every number in them traces back to a datapoint in your database.
+Two ways to look at everything at once: the interactive dashboard rendered right in the chat (*"show me the dashboard for mysite.com"*), and the same thing exported as a single shareable HTML file (*"export the report"*). Both are built from your synced data, both are organised into eight tabs - with a report hub on the Overview to jump straight to any of them - and every number in them traces back to a datapoint in your database.
 
-The dashboard uses a neutral light or dark theme: it follows the host's theme in chat and your system preference in the export. Numbers are tabular and right-aligned throughout, missing values render as a dash rather than a zero, and detail lives in the tooltips rather than on the canvas.
+The dashboard uses a neutral light or dark theme: it follows the host's theme in chat and your system preference in the export, and there's a light/dark toggle in the header if you want to override it. Numbers are tabular and right-aligned throughout, missing values render as a dash rather than a zero, and detail lives in the tooltips rather than on the canvas.
 
 Run `refresh_property` first, and `run_audit` if you want the findings populated. The DataForSEO panels (visibility over time, agent readiness) fill in when you've run the corresponding tools; everything else works from GSC and the crawl alone.
 
@@ -10,7 +10,7 @@ Run `refresh_property` first, and `run_audit` if you want the findings populated
 
 ![The Overview tab - executive summary, critical issues, recoverable clicks](../assets/dashboard-overview.png)
 
-The executive summary: clicks and impressions for the last 28 days against the prior period, the headline finding counts, and the top issues by impact. It's the tab you'd screenshot for a stakeholder - the state of the property in one screen.
+The executive summary: clicks and impressions for the last 28 days against the prior period, the headline finding counts, and the top issues by impact. It's the tab you'd screenshot for a stakeholder - the state of the property in one screen. At the top sits a **report hub** - a card per report with a live stat on it (findings count, pages crawled, clicks) - so you can jump straight to any tab.
 
 ## Issues & fixes
 
@@ -63,7 +63,20 @@ The structural story - where your internal link equity goes versus where your tr
 - **Equity flow vs traffic by template** - each template's share of internal PageRank against its share of impressions. A template hoarding equity while earning nothing is a structural decision worth revisiting.
 - **Equity vs reality, every URL** - the scatter of internal PageRank against impressions. The corners are the findings: high equity + no traffic (wasted authority), high traffic + no equity (underlinked winners, and the pages a redesign would quietly kill).
 - **Top linked pages and their status** - your most internally linked URLs with their live HTTP status. A non-200 high on this list is an equity leak in plain sight.
+- **Trapped authority** - pages the web trusts (referring domains, and Majestic **Trust Flow** with its top topic once you've run `pull_backlinks` with a Majestic key) that sit buried deep in your architecture - click depth 3+ from the homepage, or unreachable through the body - so their link equity never reaches your money pages. The fix: link to them from higher up.
 - **Agent readiness** - the 0-100 score and category checklist from `check_agent_readiness`, once you've run it.
+
+## Links
+
+![The Links tab - link intersect, competitors' links you don't have](../assets/links.png)
+
+Link intersect: the domains linking to your competitors but not to you - a ready-made outreach list. Run `link_intersect` for a property (a DataForSEO Backlinks call) and this fills with the prospects, sorted followed-first then by domain trust. With a **Majestic** key set, each prospect is re-sorted by **Trust Flow** and shows its top topic, so directory noise sinks and genuinely on-topic authority rises. No DataForSEO key? The tab shows a one-click prompt to connect one.
+
+## Content research
+
+![The Content research tab - News, Videos and Trends for a topic](../assets/research.png)
+
+On-demand topic research, right in the dashboard: type a keyword and pull recent **News** (free Google News plus DataForSEO), the ranking **Videos** (YouTube SERP), or the **Trend** direction (Google Trends - rising, falling or flat). The "what's being published and who's covering it" panel - each button is a live, 20-day-cached lookup. News works free via Google News; videos and trends use DataForSEO.
 
 ## Exporting: `export_report`
 
