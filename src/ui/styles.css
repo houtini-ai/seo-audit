@@ -411,3 +411,16 @@ select, select.sel, #cannSelect {
 .research-bar input { flex: 1 1 240px; min-width: 200px; border: 1px solid var(--border-standard); background: var(--bg-inset); color: var(--text-primary); border-radius: var(--radius-sm); padding: 8px 11px; font-size: 13px; font-family: var(--font); }
 .research-bar input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .research-out { margin-top: 10px; }
+
+/* Redact mode (?redact=1) — blur real traffic figures + link/page domains for public screenshots. */
+.redacted .metric-card .value,
+.redacted .es-num,
+.redacted #execSummary strong,
+.redacted .split-v,
+.redacted td.url,
+.redacted #linksPanel td:first-child,
+.redacted #trappedTable td.url,
+.redacted #topLinkedTable td:first-child,
+.redacted .fi-link,
+.redacted .rec-url,
+.redacted .hub-sub { filter: blur(5px); user-select: none; }

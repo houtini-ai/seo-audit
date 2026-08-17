@@ -1313,3 +1313,9 @@ if (__fixture) {
 
 // Wire the light/dark toggle in every mode (the button is static in dashboard.html).
 setupThemeToggle();
+
+// Redact mode for public screenshots: ?redact=1 (or __DASH_REDACT__) blurs traffic figures and
+// link/page domains so real numbers + inbound links don't leak into repo images.
+if ((window as any).__DASH_REDACT__ || new URLSearchParams(location.search).get('redact') === '1') {
+  document.documentElement.classList.add('redacted');
+}

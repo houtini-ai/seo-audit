@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "seo-audit-console",
   "display_name": "SEO Audit Console",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "icon": "icon.png",
   "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 90 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
   "long_description": "Merges Google Search Console history with a first-party site crawl (and on-demand DataForSEO) into one SQLite database per property, then runs ~90 deterministic and judgement-labelled checks scored by expected recoverable clicks per hour of effort. Includes a findings dashboard, finding-to-fix generators (JSON-LD, 301 maps, internal-link suggestions), change detection, keyword and content-gap research, and an agent-readiness score. Requires a Google Cloud service account with Search Console API access; DataForSEO credentials are optional.",
