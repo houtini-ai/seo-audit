@@ -319,7 +319,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   // Idempotent auto-start used by refresh_property / run_audit. Best-effort: a served port that
   // can't bind (e.g. Docker without a published port) must never fail the populate/audit — the
   // in-chat get_dashboard and export_report still work, and browserLink() falls back to those.
+  // Opt-out with SAC_AUTOSERVE=0 for headless/CI/sandboxed runs where binding a localhost port
+  // is unwanted (default: on, since the whole point is to hand the user a link).
   const autoServeDashboard = async (): Promise<void> => {
+    if (/^(0|false|no|off)$/i.test(process.env.SAC_AUTOSERVE ?? '')) return;
     try { await startDashboardServer(buildWebOpts()); } catch { /* dashboard is a convenience, not a dependency */ }
   };
 

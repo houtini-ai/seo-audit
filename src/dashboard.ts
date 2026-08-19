@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+// Copyright (c) 2026 Richard Baxter / Houtini — Source-Available (see LICENSE)
 import path from 'node:path';
 import os from 'node:os';
 import { readFileSync } from 'node:fs';
