@@ -7,7 +7,14 @@ import Database from 'better-sqlite3';
  * Local dashboard webserver — the "Phase 2" delivery surface. Serves the built dashboard
  * UI at http://127.0.0.1:PORT with live data from the property SQLite DBs, so the report
  * lives in a real browser tab: no MCP-App host cache, no iframe sandbox, native file
- * downloads, and a property switcher. Localhost-only by design (binds 127.0.0.1).
+ * downloads, and a property switcher.
+ *
+ * Localhost-only by design. Binds 127.0.0.1 by default; a container sets
+ * SAC_DASHBOARD_BIND=0.0.0.0 (so a published `127.0.0.1:PORT->PORT` host mapping can reach it)
+ * and SAC_DASHBOARD_PORT to a fixed, publishable port. Even bound to 0.0.0.0, the Host-header
+ * allowlist below refuses any request not addressed to localhost, so the SQLite data is never
+ * answered to a network client. The advertised URL host stays 127.0.0.1 (SAC_DASHBOARD_URL_HOST
+ * to override) — that is the address the user's browser actually reaches.
  */
 
 /** Named server-side handlers the web UI may invoke via POST /api/call (allowlist). */
@@ -138,16 +145,24 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
   });
 
   starting = (async () => {
+    // Bind host: 127.0.0.1 by default (never expose the SQLite data on the network). A container
+    // sets SAC_DASHBOARD_BIND=0.0.0.0 so a published 127.0.0.1:PORT->PORT host mapping can reach it;
+    // the Host-header allowlist above still refuses anything not addressed to localhost.
+    const bindHost = process.env.SAC_DASHBOARD_BIND || '127.0.0.1';
+    // Port: explicit arg > SAC_DASHBOARD_PORT (a fixed, publishable port for Docker) > 0 (random).
+    const wantPort = opts.port ?? (Number(process.env.SAC_DASHBOARD_PORT) || 0);
     const port = await new Promise<number>((resolve, reject) => {
       server.once('error', reject);
-      // 127.0.0.1 only — never expose the dashboard (or the SQLite data behind it) on the network.
-      server.listen(opts.port ?? 0, '127.0.0.1', () => {
+      server.listen(wantPort, bindHost, () => {
         const addr = server.address();
-        resolve(typeof addr === 'object' && addr ? addr.port : (opts.port ?? 0));
+        resolve(typeof addr === 'object' && addr ? addr.port : wantPort);
       });
     });
     server.unref(); // never keep the MCP process alive on our account
-    const url = `http://127.0.0.1:${port}`;
+    // Advertised host is the address the user's browser reaches — 127.0.0.1 for a host-run process,
+    // and also for a container whose port is published to the host's 127.0.0.1:PORT.
+    const urlHost = process.env.SAC_DASHBOARD_URL_HOST || '127.0.0.1';
+    const url = `http://${urlHost}:${port}`;
     running = { server, port, url };
     return { url, port };
   })();

@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { getDashboardData } from './core/dashboardData.js';
-import { startDashboardServer, stopDashboardServer, dashboardServerUrl, listLocalProperties } from './core/webServer.js';
+import { startDashboardServer, stopDashboardServer, dashboardServerUrl, type WebServerOptions } from './core/webServer.js';
+import { buildWebCallHandlers } from './core/webHandlers.js';
 import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
 import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
 import { FirecrawlClient } from './core/FirecrawlClient.js';
@@ -306,6 +307,22 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const apiKeysStatus = (): { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean } =>
     ({ dataforseo: !!dfs, majestic: !!majestic, firecrawl: !!firecrawl, supadata: !!supadata });
 
+  // The dashboard webserver's options — one definition shared by serve_dashboard AND the
+  // auto-start at the end of refresh_property / run_audit, so a populated property always has
+  // a live browser link (browserLink() surfaces dashboardServerUrl() once this is running).
+  const buildWebOpts = (port?: number): WebServerOptions => ({
+    dataDir,
+    uiHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8'),
+    call: buildWebCallHandlers({ dataDir, dfs, apiKeys: apiKeysStatus }),
+    ...(port != null ? { port } : {}),
+  });
+  // Idempotent auto-start used by refresh_property / run_audit. Best-effort: a served port that
+  // can't bind (e.g. Docker without a published port) must never fail the populate/audit — the
+  // in-chat get_dashboard and export_report still work, and browserLink() falls back to those.
+  const autoServeDashboard = async (): Promise<void> => {
+    try { await startDashboardServer(buildWebOpts()); } catch { /* dashboard is a convenience, not a dependency */ }
+  };
+
   // ── Introspection (no data / creds required) ────────────────────────────
   server.registerTool(
     'seo_audit_help',
@@ -461,9 +478,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async ({ siteUrl, scope, categories, includeJudgement }) => {
       const result = runAudit(dataDir(), siteUrl, { scope, categories, includeJudgement });
+      await autoServeDashboard(); // spin up the browser dashboard so browserLink() hands over a live URL
       return {
         content: [{ type: 'text', text: buildAuditMarkdown(result, siteUrl) + browserLink(siteUrl) }],
-        structuredContent: result as unknown as Record<string, unknown>,
+        structuredContent: { ...result, dashboardUrl: dashboardServerUrl() } as unknown as Record<string, unknown>,
       };
     },
   );
@@ -818,9 +836,14 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       _meta: { ui: { resourceUri: SYNC_PROGRESS_URI } },
     },
     async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, segments, full, location, startDate, endDate, maxPages, inspectLimit }) => {
-      const jobId = jobs.start('refresh', (update, signal) =>
-        refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, ranks, segments, full, location, startDate, endDate, maxPages, inspectLimit }, update, signal),
-      );
+      const jobId = jobs.start('refresh', async (update, signal) => {
+        const r = await refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, ranks, segments, full, location, startDate, endDate, maxPages, inspectLimit }, update, signal);
+        // Property is now populated — spin up the browser dashboard and hand back its URL so the
+        // finished job (polled via check_sync_status) carries a one-click link, no extra tool call.
+        await autoServeDashboard();
+        const dashboardUrl = dashboardServerUrl();
+        return dashboardUrl ? { ...(r as Record<string, unknown>), dashboardUrl, dashboard: `${dashboardUrl}/dashboard?siteUrl=${encodeURIComponent(siteUrl)}` } : r;
+      });
       return {
         content: [{ type: 'text', text: `Refresh started for ${siteUrl} (job ${jobId}). Poll check_sync_status.` }],
         structuredContent: { jobId, status: 'running', siteUrl },
@@ -2213,49 +2236,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           structuredContent: { stopped },
         };
       }
-      const { url } = await startDashboardServer({
-        dataDir,
-        uiHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8'),
-        call: {
-          get_dashboard_data: async (a) => {
-            const want = String(a.siteUrl ?? '');
-            // Only serve properties that actually exist locally — getDashboardData would
-            // otherwise CREATE an empty DB file for any bogus siteUrl posted at the API.
-            if (!listLocalProperties(dataDir()).some(p => p.siteUrl === want)) throw new Error(`unknown property ${want}`);
-            return { ...getDashboardData(dataDir(), want), apiKeys: apiKeysStatus() } as unknown as Record<string, unknown>;
-          },
-          related_terms: async (a) => {
-            const r = await requireDfs(dfs).relatedTerms(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined);
-            return r as unknown as Record<string, unknown>;
-          },
-          // Content research (on-demand) — News (free Google News + paid DFS) / Videos / Trends.
-          news_discovery: async (a) => {
-            const kw = String(a.keyword ?? '');
-            const seen = new Set<string>(); const articles: any[] = [];
-            const add = (x: any): void => { const k = String(x.url || x.title || '').toLowerCase(); if (k && !seen.has(k)) { seen.add(k); articles.push(x); } };
-            try { const g = await fetchGoogleNews(kw, { limit: 20 }); for (const x of g.articles) add({ ...x, via: 'google-news' }); } catch { /* free source optional */ }
-            if (dfs) { try { const r = await dfs.serpNews(kw, a.location as string | number | undefined, a.languageCode as string | undefined); for (const x of r.articles) add({ ...x, via: 'dataforseo' }); } catch { /* paid optional */ } }
-            return { articles } as unknown as Record<string, unknown>;
-          },
-          youtube_discovery: async (a) => {
-            const r = await requireDfs(dfs).serpYoutube(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined, a.blockDepth as number | undefined);
-            return r as unknown as Record<string, unknown>;
-          },
-          topic_trend: async (a) => {
-            const kws = Array.isArray(a.keywords) ? (a.keywords as string[]) : [String(a.keyword ?? '')].filter(Boolean);
-            const r = await requireDfs(dfs).googleTrends(kws, a.location as string | number | undefined, a.languageCode as string | undefined, {});
-            return r as unknown as Record<string, unknown>;
-          },
-          keyword_volume: async (a) => {
-            const r = await requireDfs(dfs).searchVolume((a.keywords as string[]) ?? [], a.location as string | number | undefined, a.languageCode as string | undefined);
-            const items = (r.tasks[0]?.result ?? []).map((k: any) => ({
-              keyword: k.keyword, searchVolume: k.search_volume, cpc: k.cpc, competition: k.competition,
-            }));
-            return { keywords: items, cached: r.cached, cost: r.cost };
-          },
-        },
-        ...(port != null ? { port } : {}),
-      });
+      const { url } = await startDashboardServer(buildWebOpts(port));
       const open = siteUrl ? `${url}/dashboard?siteUrl=${encodeURIComponent(siteUrl)}` : `${url}/`;
       const portNote = port != null && !url.endsWith(`:${port}`)
         ? ` (already running on its original port — requested port ${port} ignored; stop=true first to move it)`

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "seo-audit-console",
   "display_name": "SEO Audit Console",
-  "version": "0.7.8",
+  "version": "0.8.0",
   "icon": "icon.png",
   "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 90 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
   "long_description": "Merges Google Search Console history with a first-party site crawl (and on-demand DataForSEO) into one SQLite database per property, then runs ~90 deterministic and judgement-labelled checks scored by expected recoverable clicks per hour of effort. Includes a findings dashboard, finding-to-fix generators (JSON-LD, 301 maps, internal-link suggestions), change detection, keyword and content-gap research, and an agent-readiness score. Requires a Google Cloud service account with Search Console API access; DataForSEO credentials are optional.",
@@ -37,7 +37,9 @@
     "entry_point": "dist/index.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/index.js"],
+      "args": [
+        "${__dirname}/dist/index.js"
+      ],
       "env": {
         "GOOGLE_APPLICATION_CREDENTIALS": "${user_config.google_application_credentials}",
         "SAC_DATA_DIR": "${user_config.sac_data_dir}",
@@ -119,7 +121,9 @@
   },
   "compatibility": {
     "claude_desktop": ">=0.10.0",
-    "platforms": ["win32"],
+    "platforms": [
+      "win32"
+    ],
     "runtimes": {
       "node": ">=20.0.0"
     }
