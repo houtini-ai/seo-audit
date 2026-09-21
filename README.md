@@ -11,7 +11,9 @@
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-server-purple?style=flat-square)](https://modelcontextprotocol.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
-**The complete technical SEO audit, at conversation speed.** SEO Audit Console is an SEO MCP server that merges your **Google Search Console** history, a **first-party crawl** of your site, and on-demand **DataForSEO** market data into one prioritised audit inside Claude - from crawlability, indexation, canonicalisation, structured data, Core Web Vitals and hreflang right through to keyword cannibalisation, striking-distance queries, content gaps, competitor analysis, link prospecting (with **Majestic** Trust Flow) and AI-search readiness. Ninety-nine checks, every finding ranked by the clicks it could recover, every fix written for you: paste-ready redirects, JSON-LD, internal links and grounded content briefs. What used to be a fortnight of crawling, exporting and cross-referencing spreadsheets is twenty minutes and a prompt - and your data never leaves your machine.
+Almost every technical SEO audit I've been handed in twenty years is a crawler's opinion, and a crawler only ever sees half the picture. It tells you what your site *says*. It has nothing to say about what Google *did* about it: which queries you rank for, which pages earn the impressions, where the clicks land.
+
+This one brings the other half. SEO Audit Console runs inside Claude, pulls your **Google Search Console** history, crawls your site properly, and joins the two so every finding carries the traffic at stake. Ninety-nine checks, ranked by the clicks the fix could recover rather than how alarming the check sounds, and it writes the fix for you: the 301 rule, the JSON-LD, the internal links. The core audit needs nothing but your own Search Console; **DataForSEO** and **Majestic** slot in later, when your questions grow into competitors and link building. Your data stays on your machine.
 
 **Built by [Houtini](https://houtini.com).** We build automation for the grunt work of digital marketing - the data collection, the crawling, the merging, the checking - so your team's time goes on the thinking, the strategy and the client work that needs a human. This plugin is that idea applied to the technical SEO audit.
 
@@ -47,8 +49,8 @@ This README is the story and the quick start. The detail lives in the manual:
 | [Composition](manual/composition.md) | The join keys, the grains, and thirteen worked recipes for asking your own questions across the data |
 | [Competitive analysis](manual/competitive.md) | The Semrush-replacement workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
 | [SEO Recon](manual/recon.md) | Why a page is losing: the live SERP + AI-Overview citation verdict, the competitor diff, and the trackable to-do ledger |
-| [DataForSEO functions](manual/dataforseo.md) | Every DataForSEO-backed tool grouped by API module — Keywords, SERP, Labs, Backlinks, OnPage — each with its endpoint and cost |
-| [Majestic functions](manual/majestic.md) | The optional Trust Flow tier — what it adds and how `link_intersect` uses it |
+| [DataForSEO functions](manual/dataforseo.md) | Every DataForSEO-backed tool grouped by API module - Keywords, SERP, Labs, Backlinks, OnPage - each with its endpoint and cost |
+| [Majestic functions](manual/majestic.md) | The optional Trust Flow tier - what it adds and how `link_intersect` uses it |
 | [Dashboard & reports](manual/dashboard.md) | The eight tabs, the report hub, what each chart shows, and the shareable export |
 
 ## Surprisingly little has changed in twenty years
@@ -131,7 +133,7 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 10. **The content opportunity report.** If you write for a living, this is your page one: *"Content opportunities for mysite.com"* returns what to WRITE next (demand you already earn impressions for with no winning page), what to REFRESH (pages bleeding clicks), which SNIPPETS to rewrite (ranking well, under-clicked), and which clusters to STRENGTHEN (position 4-20, one push from the money). Every row traces to your own Search Console data - no invented keyword ideas - and *"draft the brief for row 1"* turns any of them into a grounded outline. → [competitive.md](manual/competitive.md)
 11. **Market Sizing and Prioritisation.** *"Size the market: mysite.com vs rival1.com and rival2.com"* - the keyword universe, total monthly demand, and share of voice per topic cluster, from one cached call per domain. The engagement-opening read that used to need a Semrush subscription. → [competitive.md](manual/competitive.md)
 12. **Content recon - why is this page losing?** *"Run content recon on mysite.com"* takes your worst declining pages, pulls the live Google SERP for each, and reads whether the **AI Overview** cites you. The verdict is the honest bit: *rank but not cited* is a data-accuracy or freshness problem, not a rewrite. It transcribes the ranking videos (Supadata), reads the reachable competitors (Firecrawl, plus a free browser-profile fetch that even gets Reddit), and writes the gaps into a tracked to-do board you can annotate and re-measure. → [recon.md](manual/recon.md)
-13. **Link prospecting, sorted by authority that's real.** *"Link intersect for mysite.com vs rival1.com, rival2.com"* returns the domains linking to your rivals and not to you - the outreach list, followed-first and spam-filtered. Add a **Majestic** key and it re-sorts on **Trust Flow** and shows each prospect's **Topical Trust Flow**, so the directories drop out and what's left is authority that's actually on your topic. → [Majestic, below](#link-intersect-and-the-majestic-trust-flow-tier)
+13. **Link prospecting, sorted by authority that's real.** *"Link intersect for mysite.com vs rival1.com, rival2.com"* returns the domains linking to your rivals and not to you - the outreach list, followed-first and spam-filtered. Add a **Majestic** key and it re-sorts on **Trust Flow** and shows each prospect's **Topical Trust Flow**, so the directories drop out and what's left is authority that's on your topic. → [Majestic, below](#link-intersect-and-the-majestic-trust-flow-tier)
 
 ![Ranking distribution over time - impressions by position bucket](assets/search-performance.png)
 
@@ -177,7 +179,7 @@ you  › link intersect for mysite.com vs rival1.com, rival2.com
 
 The tier is careful with your allowance: enrichment is batched 100 domains per call (about one unit each), capped by `enrichLimit` (default 100 - and when more prospects qualify than get enriched, the response says so and tells you to raise it, rather than handing you a half-scored list), requests are serialised, and every response is cached for 30 days via `MAJESTIC_CACHE_DAYS`. Ask the same question twice in a fortnight and the second answer costs nothing.
 
-Optional, genuinely optional: with no key, `link_intersect` still runs and still sorts followed-first by domain trust. Majestic is what turns "here are 100 domains" into "here are the 20 worth an email, and here's why". Grab a key on their [plans and pricing](https://majestic.com/plans-pricing) page; the full workflow is in [competitive.md](manual/competitive.md#link-intersect-link_intersect).
+Optional, and I mean optional: with no key, `link_intersect` still runs and still sorts followed-first by domain trust. Majestic is what turns "here are 100 domains" into "here are the 20 worth an email, and here's why". Grab a key on their [plans and pricing](https://majestic.com/plans-pricing) page; the full workflow is in [competitive.md](manual/competitive.md#link-intersect-link_intersect).
 
 > Trust Flow and Topical Trust Flow are trademarks of [Majestic](https://majestic.com) (Majestic-12 Ltd). This tier calls the Majestic API with your own key, only when you run `link_intersect`, and nothing else in the tool touches it.
 
@@ -303,4 +305,4 @@ Issues and PRs welcome. The check registry (`src/audit/checks.ts`) is built to b
 
 ## License
 
-**Apache License 2.0.** Free to use, modify, and redistribute, including commercially — full terms in [LICENSE](./LICENSE).
+**Apache License 2.0.** Free to use, modify, and redistribute, including commercially - full terms in [LICENSE](./LICENSE).
