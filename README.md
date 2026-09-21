@@ -35,7 +35,7 @@ you  › run an SEO audit on mysite.com
 you  › generate the fix for #1 ▍
 ```
 
-![The dashboard overview - a report hub, executive summary, critical issues and recoverable clicks](assets/dashboard-overview.png)
+[![The dashboard overview - a report hub, executive summary, critical issues and recoverable clicks](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/dashboard-overview.png)](https://github.com/houtini-ai/seo-audit)
 
 ## The manual
 
@@ -113,7 +113,7 @@ The crawl is where audits usually go wrong, so it's worth understanding what thi
 
 After the crawl it computes a real link graph: internal PageRank with nav and footer links down-weighted, click depth from the homepage counting body links only, in-degree per page. That graph powers the orphan, equity-leak and underlinked-page checks - and the donor rankings when the tool suggests internal links.
 
-![The Site health tab - classic crawl diagnostics as stat bars](assets/site-health.png)
+[![The Site health tab - classic crawl diagnostics as stat bars](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/site-health.png)](https://github.com/houtini-ai/seo-audit)
 
 ---
 
@@ -135,7 +135,7 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 12. **Content recon - why is this page losing?** *"Run content recon on mysite.com"* takes your worst declining pages, pulls the live Google SERP for each, and reads whether the **AI Overview** cites you. The verdict is the honest bit: *rank but not cited* is a data-accuracy or freshness problem, not a rewrite. It transcribes the ranking videos (Supadata), reads the reachable competitors (Firecrawl, plus a free browser-profile fetch that even gets Reddit), and writes the gaps into a tracked to-do board you can annotate and re-measure. → [recon.md](manual/recon.md)
 13. **Link prospecting, sorted by authority that's real.** *"Link intersect for mysite.com vs rival1.com, rival2.com"* returns the domains linking to your rivals and not to you - the outreach list, followed-first and spam-filtered. Add a **Majestic** key and it re-sorts on **Trust Flow** and shows each prospect's **Topical Trust Flow**, so the directories drop out and what's left is authority that's on your topic. → [Majestic, below](#link-intersect-and-the-majestic-trust-flow-tier)
 
-![Ranking distribution over time - impressions by position bucket](assets/search-performance.png)
+[![Ranking distribution over time - impressions by position bucket](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/search-performance.png)](https://github.com/houtini-ai/seo-audit)
 
 ---
 
