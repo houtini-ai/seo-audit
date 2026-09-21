@@ -2,7 +2,7 @@
 
 Every tool the server exposes, grouped by job. Each entry gives you what it does, the inputs that matter, the data grain and join keys where they're relevant, and a prompt you can copy. You never call these by name unless you want to - *"run an SEO audit on mysite.com"* routes to the right tool on its own - but knowing what exists is how you get the most out of it.
 
-DataForSEO-backed tools are marked **[paid]**. They cost real money per live call (fractions of a cent to a few cents), are cached for 20 days, and only ever run when you ask - never in bulk behind your back. Setup and honest cost notes: [competitive.md](competitive.md). One tool, `link_intersect`, has a second optional service behind it - **Majestic**, billed in its own resource units - which switches on when `MAJESTIC_API_KEY` is set and stays entirely out of the way when it isn't.
+DataForSEO-backed tools are marked **[paid]**. They cost real money per live call (fractions of a cent to a few cents), are cached for 7 days, and only ever run when you ask - never in bulk behind your back. Setup and honest cost notes: [competitive.md](competitive.md). One tool, `link_intersect`, has a second optional service behind it - **Majestic**, billed in its own resource units - which switches on when `MAJESTIC_API_KEY` is set and stays entirely out of the way when it isn't.
 
 ## The data pipeline
 
@@ -31,7 +31,7 @@ Just the GSC URL Inspection data: Google's own view of coverage, indexing, its c
 > Inspect the top 100 URLs on mysite.com
 
 ### `track_ranks` [paid]
-Ingests the DataForSEO monthly rank distribution and estimated traffic value into `rank_history`, so rank charts get a real time axis reconciled with your GSC dates. One call per refresh, cached 20 days. Pass `location` once ("United Kingdom", "Australia", or a code) - it's saved per property.
+Ingests the DataForSEO monthly rank distribution and estimated traffic value into `rank_history`, so rank charts get a real time axis reconciled with your GSC dates. One call per refresh, cached 7 days. Pass `location` once ("United Kingdom", "Australia", or a code) - it's saved per property.
 > Track ranks for mysite.com in the UK
 
 ### `check_sync_status` / `check_crawl_status`
@@ -51,7 +51,7 @@ One named check, with every affected URL and its full evidence. The drill-down a
 > Run the keyword-cannibalisation check on mysite.com with evidence
 
 ### `list_checks`
-The whole check catalogue - all 93, with categories and labels. The same list, annotated, is [checks.md](checks.md).
+The whole check catalogue - all 99, with categories and labels. The same list, annotated, is [checks.md](checks.md).
 > What does the audit check for?
 
 ### `list_templates`
@@ -101,7 +101,7 @@ Is your site ready for AI agents? Live HTTP probes of your origin scoring four c
 
 ## Competitive and keyword data (DataForSEO)
 
-All **[paid]**, all cached 20 days, all on-demand. Full workflows in [competitive.md](competitive.md).
+All **[paid]**, all cached 7 days, all on-demand. Full workflows in [competitive.md](competitive.md).
 
 ### `keyword_volume`
 True monthly search volume, CPC and competition for up to 700 keywords. How you size an opportunity before writing a word.
@@ -165,7 +165,7 @@ The links your competitors have that you don't - the classic outreach prospect l
 > Link intersect for mysite.com vs rival1.com, rival2.com
 > What links does rival.com have that we don't?
 
-**The Majestic tier (optional, and worth it if you do outreach).** DataForSEO's domain rank measures link *volume*, which floats directories and syndicated press to the top of a prospect list. Set `MAJESTIC_API_KEY` and every qualifying prospect is enriched from [Majestic](https://majestic.com) with **Trust Flow** (0-100 editorial authority - the directory killer; a domain DataForSEO ranks 227 can be Trust Flow 0) and **Topical Trust Flow** (what that authority is *about*, as ranked topics), and the list **re-sorts by Trust Flow**. You can see it's on from the output: the `Domain trust` column becomes `Trust Flow` and a `Top topic` column appears. `enrichLimit` (default 100, max 500) caps how many prospects go to Majestic - they're batched 100 per call at roughly a unit each, and if more qualified than were enriched the response says so rather than quietly truncating. Cached for `MAJESTIC_CACHE_DAYS` (default 20). Without the key nothing breaks; you just get the DataForSEO ordering. Full write-up: [competitive.md](competitive.md#the-directory-problem-and-the-majestic-fix). (Trust Flow and Topical Trust Flow are Majestic's trademarked metrics.)
+**The Majestic tier (optional, and worth it if you do outreach).** DataForSEO's domain rank measures link *volume*, which floats directories and syndicated press to the top of a prospect list. Set `MAJESTIC_API_KEY` and every qualifying prospect is enriched from [Majestic](https://majestic.com) with **Trust Flow** (0-100 editorial authority - the directory killer; a domain DataForSEO ranks 227 can be Trust Flow 0) and **Topical Trust Flow** (what that authority is *about*, as ranked topics), and the list **re-sorts by Trust Flow**. You can see it's on from the output: the `Domain trust` column becomes `Trust Flow` and a `Top topic` column appears. `enrichLimit` (default 100, max 500) caps how many prospects go to Majestic - they're batched 100 per call at roughly a unit each, and if more qualified than were enriched the response says so rather than quietly truncating. Cached for `MAJESTIC_CACHE_DAYS` (default 30). Without the key nothing breaks; you just get the DataForSEO ordering. Full write-up: [competitive.md](competitive.md#the-directory-problem-and-the-majestic-fix). (Trust Flow and Topical Trust Flow are Majestic's trademarked metrics.)
 > Link intersect for mysite.com vs rival1.com, rival2.com, enrich the top 300 prospects
 
 ### `market_sizing`
@@ -207,7 +207,7 @@ Diffs your two most recent crawls, per URL, severity-classified: a 200 that beca
 ## Dashboard and reporting
 
 ### `get_dashboard`
-The interactive dashboard, rendered right in the chat: six tabs of findings, crawl health, opportunities, search performance and architecture. What each tab shows: [dashboard.md](dashboard.md). Needs synced data.
+The interactive dashboard, rendered right in the chat: eight tabs - overview, findings, site health, opportunities, search performance, architecture, links and content research. What each tab shows: [dashboard.md](dashboard.md). Needs synced data.
 > Show me the dashboard for mysite.com
 
 ### `serve_dashboard`

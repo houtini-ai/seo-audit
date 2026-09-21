@@ -11,7 +11,7 @@
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-server-purple?style=flat-square)](https://modelcontextprotocol.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
-**The complete technical SEO audit, at conversation speed.** SEO Audit Console is an SEO MCP server that merges your **Google Search Console** history, a **first-party crawl** of your site, and on-demand **DataForSEO** market data into one prioritised audit inside Claude - from crawlability, indexation, canonicalisation, structured data, Core Web Vitals and hreflang right through to keyword cannibalisation, striking-distance queries, content gaps, competitor analysis, link prospecting (with **Majestic** Trust Flow) and AI-search readiness. Ninety-three checks, every finding ranked by the clicks it could recover, every fix written for you: paste-ready redirects, JSON-LD, internal links and grounded content briefs. What used to be a fortnight of crawling, exporting and cross-referencing spreadsheets is twenty minutes and a prompt - and your data never leaves your machine.
+**The complete technical SEO audit, at conversation speed.** SEO Audit Console is an SEO MCP server that merges your **Google Search Console** history, a **first-party crawl** of your site, and on-demand **DataForSEO** market data into one prioritised audit inside Claude - from crawlability, indexation, canonicalisation, structured data, Core Web Vitals and hreflang right through to keyword cannibalisation, striking-distance queries, content gaps, competitor analysis, link prospecting (with **Majestic** Trust Flow) and AI-search readiness. Ninety-nine checks, every finding ranked by the clicks it could recover, every fix written for you: paste-ready redirects, JSON-LD, internal links and grounded content briefs. What used to be a fortnight of crawling, exporting and cross-referencing spreadsheets is twenty minutes and a prompt - and your data never leaves your machine.
 
 **Built by [Houtini](https://houtini.com).** We build automation for the grunt work of digital marketing - the data collection, the crawling, the merging, the checking - so your team's time goes on the thinking, the strategy and the client work that needs a human. This plugin is that idea applied to the technical SEO audit.
 
@@ -23,7 +23,7 @@ you  › run an SEO audit on simracingcockpit.gg
      ⣾ search console  1.8M rows synced (19s - incremental)
      ⣾ crawl           868 pages · HTTP/2 · robots-polite · 8 parallel
      ⣾ link graph      internal PageRank · click depth · in-degree
-     ✓ 93 checks · 220 findings · ranked by expected clicks per dev-hour
+     ✓ 99 checks · 220 findings · ranked by expected clicks per dev-hour
 
      #1  CTR far below position-expected     /how-to-install-mods       XL
      #2  Page losing clicks (trend)          site-wide                  XL
@@ -43,7 +43,7 @@ This README is the story and the quick start. The detail lives in the manual:
 |---|---|
 | [Getting started](manual/getting-started.md) | Install, the GSC service-account setup (and the step everyone misses), Claude Desktop and Claude Code config, your first audit, troubleshooting |
 | [Tool reference](manual/tools.md) | Every tool: what it does, inputs, joins, an example prompt |
-| [The check registry](manual/checks.md) | All 93 checks with what each catches, its D/N label, and the fix |
+| [The check registry](manual/checks.md) | All 99 checks with what each catches, its D/N label, and the fix |
 | [Composition](manual/composition.md) | The join keys, the grains, and thirteen worked recipes for asking your own questions across the data |
 | [Competitive analysis](manual/competitive.md) | The Semrush-replacement workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
 | [SEO Recon](manual/recon.md) | Why a page is losing: the live SERP + AI-Overview citation verdict, the competitor diff, and the trackable to-do ledger |
@@ -81,7 +81,7 @@ Yes. The crawl-plus-GSC merge is not a novelty; it's the method. On one property
 
 ## What the audit checks
 
-`run_audit` executes **93 checks** over the joined data and returns a ranked list - not a wall of everything, a priority order with the traffic at stake attached to each finding. The families, briefly:
+`run_audit` executes **99 checks** over the joined data and returns a ranked list - not a wall of everything, a priority order with the traffic at stake attached to each finding. The families, briefly:
 
 | Family | What it catches |
 |---|---|
@@ -139,7 +139,7 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 
 ## What DataForSEO adds (and what it costs)
 
-Everything above works with just your Search Console data. But GSC can only describe searches where you already appear. The moment your question is "how big is this market?" or "what do competitors rank for that I don't?", you need third-party data - and that's [DataForSEO](https://dataforseo.com/?aff=213701): a pay-as-you-go API for volumes, live rankings, competitor data and Lighthouse runs. No subscription; calls cost fractions of a cent to a few cents, cached for 20 days, and only ever run when you ask. My own usage runs to a few dollars a month.
+Everything above works with just your Search Console data. But GSC can only describe searches where you already appear. The moment your question is "how big is this market?" or "what do competitors rank for that I don't?", you need third-party data - and that's [DataForSEO](https://dataforseo.com/?aff=213701): a pay-as-you-go API for volumes, live rankings, competitor data and Lighthouse runs. No subscription; calls cost fractions of a cent to a few cents, cached for 7 days, and only ever run when you ask. My own usage runs to a few dollars a month.
 
 It unlocks the Semrush-replacement layer: the organic visibility overview for any domain, any site's top pages and ranked keywords (including which keywords cite a site in **AI Overviews**), the content gap, topic gaps, search intent, lab Core Web Vitals and backlinks. It also drives **content recon** - `recon_targets` pulls the live Google SERP for a losing page, reads whether the AI Overview cites you, and tells you *why* you're behind. The full workflows and setup: [competitive.md](manual/competitive.md).
 
@@ -175,7 +175,7 @@ you  › link intersect for mysite.com vs rival1.com, rival2.com
 
 `link_intersect` needs DataForSEO's Backlinks subscription, which is separate from their SERP/Keywords/Labs APIs; if it isn't activated the tool says so in plain English rather than throwing a code at you.
 
-The tier is careful with your allowance: enrichment is batched 100 domains per call (about one unit each), capped by `enrichLimit` (default 100 - and when more prospects qualify than get enriched, the response says so and tells you to raise it, rather than handing you a half-scored list), requests are serialised, and every response is cached for 20 days via `MAJESTIC_CACHE_DAYS`. Ask the same question twice in a fortnight and the second answer costs nothing.
+The tier is careful with your allowance: enrichment is batched 100 domains per call (about one unit each), capped by `enrichLimit` (default 100 - and when more prospects qualify than get enriched, the response says so and tells you to raise it, rather than handing you a half-scored list), requests are serialised, and every response is cached for 30 days via `MAJESTIC_CACHE_DAYS`. Ask the same question twice in a fortnight and the second answer costs nothing.
 
 Optional, genuinely optional: with no key, `link_intersect` still runs and still sorts followed-first by domain trust. Majestic is what turns "here are 100 domains" into "here are the 20 worth an email, and here's why". Grab a key on their [plans and pricing](https://majestic.com/plans-pricing) page; the full workflow is in [competitive.md](manual/competitive.md#link-intersect-link_intersect).
 
@@ -204,9 +204,9 @@ Every environment variable the server reads, in one block - the first is require
         "SAC_DATA_DIR": "C:/path/to/where/audits/are/stored",
         "DATAFORSEO_USERNAME": "you@example.com",
         "DATAFORSEO_PASSWORD": "your-dataforseo-password",
-        "DATAFORSEO_CACHE_DAYS": "20",
+        "DATAFORSEO_CACHE_DAYS": "7",
         "MAJESTIC_API_KEY": "your-majestic-api-key",
-        "MAJESTIC_CACHE_DAYS": "20",
+        "MAJESTIC_CACHE_DAYS": "30",
         "FIRECRAWL_API_KEY": "your-firecrawl-key",
         "SUPADATA_API_KEY": "your-supadata-key"
       }

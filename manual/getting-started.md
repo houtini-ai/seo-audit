@@ -143,9 +143,9 @@ Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config
         "SAC_DATA_DIR": "C:/path/to/where/audits/are/stored",
         "DATAFORSEO_USERNAME": "you@example.com",
         "DATAFORSEO_PASSWORD": "your-dataforseo-password",
-        "DATAFORSEO_CACHE_DAYS": "20",
+        "DATAFORSEO_CACHE_DAYS": "7",
         "MAJESTIC_API_KEY": "your-majestic-api-key",
-        "MAJESTIC_CACHE_DAYS": "20",
+        "MAJESTIC_CACHE_DAYS": "30",
         "FIRECRAWL_API_KEY": "your-firecrawl-key",
         "SUPADATA_API_KEY": "your-supadata-key"
       }
@@ -198,9 +198,9 @@ Don't commit real credential paths to a shared repo unless the team shares the s
 | `GOOGLE_APPLICATION_CREDENTIALS` | yes | Path to the GSC service-account JSON key |
 | `SAC_DATA_DIR` | optional | Where per-property SQLite databases and reports live (default: `~/Documents/seo-audit-console`) |
 | `DATAFORSEO_USERNAME` / `DATAFORSEO_PASSWORD` | optional | Switches on the keyword / SERP / competitor / CWV / backlink tools |
-| `DATAFORSEO_CACHE_DAYS` | optional | DataForSEO response cache TTL (default 20 days) |
+| `DATAFORSEO_CACHE_DAYS` | optional | DataForSEO response cache TTL (default 7 days) |
 | `MAJESTIC_API_KEY` | optional | Switches on the **Majestic** tier in `link_intersect`: every prospect gains **Trust Flow** and **Topical Trust Flow**, and the list re-sorts by real editorial authority instead of DataForSEO's link-volume rank. Get a key on [Majestic's plans page](https://majestic.com/plans-pricing). `link_intersect` works without it. |
-| `MAJESTIC_CACHE_DAYS` | optional | Majestic response cache TTL (default 20 days). Cache hits cost no Majestic units, so leave this generous. |
+| `MAJESTIC_CACHE_DAYS` | optional | Majestic response cache TTL (default 30 days). Cache hits cost no Majestic units, so leave this generous. |
 | `FIRECRAWL_API_KEY` | optional | Lets content recon scrape competitor pages to markdown (`recon_targets scrapeCompetitors:true`). Get a key at [firecrawl.link/2d1PLD8](https://firecrawl.link/2d1PLD8). Everything else works without it. |
 | `SUPADATA_API_KEY` | optional | Lets content recon transcribe the ranking videos (YouTube/TikTok/X). Get a key at [supadata.ai](https://supadata.ai). Recon works without it - it just skips video. |
 
@@ -254,7 +254,7 @@ Refresh weekly, run *"detect changes"* right after (it diffs your two most recen
 - **A large site feels slow.** That's the crawl, and it's normal. It backs off when your server rate-limits, so it stays gentle. Carry on when the progress panel says it's done.
 - **A keyword or competitor tool says it needs credentials.** Those are the optional DataForSEO tools. Everything in the core flow works without them.
 - **`link_intersect` shows a "Domain trust" column, not "Trust Flow".** That's the tool telling you the Majestic tier is off - either `MAJESTIC_API_KEY` isn't in your config's `env` block, or the client hasn't been restarted since you added it. The footer under the table says the same thing in words.
-- **Majestic errors instead of enriching.** The message comes straight from Majestic and names the cause - a bad key, or an allowance with nothing left in it. Enrichment costs roughly one unit per prospect (batched 100 per call, capped by `enrichLimit`), so a big `topN` on a small plan runs the balance down; results are cached for `MAJESTIC_CACHE_DAYS` (20 by default), so re-running the same intersect inside that window costs nothing.
+- **Majestic errors instead of enriching.** The message comes straight from Majestic and names the cause - a bad key, or an allowance with nothing left in it. Enrichment costs roughly one unit per prospect (batched 100 per call, capped by `enrichLimit`), so a big `topN` on a small plan runs the balance down; results are cached for `MAJESTIC_CACHE_DAYS` (30 by default), so re-running the same intersect inside that window costs nothing.
 - **`pull_backlinks` errors even though DataForSEO works.** Backlinks is a separate DataForSEO subscription from SERP/Keywords/Labs - a 40204 error means it isn't activated on your account. The tool says so plainly when that's the cause.
 - **You changed the code and nothing changed.** The running MCP server holds the previous build. `npm run build`, then fully restart the client.
 

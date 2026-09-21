@@ -20,9 +20,9 @@ That's what the DataForSEO integration is for. Together these tools cover most o
 ## What it costs
 
 - Calls happen **on demand only** - one per question you ask. Nothing loops, nothing runs in bulk behind your back, and there are no scheduled pulls.
-- Every response is **cached for 20 days** (configurable via `DATAFORSEO_CACHE_DAYS`). Ask the same question twice in a fortnight and the second answer is free.
+- Every response is **cached for 7 days** (configurable via `DATAFORSEO_CACHE_DAYS`). Ask the same question twice in a fortnight and the second answer is free.
 - Live tool responses show the actual cost of the call; cached ones say "cached". `topic_gaps` is the biggest spender and it's bounded at four Labs calls maximum.
-- **Majestic bills separately**, in its own resource units rather than dollars per call, and only when you run `link_intersect` with `MAJESTIC_API_KEY` set - roughly one unit per prospect enriched, capped at 100 by default, cached 20 days. Details in [the Majestic section](#the-directory-problem-and-the-majestic-fix) below.
+- **Majestic bills separately**, in its own resource units rather than dollars per call, and only when you run `link_intersect` with `MAJESTIC_API_KEY` set - roughly one unit per prospect enriched, capped at 100 by default, cached 30 days. Details in [the Majestic section](#the-directory-problem-and-the-majestic-fix) below.
 - `page_lighthouse` is the priciest single call (a full Lighthouse run on DataForSEO's infrastructure) and also the slowest (20-120s), which is why it's strictly one URL per request.
 
 My own usage across several properties runs to a few dollars a month. Your mileage depends on how curious you are, but the design intent is that you can't accidentally spend real money.
@@ -100,7 +100,7 @@ The classic outreach question - *what links do our competitors have that we don'
 > Link intersect for mysite.com vs rival1.com, rival2.com
 > What links does rival.com have that we don't?
 
-**Freshness.** Results persist to a `link_prospects` table per property. Because rivals keep earning links, that set ages - `data_storage` shows each property's prospect count and capture date and flags it as likely stale past 20 days, and re-running `link_intersect` supersedes it. The DataForSEO call itself is 20-day cached.
+**Freshness.** Results persist to a `link_prospects` table per property. Because rivals keep earning links, that set ages - `data_storage` shows each property's prospect count and capture date and flags it as likely stale past 20 days, and re-running `link_intersect` supersedes it. The DataForSEO call itself is 7-day cached.
 
 ### The directory problem, and the Majestic fix
 
@@ -121,7 +121,7 @@ With the key set the whole list **re-sorts by Trust Flow**, the `Domain trust` c
 }
 ```
 
-**What it costs, and how it's kept cheap.** Majestic bills resource units per item looked up, so the tier is deliberately frugal: only prospects that survived the spam and intersection filters are enriched, top-down by domain trust; they go up in batches of 100 (one call, roughly one unit each); requests are serialised so nothing runs away; and `enrichLimit` caps the whole thing at 100 by default. If more prospects qualified than got enriched, the response says so explicitly and tells you to raise `enrichLimit` - it won't quietly hand you a half-scored list. (Anything left unenriched sinks to the bottom of a Trust Flow sort, which is the honest place for a domain with no score yet, so raise the limit if your filters kept more than 100 and you want the full picture.) Everything is cached for `MAJESTIC_CACHE_DAYS` (default 20) in `majestic-cache.db`, keyed per domain, so re-running the same intersect inside that window spends nothing.
+**What it costs, and how it's kept cheap.** Majestic bills resource units per item looked up, so the tier is deliberately frugal: only prospects that survived the spam and intersection filters are enriched, top-down by domain trust; they go up in batches of 100 (one call, roughly one unit each); requests are serialised so nothing runs away; and `enrichLimit` caps the whole thing at 100 by default. If more prospects qualified than got enriched, the response says so explicitly and tells you to raise `enrichLimit` - it won't quietly hand you a half-scored list. (Anything left unenriched sinks to the bottom of a Trust Flow sort, which is the honest place for a domain with no score yet, so raise the limit if your filters kept more than 100 and you want the full picture.) Everything is cached for `MAJESTIC_CACHE_DAYS` (default 30) in `majestic-cache.db`, keyed per domain, so re-running the same intersect inside that window spends nothing.
 
 > Link intersect for mysite.com vs rival1.com, rival2.com, enrich the top 200
 > Which of those prospects have Topical Trust Flow in our category?

@@ -1313,7 +1313,140 @@ export const CHECKS: CheckDef[] = [
       return out;
     },
   },
+  // ── Google Discover readiness (article-template surface) ────────────────
+  // Discover ranks article/news pages on technical hygiene + visual/structured signals + entity-rich
+  // headlines. All of these read data we ALREADY crawl (robots/x_robots_tag, json_ld, og_tags,
+  // response_time_ms, body_chunks) and are gated to Discover-eligible templates via isDiscoverEligible
+  // so Product/collection pages are never flagged. Honesty guard: pixel-level image-ratio checks are
+  // deliberately NOT here — we're HEAD-only, so we verify only what the schema DECLARES, never a
+  // "16:9 confirmed" from an image we didn't fetch. See plan/google-discover.md.
+  {
+    id: 'discover-max-image-preview', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global', yieldCoef: 0.15,
+    title: 'Article missing max-image-preview:large (no large Discover card)',
+    fix: 'Add `<meta name="robots" content="max-image-preview:large">` (or the same directive in an X-Robots-Tag header). Without it Google cannot feature the article with the large, high-CTR image card in Google Discover and image search — you get a thumbnail or nothing. This is usually one site-wide template/config change (WordPress core already emits it; a plugin or theme has overridden it here).',
+    run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd, og_tags ogTags, robots, x_robots_tag xrt FROM pages WHERE ${DISCOVER_PREFILTER}`)
+      .filter(r => isDiscoverEligible(r.jsonLd, r.ogTags) && !hasMaxImagePreviewLarge(r.robots, r.xrt) && !hasPreviewRestriction(r.robots, r.xrt))
+      .map(r => ({ urlKey: r.urlKey, evidence: { robots: r.robots ?? null, xRobotsTag: r.xrt ?? null, note: 'article-type page without max-image-preview:large' } })),
+  },
+  {
+    id: 'discover-missing-og', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page', yieldCoef: 0.12,
+    title: 'Article missing og:title or og:image (Discover cards use these)',
+    fix: 'Add both `og:title` and `og:image` — Google frequently builds the Discover headline and card image straight from Open Graph. Make og:image ≥1200px wide at 16:9, and write og:title for click-through, not just for social.',
+    run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd, og_tags ogTags FROM pages WHERE ${DISCOVER_PREFILTER}`)
+      .filter(r => isDiscoverEligible(r.jsonLd, r.ogTags))
+      .map(r => ({ urlKey: r.urlKey, missing: ['og:title', 'og:image'].filter(k => { const v = parseOg(r.ogTags)[k]; return !(v && String(v).trim()); }) }))
+      .filter(x => x.missing.length)
+      .map(x => ({ urlKey: x.urlKey, evidence: { missing: x.missing } })),
+  },
+  {
+    id: 'discover-slow-response', category: 'performance', severity: 'med', labels: ['D', 'N'], certainty: 0.5, effortBase: 5, fixType: 'global', yieldCoef: 0.1,
+    title: 'Article response looks slow for Discover (>600ms wall-time)',
+    fix: 'Aim for server response (TTFB) under 600ms — under 200ms is optimal — since Discover favours freshly-crawlable content. NOTE: the figure here is whole-fetch WALL TIME (it includes the HTML download and any retry/back-off), not a clean server TTFB, so confirm against a real TTFB or field measurement before prioritising. Caching, a CDN, or backend work are the usual levers.',
+    // Wall time only — response_time_ms is Date.now() across the whole fetch. We exclude pages that
+    // resolved through a redirect chain (extra hops inflate the number) and label this JUDGEMENT (N),
+    // because it is a proxy, not a measured TTFB. Do not present it as deterministic.
+    run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd, og_tags ogTags, response_time_ms ms FROM pages WHERE ${DISCOVER_PREFILTER} AND response_time_ms > 600 AND (redirects IS NULL OR redirects='') ORDER BY response_time_ms DESC`)
+      .filter(r => isDiscoverEligible(r.jsonLd, r.ogTags))
+      .map(r => ({ urlKey: r.urlKey, evidence: { wallTimeMs: r.ms, target: '<600ms (ideal <200ms)', note: 'whole-fetch wall time incl. HTML download / retries — a proxy, not a measured TTFB' } })),
+  },
+  {
+    id: 'discover-crawl-waste', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'global', yieldCoef: 0.1,
+    title: 'High crawl waste (budget spent on redirects / non-indexable URLs)',
+    fix: 'Google allocates a finite crawl budget per host; spending it on redirects, error pages and non-indexable URLs slows discovery of your real content (and Discover leans on fast discovery). Aim for almost everything Google crawls to be an indexable 200 — repoint internal links off redirects/404s, prune faceted/parameter URLs, and keep the sitemap to canonical indexable pages.',
+    run: (c) => {
+      const clause = `status_code IS NOT NULL AND status_code NOT IN (429,503)`; // 429/503 are transient throttling, not genuine waste
+      const tot = (rows(c, `SELECT COUNT(*) n FROM pages WHERE ${clause}`)[0]?.n) || 0;
+      if (tot < 50) return []; // too few crawled URLs to judge budget
+      // Non-indexable HTML by reason — EXCLUDING non-html assets (images/PDFs the crawler followed are
+      // not article crawl-waste). Internal redirects are stored as the final page + hops in
+      // pages.redirects (not as 3xx rows), so count redirect-chain resolutions separately.
+      const byReason = rows(c, `SELECT COALESCE(indexable_reason,'(other)') reason, COUNT(*) n FROM pages WHERE ${clause} AND indexable=0 AND COALESCE(indexable_reason,'') != 'non-html' GROUP BY 1 ORDER BY 2 DESC`);
+      const nonIndexable = byReason.reduce((s, r) => s + r.n, 0);
+      const redirected = (rows(c, `SELECT COUNT(*) n FROM pages WHERE ${clause} AND redirects IS NOT NULL AND redirects != ''`)[0]?.n) || 0;
+      const waste = nonIndexable + redirected;
+      const ratio = waste / tot;
+      if (ratio < 0.3) return [];
+      return [{ urlKey: null, evidence: { crawledUrls: tot, wasted: waste, wasteRatio: Math.round(ratio * 1000) / 10 + '%', redirected, nonIndexableByReason: Object.fromEntries(byReason.map(r => [r.reason, r.n])), note: 'crawled URLs that redirect or cannot be indexed (429/503 throttling and non-HTML assets excluded)' } }];
+    },
+  },
+  {
+    id: 'discover-generic-article-type', category: 'schema', severity: 'low', labels: ['D', 'N'], certainty: 0.5, effortBase: 1, fixType: 'global',
+    title: 'Generic Article type where a more specific one fits',
+    fix: 'The page’s Article markup uses only the generic `Article` type. Google recommends the most specific applicable type — `NewsArticle` for news, `LiveBlogPosting` for live coverage, `ProfilePage` for a person/creator profile — which unlocks richer Discover/News treatment. Usually one template/plugin setting. Only change it if the more specific type genuinely fits (judgement).',
+    // Reads the FULL @type set of each article-family node (nodeTypeList — array-@type aware). Fires
+    // only when the article family present is exactly {article}, i.e. no more-specific subtype is
+    // declared anywhere. A page typed ["Article","BlogPosting"] is NOT flagged (BlogPosting IS specific).
+    run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND json_ld LIKE '%Article%'`)
+      .map(r => { const present = new Set<string>(); for (const n of discoverArticleNodes(r.jsonLd)) for (const t of nodeTypeList(n)) if (DISCOVER_TYPES.includes(t)) present.add(t); return { urlKey: r.urlKey, present }; })
+      .filter(x => x.present.has('article') && x.present.size === 1)
+      .map(x => ({ urlKey: x.urlKey, evidence: { articleTypesDeclared: ['Article'], note: 'the Article schema declares only the generic Article type — no more specific subtype' } })),
+  },
+  {
+    id: 'discover-image-schema', category: 'schema', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page', yieldCoef: 0.12,
+    title: 'Article schema declares no image (Discover needs a large image)',
+    fix: 'Add an `image` to the Article structured data — Discover cards need a big image and cannot build one from the page alone. Google wants a high-res image (≥1200px wide), ideally in three crops: 16:9 (1200×675), 4:3 (1200×900) and 1:1 (1200×1200). The main visible image at the top of the article should match the 16:9 schema image.',
+    // MUST have ≥1 article node whose `image` is absent — this check is about that node. Without the
+    // length guard, `![].some(...)` is true and pages with NO article schema at all get flagged for a
+    // schema that doesn't exist (the .some-on-empty bug that produced 100% false positives).
+    run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd, og_tags ogTags FROM pages WHERE ${DISCOVER_PREFILTER}`)
+      .map(r => ({ urlKey: r.urlKey, nodes: discoverArticleNodes(r.jsonLd) }))
+      .filter(x => x.nodes.length > 0 && !x.nodes.some(hasSchemaImage))
+      .map(x => ({ urlKey: x.urlKey, evidence: { note: 'no `image` on the Article schema — Discover cannot build a large image card from schema alone' } })),
+  },
+  // NOTE: the Discover "front-loaded intro" angle is covered by the existing `answer-not-front-loaded`
+  // check (title + first two body chunks, capped) — a dedicated discover-intro check duplicated it,
+  // tested chunks[0] (which is the byline/author block on most themes) and triple-flagged one symptom.
+  // Deliberately not added here; see plan/google-discover.md.
 ];
+
+// ── Google Discover helpers (article-eligibility + directive/schema parsing) ──
+// The article-family @types Discover surfaces. isDiscoverEligible gates every discover-* check.
+const DISCOVER_TYPES = ['article', 'newsarticle', 'blogposting', 'liveblogposting', 'profilepage', 'reportagenewsarticle', 'opinionnewsarticle', 'reviewnewsarticle', 'techarticle', 'scholarlyarticle'];
+// Coarse SQL prefilter — narrows rows before the precise isDiscoverEligible() JSON parse (a slightly
+// wide net on the raw JSON, always confirmed in JS). Keeps every discover-* check off a full scan.
+const DISCOVER_PREFILTER = `status_code=200 AND indexable=1 AND ${HTML_CT} AND (json_ld LIKE '%Article%' OR json_ld LIKE '%BlogPosting%' OR json_ld LIKE '%ProfilePage%' OR og_tags LIKE '%article%')`;
+// Every @type a node declares. A node's @type may be a STRING or an ARRAY (e.g. ["Article","BlogPosting"]);
+// templates.nodeType() returns only the first entry, which misreads array types — so read them all here.
+function nodeTypeList(n: unknown): string[] {
+  const t = (n as { '@type'?: unknown } | null)?.['@type'];
+  if (typeof t === 'string') return [t.toLowerCase()];
+  if (Array.isArray(t)) return t.filter((x): x is string => typeof x === 'string').map(x => x.toLowerCase());
+  return [];
+}
+// JSON-LD nodes whose @type set intersects the article family (array-@type aware).
+function discoverArticleNodes(jsonLd: string | null): unknown[] {
+  return parseJsonLdNodes(jsonLd).filter(n => nodeTypeList(n).some(t => DISCOVER_TYPES.includes(t)));
+}
+function parseOg(ogTags: string | null): Record<string, string> {
+  if (!ogTags) return {};
+  try { const o = JSON.parse(ogTags); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; }
+}
+// A page is Discover-eligible if its JSON-LD declares an article-family node. If it has typed JSON-LD
+// but NO article node, JSON-LD is AUTHORITATIVE → not eligible, even when og:type=article — Yoast/WP
+// stamps og:type=article on every non-front page (so /blog, /about, /contact would otherwise qualify).
+// og:type is the fallback ONLY when there is no typed JSON-LD to judge from.
+function isDiscoverEligible(jsonLd: string | null, ogTags: string | null): boolean {
+  if (discoverArticleNodes(jsonLd).length) return true;
+  if (parseJsonLdNodes(jsonLd).some(n => nodeTypeList(n).length)) return false;
+  return (parseOg(ogTags)['og:type'] ?? '').toLowerCase() === 'article';
+}
+// max-image-preview:large can be set via the robots meta OR the X-Robots-Tag header; either counts.
+function hasMaxImagePreviewLarge(robots: string | null, xrt: string | null): boolean {
+  return `${robots ?? ''} ${xrt ?? ''}`.toLowerCase().replace(/\s+/g, '').includes('max-image-preview:large');
+}
+// A DELIBERATE preview restriction (none / standard / nosnippet) — the site chose to limit previews, so
+// "missing max-image-preview:large" is not an issue to raise (image-preview-restricted covers these).
+function hasPreviewRestriction(robots: string | null, xrt: string | null): boolean {
+  const s = `${robots ?? ''} ${xrt ?? ''}`.toLowerCase().replace(/\s+/g, '');
+  return s.includes('max-image-preview:none') || s.includes('max-image-preview:standard') || s.includes('nosnippet');
+}
+// Does a schema node declare a usable image? (string URL, {url|contentUrl|@id} object, or array of either.)
+function hasSchemaImage(node: unknown): boolean {
+  const img = (node as { image?: unknown } | null)?.image;
+  const one = (v: unknown): boolean => typeof v === 'string' ? v.trim().length > 0
+    : !!v && typeof v === 'object' && !Array.isArray(v) && !!((v as any).url || (v as any).contentUrl || (v as any)['@id']);
+  return Array.isArray(img) ? img.some(one) : one(img);
+}
 
 const sitemapHasRows = (c: CheckContext): boolean =>
   ((c.db.prepare('SELECT COUNT(*) n FROM sitemap_urls').get() as { n: number }).n) > 0;

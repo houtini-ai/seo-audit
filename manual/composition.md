@@ -1,6 +1,6 @@
 # Composition: asking your own questions
 
-The 93 preset checks are the floor, not the ceiling. The real power of holding Search Console, a crawl, URL Inspection and DataForSEO in **one database** is that you can ask bespoke questions across them - questions no single SEO tool answers, because no single tool holds all four datasets.
+The 99 preset checks are the floor, not the ceiling. The real power of holding Search Console, a crawl, URL Inspection and DataForSEO in **one database** is that you can ask bespoke questions across them - questions no single SEO tool answers, because no single tool holds all four datasets.
 
 You don't write SQL for this (though you can - every table lives in one SQLite file per property, path via `data_location`). You describe the question in plain language, and Claude plans the join. The `composition_cookbook` tool gives Claude the map below; this page is the same map for you, with the recipes expanded into prompts you can copy.
 
@@ -30,7 +30,7 @@ Grain is the thing that trips people up when composing - what one row means, per
 | `page_backlinks` | one backlinked URL | Counts plus a live HTTP status. |
 | `link_prospects` | one prospect domain (links to your rivals, not to you) | Intersections, DataForSEO domain trust, worst spam score, followed flag, anchor mix - plus **Trust Flow**, Citation Flow and **Topical Trust Flow** when `MAJESTIC_API_KEY` is set. Captured per `link_intersect` run and dated, so treat it as a snapshot: rivals keep earning links. |
 | `keyword_intent` / `page_cwv` | one keyword / one URL | Persisted when you pass `siteUrl` to `search_intent` / `page_lighthouse`. |
-| Labs tools | keyword × target, or month × target | Cached 20 days; each live call costs money, so plan the fewest calls that answer the question. |
+| Labs tools | keyword × target, or month × target | Cached 7 days; each live call costs money, so plan the fewest calls that answer the question. |
 | `findings` | one finding per check × URL | With priority and evidence JSON, per audit run. |
 
 ## Aggregate first
@@ -141,4 +141,4 @@ The AI Overview items in a SERP call, against your page's body sections: is the 
 
 ## Planning your own
 
-The method, in one paragraph: state the question, name the join key (url_key, query or domain), state the grain of each side so aggregation is honest, then run the fewest paid calls that answer it. Everything free (GSC, crawl, inspection) is already in the database; only the Labs/backlinks side costs money, and it's cached for 20 days. If you're unsure whether a question is answerable, ask - Claude reads the same cookbook and will tell you which side of the join is missing.
+The method, in one paragraph: state the question, name the join key (url_key, query or domain), state the grain of each side so aggregation is honest, then run the fewest paid calls that answer it. Everything free (GSC, crawl, inspection) is already in the database; only the Labs/backlinks side costs money, and it's cached for 7 days. If you're unsure whether a question is answerable, ask - Claude reads the same cookbook and will tell you which side of the join is missing.

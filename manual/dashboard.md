@@ -76,7 +76,7 @@ Link intersect: the domains linking to your competitors but not to you - a ready
 
 ![The Content research tab - News, Videos and Trends for a topic](../assets/research.png)
 
-On-demand topic research, right in the dashboard: type a keyword and pull recent **News** (free Google News plus DataForSEO), the ranking **Videos** (YouTube SERP), or the **Trend** direction (Google Trends - rising, falling or flat). The "what's being published and who's covering it" panel - each button is a live, 20-day-cached lookup. News works free via Google News; videos and trends use DataForSEO.
+On-demand topic research, right in the dashboard: type a keyword and pull recent **News** (free Google News plus DataForSEO), the ranking **Videos** (YouTube SERP), or the **Trend** direction (Google Trends - rising, falling or flat). The "what's being published and who's covering it" panel - each button is a live, 7-day-cached lookup. News works free via Google News; videos and trends use DataForSEO.
 
 ## Exporting: `export_report`
 

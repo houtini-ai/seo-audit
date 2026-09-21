@@ -1,10 +1,10 @@
 # DataForSEO functions
 
-Everything SEO Audit Console does with *market* data goes through [DataForSEO](https://dataforseo.com/?aff=213701) — a pay-as-you-go API for search volumes, live SERPs, competitor data, backlinks and Lighthouse. The SERP/Keywords/Labs APIs need no subscription; calls cost fractions of a cent to a few cents and are **cached locally for 20 days**, so a repeat question is free and nothing runs unless you ask. (Backlinks is a separate DataForSEO subscription — see the last section.)
+Everything SEO Audit Console does with *market* data goes through [DataForSEO](https://dataforseo.com/?aff=213701) — a pay-as-you-go API for search volumes, live SERPs, competitor data, backlinks and Lighthouse. The SERP/Keywords/Labs APIs need no subscription; calls cost fractions of a cent to a few cents and are **cached locally for 7 days**, so a repeat question is free and nothing runs unless you ask. (Backlinks is a separate DataForSEO subscription — see the last section.)
 
 Set `DATAFORSEO_USERNAME` + `DATAFORSEO_PASSWORD` ([getting-started](getting-started.md#environment-variables)). Each tool below wraps one DataForSEO endpoint — the endpoint is named so you can price it against DataForSEO's own docs.
 
-## Keywords Data — cheap, 20-day cached
+## Keywords Data — cheap, 7-day cached
 
 ### `keyword_volume`
 True monthly search volume, CPC and competition for up to 700 keywords. How you size an opportunity before writing a word.
@@ -40,7 +40,7 @@ SERP-feature and AI-Overview exposure across a keyword set, volume-weighted — 
 Endpoint: `/v3/serp/google/organic/live/advanced`
 > Which SERP features show up for my money keywords?
 
-## DataForSEO Labs — cheap, 20-day cached, top-down
+## DataForSEO Labs — cheap, 7-day cached, top-down
 
 ONE `ranked_keywords` call answers "what does this domain rank for" — never loop keywords through the SERP endpoints to reconstruct what a Labs call returns.
 

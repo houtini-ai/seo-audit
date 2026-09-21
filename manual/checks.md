@@ -1,6 +1,6 @@
 # The check registry
 
-All 93 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
+All 99 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
 
 ## Reading the labels
 
@@ -12,7 +12,7 @@ A check can carry more than one label - `noindex-with-traffic` is D+G because th
 
 Every finding is priced the same way: priority = (traffic at stake × expected yield × certainty) / effort hours. So the list you get back is ordered by expected clicks per developer-hour, not by how alarming the check sounds.
 
-## Crawlability (13)
+## Crawlability (14)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -28,6 +28,7 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `pagination-canonical-to-page-1` | D | Page 2+ canonicalising back to page 1 | Make each paginated page self-canonical, or items linked only from deep pages drop out of the crawl. |
 | `sitemap-orphan` | D | Sitemap URLs nothing on the site links to | Add internal links - sitemap discovery alone earns little authority. |
 | `robots-blocked-with-traffic` | D+G | robots.txt-disallowed URLs Google still shows and users still land on | Unblock it so it can rank properly, or unblock AND noindex (a blocked page can never see the noindex). |
+| `discover-crawl-waste` | D | Too much of the crawl going to redirects and non-indexable URLs (site-level - Discover leans on fast discovery) | Aim for almost everything Google crawls to be an indexable 200 - repoint links off redirects/404s and prune faceted/parameter URLs. |
 | `entity-internal-link-gap` | N (0.5) | Topically related pages (per Wikidata) with no link between them | Link the broader page to the more specific one - after verifying the entity match. Needs `resolve_entities`. |
 
 ## Indexation (16)
@@ -51,7 +52,7 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `image-preview-restricted` | D | max-image-preview capped below large | Set max-image-preview:large - Discover strongly favours it - unless licensing forbids. |
 | `sitemap-lastmod-untrustworthy` | D | lastmod dates that are generator stamps, future-dated, or claim changes that didn't happen | Make lastmod reflect genuine content changes, or drop it - dishonest dates teach Google to ignore yours. |
 
-## On-page (18)
+## On-page (20)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -73,6 +74,8 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `excessive-links` | D | Hundreds of links on one page | Trim the boilerplate link blocks so the links that matter stand out. |
 | `favicon-missing` | D | No favicon declared | Add one - Google shows it beside your result on mobile. |
 | `analytics-missing` | D | No analytics or tag-manager snippet found anywhere on the site | Install one (or ignore if you measure server-side) - you can't make SEO decisions blind. |
+| `discover-max-image-preview` | D | Article-template pages without `max-image-preview:large` (no large Google Discover card) | Add the directive via meta robots or an X-Robots-Tag header - usually one site-wide template change. |
+| `discover-missing-og` | D | Article-template pages missing `og:title` or `og:image` (Discover builds cards straight from Open Graph) | Add both; size og:image ≥1200px wide at 16:9, and write og:title for click-through. |
 
 ## Content (5)
 
@@ -84,7 +87,7 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `content-bloat` | D+N (0.6) | Very long unbroken sections | Split into focused, headed passages - AI grounding has sharp diminishing returns past a certain length, and density beats length. |
 | `ai-slop-signals` | N (0.5) | Copy tripping statistical tells of generic AI text (stock filler, uniform sentence lengths, identical section openers) | Rewrite the flagged sections with specifics only you can supply - and verify by reading first; competent human writing can trip these tells. |
 
-## Structured data (10)
+## Structured data (12)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -98,6 +101,8 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `rich-result-issues` | D+G | Rich-result issues Google itself reports via URL Inspection | Fix the listed issues - this is Google's own validation, not ours, so it's authoritative. |
 | `article-date-illogical` | D | Article dateModified earlier than datePublished | Fix the dates - an impossible pair undermines trust in the markup. |
 | `article-no-author` | D | Article schema with no author | Add a Person author and a visible byline - AI-search guidance rewards a demonstrable first-hand point of view. |
+| `discover-generic-article-type` | D+N (0.5) | Article schema using only the generic `Article` type where a more specific one fits | Use `NewsArticle` / `LiveBlogPosting` / `ProfilePage` where it genuinely applies - it unlocks richer Discover/News treatment. |
+| `discover-image-schema` | D | Article schema that declares no `image` (Discover cards need a large image) | Add an `image` (≥1200px wide, ideally 16:9 / 4:3 / 1:1 crops), matching the main visible image. |
 
 ## Security (3)
 
@@ -107,7 +112,7 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `non-https` | D | Pages served over HTTP | Serve over HTTPS and 301 the HTTP version. |
 | `missing-hsts` | D | No Strict-Transport-Security header | Add it with a sensible max-age. |
 
-## Performance (5)
+## Performance (6)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -116,6 +121,7 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `uncompressed-html` | D | HTML served without gzip/brotli | Enable compression - usually a one-line server or CDN setting. |
 | `no-304-revalidation` | D | Servers that advertise Last-Modified/ETag but re-serve full 200s to conditional requests | Configure the server to answer 304 Not Modified - it saves bandwidth on every revalidating crawler and signals stability to Googlebot. |
 | `high-yield-cwv-fail` | D+G | Pages earning real clicks while failing lab Core Web Vitals (needs `page_lighthouse`) | Prioritise CWV work here - this is where engineering effort has measurable ROI. |
+| `discover-slow-response` | D+N (0.5) | Article-template pages whose fetch wall-time exceeds ~600ms (a proxy, not a measured TTFB) | Aim for server response under 600ms - ideal under 200ms - since Discover favours freshly-crawlable content; confirm with a real TTFB before prioritising. |
 
 ## The merged checks (23)
 
