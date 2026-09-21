@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2026 Richard Baxter / Houtini — Source-Available (see LICENSE)
+// Copyright (c) 2026 Richard Baxter / Houtini — Apache-2.0 (see LICENSE)
 // seo-audit-console — MCP server entry point.
 import { createServer } from './server.js';
 

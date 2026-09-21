@@ -8,7 +8,7 @@ import * as cheerio from 'cheerio';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
 import { dbPathFor } from '../dist/core/paths.js';
 
-const site = process.argv[2] ?? 'sc-domain:simracingcockpit.gg';
+const site = process.argv[2] ?? 'sc-domain:example.com';
 const N = Number(process.argv[3] ?? 15);
 
 function dataDir() {

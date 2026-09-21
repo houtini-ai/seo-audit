@@ -8,15 +8,15 @@ It's the most data-intensive thing this MCP does, so it's on-demand and it costs
 
 ## The one prompt
 
-> Run content recon on simracingcockpit.gg
+> Run content recon on mysite.com
 
 That's it. Recon auto-selects your worst declining / striking-distance pages (high impressions, currently sitting at position 3-15, one top query each) and works through them. It's an **async job** - it returns a job id immediately and you poll it, because each page is a live page-fetch plus a serialised SERP call. On a handful of pages that's under a minute; on a big batch, longer.
 
 You can also aim it:
 
-> Run content recon on the top 10 pages for simracingcockpit.gg, location United Kingdom
+> Run content recon on the top 10 pages for mysite.com, location United Kingdom
 
-> Run content recon on these two URLs: simracingcockpit.gg/best-sim-racing-wheels and simracingcockpit.gg/gaming-monitors-guide
+> Run content recon on these two URLs: mysite.com/best-running-shoes and mysite.com/buying-guide
 
 Pass `location` to match where your impressions actually come from - organic rank is location-sensitive, and a UK site read from a US data centre gives you the wrong SERP. Pass explicit `urls` to skip auto-selection and interrogate exactly the pages you care about.
 
@@ -88,7 +88,7 @@ Recon doesn't just report - it seeds a **trackable to-do board** per page, and t
 
    The payoff: on `status: shipped` with `remeasure: true`, recon **re-fetches the SERP and records the outcome** - so you can see, in black and white, whether the fix moved you from *AIO-uncited* to *cited*, or up the organic ranks. That's the before/after the whole exercise was built to prove.
 
-> Show me the recon to-dos for simracingcockpit.gg
+> Show me the recon to-dos for mysite.com
 
 > Mark recon to-do #14 as shipped and re-measure
 

@@ -18,17 +18,17 @@
 > **New to MCPs, or not sure where to start?** The **[Getting started guide](manual/getting-started.md)** takes you from a completely fresh machine (no Node, no Git, never heard of a service account) to your first audit - every step screenshotted, including the one everyone misses. Ten minutes, honestly.
 
 ```console
-you  › run an SEO audit on simracingcockpit.gg
+you  › run an SEO audit on mysite.com
 
      ⣾ search console  1.8M rows synced (19s - incremental)
      ⣾ crawl           868 pages · HTTP/2 · robots-polite · 8 parallel
      ⣾ link graph      internal PageRank · click depth · in-degree
      ✓ 99 checks · 220 findings · ranked by expected clicks per dev-hour
 
-     #1  CTR far below position-expected     /how-to-install-mods       XL
+     #1  CTR far below position-expected     /pricing                   XL
      #2  Page losing clicks (trend)          site-wide                  XL
-     #3  Keyword cannibalisation             "beamng drive mods"        L
-     #4  Robots-blocked page earning traffic /category/wheels           L
+     #3  Keyword cannibalisation             "project management app"   L
+     #4  Robots-blocked page earning traffic /category/guides           L
 
 you  › generate the fix for #1 ▍
 ```

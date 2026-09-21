@@ -164,7 +164,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const ctr = (t: Totals): number => (t.impressions ? t.clicks / t.impressions : 0);
 
     // Branded vs non-branded — brand derived from the property's registrable label, matched against
-    // the space-stripped query (so "sim racing cockpit" matches brand "simracingcockpit"). Done in
+    // the space-stripped query (so "my brand name" matches brand "mybrandname"). Done in
     // one SQL pass. The detected brand is surfaced in the UI so the split is verifiable, not a
     // black box — for descriptive domains where the brand equals a generic term, the user can see it.
     const brandKey = brandToken(siteUrl); // shared helper — same derivation the audit's brandExcl uses

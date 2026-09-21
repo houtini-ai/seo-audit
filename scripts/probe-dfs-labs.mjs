@@ -16,7 +16,7 @@ function creds() {
   return { user: env.DATAFORSEO_USERNAME, pass: env.DATAFORSEO_PASSWORD };
 }
 
-const domain = process.argv[2] ?? 'simracingcockpit.gg';
+const domain = process.argv[2] ?? 'example.com';
 const url = process.argv[3] ?? `https://${domain}/`;
 const { user, pass } = creds();
 if (!user || !pass) { console.error('No DataForSEO creds (env or config).'); process.exit(1); }
