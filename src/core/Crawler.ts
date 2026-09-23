@@ -313,7 +313,7 @@ export class Crawler {
     enqueue(seed, 0);
 
     // Seed the frontier from the XML sitemap so unlinked/orphan pages get crawled — link-following
-    // alone misses them (e.g. directdrivewheels: 367 sitemap URLs, only ~100 reachable via links).
+    // alone misses them (e.g. one site: 367 sitemap URLs, only ~100 reachable via links).
     // Also stores the sitemap for crawl↔sitemap reconciliation. Off-host/junk/asset URLs filtered;
     // bounded by maxPages.
     if (!signal.aborted) {
@@ -331,7 +331,7 @@ export class Crawler {
     }
 
     // Also seed from GSC-known URLs (pages Google sends traffic to) so coverage doesn't depend on
-    // the site's sitemap being complete — e.g. simracing has 334 sitemap URLs but GSC knows 1,299.
+    // the site's sitemap being complete — e.g. one property has 334 sitemap URLs but GSC knows 1,299.
     // page_key is already a normalised URL; off-host/junk/asset filtered; bounded by maxPages.
     try {
       // Seed with the RAW GSC page URL, not the normalised page_key — the key strips

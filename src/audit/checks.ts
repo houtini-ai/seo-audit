@@ -806,7 +806,7 @@ export const CHECKS: CheckDef[] = [
   // NOTE: internal anchor-text checks (over-optimisation + generic/empty anchors) prototyped
   // and PULLED twice. Re-evaluated 2026-06-22 against the AgricIDaniel/claude-seo and
   // Bhanunamikaze/Agentic-SEO-Skill repos, this time using the links.placement='body' filter
-  // plus excluding anchors that match the target's own title/H1. On real data (ehi.com.au) the
+  // plus excluding anchors that match the target's own title/H1. On real data (a live site) the
   // dominant survivors are still false positives: sitewide template CTAs ("home" 864/865,
   // "contact us", "apply today") and category links whose anchor IS the page title. The
   // page-level "mostly generic-anchored" variant returned 0 signal; raw empty anchors are
@@ -1272,7 +1272,7 @@ export const CHECKS: CheckDef[] = [
       }
       if (!metrics.length) return [];
       // Outliers only: the LEXICON signal is mandatory (uniform sentences + repeated openers
-      // without a single slop phrase is template chrome, not slop — live-verified on simracing),
+      // without a single slop phrase is template chrome, not slop — live-verified on a real content site),
       // plus ≥1 corroborating signal, AND composite score in the top decile of pages that showed
       // any signal at all.
       const sorted = metrics.map(m => m.score).sort((a, b) => a - b);

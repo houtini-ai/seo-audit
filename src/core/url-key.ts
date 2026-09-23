@@ -94,7 +94,7 @@ export function urlKey(rawUrl: string, options: UrlKeyOptions = {}): string {
 
 /**
  * The registrable brand label of a property — the first domain label, lower-cased, alphanumerics
- * only (so "sc-domain:ehi.com.au" → "ehi", "https://www.sim-racing.gg/" → "simracing"). Returns null
+ * only (so "sc-domain:example.co.uk" → "example", "https://www.my-brand.com/" → "mybrand"). Returns null
  * for labels under 3 chars (too short to match safely). Used for whole-token brand matching:
  * `(' '||LOWER(query)||' ') LIKE '% '||brand||' %'` — same scheme as the dashboard's branded split.
  */

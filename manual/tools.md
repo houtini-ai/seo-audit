@@ -93,7 +93,7 @@ The flagship AI-search check. A small local relevance model (a cross-encoder rer
 
 ### `draft_content`
 The follow-through. Builds a grounded writing brief for a weak page: the query gap, the page's own paragraphs as voice exemplars, and its most query-relevant passages as the only permitted facts. Claude then drafts the missing answer in *your site's* voice, told to invent nothing. Omit the URL and it targets the weakest-scoring page.
-> Draft the missing content for /sim-racing-wheels
+> Draft the missing content for /best-running-shoes
 
 ### `check_agent_readiness`
 Is your site ready for AI agents? Live HTTP probes of your origin scoring four categories - discoverability (robots rules, sitemap, Link headers), content (`llms.txt`, `agents.md`, Markdown negotiation), bot access control (AI-bot rules, Content Signals, Web Bot Auth) and capabilities (MCP server card, Agent Skills, API catalogue, OAuth discovery). Returns 0-100, a level, and copy-paste fixes for everything missing. No crawl or GSC data needed, and it isn't fooled by a catch-all route that returns 200 for everything.
