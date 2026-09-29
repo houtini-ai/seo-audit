@@ -4,6 +4,22 @@ All notable changes to **@houtini/seo-audit-console**. The format loosely follow
 [Keep a Changelog](https://keepachangelog.com); the check registry is the source of truth
 (`list_checks` always returns the live list).
 
+## [0.10.0] — 2026-09-29
+
+### Added
+- **Google Trends category support** (following DataForSEO's Sep 2026 category-only filtering). `topic_trend` now takes keywords, a `categoryCode`, or both:
+  - keywords alone search every category (unchanged);
+  - keywords + `categoryCode` narrow a term to one industry (e.g. "jaguar" inside Autos);
+  - `categoryCode` alone returns interest across a whole market, no keyword needed.
+  - `related: true` (at most one keyword) adds the top and rising related topics and queries — with a category on its own, this is how you see what's breaking out across a market.
+- **`trend_categories`** (free, **52 tools total**) — searches the Google Trends category tree (~1,400 categories) by name for the codes `topic_trend` takes, each with its parent so you pick the right level.
+- Verified against the live DataForSEO API: category-only graphs return one value per point and an empty `keywords` array (the series is labelled `category:<code>`); category + `related` returns breakout topics/queries as percentage rises.
+
+## [0.9.1] — 2026-09-24
+
+### Fixed
+- Stripped comments from the published build (`removeComments`) so no source comments ship in the npm tarball.
+
 ## [0.9.0] — 2026-09-21
 
 ### Added

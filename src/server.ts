@@ -126,10 +126,10 @@ ARCHETYPE CHAINS (compose along these lines):
 3. Competitor → gap: competitor keyword footprints (ranked_keywords / topic_gaps) minus our GSC + crawled-page footprint → topics to cover, each tied to the nearest existing page.
 
 COST DISCIPLINE (behave like a strategist who knows the margins):
-- Free and instant, use liberally: everything on synced data — query_data, run_audit, query_audit, suggest_pages, list_templates, detect_changes, get_dashboard, serve_dashboard, export_report.
+- Free and instant, use liberally: trend_categories, and everything on synced data — query_data, run_audit, query_audit, suggest_pages, list_templates, detect_changes, get_dashboard, serve_dashboard, export_report.
 - Paid but CHEAP and 20-day cached (Labs/Keywords, ~$0.01–0.13 a call): keyword_volume, topic_trend, search_intent, ranked_keywords, serp_features, domain_visibility, top_pages, competitors_domain, page_intersection, topic_gaps. Top-down pulls only — ONE ranked_keywords call answers "what does this domain rank for"; NEVER loop keywords through SERP endpoints to reconstruct what a Labs call returns.
 - Paid per-keyword (SERP): related_terms, youtube_discovery (ranking videos for a topic — pair with a transcript tool), news_discovery (recent coverage / freshness), and AI-Overview CITATION checks. On-demand for a handful of clicked/explicit keywords, never a list.
-- Content research (what to write / what changed): topic_trend (is a topic rising/seasonal) → youtube_discovery + news_discovery (what the winning videos/articles cover) → draft_content.
+- Content research (what to write / what changed): topic_trend (is a topic rising/seasonal; with a categoryCode from the free trend_categories, is a whole market growing and what is breaking out in it) → youtube_discovery + news_discovery (what the winning videos/articles cover) → draft_content.
 - Separate subscription: pull_backlinks (DataForSEO Backlinks — a 40204 error means it isn't activated).
 
 AGENCY MACRO-WORKFLOWS (the engagement arc — each stage feeds the next):
@@ -236,6 +236,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **pull_backlinks** — backlink profile + per-page counts + live status → unlocks **backlinks-to-404** (recover lost equity), top-linked pages, true orphans. _"Pull backlinks for example.com"_
 - **link_intersect** — the links your competitors have that you don't - a prioritised outreach prospect list (followed-first, then domain trust, spam filtered). Also answers "what links does company X have that we don't?" for a single company. Set MAJESTIC_API_KEY to re-sort by Trust Flow + Topical Trust Flow (kills directory noise). _"Link intersect for example.com vs rival1.com, rival2.com"_
 - **keyword_volume / related_terms** — volume/CPC, and People-Also-Ask + related searches. _"Search volume for [\\"best widgets\\"]"_
+- **topic_trend / trend_categories** — Google Trends interest over time for keywords, a whole category (no keyword needed), or a keyword inside a category; \`related:true\` adds rising queries and topics. trend_categories (free) finds the category code. _"Is the Software category rising in the UK? What's breaking out in it?"_
 - **search_intent** — informational/navigational/commercial/transactional per keyword → spot intent mismatch behind low CTR. _"Classify intent for [\\"buy running shoes\\", \\"how to clean shoes\\"]"_
 - **page_lighthouse** — lab Core Web Vitals + opportunities for one URL (~20–120s). _"Run Lighthouse on https://example.com/slow-page"_
 - **competitors_domain** — domains competing for your organic keywords. _"Find competitors for example.com in the UK"_
@@ -1087,18 +1088,23 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'topic_trend',
     {
       title: 'Google Trends interest over time (DataForSEO)',
-      description: '[Paid: Keywords API, cheap, cached 20d | Use for: seasonality + "is this rising or fading" — should we update now, when to publish] Google Trends relative interest (0–100) over time for up to 5 keywords (DataForSEO KEYWORDS_DATA / google_trends). Returns a per-keyword time series plus a rising/falling/flat read, so you can see direction and seasonality. timeRange: past_7_days | past_30_days | past_90_days | past_12_months (default) | past_5_years | 2004_present. type: web (default) | news | youtube | images. Default location: United States.',
+      description: '[Paid: Keywords API, cheap, cached 20d | Use for: seasonality + "is this rising or fading" — should we update now, when to publish; category monitoring — is a whole market growing] Google Trends relative interest (0–100) over time (DataForSEO KEYWORDS_DATA / google_trends). Give up to 5 keywords, a categoryCode (find it with trend_categories), or both: keywords alone search all categories; keywords + categoryCode narrow a term to one industry (e.g. "jaguar" in Autos); categoryCode alone returns interest in the WHOLE category, no keyword needed. related:true adds the top + rising related topics and queries (at most 1 keyword) — the category-only form surfaces what is breaking out across a market. Returns the time series plus a rising/falling/flat read. timeRange: past_7_days | past_30_days | past_90_days | past_12_months (default) | past_5_years | 2004_present. type: web (default) | news | youtube | images | froogle. Default location: United States.',
       inputSchema: {
-        keywords: z.array(z.string()).min(1).max(5),
+        keywords: z.array(z.string()).max(5).optional(),
+        categoryCode: z.number().int().min(1).optional(),
+        related: z.boolean().optional(),
         location: z.union([z.string(), z.number()]).optional(),
         languageCode: z.string().optional(),
         timeRange: z.enum(['past_7_days', 'past_30_days', 'past_90_days', 'past_12_months', 'past_5_years', '2004_present']).optional(),
         type: z.enum(['web', 'news', 'youtube', 'images', 'froogle']).optional(),
       },
     },
-    async ({ keywords, location, languageCode, timeRange, type }) => {
+    async ({ keywords, categoryCode, related, location, languageCode, timeRange, type }) => {
       const client = requireDfs(dfs);
-      const r = await client.googleTrends(keywords, location, languageCode, { ...(timeRange ? { timeRange } : {}), ...(type ? { type } : {}) });
+      const r = await client.googleTrends(keywords ?? [], location, languageCode, {
+        ...(timeRange ? { timeRange } : {}), ...(type ? { type } : {}),
+        ...(categoryCode ? { categoryCode } : {}), ...(related ? { related } : {}),
+      });
       const summarise = (k: string) => {
         const vals = r.series.map(s => s.values[k]).filter((v): v is number => typeof v === 'number');
         if (!vals.length) return `${k}: no data`;
@@ -1109,9 +1115,37 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         return `${k}: ${dir} (${Math.round(first)}→${Math.round(last)}, peak ${Math.max(...vals)})`;
       };
       const txt = r.keywords.map(summarise).join('\n');
+      const fmt = (xs: Array<{ value: number | null } & ({ title: string } | { query: string })>, rising: boolean) =>
+        xs.slice(0, 10).map(x => `  ${'title' in x ? x.title : x.query} (${x.value == null ? '?' : rising ? `+${x.value}%` : x.value})`).join('\n') || '  none';
+      const relatedTxt = r.queries && r.topics
+        ? `\n\nRising queries:\n${fmt(r.queries.rising, true)}\nTop queries:\n${fmt(r.queries.top, false)}\nRising topics:\n${fmt(r.topics.rising, true)}`
+        : '';
+      const scope = r.categoryCode ? ` in category ${r.categoryCode}` : '';
       return {
-        content: [{ type: 'text', text: `Trend, ${r.series.length} points${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}:\n${txt}` }],
-        structuredContent: { keywords: r.keywords, series: r.series, cached: r.cached, cost: r.cost },
+        content: [{ type: 'text', text: `Trend${scope}, ${r.series.length} points${r.cached ? ' (cached)' : ` (live, $${r.cost.toFixed(4)})`}:\n${txt}${relatedTxt}` }],
+        structuredContent: { keywords: r.keywords, categoryCode: r.categoryCode, series: r.series, topics: r.topics, queries: r.queries, cached: r.cached, cost: r.cost },
+      };
+    },
+  );
+
+  server.registerTool(
+    'trend_categories',
+    {
+      title: 'Google Trends category codes (DataForSEO)',
+      description: '[Free | Use before topic_trend with categoryCode] Search the Google Trends category tree (~1,400 categories) by name and get the codes topic_trend takes, with each match\'s parent so you can pick the right level. Omit query to list the top-level categories.',
+      inputSchema: { query: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
+    },
+    async ({ query, limit }) => {
+      const client = requireDfs(dfs);
+      const cats = await client.googleTrendsCategories();
+      const byCode = new Map(cats.map(c => [c.code, c]));
+      const q = query?.trim().toLowerCase();
+      const hits = (q ? cats.filter(c => c.name.toLowerCase().includes(q)) : cats.filter(c => c.parent === 0)).slice(0, limit ?? 25);
+      const withParent = hits.map(c => ({ ...c, parentName: c.parent ? byCode.get(c.parent)?.name ?? null : null }));
+      const lines = withParent.map(c => `${c.code}  ${c.parentName ? `${c.parentName} > ` : ''}${c.name}`).join('\n');
+      return {
+        content: [{ type: 'text', text: `${withParent.length} of ${cats.length} categories${q ? ` matching "${query}"` : ' (top level)'}:\n${lines || 'none'}\n\nPass a code to topic_trend as categoryCode.` }],
+        structuredContent: { categories: withParent, total: cats.length },
       };
     },
   );

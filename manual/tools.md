@@ -124,8 +124,13 @@ Recent news articles ranking for a keyword (live Google News SERP): title, sourc
 > What news is there on "direct drive wheelbase" this month?
 
 ### `topic_trend`
-Google Trends relative interest (0-100) over time for up to five keywords, with a rising / falling / flat read. Answers "is this topic growing or fading, and is it seasonal" - whether a page is worth updating now, and when to publish. timeRange presets run from past_7_days to 2004_present; type can be web, news or youtube.
+Google Trends relative interest (0-100) over time, with a rising / falling / flat read. Give up to five keywords, a `categoryCode` (find it with `trend_categories`), or both: keywords alone search every category; keywords plus a category narrow a term to one industry (for example "jaguar" inside Autos); a category on its own returns interest across the whole market, no keyword needed. Set `related: true` (at most one keyword) to add the top and rising related topics and queries - the category-only form is how you see what is breaking out across a market. Answers "is this topic growing or fading, and is it seasonal" - whether a page is worth updating now, and when to publish. timeRange presets run from past_7_days to 2004_present; type can be web, news, youtube, images or froogle.
 > Is interest in "sim racing" rising or falling over the last 5 years?
+> Is the Software category rising in the UK, and what's breaking out in it?
+
+### `trend_categories`
+Free. Search the Google Trends category tree (~1,400 categories) by name and get the codes `topic_trend` takes, each with its parent so you can pick the right level. Omit the query to list the top-level categories.
+> What's the Google Trends category code for software?
 
 ### `page_lighthouse`
 A live Lighthouse run for one URL: lab Core Web Vitals, category scores and the top time-saving opportunities. Slow (20-120s) and one of the pricier calls, so it's strictly per-URL on request. Pass `siteUrl` to persist the CWV, which unlocks the high-yield-cwv-fail check.

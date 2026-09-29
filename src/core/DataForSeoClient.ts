@@ -24,6 +24,10 @@ export interface DfsResponse {
 
 const BASE_URL = 'https://api.dataforseo.com';
 
+/** Google Trends related topic / query. `value` is relative interest (top) or % increase (rising). */
+export interface TrendTopic { title: string; type: string | null; value: number | null }
+export interface TrendQuery { query: string; value: number | null }
+
 export class DataForSeoClient {
   private readonly auth: string;
   private readonly ttlMs: number;
@@ -226,28 +230,79 @@ export class DataForSeoClient {
    * `type`: web (default), news, youtube, images, froogle. Cached 7 days. */
   async googleTrends(
     keywords: string[], location?: string | number, languageCode = 'en',
-    opts: { timeRange?: string; type?: string } = {},
+    opts: { timeRange?: string; type?: string; categoryCode?: number; related?: boolean } = {},
   ): Promise<{
     series: Array<{ dateFrom: string | null; dateTo: string | null; values: Record<string, number | null> }>;
-    keywords: string[]; cached: boolean; cost: number;
+    keywords: string[]; categoryCode: number | null; cached: boolean; cost: number;
+    topics?: { top: TrendTopic[]; rising: TrendTopic[] };
+    queries?: { top: TrendQuery[]; rising: TrendQuery[] };
   }> {
+    // Since Sep 2026 the Explore endpoint accepts category_code on its own (keywords optional,
+    // code > 0): whole-category interest, not one term's. Related topics/queries need <= 1 keyword.
     const kwIn = keywords.slice(0, 5);
+    const cat = opts.categoryCode && opts.categoryCode > 0 ? opts.categoryCode : null;
+    if (!kwIn.length && !cat) throw new Error('googleTrends needs keywords, a categoryCode > 0, or both');
+    if (opts.related && kwIn.length > 1) throw new Error('related topics/queries need at most one keyword (DataForSEO limit)');
+    const itemTypes = ['google_trends_graph', ...(opts.related ? ['google_trends_topics_list', 'google_trends_queries_list'] : [])];
     const r = await this.call('/v3/keywords_data/google_trends/explore/live', [
       {
-        keywords: kwIn, ...this.loc(location), language_code: languageCode,
+        ...(kwIn.length ? { keywords: kwIn } : {}), ...(cat ? { category_code: cat } : {}),
+        ...this.loc(location), language_code: languageCode,
         type: opts.type ?? 'web', time_range: opts.timeRange ?? 'past_12_months',
-        item_types: ['google_trends_graph'],
+        item_types: itemTypes,
       },
     ]);
     const result: any = r.tasks[0]?.result?.[0];
-    const kw: string[] = Array.isArray(result?.keywords) ? result.keywords : kwIn;
-    const graph = (result?.items ?? []).find((it: any) => it.type === 'google_trends_graph');
+    const items: any[] = result?.items ?? [];
+    // A category-only graph carries one unnamed series; label it by its code.
+    const kw: string[] = kwIn.length ? (Array.isArray(result?.keywords) && result.keywords.length ? result.keywords : kwIn) : [`category:${cat}`];
+    const graph = items.find((it: any) => it.type === 'google_trends_graph');
     const series = (graph?.data ?? []).map((d: any) => ({
       dateFrom: d.date_from ?? null,
       dateTo: d.date_to ?? null,
       values: Object.fromEntries(kw.map((k, i) => [k, d.values?.[i] ?? null])),
     }));
-    return { series, keywords: kw, cached: r.cached, cost: r.cost };
+    const list = (type: string) => items.find((it: any) => it.type === type)?.data;
+    const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
+    const topicsData = list('google_trends_topics_list');
+    const queriesData = list('google_trends_queries_list');
+    const toTopic = (t: any): TrendTopic => ({ title: t.topic_title, type: t.topic_type ?? null, value: num(t.value) });
+    const toQuery = (q: any): TrendQuery => ({ query: q.query, value: num(q.value) });
+    return {
+      series, keywords: kw, categoryCode: cat, cached: r.cached, cost: r.cost,
+      ...(opts.related ? {
+        topics: { top: (topicsData?.top ?? []).map(toTopic), rising: (topicsData?.rising ?? []).map(toTopic) },
+        queries: { top: (queriesData?.top ?? []).map(toQuery), rising: (queriesData?.rising ?? []).map(toQuery) },
+      } : {}),
+    };
+  }
+
+  /** KEYWORDS_DATA — the Google Trends category tree (free, GET; ~1,400 rows). Cached like any call. */
+  async googleTrendsCategories(): Promise<Array<{ code: number; name: string; parent: number | null }>> {
+    const endpoint = '/v3/keywords_data/google_trends/categories';
+    const key = this.keyFor(endpoint, ['GET']);
+    const row = this.cache
+      .prepare('SELECT response_json, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
+      .get(key) as { response_json: string; fetched_at: string } | undefined;
+    let tasks: any[];
+    if (row && Date.now() - Date.parse(row.fetched_at) < this.ttlMs) {
+      tasks = JSON.parse(row.response_json);
+    } else {
+      const res = await fetch(`${BASE_URL}${endpoint}`, { headers: { Authorization: this.auth }, signal: AbortSignal.timeout(60000) });
+      const json: any = await res.json();
+      if (!res.ok || json?.status_code >= 40000) throw new Error(`DataForSEO ${endpoint} failed: ${res.status} ${json?.status_message ?? ''}`.trim());
+      tasks = json.tasks ?? [];
+      if (tasks[0]?.result?.length) {
+        this.cache
+          .prepare(
+            `INSERT INTO dataforseo_cache (cache_key, endpoint, request_json, response_json, cost, fetched_at)
+             VALUES (?, ?, ?, ?, 0, datetime('now'))
+             ON CONFLICT(cache_key) DO UPDATE SET response_json=excluded.response_json, fetched_at=datetime('now')`,
+          )
+          .run(key, endpoint, '["GET"]', JSON.stringify(tasks));
+      }
+    }
+    return (tasks[0]?.result ?? []).map((c: any) => ({ code: c.category_code, name: c.category_name, parent: c.category_code_parent ?? null }));
   }
 
   /**

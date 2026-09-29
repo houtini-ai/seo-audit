@@ -12,9 +12,15 @@ Endpoint: `/v3/keywords_data/google_ads/search_volume/live`
 > What's the search volume for "standing desk" and "sit stand desk"?
 
 ### `topic_trend`
-Google Trends relative interest (0–100) over time for up to 5 keywords, with a rising / falling / flat read. Answers "is this growing or fading, and is it seasonal" — whether a page is worth updating now, and when to publish. `timeRange` runs `past_7_days` → `2004_present`; `type` can be web / news / youtube.
+Google Trends relative interest (0–100) over time, with a rising / falling / flat read. Give up to 5 keywords, a `categoryCode` (find it with `trend_categories`), or both: keywords alone search every category; keywords + a category narrow a term to one industry (e.g. "jaguar" inside Autos); a `categoryCode` on its own returns interest across the whole market, no keyword needed. `related: true` (at most one keyword) adds the top + rising related topics and queries — the category-only form surfaces what is breaking out across a market. Answers "is this growing or fading, and is it seasonal" — whether a page is worth updating now, and when to publish. `timeRange` runs `past_7_days` → `2004_present`; `type` can be web / news / youtube / images / froogle.
 Endpoint: `/v3/keywords_data/google_trends/explore/live`
 > Is interest in "sim racing" rising or falling over the last 5 years?
+> Is the Software category rising in the UK, and what's breaking out in it?
+
+### `trend_categories`
+Free. Search the Google Trends category tree (~1,400 categories) by name for the codes `topic_trend` takes, each with its parent so you pick the right level. Omit the query to list the top-level categories.
+Endpoint: `/v3/keywords_data/google_trends/categories` (cost 0)
+> What's the Google Trends category code for software?
 
 ## SERP — a live call PER keyword
 
