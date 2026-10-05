@@ -602,6 +602,50 @@ function render(data: DashboardData): void {
     $('scatterSummary').textContent = 'Run a crawl (refresh_property) to see the equity map.';
   }
 
+  // 0c) Crawl-structure map - the internal link skeleton of the highest-equity pages (force graph).
+  // Node size = iPR; colour = health (green indexable 200 / amber non-indexable / red broken-or-redirected).
+  const sg = data.structureGraph;
+  const sgCard = document.getElementById('structureCard');
+  if (sgCard) sgCard.style.display = sg?.nodes?.length ? '' : 'none';
+  if (sg?.nodes?.length) {
+    const catOf = (n: { status: number | null; indexable: boolean }) =>
+      (n.status == null || n.status >= 300) ? 2 : (n.indexable ? 0 : 1);
+    const maxIpr = Math.max(...sg.nodes.map(n => n.ipr), 1);
+    const gnodes = sg.nodes.map(n => ({
+      id: n.id, name: n.id,
+      symbolSize: 6 + Math.round((n.ipr / maxIpr) * 26),
+      category: catOf(n),
+      value: n.ipr,
+      label: n.ipr >= 80 ? { show: true, formatter: shortPath(n.id, 22), color: col.muted, fontSize: 10 } : { show: false },
+      _s: n.status, _d: n.depth,
+    }));
+    const broken = sg.nodes.filter(n => n.status == null || n.status >= 300).length;
+    wrap('structureChart').setOption({
+      ...ARIA,
+      tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => p.dataType === 'edge' ? '' : `${esc(shortPath(p.data.id, 48))}<br/>iPR ${p.data.value} · status ${p.data._s ?? '-'} · depth ${p.data._d ?? '-'}` },
+      legend: { top: 0, data: ['Healthy', 'Non-indexable', 'Broken'], textStyle: { color: col.text, fontSize: 12 } },
+      series: [{
+        type: 'graph', layout: 'force', roam: true,
+        categories: [
+          { name: 'Healthy', itemStyle: { color: col.green } },
+          { name: 'Non-indexable', itemStyle: { color: col.amber } },
+          { name: 'Broken', itemStyle: { color: col.red } },
+        ],
+        force: { repulsion: 95, edgeLength: [30, 110], gravity: 0.08 },
+        data: gnodes,
+        links: sg.edges.map(e => ({ source: e.source, target: e.target })),
+        lineStyle: { color: col.border, width: 0.6, opacity: 0.55, curveness: 0.05 },
+        itemStyle: { borderColor: col.surface, borderWidth: 1 },
+        emphasis: { focus: 'adjacency', lineStyle: { color: col.accent, width: 1.3, opacity: 0.95 }, label: { show: true } },
+        label: { position: 'right' },
+      }],
+    });
+    $('structureSummary').textContent = `Internal link skeleton of the top ${sg.nodes.length} pages by internal PageRank (of ${fmt(sg.totalPages)} crawled); node size = iPR, ${broken} broken or redirected.`;
+  } else {
+    wrap('structureChart').setEmpty('Run a crawl to map the internal structure', col);
+    $('structureSummary').textContent = 'Run a crawl (refresh_property) to map your internal link structure.';
+  }
+
   // 0a) Agent readiness panel (populated by check_agent_readiness; live probe, persisted)
   const ar = data.agentReadiness;
   if (ar) {

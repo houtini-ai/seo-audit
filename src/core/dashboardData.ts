@@ -71,6 +71,14 @@ export interface DashboardData {
   marketSizing?: MarketSizing | null;
   // Internal link explorer: folder-to-folder iPR flow (bipartite Sankey - left sources, right targets).
   linkFlows?: { sources: string[]; targets: string[]; flows: { source: string; target: string; value: number }[] };
+  // Crawl-structure map: the internal link skeleton of the highest-equity pages. Nodes are the
+  // top pages by iPR (size = iPR), edges are in-content internal links among them; status/indexable
+  // drive colour (non-200 / non-indexable surfaced in the problem hue).
+  structureGraph?: {
+    nodes: { id: string; ipr: number; depth: number | null; status: number | null; indexable: boolean }[];
+    edges: { source: string; target: string }[];
+    totalPages: number;
+  };
   findings?: {
     runId: string;
     total: number;
@@ -110,7 +118,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '11';
+const PAYLOAD_VERSION = '12';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -442,6 +450,38 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const topLinkedPages = (db.db.prepare(`SELECT url_key, COALESCE(inlink_count,0) inl, status_code, indexable, indexable_reason FROM pages WHERE is_internal=1 ORDER BY inlink_count DESC, status_code LIMIT 30`).all() as any[])
       .map(p => ({ url: p.url_key, inlinks: p.inl, status: p.status_code, indexable: !!p.indexable, reason: p.indexable_reason }));
 
+    // Crawl-structure map: the internal link skeleton of the highest-equity pages. Bounded to the
+    // top-N by iPR so the force graph stays legible and fast; edges are in-content internal links
+    // whose BOTH ends are in that set (threshold-joined in SQL, not filtered in JS over every link).
+    let structureGraph: DashboardData['structureGraph'];
+    {
+      const MAX_NODES = 140, MAX_EDGES = 1100;
+      const nodeRows = db.db.prepare(
+        `SELECT url_key, COALESCE(ipr,0) ipr, click_depth, status_code, indexable
+         FROM pages WHERE is_internal=1 ORDER BY ipr DESC, inlink_count DESC LIMIT ?`,
+      ).all(MAX_NODES) as { url_key: string; ipr: number; click_depth: number | null; status_code: number | null; indexable: number }[];
+      const totalPages = (db.db.prepare(`SELECT COUNT(*) n FROM pages WHERE is_internal=1`).get() as { n: number }).n;
+      if (nodeRows.length >= 3) {
+        const thr = nodeRows[nodeRows.length - 1].ipr;
+        const edges = db.db.prepare(
+          `SELECT DISTINCT l.source_key s, l.target_key t
+           FROM links l
+           JOIN pages ps ON ps.url_key = l.source_key AND ps.is_internal = 1
+           JOIN pages pt ON pt.url_key = l.target_key AND pt.is_internal = 1
+           WHERE l.is_internal = 1 AND l.placement = 'body' AND l.source_key <> l.target_key
+             AND ps.ipr >= ? AND pt.ipr >= ?
+           LIMIT ?`,
+        ).all(thr, thr, MAX_EDGES) as { s: string; t: string }[];
+        const ids = new Set(nodeRows.map(n => n.url_key));
+        const keptEdges = edges.filter(e => ids.has(e.s) && ids.has(e.t)).map(e => ({ source: e.s, target: e.t }));
+        structureGraph = {
+          nodes: nodeRows.map(n => ({ id: n.url_key, ipr: Math.round(n.ipr), depth: n.click_depth, status: n.status_code, indexable: !!n.indexable })),
+          edges: keptEdges,
+          totalPages,
+        };
+      }
+    }
+
     // Site health — Screaming-Frog-style crawl diagnostics. One conditional-aggregation
     // pass per table region (not a COUNT(*) scan per bucket); tones are assigned HERE, where
     // the meaning of each bucket is known, so the UI never has to infer colour from label text.
@@ -681,6 +721,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       brandedSplit,
       topLinkedPages,
       linkFlows,
+      structureGraph,
       agentReadiness,
       rankHistory,
       dateAlignment,

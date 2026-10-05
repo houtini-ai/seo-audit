@@ -193,6 +193,12 @@
           <p class="sr-only" id="mismatchSummary"></p>
           <div class="chart" id="mismatchChart" role="img" aria-label="Internal equity share versus organic traffic share by template"></div>
         </div>
+        <div class="chart-card" id="structureCard" style="display:none">
+          <h3>Site structure - your internal link skeleton</h3>
+          <div class="hint">The top pages by internal PageRank and the in-content links between them. Node size = internal PageRank; <span style="color:var(--intent-success)">green</span> = healthy and indexable, <span style="color:var(--intent-warning)">amber</span> = indexable: no (noindex / canonicalised), <span style="color:var(--intent-danger)">red</span> = broken or redirected. Drag to explore; scroll to zoom.</div>
+          <p class="sr-only" id="structureSummary"></p>
+          <div class="chart chart-tall" id="structureChart" role="img" aria-label="Force-directed map of the internal link structure"></div>
+        </div>
         <div class="chart-card" id="linkFlowsCard" style="display:none">
           <h3>Where link equity flows - folder to folder</h3>
           <div class="hint">Internal PageRank moving between site sections through in-content links (each page's equity split across its outgoing body links, summed by section). Wide ribbons into sections that earn little traffic = equity flowing into a dead end; thin ribbons into your money sections = the case for more in-content links.</div>
