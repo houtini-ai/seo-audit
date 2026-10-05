@@ -120,13 +120,19 @@ export interface DashboardData {
   available?: { cwv: boolean; security: boolean; hreflang: boolean; indexCoverage: boolean; entities: boolean; schema: boolean; redirects: boolean; answerability: boolean };
   // Security / HTTPS coverage (V2): share of 200 internal pages carrying each security header.
   securityCoverage?: { total: number; headers: { key: string; label: string; present: number }[]; mixedContent: number } | null;
+  // Structured-data coverage (V2): JSON-LD @types across the crawl, most common first.
+  schemaCoverage?: { pagesWithSchema: number; totalPages: number; types: { type: string; pages: number }[] } | null;
+  // GSC index coverage (V2): per-URL index status from URL Inspection.
+  indexCoverage?: { total: number; states: { state: string; count: number }[]; canonicalMismatch: number; indexed: number } | null;
+  // Redirect chains (V2): multi-hop redirects captured during the crawl.
+  redirectChains?: { total: number; chains: { from: string; to: string; status: number; hops: number }[] } | null;
 }
 
 interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '15';
+const PAYLOAD_VERSION = '16';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -429,6 +435,59 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         }
         const mixed = (db.db.prepare(`SELECT COUNT(*) n FROM pages WHERE is_internal=1 AND COALESCE(mixed_content_count,0)>0`).get() as { n: number }).n;
         securityCoverage = { total: secRows.length, headers: keys.map(k => ({ key: k.key, label: k.label, present: present[k.key] ?? 0 })), mixedContent: mixed };
+      }
+    }
+
+    // Structured-data coverage (V2 view): JSON-LD @types across the crawl. json_ld is an array of
+    // JSON strings; each parses to an object with an @graph of nodes, and @type can be a string or array.
+    let schemaCoverage: DashboardData['schemaCoverage'] = null;
+    {
+      const schemaRows = db.db.prepare(`SELECT json_ld FROM pages WHERE is_internal=1 AND status_code=200 AND json_ld IS NOT NULL AND json_ld NOT IN ('','[]')`).all() as { json_ld: string }[];
+      if (schemaRows.length) {
+        const typeCount = new Map<string, number>();
+        for (const r of schemaRows) {
+          const types = new Set<string>();
+          try {
+            const blocks = JSON.parse(r.json_ld) as unknown[];
+            for (const b of blocks) {
+              const obj = (typeof b === 'string' ? JSON.parse(b) : b) as Record<string, any>;
+              const nodes = Array.isArray(obj['@graph']) ? obj['@graph'] : [obj];
+              for (const n of nodes) { const t = n?.['@type']; if (Array.isArray(t)) t.forEach((x: unknown) => typeof x === 'string' && types.add(x)); else if (typeof t === 'string') types.add(t); }
+            }
+          } catch { /* skip unparseable */ }
+          for (const t of types) typeCount.set(t, (typeCount.get(t) ?? 0) + 1);
+        }
+        const types = [...typeCount.entries()].map(([type, pages]) => ({ type, pages })).sort((a, b) => b.pages - a.pages).slice(0, 12);
+        if (types.length) schemaCoverage = { pagesWithSchema: schemaRows.length, totalPages: totalInternalPages, types };
+      }
+    }
+
+    // GSC index coverage (V2 view): per-URL index status from URL Inspection.
+    let indexCoverage: DashboardData['indexCoverage'] = null;
+    try {
+      const total = (db.db.prepare(`SELECT COUNT(*) n FROM url_inspection`).get() as { n: number }).n;
+      if (total > 0) {
+        const states = (db.db.prepare(`SELECT COALESCE(coverage_state,'Unknown') state, COUNT(*) count FROM url_inspection GROUP BY coverage_state ORDER BY count DESC`).all() as { state: string; count: number }[]);
+        const canonicalMismatch = (db.db.prepare(`SELECT COUNT(*) n FROM url_inspection WHERE google_canonical IS NOT NULL AND user_canonical IS NOT NULL AND google_canonical <> user_canonical`).get() as { n: number }).n;
+        const indexed = (db.db.prepare(`SELECT COUNT(*) n FROM url_inspection WHERE coverage_state LIKE '%indexed%' AND coverage_state NOT LIKE '%not indexed%'`).get() as { n: number }).n;
+        indexCoverage = { total, states, canonicalMismatch, indexed };
+      }
+    } catch { /* no url_inspection */ }
+
+    // Redirect chains (V2 view): multi-hop redirects captured during the crawl.
+    let redirectChains: DashboardData['redirectChains'] = null;
+    {
+      const rcRows = db.db.prepare(`SELECT url, redirects FROM pages WHERE is_internal=1 AND redirects IS NOT NULL AND redirects NOT IN ('','[]')`).all() as { url: string; redirects: string }[];
+      if (rcRows.length) {
+        const chains: NonNullable<DashboardData['redirectChains']>['chains'] = [];
+        for (const r of rcRows) {
+          try {
+            const hopsArr = JSON.parse(r.redirects) as { from: string; to: string; status: number }[];
+            if (Array.isArray(hopsArr) && hopsArr.length) chains.push({ from: hopsArr[0].from ?? r.url, to: hopsArr[hopsArr.length - 1].to, status: hopsArr[0].status, hops: hopsArr.length });
+          } catch { /* skip */ }
+        }
+        chains.sort((a, b) => b.hops - a.hops);
+        if (chains.length) redirectChains = { total: chains.length, chains: chains.slice(0, 50) };
       }
     }
 
@@ -782,6 +841,9 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       healthScore,
       available,
       securityCoverage,
+      schemaCoverage,
+      indexCoverage,
+      redirectChains,
       agentReadiness,
       rankHistory,
       dateAlignment,

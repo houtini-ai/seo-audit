@@ -709,6 +709,52 @@ function render(data: DashboardData): void {
     $('securitySummary').textContent = (missing.length ? `Missing or partial: ${missing.join(', ')}.` : 'All key security headers present across crawled pages.') + (sec.mixedContent ? ` ${sec.mixedContent} pages load mixed content.` : '');
   }
 
+  // 0e) Structured-data coverage (V2) - the JSON-LD @type footprint across crawled pages.
+  const sch = data.schemaCoverage;
+  const schCard = document.getElementById('schemaCard');
+  if (schCard) schCard.style.display = sch && sch.types.length ? '' : 'none';
+  if (sch && sch.types.length) {
+    const t = sch.types.slice().reverse();
+    wrap('schemaChart').setOption({
+      ...ARIA,
+      grid: { left: 160, right: 56, top: 8, bottom: 30 },
+      tooltip: { ...tooltipDefaults(col), axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => `${fmt(v)} pages` },
+      xAxis: { type: 'value', name: 'pages', ...axisNum },
+      yAxis: { type: 'category', data: t.map(x => x.type), ...axis },
+      series: [{ type: 'bar', barWidth: 14, itemStyle: { color: col.accent }, data: t.map(x => x.pages), label: { show: true, position: 'right', formatter: (p: any) => fmt(p.value), color: col.muted, fontSize: 11 } }],
+    });
+    $('schemaSummary').textContent = `${fmt(sch.pagesWithSchema)} of ${fmt(sch.totalPages)} crawled pages carry structured data, across ${sch.types.length}${sch.types.length >= 12 ? '+' : ''} rich-result types.`;
+  }
+
+  // 0f) GSC index coverage (V2) - coverage-state distribution from URL Inspection.
+  const ic = data.indexCoverage;
+  const icCard = document.getElementById('indexCoverageCard');
+  if (icCard) icCard.style.display = ic && ic.states.length ? '' : 'none';
+  if (ic && ic.states.length) {
+    const s = ic.states.slice().reverse();
+    const stateColor = (st: string) => (/indexed/i.test(st) && !/not indexed/i.test(st)) ? col.success
+      : /redirect|error|not found|excluded|noindex|not indexed|blocked|soft 404/i.test(st) ? col.danger : col.warning;
+    wrap('indexCoverageChart').setOption({
+      ...ARIA,
+      grid: { left: 230, right: 56, top: 8, bottom: 30 },
+      tooltip: { ...tooltipDefaults(col), axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => `${fmt(v)} URLs` },
+      xAxis: { type: 'value', name: 'URLs', ...axisNum },
+      yAxis: { type: 'category', data: s.map(x => x.state), ...axis },
+      series: [{ type: 'bar', barWidth: 15, data: s.map(x => ({ value: x.count, itemStyle: { color: stateColor(x.state) } })), label: { show: true, position: 'right', formatter: (p: any) => fmt(p.value), color: col.muted, fontSize: 11 } }],
+    });
+    $('indexCoverageSummary').textContent = `${fmt(ic.indexed)} of ${fmt(ic.total)} inspected URLs indexed${ic.canonicalMismatch ? `; ${ic.canonicalMismatch} with a Google-vs-declared canonical mismatch` : ''}.`;
+  }
+
+  // 0g) Redirect chains (V2) - multi-hop redirects captured during the crawl.
+  const rc = data.redirectChains;
+  const rcCard = document.getElementById('redirectsCard');
+  if (rcCard) rcCard.style.display = rc && rc.chains.length ? '' : 'none';
+  if (rc && rc.chains.length) {
+    const rows = rc.chains.map(c => `<tr><td class="url">${esc(shortPath(c.from, 46))}</td><td class="url">${esc(shortPath(c.to, 46))}</td><td class="num">${c.status}</td><td class="num">${c.hops}</td></tr>`);
+    $('redirectsTable').innerHTML = tableHtml(['From', 'To', 'Status', 'Hops'], rows);
+    $('redirectsSummary').textContent = `${fmt(rc.total)} redirecting URL${rc.total === 1 ? '' : 's'} captured during the crawl.`;
+  }
+
   // 0a) Agent readiness panel (populated by check_agent_readiness; live probe, persisted)
   const ar = data.agentReadiness;
   if (ar) {

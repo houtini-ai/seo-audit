@@ -103,15 +103,17 @@
           <p class="sr-only" id="securitySummary"></p>
           <div class="chart" id="securityChart" role="img" aria-label="Security header coverage across crawled pages"></div>
         </div>
-        <div class="chart-card skeleton" id="skelRedirects" style="display:none">
+        <div class="chart-card" id="redirectsCard" style="display:none">
           <h3>Redirect chains</h3>
-          <div class="hint">Multi-hop redirect chains and loops captured during the crawl, ranked by internal links in. <span class="skel-tag">V2</span></div>
-          <div class="empty-state" data-skel="redirects" data-run="refresh_property"></div>
+          <div class="hint">Multi-hop redirects captured during the crawl - longest chains first. Each hop is latency and a little lost equity.</div>
+          <p class="sr-only" id="redirectsSummary"></p>
+          <div id="redirectsTable" class="findings-table"></div>
         </div>
-        <div class="chart-card skeleton" id="skelSchema" style="display:none">
+        <div class="chart-card" id="schemaCard" style="display:none">
           <h3>Structured-data coverage</h3>
-          <div class="hint">Which rich-result schema types each template carries, and where eligible templates are missing it. <span class="skel-tag">V2</span></div>
-          <div class="empty-state" data-skel="schema" data-run="refresh_property"></div>
+          <div class="hint">The JSON-LD rich-result types across your crawled pages, most common first.</div>
+          <p class="sr-only" id="schemaSummary"></p>
+          <div class="chart" id="schemaChart" role="img" aria-label="Schema type coverage across crawled pages"></div>
         </div>
         <div class="chart-card skeleton" id="skelHreflang" style="display:none">
           <h3>Hreflang &amp; international</h3>
@@ -214,10 +216,11 @@
             <div id="countryBlock"><h4>Top countries</h4><div id="countryTable" class="findings-table"></div></div>
           </div>
         </div>
-        <div class="chart-card skeleton" id="skelIndexCoverage" style="display:none">
+        <div class="chart-card" id="indexCoverageCard" style="display:none">
           <h3>GSC index coverage</h3>
-          <div class="hint">Google's own per-URL index status - coverage state, google-vs-declared canonical, mobile usability, rich results. <span class="skel-tag">V2</span></div>
-          <div class="empty-state" data-skel="indexCoverage" data-run="inspect_urls"></div>
+          <div class="hint">Google's own per-URL index status from URL Inspection - how the sampled URLs are covered, and any google-vs-declared canonical conflicts.</div>
+          <p class="sr-only" id="indexCoverageSummary"></p>
+          <div class="chart" id="indexCoverageChart" role="img" aria-label="GSC coverage state distribution"></div>
         </div>
       </section>
 
