@@ -398,21 +398,6 @@ function renderHealthScore(d: DashboardData): void {
     + `</div>`;
 }
 
-// V2 skeleton cards: show every planned view with a state that reflects whether its data exists yet.
-function renderSkeletons(d: DashboardData): void {
-  const av = (d.available ?? {}) as Record<string, boolean>;
-  document.querySelectorAll<HTMLElement>('.chart-card.skeleton').forEach(card => {
-    const es = card.querySelector<HTMLElement>('.empty-state');
-    if (!es) return;
-    const key = es.dataset.skel || '';
-    const run = es.dataset.run || '';
-    card.style.display = '';
-    es.innerHTML = av[key]
-      ? `<div class="skel-ready">Data is ready - the full visual ships in V2.</div><div class="skel-run">Populated by <code>${esc(run)}</code>.</div>`
-      : `<div class="skel-run">Run <code>${esc(run)}</code> to populate; the V2 visual renders here.</div>`;
-  });
-}
-
 // Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
 function renderRecommendations(fc: DashboardData['findings']): void {
   const el = $('recs');
@@ -560,7 +545,6 @@ function render(data: DashboardData): void {
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);
   renderHealthScore(data);
-  renderSkeletons(data);
   buildExportBar(data);
 
   // 0) Equity vs reality - template mismatch (bars) + per-URL scatter (the architecture flagship)

@@ -116,8 +116,6 @@ export interface DashboardData {
   // Site Health Score (the headline every paid tool has): % of crawled internal pages with no
   // error-class (critical/high) finding. Honest + defensible; banded Weak/Fair/Good/Excellent.
   healthScore?: { score: number; band: string; errorPages: number; totalPages: number; definition: string } | null;
-  // Which latent-data views have data behind them yet - drives the V2 skeleton cards' state.
-  available?: { cwv: boolean; security: boolean; hreflang: boolean; indexCoverage: boolean; entities: boolean; schema: boolean; redirects: boolean; answerability: boolean };
   // Security / HTTPS coverage (V2): share of 200 internal pages carrying each security header.
   securityCoverage?: { total: number; headers: { key: string; label: string; present: number }[]; mixedContent: number } | null;
   // Structured-data coverage (V2): JSON-LD @types across the crawl, most common first.
@@ -140,7 +138,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '17';
+const PAYLOAD_VERSION = '18';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -367,7 +365,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     let findings: DashboardData['findings'] = null;
     if (lastRun) {
       const byCheckRaw = db.db.prepare('SELECT check_id, category, severity, COUNT(*) count, COUNT(DISTINCT url_key) urls, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['byCheck'];
-      const byCheck = byCheckRaw.map(c => ({ ...c, coveragePct: totalInternalPages > 0 && c.urls ? Math.round((c.urls / totalInternalPages) * 1000) / 10 : null }));
+      const byCheck = byCheckRaw.map(c => ({ ...c, coveragePct: totalInternalPages > 0 && c.urls ? Math.min(100, Math.round((c.urls / totalInternalPages) * 1000) / 10) : null }));
       const topRaw = db.db.prepare('SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 50').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['top'];
       // Impact = priority normalised to the run's top finding (preserves magnitude), shown as a
       // 0–100 index + S/M/L/XL size instead of a clicks "forecast".
@@ -417,7 +415,9 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     // the share of crawled internal pages carrying no error-class (critical/high) finding.
     let healthScore: DashboardData['healthScore'] = null;
     if (lastRun && totalInternalPages > 0) {
-      const errPages = (db.db.prepare(`SELECT COUNT(DISTINCT url_key) n FROM findings WHERE run_id=? AND severity IN ('crit','high') AND url_key IS NOT NULL`).get(lastRun.run_id) as { n: number }).n;
+      // Count only crawled internal pages that carry a crit/high finding, so a check whose url_key
+      // is not a crawled page (ghost-pages, backlinks-to-404) can't push errPages past the total.
+      const errPages = (db.db.prepare(`SELECT COUNT(DISTINCT f.url_key) n FROM findings f JOIN pages p ON p.url_key = f.url_key AND p.is_internal = 1 WHERE f.run_id=? AND f.severity IN ('crit','high') AND f.url_key IS NOT NULL`).get(lastRun.run_id) as { n: number }).n;
       const score = Math.max(0, Math.min(100, Math.round((1 - errPages / totalInternalPages) * 100)));
       const band = score >= 91 ? 'Excellent' : score >= 71 ? 'Good' : score >= 31 ? 'Fair' : 'Weak';
       healthScore = { score, band, errorPages: errPages, totalPages: totalInternalPages, definition: 'Share of crawled internal pages with no critical or high finding.' };
@@ -433,7 +433,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
           { key: 'csp', label: 'Content-Security-Policy' },
           { key: 'xFrame', label: 'X-Frame-Options' },
           { key: 'xContentType', label: 'X-Content-Type-Options' },
-          { key: 'referrer', label: 'Referrer-Policy' },
+          { key: 'referrerPolicy', label: 'Referrer-Policy' },
         ];
         const present: Record<string, number> = {};
         for (const r of secRows) {
@@ -458,8 +458,8 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
           try {
             const blocks = JSON.parse(r.json_ld) as unknown[];
             for (const b of blocks) {
-              const obj = (typeof b === 'string' ? JSON.parse(b) : b) as Record<string, any>;
-              const nodes = Array.isArray(obj['@graph']) ? obj['@graph'] : [obj];
+              const obj = (typeof b === 'string' ? JSON.parse(b) : b) as any;
+              const nodes = Array.isArray(obj) ? obj : (Array.isArray(obj['@graph']) ? obj['@graph'] : [obj]);
               for (const n of nodes) { const t = n?.['@type']; if (Array.isArray(t)) t.forEach((x: unknown) => typeof x === 'string' && types.add(x)); else if (typeof t === 'string') types.add(t); }
             }
           } catch { /* skip unparseable */ }
@@ -556,19 +556,6 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       }
     } catch { /* no scores */ }
 
-    // Data-availability flags for the V2 skeleton cards (cheap EXISTS probes).
-    const exists = (sql: string): boolean => { try { return !!db.db.prepare(sql).get(); } catch { return false; } };
-    const available = {
-      cwv: exists(`SELECT 1 FROM page_cwv LIMIT 1`),
-      security: exists(`SELECT 1 FROM pages WHERE security_headers IS NOT NULL AND security_headers NOT IN ('','{}') LIMIT 1`),
-      hreflang: exists(`SELECT 1 FROM pages WHERE hreflang IS NOT NULL AND hreflang NOT IN ('','[]') LIMIT 1`),
-      indexCoverage: exists(`SELECT 1 FROM url_inspection LIMIT 1`),
-      entities: exists(`SELECT 1 FROM page_entity LIMIT 1`),
-      schema: exists(`SELECT 1 FROM pages WHERE json_ld IS NOT NULL AND json_ld NOT IN ('','[]') LIMIT 1`),
-      redirects: exists(`SELECT 1 FROM pages WHERE redirects IS NOT NULL AND redirects NOT IN ('','[]') LIMIT 1`),
-      answerability: exists(`SELECT 1 FROM pages WHERE max_passage_score IS NOT NULL LIMIT 1`),
-    };
-
     // Equity vs reality: join per-page internal PageRank with 28d GSC traffic, bucketed by template.
     // (Needs a crawl — pages.ipr is populated post-crawl. Empty if crawl-free.)
     let equityScatter: DashboardData['equityScatter'];
@@ -641,18 +628,22 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         `SELECT url_key, COALESCE(ipr,0) ipr, click_depth, status_code, indexable
          FROM pages WHERE is_internal=1 ORDER BY ipr DESC, inlink_count DESC LIMIT ?`,
       ).all(MAX_NODES) as { url_key: string; ipr: number; click_depth: number | null; status_code: number | null; indexable: number }[];
-      const totalPages = (db.db.prepare(`SELECT COUNT(*) n FROM pages WHERE is_internal=1`).get() as { n: number }).n;
+      const totalPages = totalInternalPages;
       if (nodeRows.length >= 3) {
         const thr = nodeRows[nodeRows.length - 1].ipr;
+        // ORDER BY the combined endpoint iPR so that when thr is 0 (unfinalised graph / large site)
+        // the LIMIT keeps the highest-equity edges - which are the ones among the top-N nodes - rather
+        // than an arbitrary slice that the JS id-filter would mostly discard.
         const edges = db.db.prepare(
-          `SELECT DISTINCT l.source_key s, l.target_key t
+          `SELECT DISTINCT l.source_key s, l.target_key t, (ps.ipr + pt.ipr) w
            FROM links l
            JOIN pages ps ON ps.url_key = l.source_key AND ps.is_internal = 1
            JOIN pages pt ON pt.url_key = l.target_key AND pt.is_internal = 1
            WHERE l.is_internal = 1 AND l.placement = 'body' AND l.source_key <> l.target_key
              AND ps.ipr >= ? AND pt.ipr >= ?
+           ORDER BY w DESC
            LIMIT ?`,
-        ).all(thr, thr, MAX_EDGES) as { s: string; t: string }[];
+        ).all(thr, thr, MAX_EDGES) as { s: string; t: string; w: number }[];
         const ids = new Set(nodeRows.map(n => n.url_key));
         const keptEdges = edges.filter(e => ids.has(e.s) && ids.has(e.t)).map(e => ({ source: e.s, target: e.t }));
         structureGraph = {
@@ -904,7 +895,6 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       linkFlows,
       structureGraph,
       healthScore,
-      available,
       securityCoverage,
       schemaCoverage,
       indexCoverage,
