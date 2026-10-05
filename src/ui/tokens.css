@@ -1,72 +1,69 @@
 /* ============================================================
- * SEO Audit Console - design tokens (pricemonitor SaaS theme)
+ * SEO Audit Console - design tokens (Houtini house system)
  *
- * Semantic token architecture per plan/design-library-brief.md, with the
- * REAL palette lifted from C:\dev\price-monitor\app\src\pages\index.astro
- * (the pricemonitor web UI): cool grey canvas, white panels, crisp 1px
- * lines, Work Sans body + Rubik display, tabular numerals throughout.
+ * The dashboard speaks the Houtini house visual language (the house-style
+ * skill): Schibsted Grotesk for words, JetBrains Mono for every number and
+ * label, ONE chromatic accent (Houtini green #0F7A5C), warm paper, hairline
+ * rules, tabular numerals, flat surfaces (no gradients, minimal shadow).
  *
- * Layers
- *   1. Semantic colour: --bg-canvas / --bg-surface / --bg-surface-hover /
- *      --border-subtle / --text-primary / --text-secondary (+ tertiary).
- *   2. Intent: --intent-danger/warning/success/info (+ -bg tints).
- *   3. Charts: --chart-categorical-1..8, colourblind-safe muted.
- *   4. Density: --space-compact (4/8), --space-standard (12/16),
- *      --space-relaxed (24/32).
- *   5. Type: --fs-axis 11 / --fs-badge 12 / --fs-table 13 / --fs-body 14 /
- *      --fs-title 18 / --fs-kpi 24 / --fs-hero 32.
- *   6. Back-compat aliases so pre-library CSS/TS keeps resolving.
+ * The governing data-ink rule lives in the chart code, not here: grey the
+ * context, accent the point; red (#B23B3B) is reserved for genuine problems.
+ *
+ * Token NAMES are unchanged from the previous theme so every consumer
+ * (styles.css + dashboard.ts + the ECharts palette read in lib/echart.ts)
+ * re-themes by value, not by edit. chartPalette() reads --text-primary,
+ * --chart-axis/grid, --accent, --border-standard, --bg-surface,
+ * --intent-*, and --chart-categorical-1..8 via getComputedStyle.
  *
  * Dark mode overrides the semantic layer only (host theme class wins,
- * prefers-color-scheme covers standalone use - no toggle in the export).
+ * prefers-color-scheme covers standalone use).
  * ============================================================ */
 
-@import '@fontsource-variable/work-sans/index.css';
-@import '@fontsource-variable/rubik/index.css';
+@import '@fontsource-variable/schibsted-grotesk/index.css';
 @import '@fontsource-variable/jetbrains-mono/index.css';
 
 :root {
-  /* --- 1. Semantic colour (light - pricemonitor values) --- */
-  --bg-canvas: #eef0f3;
-  --bg-surface: #ffffff;
-  --bg-surface-hover: #f6f8fa;
-  --bg-inset: #eef0f3;              /* inputs / tracks / chips on a surface */
-  --border-subtle: #eef1f4;         /* pm --line-2: row separators, whisper gridlines */
-  --border-standard: #e3e6ea;       /* pm --line: card + control borders */
-  --text-primary: #17191c;          /* pm --ink: headings, key numbers */
-  --text-secondary: #22262b;        /* pm --text: body */
-  --text-muted: #757c86;            /* pm --muted: labels, hints */
-  --text-faint: #9aa1ab;            /* pm --faint: micro-labels, disabled */
+  /* --- 1. Semantic colour (light - Houtini house) --- */
+  --bg-canvas: #FAFAF7;             /* warm paper (house deck ground) */
+  --bg-surface: #FFFFFF;            /* panels */
+  --bg-surface-hover: #F5F5F1;      /* warm hover */
+  --bg-inset: #F1F1EC;              /* inputs / tracks / chips on a surface */
+  --border-subtle: #EFEFEA;         /* row separators, whisper gridlines */
+  --border-standard: #E4E4DF;       /* house hairline: card + control borders */
+  --text-primary: #121216;          /* house ink: headings, key numbers */
+  --text-secondary: #2A2A30;        /* body */
+  --text-muted: #6B6B73;            /* house muted: labels, hints */
+  --text-faint: #9A9AA0;            /* micro-labels, disabled */
 
-  /* Brand accent (pricemonitor red) */
-  --accent: #cd2026;
-  --accent-strong: #a3181d;
-  --accent-bg: #fcecec;
-  --accent-on: #ffffff;
+  /* Brand accent (Houtini green) */
+  --accent: #0F7A5C;
+  --accent-strong: #0C5C46;
+  --accent-bg: #E3F1EB;             /* pale wash */
+  --accent-on: #FFFFFF;
 
-  /* --- 2. Intent --- */
-  --intent-success: #1f9d64;  --intent-success-bg: #e8f5ee;
-  --intent-danger: #cf3742;   --intent-danger-bg: #fbe9eb;
-  --intent-warning: #c9821a;  --intent-warning-bg: #fbf1e0;
-  --intent-info: #3f8ecc;     --intent-info-bg: #e9f2fa;
+  /* --- 2. Intent (restrained, house-harmonious) --- */
+  --intent-success: #0F7A5C;  --intent-success-bg: #E3F1EB;   /* positive = the one green */
+  --intent-danger: #B23B3B;   --intent-danger-bg: #F6E7E7;    /* reserved: genuine problems */
+  --intent-warning: #B5841F;  --intent-warning-bg: #F6EEDD;   /* muted ochre */
+  --intent-info: #4A6B8A;     --intent-info-bg: #E8EEF3;      /* muted slate (links, striking distance) */
 
-  /* --- 3. Chart categorical (colourblind-safe muted, from the pm
-   * retailer spectrum + derived neutrals) --- */
-  --chart-categorical-1: #14497e;  /* deep blue */
-  --chart-categorical-2: #1f9d64;  /* green */
-  --chart-categorical-3: #d1541f;  /* orange */
-  --chart-categorical-4: #b81c1c;  /* red */
-  --chart-categorical-5: #158a86;  /* teal */
-  --chart-categorical-6: #6b5ca8;  /* violet */
-  --chart-categorical-7: #c9821a;  /* amber */
-  --chart-categorical-8: #757c86;  /* grey */
-  --chart-grid: #eef1f4;           /* whisper gridlines = lightest border */
-  --chart-axis: #757c86;
+  /* --- 3. Chart categorical (muted, warm-paper harmonious, green-led) --- */
+  --chart-categorical-1: #3E6E8C;  /* muted blue (col.blue) - distinct from the green accent */
+  --chart-categorical-2: #C0862E;  /* amber */
+  --chart-categorical-3: #B23B3B;  /* brick red */
+  --chart-categorical-4: #A9752F;  /* tan */
+  --chart-categorical-5: #2F8C83;  /* teal (col.teal) */
+  --chart-categorical-6: #6E5FA6;  /* violet (col.violet) */
+  --chart-categorical-7: #B06A9E;  /* mauve */
+  --chart-categorical-8: #9A9AA0;  /* grey (col.grey) */
+  --chart-grid: #EFEFEA;           /* warm whisper gridlines */
+  --chart-axis: #6B6B73;
+  --chart-context: #C9C9C4;        /* every bar/dot that is NOT the point */
 
-  /* Shadows (pricemonitor) */
-  --shadow: 0 1px 2px rgba(20, 24, 30, .06), 0 12px 44px -14px rgba(20, 24, 30, .32);
-  --shadow-sm: 0 1px 2px rgba(20, 24, 30, .08), 0 4px 12px -6px rgba(20, 24, 30, .18);
-  --overlay: rgba(20, 24, 30, 0.4);
+  /* Shadows (house is flat - hairline borders do the work; overlays only) */
+  --shadow: 0 4px 18px -6px rgba(18, 18, 22, .14);
+  --shadow-sm: 0 1px 2px rgba(18, 18, 22, .04);
+  --overlay: rgba(18, 18, 22, 0.38);
 
   /* --- 4. Density --- */
   --space-compact-1: 4px;
@@ -77,20 +74,20 @@
   --space-relaxed-2: 32px;
 
   /* --- 5. Type --- */
-  --font: "Work Sans Variable", "Work Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Rubik Variable", "Rubik", var(--font);
+  --font: "Schibsted Grotesk Variable", "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font);
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --fs-axis: 11px;
   --fs-badge: 12px;
   --fs-table: 13px;
   --fs-body: 14px;
   --fs-title: 18px;
-  --fs-kpi: 24px;
+  --fs-kpi: 26px;
   --fs-hero: 32px;
 
-  /* Radii + motion (pricemonitor) */
+  /* Radii + motion */
   --radius: 10px;
-  --radius-sm: 8px;
+  --radius-sm: 7px;
   --radius-pill: 20px;
   --ease: cubic-bezier(.2, .7, .2, 1);
 
@@ -139,93 +136,95 @@
   --error: var(--intent-danger);
   --warning: var(--intent-warning);
   --skipped: var(--text-muted);
-  --chart-cyan-fill: rgba(205, 32, 38, 0.06);
-  --chart-purple-fill: rgba(107, 92, 168, 0.05);
+  --chart-cyan-fill: rgba(15, 122, 92, 0.07);
+  --chart-purple-fill: rgba(110, 95, 166, 0.05);
   --chart-tooltip-bg: var(--bg-surface);
   --chart-tooltip-border: var(--border-standard);
   --chart-tooltip-title: var(--text-primary);
   --chart-tooltip-body: var(--text-secondary);
 }
 
-/* --- Dark palette (pricemonitor dark) --- */
+/* --- Dark palette (house-derived: warm near-black, brighter green) --- */
 :root.dark,
 :root[data-theme="dark"] {
-  --bg-canvas: #111418;
-  --bg-surface: #171b20;
-  --bg-surface-hover: #1c222a;
-  --bg-inset: #111418;
-  --border-subtle: #1f242a;
-  --border-standard: #272d34;
-  --text-primary: #f0f2f5;
-  --text-secondary: #e4e8ee;
-  --text-muted: #8a929d;
-  --text-faint: #6b7580;
+  --bg-canvas: #141417;
+  --bg-surface: #1B1B1F;
+  --bg-surface-hover: #212127;
+  --bg-inset: #141417;
+  --border-subtle: #26262B;
+  --border-standard: #2F2F35;
+  --text-primary: #F2F2EE;
+  --text-secondary: #E2E2DC;
+  --text-muted: #9A9A92;
+  --text-faint: #6F6F68;
 
-  --accent: #f24a4f;
-  --accent-strong: #e0353b;
-  --accent-bg: #2a1618;
+  --accent: #19A47A;
+  --accent-strong: #28B98C;
+  --accent-bg: #15271F;
 
-  --intent-success: #37c185;  --intent-success-bg: #12281f;
-  --intent-danger: #ef6673;   --intent-danger-bg: #2c1519;
-  --intent-warning: #dca23f;  --intent-warning-bg: #2a2212;
-  --intent-info: #5da3d9;     --intent-info-bg: #14212c;
+  --intent-success: #2CB183;  --intent-success-bg: #15271F;
+  --intent-danger: #D9605F;   --intent-danger-bg: #2C1717;
+  --intent-warning: #D1A33F;  --intent-warning-bg: #2A2312;
+  --intent-info: #6D97BE;     --intent-info-bg: #16222E;
 
-  --chart-categorical-1: #5b8fc4;
-  --chart-categorical-2: #37c185;
-  --chart-categorical-3: #e07b4a;
-  --chart-categorical-4: #e05c5c;
-  --chart-categorical-5: #3bb3ae;
-  --chart-categorical-6: #9c8dd6;
-  --chart-categorical-7: #dca23f;
-  --chart-categorical-8: #8a929d;
-  --chart-grid: #1f242a;
-  --chart-axis: #8a929d;
+  --chart-categorical-1: #5E8CB5;
+  --chart-categorical-2: #D1A33F;
+  --chart-categorical-3: #D9605F;
+  --chart-categorical-4: #C29A5E;
+  --chart-categorical-5: #46AFA4;
+  --chart-categorical-6: #9384C9;
+  --chart-categorical-7: #C98AB5;
+  --chart-categorical-8: #9A9A92;
+  --chart-grid: #26262B;
+  --chart-axis: #9A9A92;
+  --chart-context: #44444B;
 
-  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 48px -14px rgba(0, 0, 0, .66);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 12px -6px rgba(0, 0, 0, .5);
-  --overlay: rgba(0, 0, 0, 0.7);
-  --chart-cyan-fill: rgba(242, 74, 79, 0.10);
-  --chart-purple-fill: rgba(156, 141, 214, 0.06);
+  --shadow: 0 6px 22px -6px rgba(0, 0, 0, .55);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+  --overlay: rgba(0, 0, 0, 0.66);
+  --chart-cyan-fill: rgba(25, 164, 122, 0.12);
+  --chart-purple-fill: rgba(147, 132, 201, 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not([data-theme="light"]) {
-    --bg-canvas: #111418;
-    --bg-surface: #171b20;
-    --bg-surface-hover: #1c222a;
-    --bg-inset: #111418;
-    --border-subtle: #1f242a;
-    --border-standard: #272d34;
-    --text-primary: #f0f2f5;
-    --text-secondary: #e4e8ee;
-    --text-muted: #8a929d;
-    --text-faint: #6b7580;
+    --bg-canvas: #141417;
+    --bg-surface: #1B1B1F;
+    --bg-surface-hover: #212127;
+    --bg-inset: #141417;
+    --border-subtle: #26262B;
+    --border-standard: #2F2F35;
+    --text-primary: #F2F2EE;
+    --text-secondary: #E2E2DC;
+    --text-muted: #9A9A92;
+    --text-faint: #6F6F68;
 
-    --accent: #f24a4f;
-    --accent-strong: #e0353b;
-    --accent-bg: #2a1618;
+    --accent: #19A47A;
+    --accent-strong: #28B98C;
+    --accent-bg: #15271F;
 
-    --intent-success: #37c185;  --intent-success-bg: #12281f;
-    --intent-danger: #ef6673;   --intent-danger-bg: #2c1519;
-    --intent-warning: #dca23f;  --intent-warning-bg: #2a2212;
-    --intent-info: #5da3d9;     --intent-info-bg: #14212c;
+    --intent-success: #2CB183;  --intent-success-bg: #15271F;
+    --intent-danger: #D9605F;   --intent-danger-bg: #2C1717;
+    --intent-warning: #D1A33F;  --intent-warning-bg: #2A2312;
+    --intent-info: #6D97BE;     --intent-info-bg: #16222E;
 
-    --chart-categorical-1: #5b8fc4;
-    --chart-categorical-2: #37c185;
-    --chart-categorical-3: #e07b4a;
-    --chart-categorical-4: #e05c5c;
-    --chart-categorical-5: #3bb3ae;
-    --chart-categorical-6: #9c8dd6;
-    --chart-categorical-7: #dca23f;
-    --chart-categorical-8: #8a929d;
-    --chart-grid: #1f242a;
-    --chart-axis: #8a929d;
+    --chart-categorical-1: #5E8CB5;
+    --chart-categorical-2: #D1A33F;
+    --chart-categorical-3: #D9605F;
+    --chart-categorical-4: #C29A5E;
+    --chart-categorical-5: #46AFA4;
+    --chart-categorical-6: #9384C9;
+    --chart-categorical-7: #C98AB5;
+    --chart-categorical-8: #9A9A92;
+    --chart-grid: #26262B;
+    --chart-axis: #9A9A92;
+    --chart-context: #44444B;
 
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 48px -14px rgba(0, 0, 0, .66);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 12px -6px rgba(0, 0, 0, .5);
-    --overlay: rgba(0, 0, 0, 0.7);
-    --chart-cyan-fill: rgba(242, 74, 79, 0.10);
-    --chart-purple-fill: rgba(156, 141, 214, 0.06);
+    --shadow: 0 6px 22px -6px rgba(0, 0, 0, .55);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+    --overlay: rgba(0, 0, 0, 0.66);
+    --chart-cyan-fill: rgba(25, 164, 122, 0.12);
+    --chart-purple-fill: rgba(147, 132, 201, 0.06);
   }
 }
 
@@ -235,7 +234,7 @@ html.dark, html[data-theme="dark"] { color-scheme: dark; }
 html.light, html[data-theme="light"] { color-scheme: light; }
 
 body {
-  /* Tabular numerals GLOBAL - brief pattern #1. */
+  /* Tabular numerals GLOBAL - house rule (mono numbers everywhere). */
   font-feature-settings: "tnum", "case";
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;

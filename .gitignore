@@ -87,3 +87,6 @@ scripts/*
 credentials.json
 service-account*.json
 gsc*.json
+
+# Local design working material (references real test-property data; not for the public repo)
+design/
