@@ -118,13 +118,15 @@ export interface DashboardData {
   healthScore?: { score: number; band: string; errorPages: number; totalPages: number; definition: string } | null;
   // Which latent-data views have data behind them yet - drives the V2 skeleton cards' state.
   available?: { cwv: boolean; security: boolean; hreflang: boolean; indexCoverage: boolean; entities: boolean; schema: boolean; redirects: boolean; answerability: boolean };
+  // Security / HTTPS coverage (V2): share of 200 internal pages carrying each security header.
+  securityCoverage?: { total: number; headers: { key: string; label: string; present: number }[]; mixedContent: number } | null;
 }
 
 interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '14';
+const PAYLOAD_VERSION = '15';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -405,6 +407,29 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       const score = Math.max(0, Math.min(100, Math.round((1 - errPages / totalInternalPages) * 100)));
       const band = score >= 91 ? 'Excellent' : score >= 71 ? 'Good' : score >= 31 ? 'Fair' : 'Weak';
       healthScore = { score, band, errorPages: errPages, totalPages: totalInternalPages, definition: 'Share of crawled internal pages with no critical or high finding.' };
+    }
+
+    // Security / HTTPS coverage (V2 view): share of 200 internal pages carrying each header.
+    let securityCoverage: DashboardData['securityCoverage'] = null;
+    {
+      const secRows = db.db.prepare(`SELECT security_headers FROM pages WHERE is_internal=1 AND status_code=200 AND security_headers IS NOT NULL AND security_headers NOT IN ('','{}')`).all() as { security_headers: string }[];
+      if (secRows.length) {
+        const keys = [
+          { key: 'hsts', label: 'HSTS (Strict-Transport-Security)' },
+          { key: 'csp', label: 'Content-Security-Policy' },
+          { key: 'xFrame', label: 'X-Frame-Options' },
+          { key: 'xContentType', label: 'X-Content-Type-Options' },
+          { key: 'referrer', label: 'Referrer-Policy' },
+        ];
+        const present: Record<string, number> = {};
+        for (const r of secRows) {
+          let h: Record<string, unknown> = {};
+          try { h = JSON.parse(r.security_headers); } catch { /* skip */ }
+          for (const k of keys) if (h[k.key]) present[k.key] = (present[k.key] ?? 0) + 1;
+        }
+        const mixed = (db.db.prepare(`SELECT COUNT(*) n FROM pages WHERE is_internal=1 AND COALESCE(mixed_content_count,0)>0`).get() as { n: number }).n;
+        securityCoverage = { total: secRows.length, headers: keys.map(k => ({ key: k.key, label: k.label, present: present[k.key] ?? 0 })), mixedContent: mixed };
+      }
     }
 
     // Data-availability flags for the V2 skeleton cards (cheap EXISTS probes).
@@ -756,6 +781,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       structureGraph,
       healthScore,
       available,
+      securityCoverage,
       agentReadiness,
       rankHistory,
       dateAlignment,

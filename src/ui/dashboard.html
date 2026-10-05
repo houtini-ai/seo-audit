@@ -97,10 +97,11 @@
           <div class="hint">LCP, CLS and TBT by page, with the worst offenders and a pass/fail split. <span class="skel-tag">V2</span></div>
           <div class="empty-state" data-skel="cwv" data-run="page_lighthouse"></div>
         </div>
-        <div class="chart-card skeleton" id="skelSecurity" style="display:none">
+        <div class="chart-card" id="securityCard" style="display:none">
           <h3>Security &amp; HTTPS</h3>
-          <div class="hint">HSTS, CSP, X-Frame, referrer-policy and mixed-content coverage, by page. <span class="skel-tag">V2</span></div>
-          <div class="empty-state" data-skel="security" data-run="refresh_property"></div>
+          <div class="hint">Share of your crawled pages carrying each response-security header. <span style="color:var(--intent-danger)">Red</span> = largely missing, <span style="color:var(--intent-warning)">amber</span> = partial, <span style="color:var(--intent-success)">green</span> = covered.</div>
+          <p class="sr-only" id="securitySummary"></p>
+          <div class="chart" id="securityChart" role="img" aria-label="Security header coverage across crawled pages"></div>
         </div>
         <div class="chart-card skeleton" id="skelRedirects" style="display:none">
           <h3>Redirect chains</h3>

@@ -688,6 +688,27 @@ function render(data: DashboardData): void {
     $('structureSummary').textContent = 'Run a crawl (refresh_property) to map your internal link structure.';
   }
 
+  // 0d) Security / HTTPS coverage (V2) - header coverage bars, status-coloured (grey the context,
+  // red/amber the gaps). Site-wide headers read as 100% / 0%; partials show the real share.
+  const sec = data.securityCoverage;
+  const secCard = document.getElementById('securityCard');
+  if (secCard) secCard.style.display = sec && sec.total ? '' : 'none';
+  if (sec && sec.total) {
+    const hs = sec.headers.slice().reverse();
+    const pct = hs.map(h => Math.round((h.present / sec.total) * 100));
+    const barColor = (p: number) => p >= 95 ? col.success : p >= 50 ? col.warning : col.danger;
+    wrap('securityChart').setOption({
+      ...ARIA,
+      grid: { left: 220, right: 48, top: 8, bottom: 30 },
+      tooltip: { ...tooltipDefaults(col), axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => `${v}% of pages` },
+      xAxis: { type: 'value', max: 100, name: '% of pages', ...axis },
+      yAxis: { type: 'category', data: hs.map(h => h.label), ...axis },
+      series: [{ type: 'bar', barWidth: 15, data: pct.map(p => ({ value: p, itemStyle: { color: barColor(p) } })), label: { show: true, position: 'right', formatter: '{c}%', color: col.muted, fontSize: 11 } }],
+    });
+    const missing = sec.headers.filter(h => h.present / sec.total < 0.95).map(h => h.label.replace(/ \(.*\)/, ''));
+    $('securitySummary').textContent = (missing.length ? `Missing or partial: ${missing.join(', ')}.` : 'All key security headers present across crawled pages.') + (sec.mixedContent ? ` ${sec.mixedContent} pages load mixed content.` : '');
+  }
+
   // 0a) Agent readiness panel (populated by check_agent_readiness; live probe, persisted)
   const ar = data.agentReadiness;
   if (ar) {
