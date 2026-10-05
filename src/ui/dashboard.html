@@ -92,10 +92,11 @@
           <div id="sfImages" class="findings-table"></div>
         </div>
 
-        <div class="chart-card skeleton" id="skelCwv" style="display:none">
+        <div class="chart-card" id="cwvCard" style="display:none">
           <h3>Core Web Vitals</h3>
-          <div class="hint">LCP, CLS and TBT by page, with the worst offenders and a pass/fail split. <span class="skel-tag">V2</span></div>
-          <div class="empty-state" data-skel="cwv" data-run="page_lighthouse"></div>
+          <div class="hint">Lab Core Web Vitals from Lighthouse - the lowest-scoring pages first. Pass thresholds: LCP under 2.5s, CLS under 0.1, TBT under 200ms.</div>
+          <p class="sr-only" id="cwvSummary"></p>
+          <div id="cwvTable" class="findings-table"></div>
         </div>
         <div class="chart-card" id="securityCard" style="display:none">
           <h3>Security &amp; HTTPS</h3>
@@ -115,10 +116,11 @@
           <p class="sr-only" id="schemaSummary"></p>
           <div class="chart" id="schemaChart" role="img" aria-label="Schema type coverage across crawled pages"></div>
         </div>
-        <div class="chart-card skeleton" id="skelHreflang" style="display:none">
+        <div class="chart-card" id="hreflangCard" style="display:none">
           <h3>Hreflang &amp; international</h3>
-          <div class="hint">Declared hreflang pairs, return-tag reciprocation and broken targets. <span class="skel-tag">V2</span></div>
-          <div class="empty-state" data-skel="hreflang" data-run="refresh_property"></div>
+          <div class="hint">The languages your pages declare via hreflang, by number of pages.</div>
+          <p class="sr-only" id="hreflangSummary"></p>
+          <div class="chart" id="hreflangChart" role="img" aria-label="Declared hreflang languages"></div>
         </div>
       </section>
 
@@ -265,15 +267,17 @@
           <div class="hint">How discoverable and usable your site is for AI agents - llms.txt, agents.md, AI-bot rules, MCP server card and more. Run <code>check_agent_readiness</code> to populate.</div>
           <div id="agentPanel"></div>
         </div>
-        <div class="chart-card skeleton" id="skelAnswerability" style="display:none">
+        <div class="chart-card" id="answerabilityCard" style="display:none">
           <h3>AI answerability</h3>
-          <div class="hint">Which ranking pages carry a dense, extractable answer for their top query (local cross-encoder passage score) - the GEO frontier, and no other tool has it. <span class="skel-tag">V2</span></div>
-          <div class="empty-state" data-skel="answerability" data-run="score_passages"></div>
+          <div class="hint">Ranking pages scored by whether they carry a dense, extractable answer for their top query (local cross-encoder) - weakest first. A score under 3 means no clear passage an AI can lift. The GEO frontier; no other tool has this.</div>
+          <p class="sr-only" id="answerabilitySummary"></p>
+          <div id="answerabilityTable" class="findings-table"></div>
         </div>
-        <div class="chart-card skeleton" id="skelEntities" style="display:none">
+        <div class="chart-card" id="entitiesCard" style="display:none">
           <h3>Entity &amp; topic graph</h3>
-          <div class="hint">Your pages resolved to Wikidata entities and the subclass / part-of edges between them - topic coverage and the gaps. <span class="skel-tag">V2</span></div>
-          <div class="empty-state" data-skel="entities" data-run="resolve_entities"></div>
+          <div class="hint">Your pages resolved to Wikidata entities (node size = pages) and the subclass / part-of edges between them. Drag to explore; scroll to zoom.</div>
+          <p class="sr-only" id="entitiesSummary"></p>
+          <div class="chart chart-tall" id="entitiesChart" role="img" aria-label="Entity relationship graph"></div>
         </div>
       </section>
 

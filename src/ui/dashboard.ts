@@ -755,6 +755,69 @@ function render(data: DashboardData): void {
     $('redirectsSummary').textContent = `${fmt(rc.total)} redirecting URL${rc.total === 1 ? '' : 's'} captured during the crawl.`;
   }
 
+  // 0h) Core Web Vitals (V2) - lab CWV, worst pages first.
+  const cwv = data.cwvCoverage;
+  const cwvCard = document.getElementById('cwvCard');
+  if (cwvCard) cwvCard.style.display = cwv && cwv.worst.length ? '' : 'none';
+  if (cwv && cwv.worst.length) {
+    const rows = cwv.worst.map(w => `<tr><td class="url">${esc(shortPath(w.url, 42))}</td><td class="num">${w.perf}</td><td class="num">${(w.lcpMs / 1000).toFixed(1)}s</td><td class="num">${w.cls}</td><td class="num">${w.tbtMs}ms</td></tr>`);
+    $('cwvTable').innerHTML = tableHtml(['Page', 'Perf', 'LCP', 'CLS', 'TBT'], rows);
+    const pct = (n: number) => Math.round((n / cwv.pages) * 100);
+    $('cwvSummary').textContent = `${fmt(cwv.pages)} pages measured. Passing: LCP ${pct(cwv.passLcp)}%, CLS ${pct(cwv.passCls)}%, TBT ${pct(cwv.passTbt)}%.`;
+  }
+
+  // 0i) Hreflang / international (V2) - declared languages by page count.
+  const hl = data.hreflangCoverage;
+  const hlCard = document.getElementById('hreflangCard');
+  if (hlCard) hlCard.style.display = hl && hl.langs.length ? '' : 'none';
+  if (hl && hl.langs.length) {
+    const l = hl.langs.slice().reverse();
+    wrap('hreflangChart').setOption({
+      ...ARIA,
+      grid: { left: 90, right: 56, top: 8, bottom: 30 },
+      tooltip: { ...tooltipDefaults(col), axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => `${fmt(v)} pages` },
+      xAxis: { type: 'value', name: 'pages', ...axisNum },
+      yAxis: { type: 'category', data: l.map(x => x.lang), ...axis },
+      series: [{ type: 'bar', barWidth: 14, itemStyle: { color: col.categorical[7] }, data: l.map(x => x.pages), label: { show: true, position: 'right', formatter: (p: any) => fmt(p.value), color: col.muted, fontSize: 11 } }],
+    });
+    $('hreflangSummary').textContent = `${fmt(hl.pagesWithHreflang)} of ${fmt(hl.totalPages)} pages declare hreflang, across ${hl.langs.length} languages.`;
+  }
+
+  // 0j) AI answerability (V2) - weakest extractable-answer pages first.
+  const ans = data.answerability;
+  const ansCard = document.getElementById('answerabilityCard');
+  if (ansCard) ansCard.style.display = ans && ans.pages.length ? '' : 'none';
+  if (ans && ans.pages.length) {
+    const rows = ans.pages.map(p => `<tr><td class="url">${esc(shortPath(p.url, 38))}</td><td>${esc(p.query ?? '-')}</td><td class="num" style="color:${p.score < 3 ? 'var(--intent-danger)' : 'var(--intent-success)'}">${p.score.toFixed(2)}</td><td class="num">${fmt(p.impr)}</td></tr>`);
+    $('answerabilityTable').innerHTML = tableHtml(['Page', 'Top query', 'Passage score', 'Impr'], rows);
+    $('answerabilitySummary').textContent = `${fmt(ans.scored)} pages scored; ${fmt(ans.weak)} weak (score under 3 - no dense extractable answer).`;
+  }
+
+  // 0k) Entity & topic graph (V2) - Wikidata entities + subclass/part-of edges (force graph).
+  const eg = data.entityGraph;
+  const egCard = document.getElementById('entitiesCard');
+  if (egCard) egCard.style.display = eg && eg.nodes.length ? '' : 'none';
+  if (eg && eg.nodes.length) {
+    const maxP = Math.max(...eg.nodes.map(n => n.pages), 1);
+    const gnodes = eg.nodes.map(n => ({ id: n.qid, name: n.label, symbolSize: 8 + Math.round((n.pages / maxP) * 24), value: n.pages,
+      label: n.pages >= Math.max(2, maxP * 0.5) ? { show: true, formatter: n.label, color: col.muted, fontSize: 10 } : { show: false } }));
+    wrap('entitiesChart').setOption({
+      ...ARIA,
+      tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => p.dataType === 'edge' ? '' : `${esc(p.data.name)}<br/>${fmt(p.data.value)} pages` },
+      series: [{
+        type: 'graph', layout: 'force', roam: true,
+        force: { repulsion: 120, edgeLength: [40, 140], gravity: 0.06 },
+        data: gnodes,
+        links: eg.edges.map(e => ({ source: e.source, target: e.target })),
+        itemStyle: { color: col.accent, borderColor: col.surface, borderWidth: 1 },
+        lineStyle: { color: col.border, width: 0.8, opacity: 0.6, curveness: 0.1 },
+        emphasis: { focus: 'adjacency', lineStyle: { color: col.accent, width: 1.3, opacity: 0.95 }, label: { show: true } },
+        label: { position: 'right' },
+      }],
+    });
+    $('entitiesSummary').textContent = `${fmt(eg.total)} entities resolved across your pages, ${fmt(eg.edges.length)} relationships.`;
+  }
+
   // 0a) Agent readiness panel (populated by check_agent_readiness; live probe, persisted)
   const ar = data.agentReadiness;
   if (ar) {

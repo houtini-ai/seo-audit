@@ -126,13 +126,21 @@ export interface DashboardData {
   indexCoverage?: { total: number; states: { state: string; count: number }[]; canonicalMismatch: number; indexed: number } | null;
   // Redirect chains (V2): multi-hop redirects captured during the crawl.
   redirectChains?: { total: number; chains: { from: string; to: string; status: number; hops: number }[] } | null;
+  // Core Web Vitals (V2): lab CWV from page_lighthouse, pass rates + worst offenders.
+  cwvCoverage?: { pages: number; passLcp: number; passCls: number; passTbt: number; worst: { url: string; perf: number; lcpMs: number; cls: number; tbtMs: number }[] } | null;
+  // Hreflang / international (V2): declared languages across crawled pages.
+  hreflangCoverage?: { pagesWithHreflang: number; totalPages: number; langs: { lang: string; pages: number }[] } | null;
+  // Entity graph (V2): pages resolved to Wikidata entities + subclass/part-of edges.
+  entityGraph?: { total: number; nodes: { qid: string; label: string; pages: number }[]; edges: { source: string; target: string; relation: string }[] } | null;
+  // AI answerability (V2): cross-encoder max-passage scores for ranking pages.
+  answerability?: { scored: number; weak: number; pages: { url: string; score: number; query: string | null; impr: number }[] } | null;
 }
 
 interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '16';
+const PAYLOAD_VERSION = '17';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -491,6 +499,63 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       }
     }
 
+    // Core Web Vitals (V2 view): lab CWV from page_lighthouse.
+    let cwvCoverage: DashboardData['cwvCoverage'] = null;
+    try {
+      const cwvRows = db.db.prepare(`SELECT url, performance, lcp_ms, cls, tbt_ms FROM page_cwv WHERE performance IS NOT NULL`).all() as { url: string; performance: number; lcp_ms: number; cls: number; tbt_ms: number }[];
+      if (cwvRows.length) {
+        const passLcp = cwvRows.filter(r => r.lcp_ms != null && r.lcp_ms < 2500).length;
+        const passCls = cwvRows.filter(r => r.cls != null && r.cls < 0.1).length;
+        const passTbt = cwvRows.filter(r => r.tbt_ms != null && r.tbt_ms < 200).length;
+        const worst = cwvRows.slice().sort((a, b) => (a.performance ?? 1) - (b.performance ?? 1)).slice(0, 15)
+          .map(r => ({ url: r.url, perf: Math.round((r.performance ?? 0) * 100), lcpMs: Math.round(r.lcp_ms ?? 0), cls: Math.round((r.cls ?? 0) * 1000) / 1000, tbtMs: Math.round(r.tbt_ms ?? 0) }));
+        cwvCoverage = { pages: cwvRows.length, passLcp, passCls, passTbt, worst };
+      }
+    } catch { /* no page_cwv */ }
+
+    // Hreflang / international (V2 view): languages declared across crawled pages.
+    let hreflangCoverage: DashboardData['hreflangCoverage'] = null;
+    {
+      const hlRows = db.db.prepare(`SELECT hreflang FROM pages WHERE is_internal=1 AND hreflang IS NOT NULL AND hreflang NOT IN ('','[]','{}')`).all() as { hreflang: string }[];
+      if (hlRows.length) {
+        const langCount = new Map<string, number>();
+        for (const r of hlRows) {
+          const langs = new Set<string>();
+          try {
+            const parsed = JSON.parse(r.hreflang) as any;
+            const entries: any[] = Array.isArray(parsed) ? parsed : Object.keys(parsed).map(k => ({ lang: k }));
+            for (const e of entries) { const l = e?.lang ?? e?.hreflang ?? e?.lang_code; if (typeof l === 'string' && l) langs.add(l.toLowerCase()); }
+          } catch { /* non-JSON: skip */ }
+          for (const l of langs) langCount.set(l, (langCount.get(l) ?? 0) + 1);
+        }
+        const langs = [...langCount.entries()].map(([lang, pages]) => ({ lang, pages })).sort((a, b) => b.pages - a.pages).slice(0, 15);
+        if (langs.length) hreflangCoverage = { pagesWithHreflang: hlRows.length, totalPages: totalInternalPages, langs };
+      }
+    }
+
+    // Entity graph (V2 view): pages resolved to Wikidata entities + their edges.
+    let entityGraph: DashboardData['entityGraph'] = null;
+    try {
+      const entRows = db.db.prepare(`SELECT qid, label, COUNT(*) pages FROM page_entity GROUP BY qid, label ORDER BY pages DESC LIMIT 80`).all() as { qid: string; label: string; pages: number }[];
+      if (entRows.length >= 2) {
+        const ids = new Set(entRows.map(e => e.qid));
+        const edgeRows = db.db.prepare(`SELECT qid source, related_qid target, relation FROM entity_edge`).all() as { source: string; target: string; relation: string }[];
+        const edges = edgeRows.filter(e => ids.has(e.source) && ids.has(e.target));
+        entityGraph = { total: entRows.length, nodes: entRows.map(e => ({ qid: e.qid, label: e.label || e.qid, pages: e.pages })), edges };
+      }
+    } catch { /* no page_entity */ }
+
+    // AI answerability (V2 view): cross-encoder max-passage scores for ranking pages.
+    let answerability: DashboardData['answerability'] = null;
+    try {
+      const ansRows = db.db.prepare(`SELECT url, max_passage_score score, max_passage_query q, COALESCE(max_passage_impr,0) impr FROM pages WHERE is_internal=1 AND max_passage_score IS NOT NULL`).all() as { url: string; score: number; q: string | null; impr: number }[];
+      if (ansRows.length) {
+        const weak = ansRows.filter(r => r.score < 3).length;
+        const pages = ansRows.slice().sort((a, b) => a.score - b.score).slice(0, 15).map(r => ({ url: r.url, score: Math.round(r.score * 100) / 100, query: r.q, impr: r.impr }));
+        answerability = { scored: ansRows.length, weak, pages };
+      }
+    } catch { /* no scores */ }
+
     // Data-availability flags for the V2 skeleton cards (cheap EXISTS probes).
     const exists = (sql: string): boolean => { try { return !!db.db.prepare(sql).get(); } catch { return false; } };
     const available = {
@@ -844,6 +909,10 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       schemaCoverage,
       indexCoverage,
       redirectChains,
+      cwvCoverage,
+      hreflangCoverage,
+      entityGraph,
+      answerability,
       agentReadiness,
       rankHistory,
       dateAlignment,
