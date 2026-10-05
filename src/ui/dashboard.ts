@@ -380,6 +380,39 @@ function renderBrandedSplit(data: DashboardData): void {
     `</div>`;
 }
 
+// Site Health Score - the headline metric on Overview (banded, honest definition).
+function renderHealthScore(d: DashboardData): void {
+  const card = document.getElementById('healthCard');
+  if (!card) return;
+  const hs = d.healthScore;
+  if (!hs) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const color = (hs.band === 'Excellent' || hs.band === 'Good') ? 'var(--intent-success)'
+    : hs.band === 'Fair' ? 'var(--intent-warning)' : 'var(--intent-danger)';
+  $('healthScore').innerHTML =
+    `<div class="hs-num" style="color:${color}">${hs.score}<span class="hs-of">/100</span></div>`
+    + `<div class="hs-meta">`
+    + `<div class="hs-band" style="color:${color}">Site health: ${esc(hs.band)}</div>`
+    + `<div class="hs-def">${esc(hs.definition)}</div>`
+    + `<div class="hs-sub"><b>${fmt(hs.errorPages)}</b> of <b>${fmt(hs.totalPages)}</b> crawled pages carry a critical or high issue.</div>`
+    + `</div>`;
+}
+
+// V2 skeleton cards: show every planned view with a state that reflects whether its data exists yet.
+function renderSkeletons(d: DashboardData): void {
+  const av = (d.available ?? {}) as Record<string, boolean>;
+  document.querySelectorAll<HTMLElement>('.chart-card.skeleton').forEach(card => {
+    const es = card.querySelector<HTMLElement>('.empty-state');
+    if (!es) return;
+    const key = es.dataset.skel || '';
+    const run = es.dataset.run || '';
+    card.style.display = '';
+    es.innerHTML = av[key]
+      ? `<div class="skel-ready">Data is ready - the full visual ships in V2.</div><div class="skel-run">Populated by <code>${esc(run)}</code>.</div>`
+      : `<div class="skel-run">Run <code>${esc(run)}</code> to populate; the V2 visual renders here.</div>`;
+  });
+}
+
 // Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
 function renderRecommendations(fc: DashboardData['findings']): void {
   const el = $('recs');
@@ -402,7 +435,7 @@ function renderRecommendations(fc: DashboardData['findings']): void {
         ? `<div class="rec-examples"><div class="rec-label">Example${exs.length > 1 ? 's' : ''}</div>${exs.map(exampleRow).join('')}</div>`
         : '';
       return accordionItem({
-        summaryHtml: `${sevBadge(c.severity)}<span class="rec-title">${esc(c.title)}</span><span class="rec-count">${c.count}</span>`,
+        summaryHtml: `${sevBadge(c.severity)}<span class="rec-title">${esc(c.title)}</span><span class="rec-count">${c.count}${c.coveragePct != null ? ` · ${c.coveragePct}% of pages` : ''}</span>`,
         bodyHtml: `<div class="rec-fix"><span class="rec-label">Fix</span> ${esc(c.fix)}</div>${examplesHtml}`,
       });
     }).join('');
@@ -526,6 +559,8 @@ function render(data: DashboardData): void {
   // Audit findings - severity filter chips + prioritised table, then the categorised report
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);
+  renderHealthScore(data);
+  renderSkeletons(data);
   buildExportBar(data);
 
   // 0) Equity vs reality - template mismatch (bars) + per-URL scatter (the architecture flagship)

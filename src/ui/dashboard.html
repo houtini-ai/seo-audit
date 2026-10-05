@@ -30,6 +30,9 @@
 
       <section class="tab-panel active" data-panel="overview" role="tabpanel">
         <div id="reportNav" class="report-nav"></div>
+        <div class="chart-card" id="healthCard" style="display:none">
+          <div class="health-score" id="healthScore"></div>
+        </div>
         <div class="chart-card" id="execCard">
           <h3>Executive summary</h3>
           <div class="hint">An at-a-glance read of performance, the biggest opportunities, and what to fix first - in plain language.</div>
@@ -87,6 +90,32 @@
           <h3>Heavy images</h3>
           <div class="hint" id="sfImagesHint">The heaviest images your pages load, from a header-only sample (sizes read from content-length - the bytes are never downloaded). Over 100 KB is worth a compress; over 300 KB is costing you Core Web Vitals.</div>
           <div id="sfImages" class="findings-table"></div>
+        </div>
+
+        <div class="chart-card skeleton" id="skelCwv" style="display:none">
+          <h3>Core Web Vitals</h3>
+          <div class="hint">LCP, CLS and TBT by page, with the worst offenders and a pass/fail split. <span class="skel-tag">V2</span></div>
+          <div class="empty-state" data-skel="cwv" data-run="page_lighthouse"></div>
+        </div>
+        <div class="chart-card skeleton" id="skelSecurity" style="display:none">
+          <h3>Security &amp; HTTPS</h3>
+          <div class="hint">HSTS, CSP, X-Frame, referrer-policy and mixed-content coverage, by page. <span class="skel-tag">V2</span></div>
+          <div class="empty-state" data-skel="security" data-run="refresh_property"></div>
+        </div>
+        <div class="chart-card skeleton" id="skelRedirects" style="display:none">
+          <h3>Redirect chains</h3>
+          <div class="hint">Multi-hop redirect chains and loops captured during the crawl, ranked by internal links in. <span class="skel-tag">V2</span></div>
+          <div class="empty-state" data-skel="redirects" data-run="refresh_property"></div>
+        </div>
+        <div class="chart-card skeleton" id="skelSchema" style="display:none">
+          <h3>Structured-data coverage</h3>
+          <div class="hint">Which rich-result schema types each template carries, and where eligible templates are missing it. <span class="skel-tag">V2</span></div>
+          <div class="empty-state" data-skel="schema" data-run="refresh_property"></div>
+        </div>
+        <div class="chart-card skeleton" id="skelHreflang" style="display:none">
+          <h3>Hreflang &amp; international</h3>
+          <div class="hint">Declared hreflang pairs, return-tag reciprocation and broken targets. <span class="skel-tag">V2</span></div>
+          <div class="empty-state" data-skel="hreflang" data-run="refresh_property"></div>
         </div>
       </section>
 
@@ -184,6 +213,11 @@
             <div id="countryBlock"><h4>Top countries</h4><div id="countryTable" class="findings-table"></div></div>
           </div>
         </div>
+        <div class="chart-card skeleton" id="skelIndexCoverage" style="display:none">
+          <h3>GSC index coverage</h3>
+          <div class="hint">Google's own per-URL index status - coverage state, google-vs-declared canonical, mobile usability, rich results. <span class="skel-tag">V2</span></div>
+          <div class="empty-state" data-skel="indexCoverage" data-run="inspect_urls"></div>
+        </div>
       </section>
 
       <section class="tab-panel" data-panel="architecture" role="tabpanel">
@@ -226,6 +260,16 @@
           <h3>Agent readiness - is your site ready for AI agents?</h3>
           <div class="hint">How discoverable and usable your site is for AI agents - llms.txt, agents.md, AI-bot rules, MCP server card and more. Run <code>check_agent_readiness</code> to populate.</div>
           <div id="agentPanel"></div>
+        </div>
+        <div class="chart-card skeleton" id="skelAnswerability" style="display:none">
+          <h3>AI answerability</h3>
+          <div class="hint">Which ranking pages carry a dense, extractable answer for their top query (local cross-encoder passage score) - the GEO frontier, and no other tool has it. <span class="skel-tag">V2</span></div>
+          <div class="empty-state" data-skel="answerability" data-run="score_passages"></div>
+        </div>
+        <div class="chart-card skeleton" id="skelEntities" style="display:none">
+          <h3>Entity &amp; topic graph</h3>
+          <div class="hint">Your pages resolved to Wikidata entities and the subclass / part-of edges between them - topic coverage and the gaps. <span class="skel-tag">V2</span></div>
+          <div class="empty-state" data-skel="entities" data-run="resolve_entities"></div>
         </div>
       </section>
 

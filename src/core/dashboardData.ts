@@ -83,7 +83,7 @@ export interface DashboardData {
     runId: string;
     total: number;
     finishedAt: string | null;
-    byCheck: { check_id: string; category: string; severity: string; count: number; priority: number }[];
+    byCheck: { check_id: string; category: string; severity: string; count: number; priority: number; urls?: number; coveragePct?: number | null }[];
     top: { check_id: string; category: string; severity: string; url_key: string | null; evidence: string; traffic_at_risk: string; effort: string; priority: number; recommendation: string; impact?: number; size?: string }[];
     // Audit-deliverable view: issues grouped by category, each a sub-heading with a real example + fix.
     recommendations: {
@@ -94,6 +94,7 @@ export interface DashboardData {
         fix: string;
         severity: string;
         count: number;
+        coveragePct?: number | null;
         example: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number } | null;
         examples: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number }[];
       }[];
@@ -112,13 +113,18 @@ export interface DashboardData {
   // Trapped authority — pages with real external authority (referring domains) buried deep
   // internally (high click depth / low iPR), so their link equity isn't reaching money pages.
   trappedAuthority?: { url: string; referringDomains: number; backlinks: number; clickDepth: number | null; ipr: number; trustFlow: number | null; topTopic: string | null }[];
+  // Site Health Score (the headline every paid tool has): % of crawled internal pages with no
+  // error-class (critical/high) finding. Honest + defensible; banded Weak/Fair/Good/Excellent.
+  healthScore?: { score: number; band: string; errorPages: number; totalPages: number; definition: string } | null;
+  // Which latent-data views have data behind them yet - drives the V2 skeleton cards' state.
+  available?: { cwv: boolean; security: boolean; hreflang: boolean; indexCoverage: boolean; entities: boolean; schema: boolean; redirects: boolean; answerability: boolean };
 }
 
 interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '13';
+const PAYLOAD_VERSION = '14';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -341,9 +347,11 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const lastRun = db.db.prepare('SELECT run_id, finding_count, finished_at FROM audit_runs ORDER BY started_at DESC LIMIT 1').get() as
       | { run_id: string; finding_count: number; finished_at: string | null }
       | undefined;
+    const totalInternalPages = (db.db.prepare(`SELECT COUNT(*) n FROM pages WHERE is_internal=1`).get() as { n: number }).n;
     let findings: DashboardData['findings'] = null;
     if (lastRun) {
-      const byCheck = db.db.prepare('SELECT check_id, category, severity, COUNT(*) count, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['byCheck'];
+      const byCheckRaw = db.db.prepare('SELECT check_id, category, severity, COUNT(*) count, COUNT(DISTINCT url_key) urls, AVG(priority) priority FROM findings WHERE run_id=? GROUP BY check_id ORDER BY count DESC').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['byCheck'];
+      const byCheck = byCheckRaw.map(c => ({ ...c, coveragePct: totalInternalPages > 0 && c.urls ? Math.round((c.urls / totalInternalPages) * 1000) / 10 : null }));
       const topRaw = db.db.prepare('SELECT check_id, category, severity, url_key, evidence, traffic_at_risk, effort, priority, recommendation FROM findings WHERE run_id=? ORDER BY priority DESC LIMIT 50').all(lastRun.run_id) as NonNullable<DashboardData['findings']>['top'];
       // Impact = priority normalised to the run's top finding (preserves magnitude), shown as a
       // 0–100 index + S/M/L/XL size instead of a clicks "forecast".
@@ -376,6 +384,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
           fix: rec.text || '',
           severity: c.severity,
           count: c.count,
+          coveragePct: c.coveragePct,
           example: examples[0] ?? null,
           examples,
         });
@@ -387,6 +396,29 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
 
       findings = { runId: lastRun.run_id, total: lastRun.finding_count, finishedAt: lastRun.finished_at, byCheck, top, recommendations };
     }
+
+    // Site Health Score - the headline metric every paid tool has. Ahrefs-style and honest:
+    // the share of crawled internal pages carrying no error-class (critical/high) finding.
+    let healthScore: DashboardData['healthScore'] = null;
+    if (lastRun && totalInternalPages > 0) {
+      const errPages = (db.db.prepare(`SELECT COUNT(DISTINCT url_key) n FROM findings WHERE run_id=? AND severity IN ('crit','high') AND url_key IS NOT NULL`).get(lastRun.run_id) as { n: number }).n;
+      const score = Math.max(0, Math.min(100, Math.round((1 - errPages / totalInternalPages) * 100)));
+      const band = score >= 91 ? 'Excellent' : score >= 71 ? 'Good' : score >= 31 ? 'Fair' : 'Weak';
+      healthScore = { score, band, errorPages: errPages, totalPages: totalInternalPages, definition: 'Share of crawled internal pages with no critical or high finding.' };
+    }
+
+    // Data-availability flags for the V2 skeleton cards (cheap EXISTS probes).
+    const exists = (sql: string): boolean => { try { return !!db.db.prepare(sql).get(); } catch { return false; } };
+    const available = {
+      cwv: exists(`SELECT 1 FROM page_cwv LIMIT 1`),
+      security: exists(`SELECT 1 FROM pages WHERE security_headers IS NOT NULL AND security_headers NOT IN ('','{}') LIMIT 1`),
+      hreflang: exists(`SELECT 1 FROM pages WHERE hreflang IS NOT NULL AND hreflang NOT IN ('','[]') LIMIT 1`),
+      indexCoverage: exists(`SELECT 1 FROM url_inspection LIMIT 1`),
+      entities: exists(`SELECT 1 FROM page_entity LIMIT 1`),
+      schema: exists(`SELECT 1 FROM pages WHERE json_ld IS NOT NULL AND json_ld NOT IN ('','[]') LIMIT 1`),
+      redirects: exists(`SELECT 1 FROM pages WHERE redirects IS NOT NULL AND redirects NOT IN ('','[]') LIMIT 1`),
+      answerability: exists(`SELECT 1 FROM pages WHERE max_passage_score IS NOT NULL LIMIT 1`),
+    };
 
     // Equity vs reality: join per-page internal PageRank with 28d GSC traffic, bucketed by template.
     // (Needs a crawl — pages.ipr is populated post-crawl. Empty if crawl-free.)
@@ -722,6 +754,8 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       topLinkedPages,
       linkFlows,
       structureGraph,
+      healthScore,
+      available,
       agentReadiness,
       rankHistory,
       dateAlignment,
