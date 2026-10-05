@@ -584,19 +584,22 @@ function render(data: DashboardData): void {
 
   const sc = data.equityScatter ?? [];
   const bucketColor: Record<string, string> = { content: col.blue, category: col.red, homepage: col.amber, other: col.muted };
-  const scGroups: Record<string, number[][]> = {};
-  for (const pt of sc) (scGroups[pt.t] ??= []).push([pt.x, Math.max(1, pt.y)]); // max(1) keeps the log axis valid
+  const scGroups: Record<string, { value: number[]; id: string }[]> = {};
+  for (const pt of sc) (scGroups[pt.t] ??= []).push({ value: [pt.x, Math.max(1, pt.y)], id: pt.u }); // max(1) keeps the log axis valid
   if (sc.length) {
     wrap('scatterChart').setOption({
       ...ARIA,
-      grid: { left: 60, right: 24, top: 24, bottom: 40 },
+      grid: { left: 60, right: 24, top: 24, bottom: 48 },
       legend: { top: 0, textStyle: { color: col.text, fontSize: 12 } },
-      tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => `iPR ${p.value[0]} · ${fmt(p.value[1])} impressions` },
+      tooltip: { ...tooltipDefaults(col, 'item'), formatter: (p: any) => `${esc(shortPath(p.data.id, 44))}<br/>iPR ${p.value[0]} · ${fmt(p.value[1])} impressions` },
       xAxis: { type: 'value', name: 'internal PageRank', min: 0, max: 100, ...axis },
       yAxis: { type: 'log', name: 'impressions', ...axisNum },
-      series: Object.entries(scGroups).map(([t, pts]) => ({ name: t, type: 'scatter', symbolSize: t === 'category' ? 9 : 7, itemStyle: { color: bucketColor[t] ?? col.muted, opacity: 0.6 }, data: pts })),
+      dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }, { type: 'inside', yAxisIndex: 0, filterMode: 'none' }],
+      series: Object.entries(scGroups).map(([t, pts]) => ({ name: t, type: 'scatter', symbolSize: t === 'category' ? 9 : 7, itemStyle: { color: bucketColor[t] ?? col.muted, opacity: 0.6 }, emphasis: { itemStyle: { opacity: 1, borderColor: col.accent, borderWidth: 1.5 } }, data: pts })),
     });
-    $('scatterSummary').textContent = `${sc.length} URLs by internal PageRank and impressions; bottom-right = high-authority pages earning no traffic.`;
+    // Click a point to open that page in a new tab (consistent with the structure map).
+    wrap('scatterChart').on('click', (p: any) => { if (p?.data?.id) window.open(p.data.id, '_blank', 'noopener'); });
+    $('scatterSummary').textContent = `${sc.length} URLs by internal PageRank and impressions; bottom-right = high-authority pages earning no traffic. Scroll to zoom, click a point to open the page.`;
   } else {
     wrap('scatterChart').setEmpty('Run a crawl to map equity vs traffic', col);
     $('scatterSummary').textContent = 'Run a crawl (refresh_property) to see the equity map.';
@@ -640,7 +643,11 @@ function render(data: DashboardData): void {
         label: { position: 'right' },
       }],
     });
-    $('structureSummary').textContent = `Internal link skeleton of the top ${sg.nodes.length} pages by internal PageRank (of ${fmt(sg.totalPages)} crawled); node size = iPR, ${broken} broken or redirected.`;
+    // Click a node to open that page in a new tab (the Sitebulb "open this URL" gesture).
+    wrap('structureChart').on('click', (p: any) => {
+      if (p?.dataType !== 'edge' && p?.data?.id) window.open(p.data.id, '_blank', 'noopener');
+    });
+    $('structureSummary').textContent = `Internal link skeleton of the top ${sg.nodes.length} pages by internal PageRank (of ${fmt(sg.totalPages)} crawled); node size = iPR, ${broken} broken or redirected. Scroll to zoom, drag to pan, click a node to open the page.`;
   } else {
     wrap('structureChart').setEmpty('Run a crawl to map the internal structure', col);
     $('structureSummary').textContent = 'Run a crawl (refresh_property) to map your internal link structure.';

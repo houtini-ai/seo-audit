@@ -42,7 +42,7 @@ export interface DashboardData {
   pagePerformance?: { urlKey: string; clicks: number; prevClicks: number; clicksChangePct: number; impressions: number; position: number; category: string }[];
   keywordMovement?: { query: string; firstPos: number; lastPos: number; delta: number; firstDate: string; lastDate: string; category: string }[];
   // Equity vs reality: per-page internal PageRank (x) vs GSC impressions (y), bucketed by template.
-  equityScatter?: { x: number; y: number; t: string }[];
+  equityScatter?: { x: number; y: number; t: string; u: string }[];
   // Template-level mismatch: where internal equity flows vs where traffic actually comes from.
   templateMismatch?: { template: string; pages: number; iprPct: number; trafficPct: number }[];
   // Cannibalisation braids: per contested query, each competing URL's weekly average position.
@@ -118,7 +118,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '12';
+const PAYLOAD_VERSION = '13';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -403,7 +403,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         const gg = g28.get(p.url_key) ?? { clicks: 0, impr: 0 };
         const a = agg.get(t) ?? { ipr: 0, clicks: 0, n: 0 };
         a.ipr += p.ipr; a.clicks += gg.clicks; a.n += 1; agg.set(t, a);
-        if (p.ipr >= 15 || gg.impr >= 5) scatter.push({ x: Math.round(p.ipr), y: gg.impr, t: ['content', 'category', 'homepage'].includes(t) ? t : 'other' });
+        if (p.ipr >= 15 || gg.impr >= 5) scatter.push({ x: Math.round(p.ipr), y: gg.impr, t: ['content', 'category', 'homepage'].includes(t) ? t : 'other', u: p.url_key });
       }
       equityScatter = scatter.sort((a, b) => b.y - a.y).slice(0, 500);
       const tIpr = [...agg.values()].reduce((s, a) => s + a.ipr, 0) || 1;
