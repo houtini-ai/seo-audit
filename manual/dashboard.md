@@ -10,7 +10,7 @@ Run `refresh_property` first, and `run_audit` if you want the findings populated
 
 ![The Overview tab - executive summary, critical issues, recoverable clicks](../assets/dashboard-overview.png)
 
-The executive summary: clicks and impressions for the last 28 days against the prior period, the headline finding counts, and the top issues by impact. It's the tab you'd screenshot for a stakeholder - the state of the property in one screen. At the top sits a **report hub** - a card per report with a live stat on it (findings count, pages crawled, clicks) - so you can jump straight to any tab.
+A **Site Health Score** (0-100, banded Weak / Fair / Good / Excellent) headlines the tab - the share of crawled pages with no critical or high finding, defined in plain sight rather than as a black box. Below it, the executive summary: clicks and impressions for the last 28 days against the prior period, the headline finding counts, and the top issues by impact. It's the tab you'd screenshot for a stakeholder - the state of the property in one screen. At the top sits a **report hub** - a card per report with a live stat on it (findings count, pages crawled, clicks) - so you can jump straight to any tab.
 
 ## Issues & fixes
 
@@ -26,12 +26,15 @@ Each finding shows an **impact score (0-100, normalised to the run's biggest fin
 
 If you grew up on desktop crawlers, this tab is home. The classic crawl diagnostics as clean stat bars: **response codes**, **indexability reasons** (with the *why* for every non-indexable URL), **response-time** and **HTML-size buckets** (measured on estimated transfer, not raw bytes), **crawl depth**, and title/meta issue counts. Below the bars, the lists: server errors (5xx), pages over a second, and the heaviest images your pages load - sampled from response headers during the crawl, so the image bytes are never downloaded.
 
+It also carries the thematic reports a dedicated crawler would, each appearing when its data is present: **Security & HTTPS** (the share of pages carrying HSTS, CSP, X-Frame, X-Content-Type and Referrer-Policy), **Structured-data coverage** (the JSON-LD rich-result types across your pages), **Redirect chains** (multi-hop redirects captured during the crawl), **Core Web Vitals** (after `page_lighthouse`), and **Hreflang** (declared languages, on multilingual sites).
+
 ## Opportunities
 
 ![The Opportunities tab - quick wins, decay and cannibalisation](../assets/tab-opps.png)
 
 Where the growth work lives:
 
+- **Content architecture** - your search demand grouped into topic clusters, each a pillar topic with its supporting sub-topics. Every member is coloured by how well you cover it (green = a page ranks page 1, amber = striking distance, red = a gap with no covering page), with a coverage score per cluster, a funnel read where intent data exists (run `search_intent`), and pillar-to-member internal-link suggestions. **How it works:** the clusters come from your own Search Console demand, not a third-party keyword index - we take the queries you earn impressions for, group them lexically, map each to the page that serves it and the position it holds, classify it covered (ranks ≤10) / thin (11-20, striking distance) / gap (no page ranks), and roll that up into the cluster with its coverage %. It answers "given what my site already covers, what should I strengthen or create next, and where does it fit" - grounded in real demand, inventing nothing.
 - **Quick-wins matrix** - current clicks against recoverable potential, per page, so the underpriced fixes jump out.
 - **Biggest quick wins** - the same thing as a ranked table.
 - **Content decay** - the refresh list: pages losing clicks period-over-period.
@@ -51,6 +54,7 @@ The Search Console view you wish Google shipped - and because the history lives 
 - **Top keyword and page performance**, 28 days against the prior 28.
 - **Keyword ranking movement** over 90 days - risers and fallers.
 - **Breakdowns by device and country** - these appear when you've synced with `segments:true` ([tools.md](tools.md#sync_gsc)).
+- **GSC index coverage** - Google's own per-URL index status from URL Inspection (run `inspect_urls`): the coverage-state distribution and any Google-vs-declared canonical conflicts.
 
 Tables export to CSV where you'd want them to.
 
@@ -60,11 +64,14 @@ Tables export to CSV where you'd want them to.
 
 The structural story - where your internal link equity goes versus where your traffic comes from:
 
+- **Site structure map** - a force-directed graph of your internal link skeleton: the top pages by internal PageRank and the in-content links between them. Node size is internal PageRank; colour is health (green indexable, amber non-indexable, red broken or redirected), so a cluster of amber or red high up is a structural problem you can see at a glance. Drag to explore, scroll to zoom, click a node to open the page.
 - **Equity flow vs traffic by template** - each template's share of internal PageRank against its share of impressions. A template hoarding equity while earning nothing is a structural decision worth revisiting.
 - **Equity vs reality, every URL** - the scatter of internal PageRank against impressions. The corners are the findings: high equity + no traffic (wasted authority), high traffic + no equity (underlinked winners, and the pages a redesign would quietly kill).
 - **Top linked pages and their status** - your most internally linked URLs with their live HTTP status. A non-200 high on this list is an equity leak in plain sight.
 - **Trapped authority** - pages the web trusts (referring domains, and Majestic **Trust Flow** with its top topic once you've run `pull_backlinks` with a Majestic key) that sit buried deep in your architecture - click depth 3+ from the homepage, or unreachable through the body - so their link equity never reaches your money pages. The fix: link to them from higher up.
 - **Agent readiness** - the 0-100 score and category checklist from `check_agent_readiness`, once you've run it.
+- **AI answerability** - a local cross-encoder scores whether each ranking page carries a dense, extractable answer for its top query (run `score_passages`). Weakest first; a score under 3 means there's no clear passage an AI can lift. No other tool checks this.
+- **Entity & topic graph** - your pages resolved to Wikidata entities (run `resolve_entities`) and the subclass / part-of edges between them - a map of the concepts your site covers.
 
 ## Links
 

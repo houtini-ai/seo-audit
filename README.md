@@ -139,6 +139,8 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 
 [![Ranking distribution over time - impressions by position bucket](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/search-performance.png)](https://github.com/houtini-ai/seo-audit)
 
+[![Content architecture - your search demand grouped into topic clusters, each with a coverage score, striking-distance members and gaps](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/content-architecture.png)](https://github.com/houtini-ai/seo-audit)
+
 ---
 
 ## What DataForSEO adds (and what it costs)
