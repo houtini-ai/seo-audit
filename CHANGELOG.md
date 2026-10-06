@@ -4,6 +4,14 @@ All notable changes to **@houtini/seo-audit-console**. The format loosely follow
 [Keep a Changelog](https://keepachangelog.com); the check registry is the source of truth
 (`list_checks` always returns the live list).
 
+## [0.12.0] — 2026-10-06
+
+### Added
+- **Content architecture (topic clusters)** view on the Opportunities tab: your Search Console demand grouped into topic clusters - a pillar topic with supporting sub-topics - each classified covered / thin / gap, with a coverage score, a funnel read (where `keyword_intent` exists), the concrete gaps, and pillar-to-member internal-link suggestions. GSC-first, grounded in your own demand, no paid calls.
+
+### Fixed
+- **Historical rank overview returned only ~6 months.** The DataForSEO `historical_rank_overview` call never sent `date_from`, so the endpoint returned its default previous-six-months window - the rank-history / visibility-over-time chart silently showed only ~6 months. Now sends `date_from` (2020-10-01, the endpoint's earliest data) for the full history. Live-verified: 6 → 72 months.
+
 ## [0.11.1] — 2026-10-06
 
 ### Added
