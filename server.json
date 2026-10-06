@@ -6,6 +6,7 @@
     "url": "https://github.com/houtini-ai/seo-audit",
     "source": "github"
   },
+  "websiteUrl": "https://houtini.com",
   "version": "0.12.1",
   "packages": [
     {
