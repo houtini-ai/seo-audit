@@ -504,7 +504,8 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
 
     // Content architecture (topic clusters) - the full topical picture from GSC demand + crawl.
     let topicClusters: DashboardData['topicClusters'] = null;
-    try { const ca = contentArchitecture(db.db, {}); if (ca.clusters.length) topicClusters = ca; } catch { /* no GSC / no crawl */ }
+    try { const ca = contentArchitecture(db.db, { maxDate: maxDate || undefined }); if (ca.clusters.length) topicClusters = ca; }
+    catch (e) { console.error('contentArchitecture failed:', (e as Error).message); }
 
     // Core Web Vitals (V2 view): lab CWV from page_lighthouse.
     let cwvCoverage: DashboardData['cwvCoverage'] = null;

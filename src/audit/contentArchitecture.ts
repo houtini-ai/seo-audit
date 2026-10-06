@@ -26,13 +26,17 @@ export interface TopicCluster {
   totalImpressions: number;
 }
 
-interface Opts { minImpressions?: number; maxQueries?: number; maxClusters?: number; clusterThreshold?: number }
+interface Opts { minImpressions?: number; maxQueries?: number; maxClusters?: number; clusterThreshold?: number; maxDate?: string }
+
+const FUNNELS = new Set(['informational', 'commercial', 'transactional', 'navigational']);
 
 export function contentArchitecture(db: Database.Database, opts: Opts = {}): { clusters: TopicCluster[]; totalClusters: number } {
   const minImpr = opts.minImpressions ?? 50;
   const maxQueries = opts.maxQueries ?? 500;
   const clusterT = opts.clusterThreshold ?? 0.5;
-  const maxDate = gscFreshness(db).effectiveMax;
+  // Reuse the caller's finalised max date when given (dashboardData already computed it) - avoids a
+  // second full GROUP BY date scan of search_analytics on every dashboard rebuild.
+  const maxDate = opts.maxDate ?? gscFreshness(db).effectiveMax;
   if (!maxDate) return { clusters: [], totalClusters: 0 };
   const win = `date > date('${maxDate}', '-28 days') AND date <= '${maxDate}'`;
 
@@ -60,7 +64,7 @@ export function contentArchitecture(db: Database.Database, opts: Opts = {}): { c
     const toks = new Set(tokenize(query));
     if (!toks.size) continue;
     const topPage = q.pages.reduce((a, b) => (b.impr > a.impr ? b : a));           // page that earns the most for this query
-    const bestPos = Math.min(...q.pages.map(p => p.pos));                           // our best position on the query
+    const bestPos = Math.min(...q.pages.map(p => p.pos ?? 999));                     // our best position (a null impression-weighted pos can't count as rank 0)
     queries.push({ query, toks, impr: q.impr, topPage: topPage.key, bestPos });
   }
   if (!queries.length) return { clusters: [], totalClusters: 0 };
@@ -94,7 +98,7 @@ export function contentArchitecture(db: Database.Database, opts: Opts = {}): { c
       if (intentW.size) {
         const total = [...intentW.values()].reduce((s, v) => s + v, 0);
         const top = [...intentW.entries()].sort((a, b) => b[1] - a[1])[0];
-        funnel = top[1] / total >= 0.6 ? (top[0] as TopicCluster['funnel']) : 'mixed';
+        funnel = (top[1] / total >= 0.6 && FUNNELS.has(top[0])) ? (top[0] as TopicCluster['funnel']) : 'mixed';
       }
       const covered = members.filter(m => status(m.bestPos) === 'covered').reduce((s, m) => s + m.impr, 0);
       // nearestPage = the page already associated with the gap query in GSC (where to improve / link from).
