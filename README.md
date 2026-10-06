@@ -35,7 +35,9 @@ you  › run an SEO audit on mysite.com
 you  › generate the fix for #1 ▍
 ```
 
-[![The dashboard overview - a report hub, executive summary, critical issues and recoverable clicks](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/dashboard-overview.png)](https://github.com/houtini-ai/seo-audit)
+[![The dashboard overview - the Site Health Score, a plain-language executive summary, critical issues and recoverable clicks](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/dashboard-overview.png)](https://github.com/houtini-ai/seo-audit)
+
+[![The Architecture tab - the crawl-structure map of your internal link skeleton, the equity-vs-traffic flow, and the equity-vs-reality scatter](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/architecture.png)](https://github.com/houtini-ai/seo-audit)
 
 ## The manual
 
@@ -113,7 +115,7 @@ The crawl is where audits usually go wrong, so it's worth understanding what thi
 
 After the crawl it computes a real link graph: internal PageRank with nav and footer links down-weighted, click depth from the homepage counting body links only, in-degree per page. That graph powers the orphan, equity-leak and underlinked-page checks - and the donor rankings when the tool suggests internal links.
 
-[![The Site health tab - classic crawl diagnostics as stat bars](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/site-health.png)](https://github.com/houtini-ai/seo-audit)
+[![The Site health tab - classic crawl diagnostics plus security-header, structured-data and redirect-chain coverage](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/site-health.png)](https://github.com/houtini-ai/seo-audit)
 
 ---
 
