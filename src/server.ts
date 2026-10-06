@@ -51,7 +51,7 @@ import { GscSync, FULL_DIMENSIONS } from './core/GscSync.js';
 import { UrlInspector } from './core/UrlInspector.js';
 import { Crawler } from './core/Crawler.js';
 import { Refresh } from './core/Refresh.js';
-import { DataForSeoClient } from './core/DataForSeoClient.js';
+import { DataForSeoClient, historicalDateFrom } from './core/DataForSeoClient.js';
 import { RankTracker } from './core/RankTracker.js';
 import { Backlinks } from './core/Backlinks.js';
 import { LinkIntersect } from './core/LinkIntersect.js';
@@ -1742,13 +1742,18 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         target: z.string().describe('Domain or subdomain, no scheme (e.g. example.com or blog.example.com)'),
         location: z.union([z.string(), z.number()]).optional(),
         languageName: z.string().optional(),
-        months: z.number().int().min(1).max(24).optional(),
+        months: z.number().int().min(1).max(24).optional().describe('Months of history ending last month (default 12). Sent as date_from; longer windows cost more (billed per monthly item).'),
       },
     },
     async ({ target, location, languageName, months }) => {
       const client = requireDfs(dfs);
       const cleaned = dfsHost(target);
-      const r = await client.historicalRankOverview(cleaned, location, 'en', languageName);
+      // Request only the window asked for: with no date_from the endpoint returns 6 months
+      // (so months=24 silently gave 6), and the client default (2020-10-01) bills ~6 years of
+      // monthly items just to slice most of them away.
+      const windowMonths = months ?? 12;
+      const dateFrom = historicalDateFrom(windowMonths);
+      const r = await client.historicalRankOverview(cleaned, location, 'en', languageName, dateFrom);
       const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
       const n = (v: unknown): number => Number(v) || 0;
       // Guard year/month — a malformed item would emit an "undefined-NaN" period row.
@@ -1771,11 +1776,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           };
         })
         .sort((a, b) => (a.period < b.period ? -1 : 1))
-        .slice(-(months ?? 12));
+        .slice(-windowMonths);
       if (!series.length) {
         return {
           content: [{ type: 'text', text: `No historical rank data for ${cleaned} — check the target (bare domain/subdomain) and location.` }],
-          structuredContent: { target: cleaned, series: [], cached: r.cached, cost: r.cost },
+          structuredContent: { target: cleaned, requestedMonths: windowMonths, dateFrom, series: [], cached: r.cached, cost: r.cost },
         };
       }
       const first = series[0];
@@ -1785,15 +1790,20 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         Math.abs(delta) < 10
           ? `flat (ETV ${fmtNum(first.etv)} → ${fmtNum(last.etv)}, ${delta >= 0 ? '+' : ''}${delta.toFixed(0)}% ${first.period} → ${last.period})`
           : `${delta > 0 ? 'rising' : 'declining'} (ETV ${fmtNum(first.etv)} → ${fmtNum(last.etv)}, ${delta > 0 ? '+' : ''}${delta.toFixed(0)}% ${first.period} → ${last.period})`;
-      const header = `**${cleaned}** — organic visibility, last ${series.length} months. Trend: ${verdict}\n\n` +
+      // Say so when fewer months came back than were asked for (young domain, or a window
+      // reaching back past DataForSEO's 2020-10 floor) - a short series never passes as the full ask.
+      const shortfall = series.length < windowMonths
+        ? ` (requested ${windowMonths}; DataForSEO returned ${series.length} from ${dateFrom})`
+        : '';
+      const header = `**${cleaned}** — organic visibility, last ${series.length} months${shortfall}. Trend: ${verdict}\n\n` +
         `| Period | Keywords | Pos 1–3 | Pos 4–10 | Pos 11–20 | Pos 21–100 | New | Lost | ETV |\n|---|---|---|---|---|---|---|---|---|`;
       const rows = series.map(s =>
         `| ${s.period} | ${fmtNum(s.keywords)} | ${fmtNum(s.pos_1_3)} | ${fmtNum(s.pos_4_10)} | ${fmtNum(s.pos_11_20)} | ${fmtNum(s.pos_21_100)} | ${fmtNum(s.isNew)} | ${fmtNum(s.isLost)} | ${fmtNum(s.etv)} |`,
       );
-      const md = capMdRows(header, rows, `\n\n${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}).`}`);
+      const md = capMdRows(header, rows, `\n\n${r.cached ? 'Cached.' : `Live ($${r.cost.toFixed(4)}; billed per monthly item, date_from ${dateFrom}).`}`);
       return {
         content: [{ type: 'text', text: md }],
-        structuredContent: { target: cleaned, months: series.length, verdict, series, cached: r.cached, cost: r.cost },
+        structuredContent: { target: cleaned, months: series.length, requestedMonths: windowMonths, dateFrom, verdict, series, cached: r.cached, cost: r.cost },
       };
     },
   );
