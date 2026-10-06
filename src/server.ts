@@ -2005,7 +2005,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         browserLink(siteUrl);
       return {
         content: [{ type: 'text', text: md }],
-        structuredContent: fp as unknown as Record<string, unknown>,
+        // cost/cached belong in JSON too, not only the prose - same facts in both surfaces.
+        structuredContent: { ...(fp as unknown as Record<string, unknown>), cost: r.cost, cached: r.cached },
       };
     },
   );
@@ -2060,7 +2061,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         browserLink(siteUrl);
       return {
         content: [{ type: 'text', text: md }],
-        structuredContent: m as unknown as Record<string, unknown>,
+        // cost/cached belong in JSON too, not only the prose - same facts in both surfaces.
+        structuredContent: { ...(m as unknown as Record<string, unknown>), cost, cached: cachedAll },
       };
     },
   );
@@ -2405,7 +2407,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         `${result.cached ? 'DataForSEO cached.' : `Live cost $${totalCost.toFixed(4)}.`} Persisted to link_prospects.` + browserLink(siteUrl);
       return {
         content: [{ type: 'text', text: capMdRows(header, rows, footer) }],
-        structuredContent: result as unknown as Record<string, unknown>,
+        // Headline cost in JSON = the text's totalCost (intersect + any derive call); keep the breakdown.
+        structuredContent: { ...(result as unknown as Record<string, unknown>), cost: totalCost, intersectCost: result.cost, deriveCost },
       };
     },
   );
