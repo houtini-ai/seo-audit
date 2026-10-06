@@ -28,6 +28,22 @@ const BASE_URL = 'https://api.dataforseo.com';
 export interface TrendTopic { title: string; type: string | null; value: number | null }
 export interface TrendQuery { query: string; value: number | null }
 
+/** Earliest date_from DataForSEO holds for Labs historical endpoints. */
+export const HISTORICAL_MIN_DATE_FROM = '2020-10-01';
+
+/**
+ * date_from (yyyy-mm-dd) for a window of `months` whole months ending last month:
+ * the first day of the month `months` before `now`'s month, clamped to 2020-10-01.
+ * In Oct 2026, months=12 -> 2025-10-01 (2025-10 .. 2026-09). Computed in UTC so the
+ * request body (and therefore the cache key) is stable for the whole month.
+ */
+export function historicalDateFrom(months: number, now: Date = new Date()): string {
+  const m = Math.max(1, Math.floor(months));
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - m, 1));
+  const iso = d.toISOString().slice(0, 10);
+  return iso < HISTORICAL_MIN_DATE_FROM ? HISTORICAL_MIN_DATE_FROM : iso;
+}
+
 export class DataForSeoClient {
   private readonly auth: string;
   private readonly ttlMs: number;
@@ -335,8 +351,10 @@ export class DataForSeoClient {
   /** Labs — domain ranking distribution over time (monthly). The over-time sequence.
    * date_from is REQUIRED for full history: without it the endpoint returns only the
    * previous 6 months (the chart silently showed just those). 2020-10-01 is the earliest
-   * data DataForSEO holds for this endpoint, so it pulls everything available (~6 years). */
-  async historicalRankOverview(target: string, location?: string | number, languageCode = 'en', languageName?: string, dateFrom = '2020-10-01'): Promise<DfsResponse> {
+   * data DataForSEO holds for this endpoint, so the default pulls everything available (~6 years).
+   * Billed per monthly item returned, so callers that only need a recent window should pass a
+   * later dateFrom (see historicalDateFrom). */
+  async historicalRankOverview(target: string, location?: string | number, languageCode = 'en', languageName?: string, dateFrom = HISTORICAL_MIN_DATE_FROM): Promise<DfsResponse> {
     return this.call('/v3/dataforseo_labs/google/historical_rank_overview/live', [
       { target, ...this.loc(location), ...(languageName ? { language_name: languageName } : { language_code: languageCode }), date_from: dateFrom },
     ]);

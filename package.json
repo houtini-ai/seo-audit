@@ -61,6 +61,7 @@
     "probe:extract2": "node scripts/probe-extract2.mjs",
     "probe:backlinks": "node scripts/probe-backlinks.mjs",
     "probe:dfs-labs": "node scripts/probe-dfs-labs.mjs",
+    "probe:dfs-datefrom": "node scripts/probe-dfs-datefrom.mjs",
     "probe:6a": "node scripts/probe-6a.mjs",
     "probe:priority": "node scripts/probe-priority.mjs",
     "probe:templates": "node scripts/probe-templates.mjs",
