@@ -332,10 +332,13 @@ export class DataForSeoClient {
     return { peopleAlsoAsk, relatedSearches, cached: r.cached, cost: r.cost };
   }
 
-  /** Labs — domain ranking distribution over time (monthly). The over-time sequence. */
-  async historicalRankOverview(target: string, location?: string | number, languageCode = 'en', languageName?: string): Promise<DfsResponse> {
+  /** Labs — domain ranking distribution over time (monthly). The over-time sequence.
+   * date_from is REQUIRED for full history: without it the endpoint returns only the
+   * previous 6 months (the chart silently showed just those). 2020-10-01 is the earliest
+   * data DataForSEO holds for this endpoint, so it pulls everything available (~6 years). */
+  async historicalRankOverview(target: string, location?: string | number, languageCode = 'en', languageName?: string, dateFrom = '2020-10-01'): Promise<DfsResponse> {
     return this.call('/v3/dataforseo_labs/google/historical_rank_overview/live', [
-      { target, ...this.loc(location), ...(languageName ? { language_name: languageName } : { language_code: languageCode }) },
+      { target, ...this.loc(location), ...(languageName ? { language_name: languageName } : { language_code: languageCode }), date_from: dateFrom },
     ]);
   }
 
