@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { gscFreshness } from '../core/gscFreshness.js';
+import { tokenize, jaccard } from './lexical.js';
 
 /**
  * Content architecture (topic clusters) - the whole topical picture, not just the gaps.
@@ -13,15 +14,6 @@ import { gscFreshness } from '../core/gscFreshness.js';
  * pages that serve it. Computable from stored GSC + crawl - no paid calls. Entity labels
  * are layered on by the caller where page_entity resolved.
  */
-const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'with', 'your', 'you', 'is', 'are', 'best', 'how', 'what', 'vs', 'why', 'can', 'my', 'i', 'it']);
-const tokenize = (s: string): string[] =>
-  (s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(t => t.length >= 2 && !STOP.has(t));
-const jaccard = (a: Set<string>, b: Set<string>): number => {
-  if (!a.size || !b.size) return 0;
-  let inter = 0;
-  for (const x of a) if (b.has(x)) inter++;
-  return inter / (a.size + b.size - inter);
-};
 
 export interface TopicCluster {
   id: string;
@@ -75,23 +67,6 @@ export function contentArchitecture(db: Database.Database, opts: Opts = {}): { c
   queries.sort((a, b) => b.impr - a.impr);
   const head = queries.slice(0, maxQueries);
 
-  // Existing-page vocabulary (title + h1 + slug) -> nearest-page lookup for gaps.
-  const pages = db.prepare(`SELECT url_key, title, h1, url FROM pages WHERE status_code=200`).all() as { url_key: string; title: string | null; h1: string | null; url: string }[];
-  const pageTokens = pages.map(p => {
-    const slug = (() => { try { return decodeURIComponent(new URL(p.url).pathname).replace(/[-_/]+/g, ' '); } catch { return ''; } })();
-    return { key: p.url_key, toks: new Set(tokenize(`${p.title ?? ''} ${p.h1 ?? ''} ${slug}`)) };
-  });
-  const invIndex = new Map<string, number[]>();
-  pageTokens.forEach((pt, i) => { for (const t of pt.toks) (invIndex.get(t) ?? invIndex.set(t, []).get(t)!).push(i); });
-  const nearestPage = (topic: string): string | null => {
-    const tt = tokenize(topic); if (!tt.length) return null;
-    const hits = new Map<number, number>();
-    for (const t of tt) for (const i of invIndex.get(t) ?? []) hits.set(i, (hits.get(i) ?? 0) + 1);
-    let cover = 0, key: string | null = null;
-    for (const [i, n] of hits) { const cv = n / tt.length; if (cv > cover) { cover = cv; key = pageTokens[i].key; } }
-    return key;
-  };
-
   // Persisted intent (optional) for the funnel read.
   const intentOf = new Map<string, string>();
   try { for (const r of db.prepare('SELECT keyword, intent FROM keyword_intent').all() as { keyword: string; intent: string }[]) intentOf.set(r.keyword, r.intent); } catch { /* no table */ }
@@ -122,9 +97,10 @@ export function contentArchitecture(db: Database.Database, opts: Opts = {}): { c
         funnel = top[1] / total >= 0.6 ? (top[0] as TopicCluster['funnel']) : 'mixed';
       }
       const covered = members.filter(m => status(m.bestPos) === 'covered').reduce((s, m) => s + m.impr, 0);
+      // nearestPage = the page already associated with the gap query in GSC (where to improve / link from).
       const gaps = members.filter(m => status(m.bestPos) === 'gap')
         .slice(0, 6)
-        .map(m => ({ topic: m.query, impressions: m.impr, nearestPage: m.topPage ?? nearestPage(m.query) }));
+        .map(m => ({ topic: m.query, impressions: m.impr, nearestPage: m.topPage }));
       // Simple link suggestions: interlink the pillar page with the distinct member pages (V1).
       const pillarPage = c.head.topPage;
       const seen = new Set<string>();

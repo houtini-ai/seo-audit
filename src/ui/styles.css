@@ -215,6 +215,7 @@ body {
 .hs-sub b { color: var(--text-secondary); font-weight: 600; }
 
 /* Content architecture (topic clusters) */
+.ca-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); margin: -4px 0 var(--space-standard-1); }
 .ca-list { display: flex; flex-direction: column; gap: var(--space-standard-1); }
 .ca-cluster { border: 1px solid var(--border-standard); border-radius: var(--radius-sm); padding: var(--space-standard-1) var(--space-standard-2); background: var(--bg-surface); }
 .ca-chead { display: flex; align-items: baseline; gap: var(--space-standard-1); flex-wrap: wrap; }

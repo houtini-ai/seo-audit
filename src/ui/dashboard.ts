@@ -415,7 +415,7 @@ function renderTopicClusters(d: DashboardData): void {
     const links = c.linkSuggestions.length ? `<span class="ca-links">${c.linkSuggestions.length} internal-link suggestion${c.linkSuggestions.length === 1 ? '' : 's'}</span>` : '';
     return `<div class="ca-cluster">`
       + `<div class="ca-chead"><span class="ca-pillar">${esc(c.pillar.label)}</span>`
-      + (fn ? `<span class="ca-funnel">${fn}</span>` : '')
+      + (fn ? `<span class="ca-funnel">${esc(fn)}</span>` : '')
       + `<span class="ca-cov" style="color:${covColor}">${c.coverage}% covered</span>`
       + `<span class="ca-impr">${fmt(c.totalImpressions)} impr</span></div>`
       + `<div class="ca-members">${members}</div>`
@@ -424,7 +424,10 @@ function renderTopicClusters(d: DashboardData): void {
       + `</div>`;
   }).join('');
   $('topicClustersList').innerHTML = html;
-  $('topicClustersSummary').textContent = `${tc.clusters.length} topic clusters from your search demand, with coverage, gaps and funnel per cluster.`;
+  const capped = tc.clusters.length < tc.totalClusters;
+  const countTxt = capped ? `Showing the top ${tc.clusters.length} of ${fmt(tc.totalClusters)} topic clusters, by demand.` : `${tc.clusters.length} topic clusters.`;
+  $('topicClustersCount').textContent = countTxt;
+  $('topicClustersSummary').textContent = `${countTxt} Coverage, gaps and funnel per cluster.`;
 }
 
 // Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
