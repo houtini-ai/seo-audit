@@ -4,6 +4,14 @@ All notable changes to **@houtini/seo-audit-console**. The format loosely follow
 [Keep a Changelog](https://keepachangelog.com); the check registry is the source of truth
 (`list_checks` always returns the live list).
 
+## [0.11.1] — 2026-10-06
+
+### Added
+- `?theme=dark|light` deep-link for the served dashboard, so a shared link or a headless capture opens in the chosen theme.
+
+### Fixed
+- Redact mode (`?redact=1`) now fully de-identifies a public screenshot: it also blurs the property name (header + switcher) and the highest-impact-fix slugs, and suppresses the crawl-structure-map node labels (canvas text CSS can't blur).
+
 ## [0.11.0] — 2026-10-06
 
 ### Added - dashboard redesign + new views
