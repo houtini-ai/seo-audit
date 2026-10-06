@@ -632,13 +632,14 @@ function render(data: DashboardData): void {
   if (sg?.nodes?.length) {
     const catOf = (n: { status: number | null; indexable: boolean }) =>
       (n.status == null || n.status >= 300) ? 2 : (n.indexable ? 0 : 1);
+    const redacted = document.documentElement.classList.contains('redacted'); // hide the canvas slug labels in redact mode
     const maxIpr = Math.max(...sg.nodes.map(n => n.ipr), 1);
     const gnodes = sg.nodes.map(n => ({
       id: n.id, name: n.id,
       symbolSize: 6 + Math.round((n.ipr / maxIpr) * 26),
       category: catOf(n),
       value: n.ipr,
-      label: n.ipr >= 80 ? { show: true, formatter: shortPath(n.id, 22), color: col.muted, fontSize: 10 } : { show: false },
+      label: (n.ipr >= 80 && !redacted) ? { show: true, formatter: shortPath(n.id, 22), color: col.muted, fontSize: 10 } : { show: false },
       _s: n.status, _d: n.depth,
     }));
     const broken = sg.nodes.filter(n => n.status == null || n.status >= 300).length;
@@ -1492,8 +1493,12 @@ if (__fixture) {
   applyHostContext({ theme: (window as any).__DASH_THEME__ ?? 'light' });
   currentData = __fixture; render(__fixture);
 } else if (__sacWeb) {
-  // Web mode: honour a saved choice, else the browser's colour scheme; load over HTTP, offer a property switcher.
-  applyHostContext({ theme: savedTheme() ?? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') });
+  // Web mode: a ?theme= deep-link wins (headless capture / shared link), else a saved choice, else the browser's colour scheme.
+  const urlTheme = new URLSearchParams(location.search).get('theme');
+  const bootTheme: 'light' | 'dark' = (urlTheme === 'dark' || urlTheme === 'light')
+    ? urlTheme
+    : (savedTheme() ?? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  applyHostContext({ theme: bootTheme });
   if ((__sacWeb.properties?.length ?? 0) > 1) {
     const header = document.querySelector('.header');
     if (header) {

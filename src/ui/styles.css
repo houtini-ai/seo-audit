@@ -423,7 +423,10 @@ select, select.sel, #cannSelect {
 .research-bar input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .research-out { margin-top: 10px; }
 
-/* Redact mode (?redact=1) — blur real traffic figures + link/page domains for public screenshots. */
+/* Redact mode (?redact=1) — blur the property name, real traffic figures + link/page domains for public screenshots. */
+.redacted .site,
+.redacted .property-switcher,
+.redacted .exec-where,
 .redacted .metric-card .value,
 .redacted .es-num,
 .redacted #execSummary strong,
