@@ -125,6 +125,12 @@
       </section>
 
       <section class="tab-panel" data-panel="opportunities" role="tabpanel">
+        <div class="chart-card" id="topicClustersCard" style="display:none">
+          <h3>Content architecture - your topic clusters</h3>
+          <div class="hint">Your search demand grouped into topic clusters - a pillar topic with its supporting sub-topics. <span style="color:var(--intent-success)">Green</span> = a page ranks page 1, <span style="color:var(--intent-warning)">amber</span> = striking distance, <span style="color:var(--intent-danger)">red</span> = a gap with no covering page. Coverage is the share of the cluster's demand you already win.</div>
+          <p class="sr-only" id="topicClustersSummary"></p>
+          <div id="topicClustersList" class="ca-list"></div>
+        </div>
         <div class="chart-card">
           <h3>Quick-wins matrix - clicks vs potential</h3>
           <div class="hint">Every query plotted by average position (x) and click-through rate (y) against Google's expected-CTR curve (dashed). <span style="color:var(--intent-warning)">Amber</span> = striking distance (page 2, push to page 1); <span style="color:var(--intent-info)">blue</span> = ranks page 1 but under-clicked (rewrite the snippet). Bubble size = impressions.</div>

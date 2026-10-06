@@ -214,6 +214,27 @@ body {
 .hs-sub { font-size: 12px; color: var(--text-faint); margin-top: 4px; }
 .hs-sub b { color: var(--text-secondary); font-weight: 600; }
 
+/* Content architecture (topic clusters) */
+.ca-list { display: flex; flex-direction: column; gap: var(--space-standard-1); }
+.ca-cluster { border: 1px solid var(--border-standard); border-radius: var(--radius-sm); padding: var(--space-standard-1) var(--space-standard-2); background: var(--bg-surface); }
+.ca-chead { display: flex; align-items: baseline; gap: var(--space-standard-1); flex-wrap: wrap; }
+.ca-pillar { font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.ca-funnel { font-family: var(--font-mono); font-size: 11px; color: var(--accent-strong); background: var(--accent-bg); padding: 1px 7px; border-radius: var(--radius-pill); }
+.ca-cov { font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+.ca-impr { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); margin-left: auto; }
+.ca-members { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--space-compact-2); }
+.ca-member { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); background: var(--bg-inset); border-radius: var(--radius-sm); padding: 2px 8px; }
+.ca-pos { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.ca-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--text-faint); flex: none; }
+.ca-dot.ca-covered { background: var(--intent-success); }
+.ca-dot.ca-thin { background: var(--intent-warning); }
+.ca-dot.ca-gap { background: var(--intent-danger); }
+.ca-gaps { margin-top: var(--space-compact-2); font-size: 12px; color: var(--text-muted); }
+.ca-gaps-lbl { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--intent-danger); margin-right: 4px; }
+.ca-gap-impr { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.ca-foot { margin-top: var(--space-compact-2); }
+.ca-links { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+
 
 /* expandable finding rows */
 .findings-table .fi-row { cursor: pointer; }
@@ -437,4 +458,7 @@ select, select.sel, #cannSelect {
 .redacted #topLinkedTable td:first-child,
 .redacted .fi-link,
 .redacted .rec-url,
+.redacted .ca-pillar,
+.redacted .ca-member,
+.redacted .ca-gaps,
 .redacted .hub-sub { filter: blur(5px); user-select: none; }

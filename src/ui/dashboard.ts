@@ -398,6 +398,35 @@ function renderHealthScore(d: DashboardData): void {
     + `</div>`;
 }
 
+// Content architecture: topic clusters (pillar + supporting demand) with coverage / gap / funnel.
+function renderTopicClusters(d: DashboardData): void {
+  const card = document.getElementById('topicClustersCard');
+  if (!card) return;
+  const tc = d.topicClusters;
+  if (!tc || !tc.clusters.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const funnelLabel: Record<string, string> = { informational: 'TOFU · info', commercial: 'MOFU · commercial', transactional: 'BOFU · transactional', navigational: 'navigational', mixed: 'mixed', unknown: '' };
+  const dot = (s: string): string => `<span class="ca-dot ca-${s}" title="${s}"></span>`;
+  const html = tc.clusters.map(c => {
+    const covColor = c.coverage >= 70 ? 'var(--intent-success)' : c.coverage >= 40 ? 'var(--intent-warning)' : 'var(--intent-danger)';
+    const members = c.members.map(m => `<span class="ca-member">${dot(m.status)}${esc(m.topic)}<span class="ca-pos">${m.position}</span></span>`).join('');
+    const gaps = c.gaps.length ? `<div class="ca-gaps"><span class="ca-gaps-lbl">Gaps</span> ${c.gaps.map(g => `${esc(g.topic)} <span class="ca-gap-impr">${fmt(g.impressions)}</span>`).join(' · ')}</div>` : '';
+    const fn = funnelLabel[c.funnel] ?? c.funnel;
+    const links = c.linkSuggestions.length ? `<span class="ca-links">${c.linkSuggestions.length} internal-link suggestion${c.linkSuggestions.length === 1 ? '' : 's'}</span>` : '';
+    return `<div class="ca-cluster">`
+      + `<div class="ca-chead"><span class="ca-pillar">${esc(c.pillar.label)}</span>`
+      + (fn ? `<span class="ca-funnel">${fn}</span>` : '')
+      + `<span class="ca-cov" style="color:${covColor}">${c.coverage}% covered</span>`
+      + `<span class="ca-impr">${fmt(c.totalImpressions)} impr</span></div>`
+      + `<div class="ca-members">${members}</div>`
+      + gaps
+      + (links ? `<div class="ca-foot">${links}</div>` : '')
+      + `</div>`;
+  }).join('');
+  $('topicClustersList').innerHTML = html;
+  $('topicClustersSummary').textContent = `${tc.clusters.length} topic clusters from your search demand, with coverage, gaps and funnel per cluster.`;
+}
+
 // Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
 function renderRecommendations(fc: DashboardData['findings']): void {
   const el = $('recs');
@@ -545,6 +574,7 @@ function render(data: DashboardData): void {
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);
   renderHealthScore(data);
+  renderTopicClusters(data);
   buildExportBar(data);
 
   // 0) Equity vs reality - template mismatch (bars) + per-URL scatter (the architecture flagship)
