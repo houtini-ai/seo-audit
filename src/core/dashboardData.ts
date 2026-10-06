@@ -6,6 +6,7 @@ import { brandToken } from './url-key.js';
 import { HTML_CT } from './sql.js';
 import { latestSerpFootprint, ensureFootprintTable, type SerpFootprint } from './serpFootprint.js';
 import { latestMarketSizing, ensureMarketTable, type MarketSizing } from './marketSizing.js';
+import { contentArchitecture, type TopicCluster } from '../audit/contentArchitecture.js';
 
 export interface DashboardData {
   siteUrl: string;
@@ -124,6 +125,8 @@ export interface DashboardData {
   indexCoverage?: { total: number; states: { state: string; count: number }[]; canonicalMismatch: number; indexed: number } | null;
   // Redirect chains (V2): multi-hop redirects captured during the crawl.
   redirectChains?: { total: number; chains: { from: string; to: string; status: number; hops: number }[] } | null;
+  // Content architecture (topic clusters): pillar + supporting demand with coverage/gap/funnel.
+  topicClusters?: { clusters: TopicCluster[]; totalClusters: number } | null;
   // Core Web Vitals (V2): lab CWV from page_lighthouse, pass rates + worst offenders.
   cwvCoverage?: { pages: number; passLcp: number; passCls: number; passTbt: number; worst: { url: string; perf: number; lcpMs: number; cls: number; tbtMs: number }[] } | null;
   // Hreflang / international (V2): declared languages across crawled pages.
@@ -138,7 +141,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '18';
+const PAYLOAD_VERSION = '20';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -498,6 +501,10 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         if (chains.length) redirectChains = { total: chains.length, chains: chains.slice(0, 50) };
       }
     }
+
+    // Content architecture (topic clusters) - the full topical picture from GSC demand + crawl.
+    let topicClusters: DashboardData['topicClusters'] = null;
+    try { const ca = contentArchitecture(db.db, {}); if (ca.clusters.length) topicClusters = ca; } catch { /* no GSC / no crawl */ }
 
     // Core Web Vitals (V2 view): lab CWV from page_lighthouse.
     let cwvCoverage: DashboardData['cwvCoverage'] = null;
@@ -903,6 +910,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
       hreflangCoverage,
       entityGraph,
       answerability,
+      topicClusters,
       agentReadiness,
       rankHistory,
       dateAlignment,
