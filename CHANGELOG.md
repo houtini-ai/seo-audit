@@ -4,6 +4,12 @@ All notable changes to **@houtini/seo-audit-console**. The format loosely follow
 [Keep a Changelog](https://keepachangelog.com); the check registry is the source of truth
 (`list_checks` always returns the live list).
 
+## [0.12.1] — 2026-10-06
+
+### Fixed
+- **`domain_visibility` ignored its `months` window.** The tool accepted `months` (1-24) but never translated it to a `date_from`, so the DataForSEO endpoint fell back to its default previous-six-months window - `months: 24` silently returned 6. It now sends `date_from` for the requested window (via a shared `historicalDateFrom` helper, computed in UTC on the first of the month so the cache key is stable, clamped to the 2020-10-01 data floor), reports `requestedMonths` alongside the returned `months`, and adds an honest shortfall note when a young domain or the data floor returns fewer months than asked. Live-verified: `months: 24` → 24 points, `months: 6` → 6.
+- **Paid-tool cost/cached now match between text and JSON.** `market_sizing` and `serp_features` reported the spend and cache state in the markdown but omitted both from `structuredContent`; `link_intersect` reported the combined `totalCost` (intersect + any competitor-derivation call) in text but exposed only the intersect cost in JSON, understating the spend when competitors were auto-derived. All three now carry the same facts in both surfaces (`link_intersect` adds an `intersectCost`/`deriveCost` breakdown), matching the shape `keyword_volume`, `topic_trend` and `search_intent` already use.
+
 ## [0.12.0] — 2026-10-06
 
 ### Added
