@@ -162,12 +162,14 @@ export const CHECKS: CheckDef[] = [
     id: 'content-only-in-rendered-dom', category: 'crawlability', severity: 'high', labels: ['D'], certainty: 1, effortBase: 8, fixType: 'per-page',
     title: 'Content or links only in the rendered DOM', fix: 'Links and/or body text exist only after JavaScript runs — the raw HTML (what a first-pass crawl, and Google before it renders, sees) is missing them. Server-side render or pre-render the critical content and in-site links so they are in the initial HTML; don’t rely on client-side JS for primary navigation or copy. Run render_pages to populate this.',
     // Flag the real Response-vs-Render gaps: internal links only after JS, body only after JS, or a title only after JS.
-    run: (c) => rows(c, `SELECT url_key urlKey, links_only_rendered lor, raw_word_count rwc, rendered_word_count rdwc, title_changed tc, rendered_title rt
+    // Matches dependsOnJsFlag() exactly: links only after JS, body only after JS, or title only after JS
+    // (raw title empty AND rendered title present) — not merely a title that changed.
+    run: (c) => rows(c, `SELECT url_key urlKey, links_only_rendered lor, raw_word_count rwc, rendered_word_count rdwc, raw_title rawt, rendered_title rt
       FROM render_audit
       WHERE links_only_rendered > 0
          OR (raw_word_count < 50 AND rendered_word_count >= 100)
-         OR (COALESCE(TRIM(rendered_title),'') != '' AND title_changed = 1 AND raw_word_count < 50)`)
-      .map(r => ({ urlKey: r.urlKey, evidence: { linksOnlyRendered: r.lor, rawWordCount: r.rwc, renderedWordCount: r.rdwc, titleChangedOnRender: !!r.tc } })),
+         OR (COALESCE(TRIM(raw_title),'') = '' AND COALESCE(TRIM(rendered_title),'') != '')`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { linksOnlyRendered: r.lor, rawWordCount: r.rwc, renderedWordCount: r.rdwc, titleOnlyAfterRender: !String(r.rawt ?? '').trim() && !!String(r.rt ?? '').trim() } })),
   },
   // ── Indexation / crawlability ───────────────────────────────────────────
   {
@@ -903,7 +905,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Canonical points to a broken or unhealthy URL', fix: 'Point the canonical at a live, indexable, self-canonical HTTPS URL — Google ignores a canonical whose target is a 4xx/5xx/redirect, noindex, itself canonicalised elsewhere (a chain/loop), or an HTTPS→HTTP downgrade.',
     // Join the declared canonical_key back to the crawl. Only flag when we crawled the target.
     // Skip self-canonicals. Covers: non-200 target, noindex target, canonical chain/loop (target
-    // canonicalises onward), and HTTPS→HTTP downgrade (research: Sitebulb indexability hints).
+    // canonicalises onward), and HTTPS→HTTP downgrade (the indexability-hint family).
     run: (c) => rows(c, `SELECT p.url_key urlKey, p.canonical_url canon, p.canonical_key ck, t.status_code st, t.noindex ni, t.canonical_key tck
       FROM pages p JOIN pages t ON t.url_key = p.canonical_key
       WHERE p.canonical_key IS NOT NULL AND p.canonical_key != p.url_key AND p.status_code = 200

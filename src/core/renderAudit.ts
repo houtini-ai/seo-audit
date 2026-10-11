@@ -90,13 +90,13 @@ export async function auditRender(
     const ua = opts.userAgent ?? DEFAULT_UA;
     const upsert = db.db.prepare(
       `INSERT INTO render_audit (url_key, raw_word_count, rendered_word_count, raw_internal_links, rendered_internal_links,
-         links_only_rendered, sample_new_links, title_changed, rendered_title, canonical_changed, rendered_at)
+         links_only_rendered, sample_new_links, title_changed, raw_title, rendered_title, canonical_changed, rendered_at)
        VALUES (@url_key,@raw_word_count,@rendered_word_count,@raw_internal_links,@rendered_internal_links,
-         @links_only_rendered,@sample_new_links,@title_changed,@rendered_title,@canonical_changed,datetime('now'))
+         @links_only_rendered,@sample_new_links,@title_changed,@raw_title,@rendered_title,@canonical_changed,datetime('now'))
        ON CONFLICT(url_key) DO UPDATE SET raw_word_count=excluded.raw_word_count, rendered_word_count=excluded.rendered_word_count,
          raw_internal_links=excluded.raw_internal_links, rendered_internal_links=excluded.rendered_internal_links,
          links_only_rendered=excluded.links_only_rendered, sample_new_links=excluded.sample_new_links,
-         title_changed=excluded.title_changed, rendered_title=excluded.rendered_title,
+         title_changed=excluded.title_changed, raw_title=excluded.raw_title, rendered_title=excluded.rendered_title,
          canonical_changed=excluded.canonical_changed, rendered_at=datetime('now')`,
     );
 
@@ -122,13 +122,14 @@ export async function auditRender(
           url_key: key, raw_word_count: diff.rawWordCount, rendered_word_count: diff.renderedWordCount,
           raw_internal_links: diff.rawInternalLinks, rendered_internal_links: diff.renderedInternalLinks,
           links_only_rendered: diff.linksOnlyRendered, sample_new_links: diff.sampleNewLinks.length ? JSON.stringify(diff.sampleNewLinks) : null,
-          title_changed: diff.titleChanged ? 1 : 0, rendered_title: diff.renderedTitle, canonical_changed: diff.canonicalChanged ? 1 : 0,
+          title_changed: diff.titleChanged ? 1 : 0, raw_title: diff.rawTitle, rendered_title: diff.renderedTitle, canonical_changed: diff.canonicalChanged ? 1 : 0,
         });
         rows.push({ ...diff, urlKey: key });
         if (dependsOnJsFlag(diff)) dependsOnJs++;
       }
     } finally {
       await closeRenderer();
+      await dispatcher.close().catch(() => { /* pool already gone */ });
     }
     return { available: true, audited: rows.length, dependsOnJs, rows };
   } finally {

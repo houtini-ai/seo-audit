@@ -6,9 +6,9 @@ All notable changes to **@houtini/seo-audit-console**. The format loosely follow
 
 ## [0.13.0] — 2026-10-11
 
-### Added - Screaming Frog / Sitebulb parity features (99 → 107 checks)
+### Added - desktop-crawler parity features (99 → 107 checks)
 - **Accessibility audit (static axe-core subset).** A new `accessibility` category of deterministic checks decidable from raw HTML: `a11y-link-name`, `a11y-button-name`, `a11y-form-label`, `a11y-viewport-zoom-disabled`, `a11y-duplicate-id`, `a11y-positive-tabindex` (alongside the existing image-alt, heading-hierarchy and missing-lang signals). Accessible-name aware; submit/reset inputs and labelled fields aren't false-flagged. Findings flow into the dashboard by-category view automatically.
-- **Semantic near-duplicate detection.** `find_duplicates` embeds each indexable page's title+body with a local sentence model (all-MiniLM-L6-v2, transformers.js/ONNX, GPU with CPU fallback, no Python, no API cost), flags pairs above a cosine threshold (default 0.9), and persists them; `run_audit` reports `near-duplicate-content` (judgement, gated behind `includeJudgement`). The content-similarity / cannibalisation signal Screaming Frog v22 and Sitebulb surface - done locally.
+- **Semantic near-duplicate detection.** `find_duplicates` embeds each indexable page's title+body with a local sentence model (all-MiniLM-L6-v2, transformers.js/ONNX, GPU with CPU fallback, no Python, no API cost), flags pairs above a cosine threshold (default 0.9), and persists them; `run_audit` reports `near-duplicate-content` (judgement, gated behind `includeJudgement`). The content-similarity / cannibalisation signal the desktop crawlers surface - done locally, with no API cost.
 - **JavaScript render tier (Response vs Render).** `render_pages` renders a bounded, sampled set of pages in headless Chromium and diffs the rendered DOM against the raw HTML, surfacing content and internal links that exist only after JavaScript (`content-only-in-rendered-dom`). Opt-in: Playwright is an optional dependency and the render pass is a separate async job, never part of the normal HTTP crawl; it degrades with a clear install hint when the browser isn't present. Install once with `npm i playwright && npx playwright install chromium`.
 
 ### Notes

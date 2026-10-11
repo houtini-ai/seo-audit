@@ -94,10 +94,12 @@ Yes. The crawl-plus-GSC merge is not a novelty; it's the method. On one property
 | **Trends (GSC over time)** | Pages losing clicks, rankings slipping, vanished queries, rising pages worth doubling down on, stale content decaying year-on-year |
 | **The merged questions** | Cannibalisation, striking distance, ghost pages, traffic to dead URLs, internal authority wasted on no-click pages, titles missing the query you already rank for |
 | **AI-search readiness** | Phrases you rank for but never say, queries your copy never answers in one passage, content that doesn't chunk cleanly for retrieval |
+| **Accessibility** | A deterministic subset of the axe-core rules read straight from the HTML - links and buttons with no accessible name, unlabelled form fields, pinch-zoom disabled, positive tabindex, duplicate ids - alongside alt text, heading order and missing `lang` |
+| **Rendering & duplication** | On demand: *Response vs Render* (`render_pages`) flags content and links that exist only after JavaScript, and semantic near-duplicate detection (`find_duplicates`) finds pages that say the same thing - both run locally, no API cost |
 
 Every check is labelled **D** (deterministic - here are the bytes) or **N** (judgement - off by default, ask for *"the judgement findings"* to see them). In my view a wrong finding is worse than no finding at all, so the heuristic checks have to ask permission. The full registry, check by check, is in [the manual](manual/checks.md).
 
-And if you grew up on Screaming Frog or Sitebulb, the dashboard's Site health tab will feel like home - response codes, indexability reasons, crawl depth, the heaviest images, server errors and slow pages, all as clean stat bars. Same diagnostics, except each one is sitting next to the Search Console numbers for the same URL. The tab-by-tab tour is in [dashboard.md](manual/dashboard.md).
+And if you grew up on the classic desktop SEO crawlers, the dashboard's Site health tab will feel like home - response codes, indexability reasons, crawl depth, the heaviest images, server errors and slow pages, all as clean stat bars. Same diagnostics, except each one is sitting next to the Search Console numbers for the same URL. The tab-by-tab tour is in [dashboard.md](manual/dashboard.md).
 
 ---
 

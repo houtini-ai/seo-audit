@@ -399,6 +399,7 @@ export class AuditDatabase {
         links_only_rendered INTEGER,    -- internal link targets present only after JS
         sample_new_links TEXT,          -- JSON array of example rendered-only targets
         title_changed INTEGER,
+        raw_title TEXT,                  -- title in the raw HTML (empty = title only appears after JS)
         rendered_title TEXT,
         canonical_changed INTEGER,
         rendered_at TEXT DEFAULT (datetime('now'))

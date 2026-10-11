@@ -696,7 +696,7 @@ function render(data: DashboardData): void {
         label: { position: 'right' },
       }],
     });
-    // Click a node to open that page in a new tab (the Sitebulb "open this URL" gesture).
+    // Click a node to open that page in a new tab.
     wrap('structureChart').on('click', (p: any) => {
       if (p?.dataType !== 'edge' && p?.data?.id) window.open(p.data.id, '_blank', 'noopener');
     });

@@ -21,11 +21,15 @@ export interface NearDuplicateResult {
   pagesWithDuplicate: number;
 }
 
+/** Hard ceiling on pairs collected/stored — a heavily templated site can push ~n^2/2 pairs, so cap
+ * the in-memory array and the DB write (highest-similarity kept). maxPairsReturned caps only output. */
+const PAIR_CAP = 5000;
+
 /**
  * Embed each indexable HTML page's title+body and flag pairs whose cosine similarity clears the
- * threshold — the semantic near-duplicate / content-cannibalisation signal Screaming Frog v22 and
- * Sitebulb surface. Local embeddings (no API cost). On-demand (ML inference), bounded by `limit`.
- * Persists distinct pairs to `near_duplicates`; powers the `near-duplicate-content` check.
+ * threshold — the semantic near-duplicate / content-cannibalisation signal. Local embeddings (no API
+ * cost). On-demand (ML inference), bounded by `limit`. Persists distinct pairs to `near_duplicates`;
+ * powers the `near-duplicate-content` check.
  */
 export async function findNearDuplicates(
   dataDir: string,
@@ -57,14 +61,22 @@ export async function findNearDuplicates(
     const vecs = await embed(texts);
 
     // Pairwise cosine. O(n^2) but n<=cap and each dot is 384 mults — trivial for a few hundred pages.
+    // Order each pair's keys lexically so url_key_a is the smaller (matches the schema/PK contract and
+    // gives canonical unordered pairs), and stop collecting at PAIR_CAP so a fully-templated site can't
+    // push ~n^2/2 pairs into memory and the DB.
     const pairs: NearDupPair[] = [];
     const flaggedKeys = new Set<string>();
+    let pairCapHit = false;
+    outer:
     for (let i = 0; i < vecs.length; i++) {
       for (let j = i + 1; j < vecs.length; j++) {
         const sim = cosine(vecs[i], vecs[j]);
         if (sim >= threshold) {
-          pairs.push({ a: candidates[i].urlKey, b: candidates[j].urlKey, similarity: Math.round(sim * 1000) / 1000 });
-          flaggedKeys.add(candidates[i].urlKey); flaggedKeys.add(candidates[j].urlKey);
+          const ka = candidates[i].urlKey, kb = candidates[j].urlKey;
+          const [a, b] = ka < kb ? [ka, kb] : [kb, ka];
+          pairs.push({ a, b, similarity: Math.round(sim * 1000) / 1000 });
+          flaggedKeys.add(ka); flaggedKeys.add(kb);
+          if (pairs.length >= PAIR_CAP) { pairCapHit = true; break outer; }
         }
       }
     }
@@ -77,7 +89,7 @@ export async function findNearDuplicates(
 
     const outCap = opts.maxPairsReturned ?? 100;
     return {
-      embedded: candidates.length, threshold, scale: SIMILARITY_NOTE, capped, cap,
+      embedded: candidates.length, threshold, scale: SIMILARITY_NOTE, capped: capped || pairCapHit, cap,
       pairs: pairs.slice(0, outCap), pairsTotal: pairs.length, pagesWithDuplicate: flaggedKeys.size,
     };
   } finally {

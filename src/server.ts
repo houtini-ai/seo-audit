@@ -539,7 +539,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'query_data',
     {
       title: 'Query the raw data (aggregate first)',
-      description: 'Direct read-only access to the property database — the composition layer\'s escape hatch. AGGREGATE IN THE DATABASE and return answers, not rows: default mode groups by the columns you name and returns counts, percentages and sum/avg/min/max metrics (Screaming Frog-style distributions in one call — "status codes by folder", "clicks by page_key"). mode:rows returns raw rows with strict token discipline (curated default columns, 120-char cells, loud paging footer). Filters are exact/range/like/in and always parameterised; column names are validated against the live table schema. Grain: per table — search_analytics = date × query × page; pages/links = latest crawl per url_key; url_inspection / sitemap_urls / page_backlinks = one row per URL; findings = check × URL per audit run. Joins: url_key across pages/links/search_analytics.page_key/url_inspection/sitemap_urls/page_backlinks; query → keyword tools; run_id → audit runs.',
+      description: 'Direct read-only access to the property database — the composition layer\'s escape hatch. AGGREGATE IN THE DATABASE and return answers, not rows: default mode groups by the columns you name and returns counts, percentages and sum/avg/min/max metrics (classic crawler-style distributions in one call — "status codes by folder", "clicks by page_key"). mode:rows returns raw rows with strict token discipline (curated default columns, 120-char cells, loud paging footer). Filters are exact/range/like/in and always parameterised; column names are validated against the live table schema. Grain: per table — search_analytics = date × query × page; pages/links = latest crawl per url_key; url_inspection / sitemap_urls / page_backlinks = one row per URL; findings = check × URL per audit run. Joins: url_key across pages/links/search_analytics.page_key/url_inspection/sitemap_urls/page_backlinks; query → keyword tools; run_id → audit runs.',
       inputSchema: {
         siteUrl: z.string(),
         table: z.enum(QUERYABLE_TABLES),
@@ -594,7 +594,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'render_pages',
     {
       title: 'Response vs Render (JavaScript rendering tier)',
-      description: '[Opt-in: needs the optional `playwright` package + `npx playwright install chromium`] Render a BOUNDED, sampled set of indexable pages in headless Chromium and diff the rendered DOM against the raw HTML the crawler fetched — the "Response vs Render" check Screaming Frog and Sitebulb are known for. Surfaces content and internal links that exist ONLY after JavaScript runs (what a first-pass crawl, and Google before it renders, can miss). Persists to render_audit; run_audit then reports `content-only-in-rendered-dom`. Slow (a real browser), so it is a separate async job and never part of the normal crawl — poll check_crawl_status. `limit` caps pages (default 10, lowest raw word-count first — the likeliest JS-dependent pages); pass `urls` to render specific pages. Degrades with a clear message if the browser isn’t installed; the HTTP audit is unaffected either way.',
+      description: '[Opt-in: needs the optional `playwright` package + `npx playwright install chromium`] Render a BOUNDED, sampled set of indexable pages in headless Chromium and diff the rendered DOM against the raw HTML the crawler fetched — the "Response vs Render" check the classic desktop crawlers are known for. Surfaces content and internal links that exist ONLY after JavaScript runs (what a first-pass crawl, and Google before it renders, can miss). Persists to render_audit; run_audit then reports `content-only-in-rendered-dom`. Slow (a real browser), so it is a separate async job and never part of the normal crawl — poll check_crawl_status. `limit` caps pages (default 10, lowest raw word-count first — the likeliest JS-dependent pages); pass `urls` to render specific pages. Degrades with a clear message if the browser isn’t installed; the HTTP audit is unaffected either way.',
       inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(200).optional(), urls: z.array(z.string()).optional() },
     },
     async ({ siteUrl, limit, urls }) => {
@@ -610,18 +610,17 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'find_duplicates',
     {
       title: 'Find near-duplicate content (semantic embeddings)',
-      description: 'Embed each indexable HTML page\'s title+body with a local sentence model (all-MiniLM-L6-v2, downloaded once to a cache, no Python, no API cost) and flag pairs whose cosine similarity clears a threshold — the semantic near-duplicate / cannibalisation signal Screaming Frog and Sitebulb surface. Persists pairs to near_duplicates; run_audit then reports them as `near-duplicate-content` (judgement — needs includeJudgement:true). On-demand + ML-ish; `limit` caps pages compared (default 500, highest word-count first), `threshold` the cosine bar (default 0.9). The model reads ~the first 200 words, so it catches templated/boilerplate duplicates and thin variants — verify a pair before consolidating. First run downloads ~25MB. Re-run after a re-crawl.',
+      description: 'Embed each indexable HTML page\'s title+body with a local sentence model (all-MiniLM-L6-v2, downloaded once to a cache, no Python, no API cost) and flag pairs whose cosine similarity clears a threshold — the semantic near-duplicate / cannibalisation signal. Persists pairs to near_duplicates; run_audit then reports them as `near-duplicate-content` (judgement — needs includeJudgement:true). On-demand + ML-ish; `limit` caps pages compared (default 500, highest word-count first), `threshold` the cosine bar (default 0.9). The model reads ~the first 200 words, so it catches templated/boilerplate duplicates and thin variants — verify a pair before consolidating. First run downloads ~25MB. Re-run after a re-crawl.',
       inputSchema: { siteUrl: z.string(), threshold: z.number().min(0.5).max(1).optional(), limit: z.number().int().min(2).max(2000).optional() },
     },
     async ({ siteUrl, threshold, limit }) => {
-      const r = await findNearDuplicates(dataDir(), siteUrl, { ...(threshold != null ? { threshold } : {}), ...(limit != null ? { limit } : {}) });
-      const top = r.pairs.slice(0, 25).map(p => `  ${p.similarity.toFixed(3)}  ${p.a.replace(/^https?:\/\/[^/]+/, '')}  ≈  ${p.b.replace(/^https?:\/\/[^/]+/, '')}`).join('\n');
-      const text = `Embedded ${r.embedded} page(s)${r.capped ? ` (capped at ${r.cap} by word count — raise limit for more)` : ''}; ` +
-        `${r.pairsTotal} near-duplicate pair(s) at cosine ≥ ${r.threshold}, across ${r.pagesWithDuplicate} page(s).\n\n` +
-        `Scale: ${r.scale}\n` +
-        (top ? `\nTop pairs (showing up to 25 of ${r.pairsTotal}):\n${top}\n\nrun_audit includeJudgement:true surfaces these as near-duplicate-content.` : '\nNo near-duplicates at this threshold. Lower it (e.g. 0.85) to widen the net.') +
-        browserLink(siteUrl);
-      return { content: [{ type: 'text', text }], structuredContent: r as unknown as Record<string, unknown> };
+      // Async job: the first run downloads the model and embedding up to `limit` pages (CPU, cold
+      // cache, large sites) can exceed the ~60s tool ceiling — return a jobId and poll.
+      const jobId = jobs.start('duplicates', () => findNearDuplicates(dataDir(), siteUrl, { ...(threshold != null ? { threshold } : {}), ...(limit != null ? { limit } : {}) }));
+      return {
+        content: [{ type: 'text', text: `Near-duplicate scan started for ${siteUrl} (job ${jobId}). Embedding runs locally (first run downloads ~25MB); poll check_crawl_status with jobId "${jobId}". The finished job lists the near-duplicate pairs; run_audit includeJudgement:true then surfaces them as near-duplicate-content.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
+      };
     },
   );
 

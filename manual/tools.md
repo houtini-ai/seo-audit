@@ -95,6 +95,14 @@ The flagship AI-search check. A small local relevance model (a cross-encoder rer
 The follow-through. Builds a grounded writing brief for a weak page: the query gap, the page's own paragraphs as voice exemplars, and its most query-relevant passages as the only permitted facts. Claude then drafts the missing answer in *your site's* voice, told to invent nothing. Omit the URL and it targets the weakest-scoring page.
 > Draft the missing content for /best-running-shoes
 
+### `find_duplicates`
+Semantic near-duplicate detection, run locally. A small sentence-embedding model (all-MiniLM-L6-v2, ~25MB one-time download, no Python, no API cost) maps each indexable page's title+body to a vector, and cosine similarity flags pairs that say the same thing above a threshold (default 0.9). Catches templated/boilerplate variants and thin pages that merely reword each other. Pairs persist to `near_duplicates`; the next audit reports `near-duplicate-content` (judgement - ask for the judgement findings). Async job - poll `check_crawl_status`. The model reads ~the first 200 words, so verify a pair before consolidating. Re-run after a re-crawl.
+> Find near-duplicate pages on mysite.com
+
+### `render_pages`
+The *Response vs Render* check: render a bounded, sampled set of pages in headless Chromium and diff the rendered DOM against the raw HTML the crawler fetched, surfacing content and internal links that exist **only** after JavaScript (what a first-pass crawl, and Google before it renders, can miss) as `content-only-in-rendered-dom`. Opt-in: it needs the optional browser (`npm i playwright && npx playwright install chromium`), runs as a separate async job (never part of the normal crawl - poll `check_crawl_status`), and degrades with a clear install hint when the browser isn't present. `limit` caps pages (default 10, likeliest JS-dependent first); the HTTP audit is unaffected either way.
+> Render the top pages on mysite.com and show what only appears after JavaScript
+
 ### `check_agent_readiness`
 Is your site ready for AI agents? Live HTTP probes of your origin scoring four categories - discoverability (robots rules, sitemap, Link headers), content (`llms.txt`, `agents.md`, Markdown negotiation), bot access control (AI-bot rules, Content Signals, Web Bot Auth) and capabilities (MCP server card, Agent Skills, API catalogue, OAuth discovery). Returns 0-100, a level, and copy-paste fixes for everything missing. No crawl or GSC data needed, and it isn't fooled by a catch-all route that returns 200 for everything.
 > Check agent readiness for mysite.com

@@ -1,6 +1,6 @@
 # The check registry
 
-All 99 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
+All 107 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
 
 ## Reading the labels
 
@@ -12,11 +12,12 @@ A check can carry more than one label - `noindex-with-traffic` is D+G because th
 
 Every finding is priced the same way: priority = (traffic at stake × expected yield × certainty) / effort hours. So the list you get back is ordered by expected clicks per developer-hour, not by how alarming the check sounds.
 
-## Crawlability (14)
+## Crawlability (15)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
 | `broken-internal-links` | D | Internal links pointing at 4xx/5xx URLs | Repoint them to a live, canonical URL (`fix_finding` writes the 301). |
+| `content-only-in-rendered-dom` | D | Content or internal links that exist only after JavaScript runs (needs `render_pages`) | Server-side render or pre-render the critical content and in-site links so they're in the initial HTML - don't rely on client-side JS for primary navigation or copy. |
 | `redirect-chain` | D | Redirects of 2+ hops | Collapse to a single hop to the final URL. |
 | `internal-links-to-redirects` | D | Internal links that travel through a redirect | Repoint to the final URL - saves crawl budget and equity. |
 | `meta-nofollow` | D | Pages with meta robots nofollow | Remove it unless you mean to drop all link equity from the page. |
@@ -77,11 +78,12 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `discover-max-image-preview` | D | Article-template pages without `max-image-preview:large` (no large Google Discover card) | Add the directive via meta robots or an X-Robots-Tag header - usually one site-wide template change. |
 | `discover-missing-og` | D | Article-template pages missing `og:title` or `og:image` (Discover builds cards straight from Open Graph) | Add both; size og:image ≥1200px wide at 16:9, and write og:title for click-through. |
 
-## Content (5)
+## Content (6)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
 | `thin-content` | D+N (0.6) | Pages under ~200 words of body text | Expand or consolidate. |
+| `near-duplicate-content` | N (0.7) | Pages that are semantically near-identical (local embedding cosine ≥ threshold) | Consolidate to one canonical page or genuinely differentiate them. Populate with `find_duplicates` first; verify each pair before merging. |
 | `poor-chunkability` | D | 400+ words with no heading structure | Break the copy into headed sections - AI search and snippets lift self-contained passages, and a wall of text gives them nothing to quote. |
 | `low-extractability` | D+N (0.5) | Sections that open with "it / this / they" and never name their subject | Open key sections by naming the entity - lifted out of context, these passages read as meaningless. |
 | `content-bloat` | D+N (0.6) | Very long unbroken sections | Split into focused, headed passages - AI grounding has sharp diminishing returns past a certain length, and density beats length. |
@@ -122,6 +124,19 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 | `no-304-revalidation` | D | Servers that advertise Last-Modified/ETag but re-serve full 200s to conditional requests | Configure the server to answer 304 Not Modified - it saves bandwidth on every revalidating crawler and signals stability to Googlebot. |
 | `high-yield-cwv-fail` | D+G | Pages earning real clicks while failing lab Core Web Vitals (needs `page_lighthouse`) | Prioritise CWV work here - this is where engineering effort has measurable ROI. |
 | `discover-slow-response` | D+N (0.5) | Article-template pages whose fetch wall-time exceeds ~600ms (a proxy, not a measured TTFB) | Aim for server response under 600ms - ideal under 200ms - since Discover favours freshly-crawlable content; confirm with a real TTFB before prioritising. |
+
+## Accessibility (6)
+
+A deterministic subset of the [axe-core](https://github.com/dequelabs/axe-core) rules - the ones decidable from the raw HTML, no render needed (the full rule set rides on `render_pages`). These sit alongside the on-page `image-alt`, `heading-hierarchy` and `missing-lang` checks.
+
+| Check | Labels | What it catches | The fix, in one line |
+|---|---|---|---|
+| `a11y-link-name` | D | Links with no discernible accessible name (empty anchor, icon-only, no aria-label) | Give the link visible text, an aria-label, or an `<img>` with real alt text (axe link-name). |
+| `a11y-button-name` | D | Buttons / `role=button` / `type=button` inputs with no accessible name | Add text, a value, or an aria-label - submit/reset self-name, so they're never flagged (axe button-name). |
+| `a11y-form-label` | D | Visible form fields with no `<label>`, wrapping label or aria-label | Associate each field with a label (axe label). |
+| `a11y-viewport-zoom-disabled` | D | `<meta viewport>` blocking pinch-zoom (`user-scalable=no` / `maximum-scale<2`) | Remove the zoom restriction - a WCAG 1.4.4 failure (axe meta-viewport). |
+| `a11y-duplicate-id` | D | `id` values used more than once | Make every id unique - duplicates break label/for, aria-labelledby and in-page anchors (axe duplicate-id). |
+| `a11y-positive-tabindex` | D | Elements with `tabindex` greater than 0 | Use `tabindex="0"`/`-1` and order the DOM instead - positive values break keyboard focus order (axe tabindex). |
 
 ## The merged checks (23)
 

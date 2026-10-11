@@ -271,12 +271,16 @@ export function extractPage(
     if (!hasAccName(el, true)) a11yButtonsNoName++;
   });
   let a11yInputsNoLabel = 0;
+  // Precompute the set of label[for] targets — a per-input `label[for="<id>"]` selector would throw
+  // from css-select on an id with selector-significant characters and abort the whole extraction.
+  const labelFors = new Set<string>();
+  $('label[for]').each((_, l) => { const f = ($(l).attr('for') ?? '').trim(); if (f) labelFors.add(f); });
   $('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), select, textarea').each((_, el) => {
     const $e = $(el);
     if (($e.attr('aria-label') ?? '').trim() || ($e.attr('aria-labelledby') ?? '').trim() || ($e.attr('title') ?? '').trim()) return;
     if ($e.closest('label').length) return;                                   // wrapped in a <label>
     const id = ($e.attr('id') ?? '').trim();
-    if (id && $(`label[for="${id.replace(/"/g, '\\"')}"]`).length) return;     // referenced by a <label for>
+    if (id && labelFors.has(id)) return;                                      // referenced by a <label for>
     a11yInputsNoLabel++;
   });
   // Viewport that blocks pinch-zoom (user-scalable=no, or maximum-scale<2) — axe meta-viewport.
