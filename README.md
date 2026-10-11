@@ -95,7 +95,7 @@ Yes. The crawl-plus-GSC merge is not a novelty; it's the method. On one property
 | **The merged questions** | Cannibalisation, striking distance, ghost pages, traffic to dead URLs, internal authority wasted on no-click pages, titles missing the query you already rank for |
 | **AI-search readiness** | Phrases you rank for but never say, queries your copy never answers in one passage, content that doesn't chunk cleanly for retrieval |
 | **Accessibility** | A deterministic subset of the axe-core rules read straight from the HTML - links and buttons with no accessible name, unlabelled form fields, pinch-zoom disabled, positive tabindex, duplicate ids - alongside alt text, heading order and missing `lang` |
-| **Rendering & duplication** | On demand: *Response vs Render* (`render_pages`) flags content and links that exist only after JavaScript, and semantic near-duplicate detection (`find_duplicates`) finds pages that say the same thing - both run locally, no API cost |
+| **JavaScript rendering & duplication** | On demand: *Response vs Render* (`render_pages`) crawls each page in headless Chromium and flags content and links that exist only after JavaScript, and semantic near-duplicate detection (`find_duplicates`) finds pages that say the same thing - both run locally, no API cost |
 
 Every check is labelled **D** (deterministic - here are the bytes) or **N** (judgement - off by default, ask for *"the judgement findings"* to see them). In my view a wrong finding is worse than no finding at all, so the heuristic checks have to ask permission. The full registry, check by check, is in [the manual](manual/checks.md).
 
@@ -284,7 +284,7 @@ A few things I'm building next, in rough order:
 - **A per-page content scorecard.** A dedicated table of *every* ranking phrase your copy misses, not just the top query.
 - **More agent readiness.** A WebMCP advisory (which tool actions your site could expose to agents) and the agent-commerce protocols.
 - **A printable report.** A proper A4 document you can hand a client, not a slide deck.
-- **Source-level parser checks.** The audit spec is written - ~94 checks covering the layer most tools never touch: elements that silently break `<head>` parsing, directives hoisted into the body and ignored, raw-vs-rendered divergence.
+- **Source-level parser checks.** The layer most tools never touch: elements that silently break `<head>` parsing, and directives hoisted into the body and ignored. (Raw-vs-rendered divergence now ships - see JavaScript rendering below.)
 
 Got a weird edge case you wish a tool caught? Tell me - that's exactly how the merged GSC×crawl checks got built.
 
