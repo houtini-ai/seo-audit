@@ -69,6 +69,7 @@ scripts/*
 !scripts/probe-extract2.mjs
 !scripts/probe-charset-fixture.mjs
 !scripts/probe-a11y.mjs
+!scripts/probe-neardup.mjs
 !scripts/fixtures/
 !scripts/fixtures/charset-utf8.html
 !scripts/fixtures/a11y.html

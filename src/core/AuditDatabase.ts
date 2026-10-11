@@ -381,6 +381,14 @@ export class AuditDatabase {
         probability REAL,
         fetched_at TEXT DEFAULT (datetime('now'))
       );
+      -- Semantic near-duplicate pairs (local embeddings). DELETE+rewrite each run; powers near-duplicate-content.
+      CREATE TABLE IF NOT EXISTS near_duplicates (
+        url_key_a TEXT NOT NULL,        -- the lexically-first url_key of the pair
+        url_key_b TEXT NOT NULL,
+        similarity REAL NOT NULL,       -- cosine 0–1 (all-MiniLM-L6-v2)
+        computed_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (url_key_a, url_key_b)
+      );
     `);
     // Per-URL lab Core Web Vitals (On-Page Lighthouse) → powers high-yield-cwv-fail.
     this.db.exec(`

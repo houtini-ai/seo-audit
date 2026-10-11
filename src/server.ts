@@ -42,6 +42,7 @@ import { dbPathFor, sanitizeProperty } from './core/paths.js';
 import { runQueryData, QUERYABLE_TABLES, FILTER_OPS, METRIC_FNS, truncateCell } from './core/queryData.js';
 import { storageSummary, pruneProperty, fmtBytes } from './core/dataStorage.js';
 import { scoreSitePassages } from './core/passageScore.js';
+import { findNearDuplicates } from './core/nearDuplicate.js';
 import { buildDraftBrief } from './core/draftBrief.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks, collapseChainRules } from './generators/index.js';
 
@@ -585,6 +586,25 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         content: [{ type: 'text', text }],
         structuredContent: { ...r, ...(keys ? { pages: shown, pagesReturned: shown.length } : {}) } as unknown as Record<string, unknown>,
       };
+    },
+  );
+
+  server.registerTool(
+    'find_duplicates',
+    {
+      title: 'Find near-duplicate content (semantic embeddings)',
+      description: 'Embed each indexable HTML page\'s title+body with a local sentence model (all-MiniLM-L6-v2, downloaded once to a cache, no Python, no API cost) and flag pairs whose cosine similarity clears a threshold — the semantic near-duplicate / cannibalisation signal Screaming Frog and Sitebulb surface. Persists pairs to near_duplicates; run_audit then reports them as `near-duplicate-content` (judgement — needs includeJudgement:true). On-demand + ML-ish; `limit` caps pages compared (default 500, highest word-count first), `threshold` the cosine bar (default 0.9). The model reads ~the first 200 words, so it catches templated/boilerplate duplicates and thin variants — verify a pair before consolidating. First run downloads ~25MB. Re-run after a re-crawl.',
+      inputSchema: { siteUrl: z.string(), threshold: z.number().min(0.5).max(1).optional(), limit: z.number().int().min(2).max(2000).optional() },
+    },
+    async ({ siteUrl, threshold, limit }) => {
+      const r = await findNearDuplicates(dataDir(), siteUrl, { ...(threshold != null ? { threshold } : {}), ...(limit != null ? { limit } : {}) });
+      const top = r.pairs.slice(0, 25).map(p => `  ${p.similarity.toFixed(3)}  ${p.a.replace(/^https?:\/\/[^/]+/, '')}  ≈  ${p.b.replace(/^https?:\/\/[^/]+/, '')}`).join('\n');
+      const text = `Embedded ${r.embedded} page(s)${r.capped ? ` (capped at ${r.cap} by word count — raise limit for more)` : ''}; ` +
+        `${r.pairsTotal} near-duplicate pair(s) at cosine ≥ ${r.threshold}, across ${r.pagesWithDuplicate} page(s).\n\n` +
+        `Scale: ${r.scale}\n` +
+        (top ? `\nTop pairs (showing up to 25 of ${r.pairsTotal}):\n${top}\n\nrun_audit includeJudgement:true surfaces these as near-duplicate-content.` : '\nNo near-duplicates at this threshold. Lower it (e.g. 0.85) to widen the net.') +
+        browserLink(siteUrl);
+      return { content: [{ type: 'text', text }], structuredContent: r as unknown as Record<string, unknown> };
     },
   );
 

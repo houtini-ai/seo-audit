@@ -150,6 +150,13 @@ export const CHECKS: CheckDef[] = [
     title: 'Thin content', fix: 'Expand or consolidate — under ~200 words of body text.',
     run: (c) => rows(c, `SELECT url_key urlKey, word_count FROM pages WHERE status_code=200 AND indexable=1 AND word_count < 200`).map(r => ({ urlKey: r.urlKey, evidence: { wordCount: r.word_count } })),
   },
+  {
+    // N / judgement (gated). Needs find_duplicates to populate near_duplicates first; empty otherwise.
+    id: 'near-duplicate-content', category: 'content', severity: 'med', labels: ['N'], certainty: 0.7, effortBase: 5, fixType: 'per-page',
+    title: 'Near-duplicate content (semantic)', fix: 'Two or more pages are semantically near-identical (local embedding cosine at/above the threshold). Consolidate to one canonical page (301 or rel=canonical the weaker variants), or genuinely differentiate them. Run `find_duplicates` to populate this; verify each pair before merging — the model reads roughly the first 200 words of title+body.',
+    // One finding per page, citing its highest-similarity partner (SQLite returns the partner from the MAX row).
+    run: (c) => rows(c, `SELECT urlKey, dup, MAX(similarity) sim FROM (SELECT url_key_a urlKey, url_key_b dup, similarity FROM near_duplicates UNION ALL SELECT url_key_b urlKey, url_key_a dup, similarity FROM near_duplicates) GROUP BY urlKey`).map(r => ({ urlKey: r.urlKey, evidence: { duplicateOf: r.dup, similarity: r.sim } })),
+  },
   // ── Indexation / crawlability ───────────────────────────────────────────
   {
     // RETIRED: 'canonical-mismatch' (was HIGH). A 200 page whose canonical points to a *healthy*
