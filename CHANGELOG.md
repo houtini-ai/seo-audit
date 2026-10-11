@@ -4,6 +4,16 @@ All notable changes to **@houtini/seo-audit-console**. The format loosely follow
 [Keep a Changelog](https://keepachangelog.com); the check registry is the source of truth
 (`list_checks` always returns the live list).
 
+## [0.12.2] — 2026-10-11
+
+### Fixed
+- **Crawled titles / meta descriptions / H1s now whitespace-normalised.** A multi-line `<title>` in the source (e.g. Shopify's `…2500kg\n – EHI.com.au`) was stored with the embedded newline intact - the title read with a stray gap in reports and its `title_length` over-counted by a character or two (which could tip the >60-char check). Title, meta description and H1 are now collapsed to single spaces and trimmed, the way a browser renders them, so every length / duplicate / keyword-in-title measurement is computed on the clean string.
+- **Crawler honours the response charset (decode once).** HTML bodies were read with `res.text()`, which always decodes UTF-8 regardless of the declared charset - correct for a UTF-8 site but mojibake for a page served as ISO-8859-1 / Windows-1252. Bodies are now decoded once via the declared charset (Content-Type → `<meta charset>` → UTF-8 fallback, invalid label → UTF-8), so non-UTF-8 pages no longer corrupt. New regression test: `npm run probe:charset`.
+- **Shopify 429 back-off now pauses the whole crawl, not just the one request.** A 429/503 retry backed off only the request that hit it while the other workers kept hammering the rate-limited host, so pages could still be recorded as 429 (56 of them on a recent ehi.com.au crawl, including top content pages). A shared throttle gate now makes every worker respect the cooldown after any 429/503, the retry budget is raised (4 → 6) and `Retry-After` is honoured up to 30s. Only the final status after retries is recorded.
+
+### Notes
+- **No data-migration is run, by design.** The mojibake reported against stored titles (`â\x80\x93` for "–") was a *display* artifact of the viewer, not the stored bytes: direct inspection of the crawl database showed the en dash stored correctly as UTF-8 (`E2 80 93`) in 2,099 titles and **zero** Latin-1-mojibake rows. A Latin-1→UTF-8 "repair" would therefore have corrupted correct data. Existing rows are repaired simply by re-crawling (the crawler replaces the `pages` snapshot), which also recovers the pages that had been recorded as 429.
+
 ## [0.12.1] — 2026-10-06
 
 ### Fixed

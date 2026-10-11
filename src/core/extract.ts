@@ -1,6 +1,37 @@
 import * as cheerio from 'cheerio';
 import { urlKey, type UrlKeyOptions } from './url-key.js';
 
+/** Collapse runs of whitespace to a single space and trim — a browser renders a multi-line
+ * `<title>` / meta / heading that way, so a stored value with an embedded newline (" ...\n – x")
+ * over-counts its length and reads wrong in reports. Apply to every short SEO text field. */
+export const collapseWs = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
+/**
+ * Decode an HTML response body to a string ONCE, honouring the charset in this order:
+ *   1. the Content-Type response header (`charset=…`),
+ *   2. a `<meta charset>` / `<meta http-equiv="Content-Type">` declaration in the first bytes,
+ *   3. UTF-8 (the HTML5 default).
+ * Reading UTF-8 bytes as Latin-1 (or guessing then re-decoding) is the classic source of
+ * mojibake — "–" (E2 80 93) surfacing as "â\x80\x93". Decoding once from the declared charset
+ * avoids both the wrong-charset read and the double decode. An unknown/invalid label falls back
+ * to UTF-8 rather than throwing.
+ */
+export function decodeHtmlBody(buf: Buffer, contentTypeHeader?: string | null): string {
+  let label = contentTypeHeader?.match(/charset=["']?([\w-]+)/i)?.[1]?.toLowerCase();
+  if (!label) {
+    // Sniff the first 2KB as Latin-1 (every byte maps 1:1, so the ASCII meta tag survives intact)
+    // for a declared charset — HTML5 requires the declaration within the first 1024 bytes.
+    const head = buf.subarray(0, 2048).toString('latin1');
+    label = (head.match(/<meta[^>]+charset=["']?([\w-]+)/i)?.[1]
+      ?? head.match(/<meta[^>]+http-equiv=["']?content-type["'][^>]*;\s*charset=([\w-]+)/i)?.[1])?.toLowerCase();
+  }
+  try {
+    return new TextDecoder(label || 'utf-8').decode(buf);
+  } catch {
+    return new TextDecoder('utf-8').decode(buf); // unknown/invalid label → safe default
+  }
+}
+
 /**
  * Internal = the seed host or its www/apex twin ONLY — not arbitrary sibling subdomains.
  * accounts./shop./blog. etc. are separate properties; crawling (or following redirects into)
@@ -85,10 +116,12 @@ export function extractPage(
 ): ExtractedPage {
   const $ = cheerio.load(html);
 
-  const title = $('head > title').first().text().trim() || null;
-  const metaDescription = $('meta[name="description"]').attr('content')?.trim() ?? null;
+  // Whitespace-normalise short text fields: a multi-line <title>/heading in the source otherwise
+  // stores embedded newlines that over-count length and render as stray gaps in reports.
+  const title = collapseWs($('head > title').first().text()) || null;
+  const metaDescription = (() => { const c = $('meta[name="description"]').attr('content'); return c != null ? collapseWs(c) || null : null; })();
   const h1Els = $('h1');
-  const h1 = h1Els.first().text().trim() || null;
+  const h1 = collapseWs(h1Els.first().text()) || null;
   const lang = $('html').attr('lang')?.trim() ?? null;
   const charset = $('meta[charset]').attr('charset')?.trim()
     ?? ($('meta[http-equiv="Content-Type"]').attr('content')?.match(/charset=([\w-]+)/i)?.[1] ?? null);
@@ -105,7 +138,7 @@ export function extractPage(
   // word count excluding script/style/noscript/template (fixes inline-script inflation)
   const $body = cheerio.load(html);
   $body('script, style, noscript, template').remove();
-  const bodyText = $body('body').text().replace(/\s+/g, ' ').trim();
+  const bodyText = collapseWs($body('body').text());
   const wordCount = bodyText ? bodyText.split(' ').length : 0;
 
   // Body chunks: visible content segmented by heading, boilerplate stripped — the data layer for the
@@ -116,7 +149,7 @@ export function extractPage(
     const $c = cheerio.load(html);
     $c('script, style, noscript, template, nav, header, footer, aside').remove();
     const root = ($c('main').first()[0] ?? $c('article').first()[0] ?? $c('body')[0]) as any;
-    const ws = (t: string): string => t.replace(/\s+/g, ' ').trim();
+    const ws = collapseWs; // local alias — the whitespace rule lives once, in collapseWs
     let cur: { heading: string; level: number; parts: string[] } = { heading: '', level: 0, parts: [] };
     const flush = (): void => {
       const text = ws(cur.parts.join(' '));
@@ -254,7 +287,7 @@ export function extractPage(
     links.push({
       targetUrl: target.toString(),
       targetKey: urlKey(target.toString(), keyOpts),
-      anchor: $(el).text().replace(/\s+/g, ' ').trim().slice(0, 300),
+      anchor: collapseWs($(el).text()).slice(0, 300),
       placement: placementOf($, el),
       rel: $(el).attr('rel')?.trim() ?? '',
       isInternal,

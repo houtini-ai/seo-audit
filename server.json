@@ -7,12 +7,12 @@
     "source": "github"
   },
   "websiteUrl": "https://houtini.com",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@houtini/seo-audit-console",
-      "version": "0.12.1",
+      "version": "0.12.2",
       "transport": {
         "type": "stdio"
       },

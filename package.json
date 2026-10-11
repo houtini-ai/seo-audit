@@ -1,6 +1,6 @@
 {
   "name": "@houtini/seo-audit-console",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "mcpName": "io.github.houtini-ai/seo-audit-console",
   "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 99 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
   "type": "module",
@@ -59,6 +59,7 @@
     "probe:schema-rules": "node scripts/probe-schema-rules.mjs",
     "probe:extract": "node scripts/probe-extract.mjs",
     "probe:extract2": "node scripts/probe-extract2.mjs",
+    "probe:charset": "node scripts/probe-charset-fixture.mjs",
     "probe:backlinks": "node scripts/probe-backlinks.mjs",
     "probe:dfs-labs": "node scripts/probe-dfs-labs.mjs",
     "probe:dfs-datefrom": "node scripts/probe-dfs-datefrom.mjs",

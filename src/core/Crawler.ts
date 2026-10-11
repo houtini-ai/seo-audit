@@ -3,7 +3,7 @@ import { Agent, fetch as ufetch } from 'undici';
 import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
-import { extractPage, isInternalHost } from './extract.js';
+import { extractPage, isInternalHost, decodeHtmlBody } from './extract.js';
 import { fetchRobots } from './robots.js';
 import { finalizeLinkGraph } from './linkGraph.js';
 import { fetchSitemapUrls } from './sitemap.js';
@@ -69,8 +69,18 @@ export interface CrawlResult {
 
 const DEFAULT_UA = 'Mozilla/5.0 (compatible; seo-audit-console/0.1; +https://github.com/houtini-ai/seo-audit-console)';
 const FETCH_TIMEOUT_MS = 20000;
-const MAX_TRANSIENT_RETRIES = 4; // 429/503 backoff attempts before recording the status
+const MAX_TRANSIENT_RETRIES = 6; // 429/503 backoff attempts before recording the status
+const MAX_NET_RETRIES = 4;       // network-error (timeout/reset) retries — separate budget so a slow URL can't stall a worker for minutes
+const RETRY_AFTER_CAP_MS = 30000; // honour Retry-After up to this (a hostile header can't stall the crawl)
+const BACKOFF_CAP_MS = 15000;     // cap for the exponential fallback when no Retry-After is given
 const FLUSH_EVERY = 50;
+
+// Shared throttle gate: a 429/503 on ONE request backs off the WHOLE worker pool, not just that
+// request's own retries — otherwise the other N-1 workers keep hammering a rate-limited host and it
+// never recovers (how 56 Shopify product pages ended up recorded as 429 despite per-request retries).
+interface ThrottleGate { until: number }
+const gateWaitMs = (g: ThrottleGate): number => Math.max(0, g.until - Date.now());
+const gatePenalise = (g: ThrottleGate, ms: number): void => { g.until = Math.max(g.until, Date.now() + ms); };
 
 interface RedirectHop { from: string; to: string; status: number; }
 
@@ -99,7 +109,7 @@ interface FetchOutcome {
 const makeDispatcher = (connections: number): Agent =>
   new Agent({ allowH2: true, connections, keepAliveTimeout: 30_000, keepAliveMaxTimeout: 60_000 });
 
-async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, maxHops = 5): Promise<FetchOutcome> {
+async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, gate: ThrottleGate, signal: AbortSignal, maxHops = 5): Promise<FetchOutcome> {
   const redirects: RedirectHop[] = [];
   let current = url;
   let hops = 0;
@@ -112,6 +122,10 @@ async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, ma
   // response below, so a GET stays as light as a HEAD for images/PDFs/etc.
   const method = 'GET';
   while (true) {
+    // Respect a pool-wide cooldown another worker set after a 429/503 before firing this request.
+    // Add per-worker jitter so the whole pool doesn't wake in lockstep and stampede the host again.
+    const cool = gateWaitMs(gate);
+    if (cool) await sleep(Math.min(cool, RETRY_AFTER_CAP_MS) + Math.floor(Math.random() * 500));
     let res: Response;
     try {
       res = (await ufetch(current, {
@@ -126,15 +140,19 @@ async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, ma
           'cache-control': 'no-cache',
           pragma: 'no-cache',
         },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        // Abort on either the per-request timeout OR the crawl being cancelled, so a cancel
+        // stops in-flight fetches instead of letting them run to completion/timeout.
+        signal: AbortSignal.any([AbortSignal.timeout(FETCH_TIMEOUT_MS), signal]),
       })) as unknown as Response;
     } catch (err) {
+      // A cancelled crawl is not a transient network hiccup — don't burn the retry budget on it.
+      if (signal.aborted) throw err;
       // The server slowed past the timeout or dropped the connection. Don't lose the page to a
       // transient hiccup — wait (10s, 20s, 30s) and retry before giving up, so a slowdown becomes
       // latency rather than a silent coverage gap. Uses its OWN budget (not the 429/503 one) so a
       // page that 503s then times out still gets full network retries; trips `throttled` so the
       // crawl paces itself down. Surfaces as a failure only after the budget is exhausted.
-      if (netRetries < MAX_TRANSIENT_RETRIES) {
+      if (netRetries < MAX_NET_RETRIES) {
         netRetries++;
         await sleep(Math.min(10000 * netRetries, 30000));
         continue;
@@ -145,10 +163,14 @@ async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, ma
     // page — back off (respecting Retry-After) and retry, so a fast crawl doesn't poison the
     // data with rate-limit statuses. Only the final status after retries is recorded.
     if ((res.status === 429 || res.status === 503) && transientRetries < MAX_TRANSIENT_RETRIES) {
+      // Retry-After is seconds (or an HTTP-date); honour the numeric form capped, else exponential.
       const ra = Number(res.headers.get('retry-after'));
-      const waitMs = Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 20000) : Math.min(1000 * 2 ** transientRetries, 8000);
+      const waitMs = Number.isFinite(ra) && ra > 0
+        ? Math.min(ra * 1000, RETRY_AFTER_CAP_MS)
+        : Math.min(1000 * 2 ** transientRetries, BACKOFF_CAP_MS);
       try { await res.body?.cancel(); } catch { /* no body */ }
       transientRetries++;
+      gatePenalise(gate, waitMs); // back the whole pool off, not just this request
       await sleep(waitMs);
       continue;
     }
@@ -167,7 +189,10 @@ async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, ma
     // Read the body only for HTML; for any non-HTML response (image/PDF/asset) abort the transfer
     // so we never pull the bytes — keeping the always-GET fetch as cheap as a HEAD would have been.
     let body = '';
-    if (isHtml) body = await res.text();
+    // Decode ONCE, honouring the response charset (Content-Type → <meta charset> → UTF-8). Using
+    // res.text() would force UTF-8 regardless of the declared charset — fine for a UTF-8 site, but
+    // it mojibakes a page served as Latin-1/Windows-1252. decodeHtmlBody reads the declared charset.
+    if (isHtml) body = decodeHtmlBody(Buffer.from(await res.arrayBuffer()), contentType);
     else { try { await res.body?.cancel(); } catch { /* already closed */ } }
     const h = (name: string): string | null => res.headers.get(name);
     const sec: Record<string, string> = {};
@@ -360,6 +385,8 @@ export class Crawler {
     // and decay back toward base when it's clear. Same pages crawled (no data lost) — just paced
     // so hard-throttled sites stop triggering retries (net faster + cleaner) and fast sites stay fast.
     let dynamicDelay = delayMs;
+    // One throttle gate shared by every worker: a 429/503 anywhere pauses the whole pool.
+    const gate: ThrottleGate = { until: 0 };
     const processOne = async (item: { url: string; depth: number }): Promise<void> => {
       if (dynamicDelay) await sleep(dynamicDelay);
       const path = (() => { try { return new URL(item.url).pathname; } catch { return '/'; } })();
@@ -369,7 +396,7 @@ export class Crawler {
         skipped++; return;
       }
       try {
-        const r = await fetchWithRedirects(item.url, ua, dispatcher);
+        const r = await fetchWithRedirects(item.url, ua, dispatcher, gate, signal);
         // Self-tune the delay from the throttle signal.
         if (r.throttled) dynamicDelay = Math.min(Math.round(dynamicDelay * 1.5) + 200, 5000);
         else if (dynamicDelay > delayMs) dynamicDelay = Math.max(delayMs, Math.round(dynamicDelay * 0.9));
