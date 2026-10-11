@@ -90,6 +90,13 @@ export interface ExtractedPage {
   hasRdfa: boolean;
   hasFavicon: boolean;             // any <link rel*=icon> declared
   hasAnalytics: boolean;           // a client-side analytics/tag-manager snippet detected
+  // Accessibility (static subset — the axe-core rules decidable from raw HTML, no render needed).
+  a11yLinksNoName: number;         // <a href> with no discernible accessible name (axe link-name)
+  a11yButtonsNoName: number;       // button / [role=button] / submit|button input with no accessible name (axe button-name)
+  a11yInputsNoLabel: number;       // visible form control with no <label>/aria-label/title (axe label)
+  a11yViewportZoomDisabled: boolean; // <meta viewport> blocks pinch-zoom: user-scalable=no / maximum-scale<2 (axe meta-viewport)
+  a11yPositiveTabindex: number;    // elements with tabindex>0 — breaks the natural focus order (axe tabindex)
+  a11yDuplicateIds: number;        // id values used more than once in the document (axe duplicate-id)
   bodyChunks: { heading: string; level: number; text: string }[]; // content segmented by heading (RAG layer)
   links: ExtractedLink[];
   imageSrcs: string[];             // distinct absolute <img> src URLs (capped) — image-weight sampling
@@ -239,6 +246,49 @@ export function extractPage(
   // not "no analytics" (server-side measurement is invisible to a crawl).
   const hasAnalytics = /googletagmanager\.com|google-analytics\.com|gtag\(|plausible\.io|matomo|_paq\b|usefathom\.com|clarity\.ms|cloudflareinsights\.com|mixpanel|heap-\d|segment\.com\/analytics/i.test(html);
 
+  // Accessibility (static subset of axe-core — only the rules decidable from raw HTML; the full
+  // rule set needs the rendered DOM, which is the render tier). An element's "accessible name" here
+  // = visible text OR aria-label OR aria-labelledby OR title (and, for links, an <img alt> child).
+  const hasAccName = (el: any, viaImgAlt = false): boolean => {
+    const $e = $(el);
+    if ($e.text().replace(/\s+/g, ' ').trim()) return true;
+    if (($e.attr('aria-label') ?? '').trim()) return true;
+    if (($e.attr('aria-labelledby') ?? '').trim()) return true;
+    if (($e.attr('title') ?? '').trim()) return true;
+    if (viaImgAlt && $e.find('img[alt]').filter((_, i) => (($(i).attr('alt') ?? '').trim() !== '')).length) return true;
+    return false;
+  };
+  let a11yLinksNoName = 0;
+  $('a[href]').each((_, el) => { if (!hasAccName(el, true)) a11yLinksNoName++; });
+  let a11yButtonsNoName = 0;
+  // submit/reset inputs self-name via a UA default, so axe doesn't flag them — only type=button does.
+  $('button, [role="button"], input[type="button"]').each((_, el) => {
+    const $e = $(el);
+    if ((el as { name?: string }).name === 'input') {
+      if (!(($e.attr('value') ?? '').trim() || ($e.attr('aria-label') ?? '').trim() || ($e.attr('title') ?? '').trim())) a11yButtonsNoName++;
+      return;
+    }
+    if (!hasAccName(el, true)) a11yButtonsNoName++;
+  });
+  let a11yInputsNoLabel = 0;
+  $('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), select, textarea').each((_, el) => {
+    const $e = $(el);
+    if (($e.attr('aria-label') ?? '').trim() || ($e.attr('aria-labelledby') ?? '').trim() || ($e.attr('title') ?? '').trim()) return;
+    if ($e.closest('label').length) return;                                   // wrapped in a <label>
+    const id = ($e.attr('id') ?? '').trim();
+    if (id && $(`label[for="${id.replace(/"/g, '\\"')}"]`).length) return;     // referenced by a <label for>
+    a11yInputsNoLabel++;
+  });
+  // Viewport that blocks pinch-zoom (user-scalable=no, or maximum-scale<2) — axe meta-viewport.
+  const vpContent = (viewport ?? '').toLowerCase();
+  const vpMaxScale = Number(vpContent.match(/maximum-scale\s*=\s*([0-9.]+)/)?.[1]);
+  const a11yViewportZoomDisabled = /user-scalable\s*=\s*(no|0)/.test(vpContent) || (Number.isFinite(vpMaxScale) && vpMaxScale < 2);
+  const a11yPositiveTabindex = $('[tabindex]').filter((_, el) => (Number($(el).attr('tabindex')) || 0) > 0).length;
+  const idCounts = new Map<string, number>();
+  $('[id]').each((_, el) => { const id = ($(el).attr('id') ?? '').trim(); if (id) idCounts.set(id, (idCounts.get(id) ?? 0) + 1); });
+  let a11yDuplicateIds = 0;
+  for (const n of idCounts.values()) if (n > 1) a11yDuplicateIds++;
+
   // Images: count those lacking a non-empty alt (decorative alt="" is intentional, not flagged),
   // and those lacking both width & height attributes (a deterministic CLS signal).
   const imgEls = $('img');
@@ -330,6 +380,12 @@ export function extractPage(
     hasRdfa,
     hasFavicon,
     hasAnalytics,
+    a11yLinksNoName,
+    a11yButtonsNoName,
+    a11yInputsNoLabel,
+    a11yViewportZoomDisabled,
+    a11yPositiveTabindex,
+    a11yDuplicateIds,
     bodyChunks,
     links,
     imageSrcs: [...imageSrcSet],

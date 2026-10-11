@@ -25,7 +25,7 @@ export interface RawFinding {
 }
 export interface CheckDef {
   id: string;
-  category: 'crawlability' | 'indexation' | 'onpage' | 'content' | 'schema' | 'security' | 'performance' | 'war-stories' | 'merged';
+  category: 'crawlability' | 'indexation' | 'onpage' | 'content' | 'schema' | 'security' | 'performance' | 'accessibility' | 'war-stories' | 'merged';
   severity: Severity;
   labels: FindingLabel[];
   certainty: number; // 1.0 deterministic, 0.5 judgement
@@ -197,6 +197,37 @@ export const CHECKS: CheckDef[] = [
     id: 'mixed-content', category: 'security', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'Mixed content (http on https)', fix: 'Serve every subresource over https — browsers block or warn on insecure resources.',
     run: (c) => rows(c, `SELECT url_key urlKey, mixed_content_count n FROM pages WHERE status_code=200 AND url LIKE 'https://%' AND mixed_content_count > 0`).map(r => ({ urlKey: r.urlKey, evidence: { insecureResources: r.n } })),
+  },
+  // ── Accessibility (static axe-core subset — decidable from raw HTML; full axe needs the render tier) ──
+  {
+    id: 'a11y-link-name', category: 'accessibility', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Links with no accessible name', fix: 'Give every link discernible text: visible anchor text, an aria-label, or (for an icon/image link) an <img> with real alt text. A nameless link is unusable with a screen reader and tells search engines nothing about the destination (axe link-name).',
+    run: (c) => rows(c, `SELECT url_key urlKey, a11y_links_no_name n FROM pages WHERE status_code=200 AND indexable=1 AND a11y_links_no_name > 0`).map(r => ({ urlKey: r.urlKey, evidence: { namelessLinks: r.n } })),
+  },
+  {
+    id: 'a11y-button-name', category: 'accessibility', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Buttons with no accessible name', fix: 'Give every button text, a value (for input buttons), or an aria-label — an icon-only button with no label can’t be operated by assistive tech (axe button-name).',
+    run: (c) => rows(c, `SELECT url_key urlKey, a11y_buttons_no_name n FROM pages WHERE status_code=200 AND indexable=1 AND a11y_buttons_no_name > 0`).map(r => ({ urlKey: r.urlKey, evidence: { namelessButtons: r.n } })),
+  },
+  {
+    id: 'a11y-form-label', category: 'accessibility', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Form fields with no label', fix: 'Associate every visible input/select/textarea with a <label for> (or wrap it in a <label>, or give it an aria-label). Unlabelled fields are a top WCAG failure and hurt form completion (axe label).',
+    run: (c) => rows(c, `SELECT url_key urlKey, a11y_inputs_no_label n FROM pages WHERE status_code=200 AND indexable=1 AND a11y_inputs_no_label > 0`).map(r => ({ urlKey: r.urlKey, evidence: { unlabelledFields: r.n } })),
+  },
+  {
+    id: 'a11y-viewport-zoom-disabled', category: 'accessibility', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Pinch-zoom disabled in the viewport meta', fix: 'Remove user-scalable=no and any maximum-scale below 2 from the <meta name="viewport"> — disabling zoom is a WCAG 1.4.4 failure and hurts low-vision users on mobile (axe meta-viewport).',
+    run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND a11y_viewport_zoom_disabled=1`).map(r => ({ urlKey: r.urlKey, evidence: { zoomDisabled: true } })),
+  },
+  {
+    id: 'a11y-duplicate-id', category: 'accessibility', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Duplicate id attributes', fix: 'Make every id unique on the page — duplicate ids break label/for associations, aria-labelledby references and in-page anchors (axe duplicate-id).',
+    run: (c) => rows(c, `SELECT url_key urlKey, a11y_duplicate_ids n FROM pages WHERE status_code=200 AND indexable=1 AND a11y_duplicate_ids > 0`).map(r => ({ urlKey: r.urlKey, evidence: { duplicateIds: r.n } })),
+  },
+  {
+    id: 'a11y-positive-tabindex', category: 'accessibility', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    title: 'Positive tabindex values', fix: 'Avoid tabindex greater than 0 — it overrides the natural DOM focus order and makes keyboard navigation unpredictable. Use tabindex="0" / "-1" and order the DOM instead (axe tabindex).',
+    run: (c) => rows(c, `SELECT url_key urlKey, a11y_positive_tabindex n FROM pages WHERE status_code=200 AND indexable=1 AND a11y_positive_tabindex > 0`).map(r => ({ urlKey: r.urlKey, evidence: { positiveTabindex: r.n } })),
   },
   {
     id: 'meta-nofollow', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',

@@ -517,6 +517,13 @@ export class AuditDatabase {
     ensure('pages', 'has_favicon', 'has_favicon INTEGER');
     ensure('pages', 'has_analytics', 'has_analytics INTEGER');
     ensure('pages', 'conditional_304', 'conditional_304 INTEGER'); // 1 = honoured If-Modified-Since/If-None-Match with a 304; 0 = returned 200 anyway; NULL = not probed
+    // Accessibility (static axe subset) — NULL on crawls before this feature, so checks treat NULL as "not measured".
+    ensure('pages', 'a11y_links_no_name', 'a11y_links_no_name INTEGER');
+    ensure('pages', 'a11y_buttons_no_name', 'a11y_buttons_no_name INTEGER');
+    ensure('pages', 'a11y_inputs_no_label', 'a11y_inputs_no_label INTEGER');
+    ensure('pages', 'a11y_viewport_zoom_disabled', 'a11y_viewport_zoom_disabled INTEGER');
+    ensure('pages', 'a11y_positive_tabindex', 'a11y_positive_tabindex INTEGER');
+    ensure('pages', 'a11y_duplicate_ids', 'a11y_duplicate_ids INTEGER');
     ensure('sitemap_urls', 'lastmod', 'lastmod TEXT');
     ensure('pages', 'max_passage_score', 'max_passage_score REAL');
     ensure('pages', 'max_passage_query', 'max_passage_query TEXT');

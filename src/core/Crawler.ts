@@ -292,7 +292,8 @@ export class Crawler {
          json_ld, og_tags, hreflang, redirects, internal_links, external_links,
          image_count, images_without_alt, images_missing_dimensions, canonical_count, canonical_relative,
          h2_count, heading_skips, rel_next, rel_prev, rel_amphtml, mixed_content_count, twitter_tags,
-         has_microdata, has_rdfa, has_favicon, has_analytics, body_chunks, security_headers)
+         has_microdata, has_rdfa, has_favicon, has_analytics, body_chunks, security_headers,
+         a11y_links_no_name, a11y_buttons_no_name, a11y_inputs_no_label, a11y_viewport_zoom_disabled, a11y_positive_tabindex, a11y_duplicate_ids)
        VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@content_encoding,@cache_control,
          @last_modified,@etag,@vary,@bytes,@response_time_ms,@depth,
          @is_internal,@indexable,@indexable_reason,@noindex,@title,@title_length,@meta_description,@meta_description_length,
@@ -300,7 +301,8 @@ export class Crawler {
          @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links,
          @image_count,@images_without_alt,@images_missing_dimensions,@canonical_count,@canonical_relative,
          @h2_count,@heading_skips,@rel_next,@rel_prev,@rel_amphtml,@mixed_content_count,@twitter_tags,
-         @has_microdata,@has_rdfa,@has_favicon,@has_analytics,@body_chunks,@security_headers)
+         @has_microdata,@has_rdfa,@has_favicon,@has_analytics,@body_chunks,@security_headers,
+         @a11y_links_no_name,@a11y_buttons_no_name,@a11y_inputs_no_label,@a11y_viewport_zoom_disabled,@a11y_positive_tabindex,@a11y_duplicate_ids)
        ON CONFLICT(url_key) DO NOTHING`,
     );
     // Robots-disallowed URLs are NOT fetched (we respect robots), but we record them as
@@ -446,6 +448,13 @@ export class Crawler {
           has_favicon: ex ? (ex.hasFavicon ? 1 : 0) : null, has_analytics: ex ? (ex.hasAnalytics ? 1 : 0) : null,
           body_chunks: ex?.bodyChunks?.length ? JSON.stringify(ex.bodyChunks) : null,
           security_headers: r.securityHeaders,
+          // Accessibility (static axe subset) — NULL when the page wasn't HTML-extracted, so checks skip it.
+          a11y_links_no_name: ex ? ex.a11yLinksNoName : null,
+          a11y_buttons_no_name: ex ? ex.a11yButtonsNoName : null,
+          a11y_inputs_no_label: ex ? ex.a11yInputsNoLabel : null,
+          a11y_viewport_zoom_disabled: ex ? (ex.a11yViewportZoomDisabled ? 1 : 0) : null,
+          a11y_positive_tabindex: ex ? ex.a11yPositiveTabindex : null,
+          a11y_duplicate_ids: ex ? ex.a11yDuplicateIds : null,
         });
 
         if (ex) {

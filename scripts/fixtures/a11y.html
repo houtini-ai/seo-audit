@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Accessibility fixture</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+</head>
+<body>
+<!-- links: 1 nameless (icon-only), 2 named (text, img-alt) -->
+<a href="/icon"><svg viewBox="0 0 1 1"></svg></a>
+<a href="/home">Home</a>
+<a href="/logo"><img src="/logo.png" alt="Acme logo"></a>
+
+<!-- buttons: 1 nameless (icon-only), 1 named, 1 submit (self-named, not counted) -->
+<button><svg viewBox="0 0 1 1"></svg></button>
+<button>Save</button>
+<input type="submit">
+
+<!-- inputs: 1 unlabelled, 2 labelled (for= and wrapping) -->
+<input type="text" name="q">
+<label for="email">Email</label><input id="email" type="email">
+<label>Phone <input type="tel" name="phone"></label>
+
+<!-- positive tabindex: 1 -->
+<div tabindex="3">skip-ahead</div>
+<div tabindex="0">fine</div>
+
+<!-- duplicate ids: 1 distinct id used twice -->
+<span id="dup">a</span>
+<span id="dup">b</span>
+<span id="unique">c</span>
+</body>
+</html>
