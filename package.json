@@ -2,7 +2,7 @@
   "name": "@houtini/seo-audit-console",
   "version": "0.12.2",
   "mcpName": "io.github.houtini-ai/seo-audit-console",
-  "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 99 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
+  "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 107 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -93,6 +93,9 @@
     "googleapis": "^173.0.0",
     "undici": "^8.7.0",
     "zod": "^3.25.1"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.50.0"
   },
   "devDependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",

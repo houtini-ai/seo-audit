@@ -157,6 +157,18 @@ export const CHECKS: CheckDef[] = [
     // One finding per page, citing its highest-similarity partner (SQLite returns the partner from the MAX row).
     run: (c) => rows(c, `SELECT urlKey, dup, MAX(similarity) sim FROM (SELECT url_key_a urlKey, url_key_b dup, similarity FROM near_duplicates UNION ALL SELECT url_key_b urlKey, url_key_a dup, similarity FROM near_duplicates) GROUP BY urlKey`).map(r => ({ urlKey: r.urlKey, evidence: { duplicateOf: r.dup, similarity: r.sim } })),
   },
+  {
+    // Response vs Render (render tier). Needs render_pages to populate render_audit first; empty otherwise.
+    id: 'content-only-in-rendered-dom', category: 'crawlability', severity: 'high', labels: ['D'], certainty: 1, effortBase: 8, fixType: 'per-page',
+    title: 'Content or links only in the rendered DOM', fix: 'Links and/or body text exist only after JavaScript runs — the raw HTML (what a first-pass crawl, and Google before it renders, sees) is missing them. Server-side render or pre-render the critical content and in-site links so they are in the initial HTML; don’t rely on client-side JS for primary navigation or copy. Run render_pages to populate this.',
+    // Flag the real Response-vs-Render gaps: internal links only after JS, body only after JS, or a title only after JS.
+    run: (c) => rows(c, `SELECT url_key urlKey, links_only_rendered lor, raw_word_count rwc, rendered_word_count rdwc, title_changed tc, rendered_title rt
+      FROM render_audit
+      WHERE links_only_rendered > 0
+         OR (raw_word_count < 50 AND rendered_word_count >= 100)
+         OR (COALESCE(TRIM(rendered_title),'') != '' AND title_changed = 1 AND raw_word_count < 50)`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { linksOnlyRendered: r.lor, rawWordCount: r.rwc, renderedWordCount: r.rdwc, titleChangedOnRender: !!r.tc } })),
+  },
   // ── Indexation / crawlability ───────────────────────────────────────────
   {
     // RETIRED: 'canonical-mismatch' (was HIGH). A 200 page whose canonical points to a *healthy*

@@ -389,6 +389,20 @@ export class AuditDatabase {
         computed_at TEXT DEFAULT (datetime('now')),
         PRIMARY KEY (url_key_a, url_key_b)
       );
+      -- Response vs Render: raw-HTML vs rendered-DOM diff per sampled page (opt-in render tier).
+      CREATE TABLE IF NOT EXISTS render_audit (
+        url_key TEXT PRIMARY KEY,
+        raw_word_count INTEGER,
+        rendered_word_count INTEGER,
+        raw_internal_links INTEGER,
+        rendered_internal_links INTEGER,
+        links_only_rendered INTEGER,    -- internal link targets present only after JS
+        sample_new_links TEXT,          -- JSON array of example rendered-only targets
+        title_changed INTEGER,
+        rendered_title TEXT,
+        canonical_changed INTEGER,
+        rendered_at TEXT DEFAULT (datetime('now'))
+      );
     `);
     // Per-URL lab Core Web Vitals (On-Page Lighthouse) → powers high-yield-cwv-fail.
     this.db.exec(`

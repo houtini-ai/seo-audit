@@ -43,6 +43,7 @@ import { runQueryData, QUERYABLE_TABLES, FILTER_OPS, METRIC_FNS, truncateCell } 
 import { storageSummary, pruneProperty, fmtBytes } from './core/dataStorage.js';
 import { scoreSitePassages } from './core/passageScore.js';
 import { findNearDuplicates } from './core/nearDuplicate.js';
+import { auditRender } from './core/renderAudit.js';
 import { buildDraftBrief } from './core/draftBrief.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks, collapseChainRules } from './generators/index.js';
 
@@ -585,6 +586,22 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       return {
         content: [{ type: 'text', text }],
         structuredContent: { ...r, ...(keys ? { pages: shown, pagesReturned: shown.length } : {}) } as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    'render_pages',
+    {
+      title: 'Response vs Render (JavaScript rendering tier)',
+      description: '[Opt-in: needs the optional `playwright` package + `npx playwright install chromium`] Render a BOUNDED, sampled set of indexable pages in headless Chromium and diff the rendered DOM against the raw HTML the crawler fetched — the "Response vs Render" check Screaming Frog and Sitebulb are known for. Surfaces content and internal links that exist ONLY after JavaScript runs (what a first-pass crawl, and Google before it renders, can miss). Persists to render_audit; run_audit then reports `content-only-in-rendered-dom`. Slow (a real browser), so it is a separate async job and never part of the normal crawl — poll check_crawl_status. `limit` caps pages (default 10, lowest raw word-count first — the likeliest JS-dependent pages); pass `urls` to render specific pages. Degrades with a clear message if the browser isn’t installed; the HTTP audit is unaffected either way.',
+      inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(200).optional(), urls: z.array(z.string()).optional() },
+    },
+    async ({ siteUrl, limit, urls }) => {
+      const jobId = jobs.start('render', (update, signal) => auditRender(dataDir(), siteUrl, { ...(limit != null ? { limit } : {}), ...(urls?.length ? { urls } : {}) }, update, signal));
+      return {
+        content: [{ type: 'text', text: `Render pass started for ${siteUrl} (job ${jobId}). Headless Chromium renders each sampled page (a few seconds each), so poll check_crawl_status with jobId "${jobId}"; the finished job reports which pages depend on JavaScript. If Playwright/Chromium isn’t installed the job returns a one-line install hint and the HTTP audit is unaffected.` }],
+        structuredContent: { jobId, status: 'running', siteUrl },
       };
     },
   );

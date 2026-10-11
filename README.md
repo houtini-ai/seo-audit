@@ -25,7 +25,7 @@ you  › run an SEO audit on mysite.com
      ⣾ search console  1.8M rows synced (19s - incremental)
      ⣾ crawl           868 pages · HTTP/2 · robots-polite · 8 parallel
      ⣾ link graph      internal PageRank · click depth · in-degree
-     ✓ 99 checks · 220 findings · ranked by expected clicks per dev-hour
+     ✓ 107 checks · 220 findings · ranked by expected clicks per dev-hour
 
      #1  CTR far below position-expected     /pricing                   XL
      #2  Page losing clicks (trend)          site-wide                  XL
@@ -47,7 +47,7 @@ This README is the story and the quick start. The detail lives in the manual:
 |---|---|
 | [Getting started](manual/getting-started.md) | Install, the GSC service-account setup (and the step everyone misses), Claude Desktop and Claude Code config, your first audit, troubleshooting |
 | [Tool reference](manual/tools.md) | Every tool: what it does, inputs, joins, an example prompt |
-| [The check registry](manual/checks.md) | All 99 checks with what each catches, its D/N label, and the fix |
+| [The check registry](manual/checks.md) | All 107 checks with what each catches, its D/N label, and the fix |
 | [Composition](manual/composition.md) | The join keys, the grains, and thirteen worked recipes for asking your own questions across the data |
 | [Competitive analysis](manual/competitive.md) | The Semrush-replacement workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
 | [SEO Recon](manual/recon.md) | Why a page is losing: the live SERP + AI-Overview citation verdict, the competitor diff, and the trackable to-do ledger |
@@ -85,7 +85,7 @@ Yes. The crawl-plus-GSC merge is not a novelty; it's the method. On one property
 
 ## What the audit checks
 
-`run_audit` executes **99 checks** over the joined data and returns a ranked list - not a wall of everything, a priority order with the traffic at stake attached to each finding. The families, briefly:
+`run_audit` executes **107 checks** over the joined data and returns a ranked list - not a wall of everything, a priority order with the traffic at stake attached to each finding. The families, briefly:
 
 | Family | What it catches |
 |---|---|
