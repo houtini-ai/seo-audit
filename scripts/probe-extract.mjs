@@ -41,6 +41,42 @@ const keyOpts = { hostForm: 'https://www.example.com' };
   check('single canonical → count 1', ex.canonicalCount === 1, ex.canonicalCount);
 }
 
+// ── <base href> resolution ──────────────────────────────────────────────────
+{
+  const page = 'https://example.com/areas/england/';
+  const doc = (head) => `<!doctype html><html><head>${head}
+    <link rel="canonical" href="areas/england/">
+    <link rel="alternate" hreflang="en-gb" href="en-gb/areas/england/">
+  </head><body>
+    <nav><a href="buildings/x/">x</a></nav>
+    <img src="img/a.png" alt="a">
+  </body></html>`;
+  const hrefs = (ex) => JSON.parse(ex.hreflang ?? '[]').map(h => h.href);
+  const urlsOf = (ex) => [ex.canonicalUrl, ...ex.links.map(l => l.targetUrl), ...ex.imageSrcs, ...hrefs(ex)];
+
+  const withBase = extractPage(doc('<base href="https://example.com/">'), page, 'example.com', keyOpts, null);
+  console.log('[base]', JSON.stringify(urlsOf(withBase)));
+  check('base: link resolved against <base href>', withBase.links[0]?.targetUrl === 'https://example.com/buildings/x/', withBase.links[0]?.targetUrl);
+  check('base: img resolved against <base href>', withBase.imageSrcs[0] === 'https://example.com/img/a.png', withBase.imageSrcs[0]);
+  check('base: canonical resolved against <base href>', withBase.canonicalUrl === 'https://example.com/areas/england/', withBase.canonicalUrl);
+  check('base: hreflang stored absolute against <base href>', hrefs(withBase)[0] === 'https://example.com/en-gb/areas/england/', hrefs(withBase)[0]);
+  check('base: nothing nested under /areas/england/', urlsOf(withBase).every(u => u.startsWith('https://example.com/') && !u.includes('/areas/england/buildings') && !u.includes('/areas/england/img') && !u.includes('/areas/england/en-gb') && !u.includes('/areas/england/areas')), JSON.stringify(urlsOf(withBase)));
+  check('base: canonicalRelative still tests the raw href', withBase.canonicalRelative === true, withBase.canonicalRelative);
+
+  const relBase = extractPage(doc('<base href="/">'), page, 'example.com', keyOpts, null);
+  check('relative <base href="/"> resolves against the origin', relBase.links[0]?.targetUrl === 'https://example.com/buildings/x/', relBase.links[0]?.targetUrl);
+
+  const badBase = extractPage(doc('<base href="javascript:void(0)">'), page, 'example.com', keyOpts, null);
+  check('non-http(s) <base href> ignored', badBase.links[0]?.targetUrl === 'https://example.com/areas/england/buildings/x/', badBase.links[0]?.targetUrl);
+
+  const noBase = extractPage(doc(''), page, 'example.com', keyOpts, null);
+  console.log('[no base]', JSON.stringify(urlsOf(noBase)));
+  check('no base: link resolved against page URL', noBase.links[0]?.targetUrl === 'https://example.com/areas/england/buildings/x/', noBase.links[0]?.targetUrl);
+  check('no base: img resolved against page URL', noBase.imageSrcs[0] === 'https://example.com/areas/england/img/a.png', noBase.imageSrcs[0]);
+  check('no base: canonical resolved against page URL', noBase.canonicalUrl === 'https://example.com/areas/england/areas/england/', noBase.canonicalUrl);
+  check('no base: hreflang resolved against page URL', hrefs(noBase)[0] === 'https://example.com/areas/england/en-gb/areas/england/', hrefs(noBase)[0]);
+}
+
 // ── checks over a seeded DB ─────────────────────────────────────────────────
 const dbPath = path.join(tmpdir(), `sac-extract-${process.pid}.db`);
 rmSync(dbPath, { force: true });

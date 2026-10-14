@@ -123,6 +123,20 @@ export function extractPage(
 ): ExtractedPage {
   const $ = cheerio.load(html);
 
+  // Browsers and Googlebot resolve relative URLs against the first <base href> (itself resolved
+  // against the page URL), not the page URL. Ignoring it turns a site that pairs a root
+  // <base href> with relative nav hrefs into thousands of phantom nested 404s. Browsers ignore a
+  // data: or javascript: base, and no other non-http(s) base yields a crawlable target, so those
+  // fall back to the page URL.
+  const docBase = (() => {
+    const baseHref = $('base[href]').first().attr('href')?.trim();
+    if (!baseHref) return pageUrl;
+    try {
+      const u = new URL(baseHref, pageUrl);
+      return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : pageUrl;
+    } catch { return pageUrl; }
+  })();
+
   // Whitespace-normalise short text fields: a multi-line <title>/heading in the source otherwise
   // stores embedded newlines that over-count length and render as stray gaps in reports.
   const title = collapseWs($('head > title').first().text()) || null;
@@ -136,7 +150,7 @@ export function extractPage(
   const canonicalRaw = canonicalEls.first().attr('href')?.trim() ?? null;
   // A malformed canonical href (e.g. `href="http://"`) must not make the whole page
   // extraction throw — that would record a fine 200 page as a fetch failure.
-  const canonicalUrl = canonicalRaw ? (() => { try { return new URL(canonicalRaw, pageUrl).toString(); } catch { return null; } })() : null;
+  const canonicalUrl = canonicalRaw ? (() => { try { return new URL(canonicalRaw, docBase).toString(); } catch { return null; } })() : null;
   const canonicalRelative = canonicalRaw != null && !/^https?:\/\//i.test(canonicalRaw);
   const robots = $('meta[name="robots"]').attr('content')?.trim() ?? null;
   const viewport = $('meta[name="viewport"]').attr('content')?.trim() ?? null;
@@ -199,7 +213,11 @@ export function extractPage(
   $('link[rel="alternate"][hreflang]').each((_, el) => {
     const l = $(el).attr('hreflang');
     const href = $(el).attr('href');
-    if (l && href) hreflang.push({ lang: l, href });
+    if (!l || !href) return;
+    // Stored absolute because later consumers no longer have the <base href> to resolve against.
+    let abs = href;
+    try { abs = new URL(href, docBase).toString(); } catch { /* keep raw; consumers skip unparseable hrefs */ }
+    hreflang.push({ lang: l, href: abs });
   });
 
   // Twitter Card tags (alongside Open Graph) — share-appearance completeness.
@@ -309,7 +327,7 @@ export function extractPage(
     const src = ($e.attr('src') ?? '').trim();
     if (src && !src.startsWith('data:') && imageSrcSet.size < 15) {
       try {
-        const u = new URL(src, pageUrl);
+        const u = new URL(src, docBase);
         if (u.protocol === 'http:' || u.protocol === 'https:') imageSrcSet.add(u.toString());
       } catch { /* skip bad src */ }
     }
@@ -323,7 +341,7 @@ export function extractPage(
     if (!href) return;
     let target: URL;
     try {
-      target = new URL(href, pageUrl);
+      target = new URL(href, docBase);
     } catch {
       return;
     }

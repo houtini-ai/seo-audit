@@ -1503,8 +1503,9 @@ function hasSchemaImage(node: unknown): boolean {
 const sitemapHasRows = (c: CheckContext): boolean =>
   ((c.db.prepare('SELECT COUNT(*) n FROM sitemap_urls').get() as { n: number }).n) > 0;
 
-// hreflang checks share parsing/normalisation: hrefs are stored RAW, so resolve each against the
-// page URL then urlKey() with the property's host_form so they match pages.url_key. Computed once.
+// hreflang checks share parsing/normalisation: stored hrefs may be absolute or raw (existing crawl
+// databases), so resolve each against the page URL (a no-op for absolute hrefs), then urlKey()
+// with the property's host_form so they match pages.url_key. Computed once.
 type HreflangOut = { broken: RawFinding[]; noReturn: RawFinding[] };
 let _hreflangCache: { db: Database.Database; out: HreflangOut } | null = null;
 function hreflangFindings(ctx: CheckContext): HreflangOut {

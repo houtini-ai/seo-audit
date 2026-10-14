@@ -4,6 +4,11 @@ All notable changes to **@houtini/seo-audit-console**. The format loosely follow
 [Keep a Changelog](https://keepachangelog.com); the check registry is the source of truth
 (`list_checks` always returns the live list).
 
+## [Unreleased]
+
+### Fixed
+- **Crawler honours `<base href>` when resolving relative URLs.** Links, image sources, the canonical and hreflang alternates were all resolved against the page URL, but browsers and Googlebot resolve them against the document's first `<base href>`. On a site that emits `<base href="https://example.com/">` with relative nav hrefs such as `href="buildings/x/"`, a link on `/areas/england/` was crawled as `/areas/england/buildings/x/` instead of `/buildings/x/` - on one 4,000-URL crawl that produced 3,637 phantom 404 pages and 3,635 false broken-internal-link findings, and skewed inlink counts, iPR, orphan and click-depth data for every real page. The extractor now resolves against the base URL (falling back to the page URL when there is no base or it isn't http(s)), and hreflang hrefs are stored absolute. Re-crawl affected properties to replace the bad `pages` / `links` rows. Regression test added to `npm run probe:extract`.
+
 ## [0.13.0] — 2026-10-11
 
 ### Added - desktop-crawler parity features (99 → 107 checks)
