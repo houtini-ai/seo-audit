@@ -100,7 +100,7 @@ The classic outreach question - *what links do our competitors have that we don'
 > Link intersect for mysite.com vs rival1.com, rival2.com
 > What links does rival.com have that we don't?
 
-**Freshness.** Results persist to a `link_prospects` table per property. Because rivals keep earning links, that set ages - `data_storage` shows each property's prospect count and capture date and flags it as likely stale past 20 days, and re-running `link_intersect` supersedes it. The DataForSEO call itself is 7-day cached.
+**Freshness.** Results persist to a `link_prospects` table per property. Because rivals keep earning links, that set ages - `data_storage` shows each property's prospect count and capture date and flags it as likely stale past 20 days, and re-running `link_intersect` supersedes it. The DataForSEO call itself is 20-day cached.
 
 ### The directory problem, and the Majestic fix
 
@@ -139,7 +139,7 @@ The deepest use of the SERP data. **`recon_targets`** takes your worst declining
 - **consolidate-weak-page** - cited on a weak page; strengthen it.
 - **competitive-gap** - not cited, weak rank; run the full competitor diff.
 
-It seeds deterministic to-dos (schema, freshness, cannibalisation, video) and returns the competitor set Google rewards. Set `scrapeCompetitors:true` and it fetches them too, routed by source: the ranking **videos** to Supadata for transcripts (usually what wins these SERPs), competitor **pages** to Firecrawl ([get a key](https://firecrawl.link/2d1PLD8)) with a free browser-profile fetch behind it that even reaches Reddit. Cloudflare-challenge publishers (PCMag) can't be fetched from a server - they're flagged so you can paste their copy and have it diffed in.
+It seeds deterministic to-dos (schema, freshness, cannibalisation, video) and returns the competitor set Google rewards. Set `scrapeCompetitors:true` and it fetches them too, free and with no API key: competitor **pages** through a browser-profile fetch that even reaches Reddit, and the ranking **videos** listed for you to watch (usually what wins these SERPs). Cloudflare-challenge publishers (PCMag) can't be fetched from a server - they're flagged so you can paste their copy and have it diffed in.
 
 Then **`save_recon_todo`** writes the competitor-diff gaps back with a baseline, and **`recon_todos`** is the trackable, annotatable board - filter by page or status, update a to-do's status, append dated notes, and on `status:shipped remeasure:true` it re-fetches the SERP to show whether the fix moved you from AIO-uncited to cited.
 

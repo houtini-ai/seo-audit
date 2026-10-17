@@ -1,6 +1,6 @@
 {
   "name": "@houtini/seo-audit-console",
-  "version": "0.14.1",
+  "version": "0.15.0",
   "mcpName": "io.github.houtini-ai/seo-audit-console",
   "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 111 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
   "type": "module",
@@ -49,7 +49,7 @@
     "build:mcpb": "npm run build && node scripts/build-mcpb.mjs",
     "dev": "tsc -p tsconfig.server.json --watch",
     "start": "node dist/index.js",
-    "test": "npm run build:server && npm run smoke && npm run probe:jobs",
+    "test": "npm run build:server && npm run smoke && npm run probe:jobs && npm run probe:fts && npm run probe:review-0-15",
     "smoke": "node scripts/smoke.mjs",
     "demo:property": "node scripts/demo-property.mjs",
     "demo:screenshots": "node scripts/demo-screenshots.mjs",
@@ -87,7 +87,8 @@
     "probe:drift-fixes": "node scripts/probe-drift-fixes.mjs",
     "probe:majestic": "node scripts/probe-majestic.mjs",
     "clean": "rimraf dist",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "npm run clean && npm run build",
+    "probe:review-0-15": "node scripts/probe-review-0-15.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

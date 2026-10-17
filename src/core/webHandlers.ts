@@ -13,7 +13,7 @@ import type { DataForSeoClient } from './DataForSeoClient.js';
 export interface WebHandlerDeps {
   dataDir: () => string;
   dfs: DataForSeoClient | null;
-  apiKeys: () => { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean };
+  apiKeys: () => { dataforseo: boolean; majestic: boolean };
 }
 
 export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {

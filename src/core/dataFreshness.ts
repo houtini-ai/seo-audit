@@ -111,9 +111,11 @@ export function getDataFreshness(db: Database.Database, liveJobs?: Set<string> |
     // status is written by the engine (running / completed / failed). Rows from before it existed
     // fall back to finished_at; a run with neither that started over 30 minutes ago died with its
     // process (an audit takes seconds), so it is reported as interrupted, never as running forever.
+    // 'running' gets the same age check as NULL: the engine writes it at start, so a process killed
+    // mid-audit leaves it behind and it must not be taken at its word.
     const auditState = (): string => {
       if (!a) return 'never';
-      if (a.status) return a.status;
+      if (a.status && a.status !== 'running') return a.status;
       if (a.finished_at) return 'completed';
       const started = a.started_at ? Date.parse(`${a.started_at.replace(' ', 'T')}Z`) : NaN;
       return Number.isFinite(started) && Date.now() - started > 30 * 60_000 ? 'interrupted' : 'running';

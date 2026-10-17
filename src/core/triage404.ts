@@ -174,10 +174,13 @@ export async function verifyLive(rows: Triage404Row[], baseHost: string, opts: {
       if (catchAll) {
         return { ...r, live: { ...live, catchAll: true }, reason: `${r.reason}. Live it ${live.chain.join('→')}s to the homepage (a catch-all rule, not a specific redirect): a specific 301${r.bestMatch ? ` to ${r.bestMatch}` : ''} still helps.` };
       }
+      // An off-property destination was recorded, not fetched (probe_urls' own-host guard), so don't
+      // call it live - say where it goes and that it went unchecked.
+      const offSite = p.redirectsOffProperty ? ` - off the property, so the destination was not checked` : '';
       return { ...r, live: { ...live, matchesSuggestion }, bucket: 'already-redirected' as const,
         reason: matchesSuggestion
           ? `already redirects live (${live.chain.join('→')}) to the suggested target; the crawl predates it. Nothing to do.`
-          : `already redirects live (${live.chain.join('→')}) to ${p.finalUrl}; the crawl predates it. Nothing to do unless that destination is wrong${r.bestMatch && r.bucket === 'redirect' ? ` (slug match suggested ${r.bestMatch} instead)` : ''}.` };
+          : `already redirects ${offSite ? '' : 'live '}(${live.chain.join('→')}) to ${p.finalUrl}${offSite}; the crawl predates it. Nothing to do unless that destination is wrong${r.bestMatch && r.bucket === 'redirect' ? ` (slug match suggested ${r.bestMatch} instead)` : ''}.` };
     }
     if (!p.redirectChain.length && p.finalStatus < 400) {
       return { ...r, live, bucket: 'live-now' as const, reason: `answers ${p.finalStatus} live now; the crawl is stale. Re-crawl to clear it.` };

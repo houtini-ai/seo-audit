@@ -166,7 +166,7 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 9. **Reporting.** *"Show me the dashboard"* in the chat, *"serve the dashboard"* for the live version in your browser, or *"export the report"* as one self-contained HTML file you can send a client. → [dashboard.md](manual/dashboard.md)
 10. **The content opportunity report.** If you write for a living, this is your page one: *"Content opportunities for mysite.com"* returns what to WRITE next (demand you already earn impressions for with no winning page), what to REFRESH (pages bleeding clicks), which SNIPPETS to rewrite (ranking well, under-clicked), and which clusters to STRENGTHEN (position 4-20, one push from the money). Every row traces to your own Search Console data - no invented keyword ideas - and *"draft the brief for row 1"* turns any of them into a grounded outline. → [competitive.md](manual/competitive.md)
 11. **Market Sizing and Prioritisation.** *"Size the market: mysite.com vs rival1.com and rival2.com"* - the keyword universe, total monthly demand, and share of voice per topic cluster, from one cached call per domain. The engagement-opening read that used to need a Semrush subscription. → [competitive.md](manual/competitive.md)
-12. **Content recon - why is this page losing?** *"Run content recon on mysite.com"* takes your worst declining pages, pulls the live Google SERP for each, and reads whether the **AI Overview** cites you. The verdict is the honest bit: *rank but not cited* is a data-accuracy or freshness problem, not a rewrite. It transcribes the ranking videos (Supadata), reads the reachable competitors (Firecrawl, plus a free browser-profile fetch that even gets Reddit), and writes the gaps into a tracked to-do board you can annotate and re-measure. → [recon.md](manual/recon.md)
+12. **Content recon - why is this page losing?** *"Run content recon on mysite.com"* takes your worst declining pages, pulls the live Google SERP for each, and reads whether the **AI Overview** cites you. The verdict is the honest bit: *rank but not cited* is a data-accuracy or freshness problem, not a rewrite. It reads the reachable competitors with a free browser-profile fetch (one that even gets Reddit), lists the ranking videos for you to watch, and writes the gaps into a tracked to-do board you can annotate and re-measure. → [recon.md](manual/recon.md)
 13. **Link prospecting, sorted by authority that's real.** *"Link intersect for mysite.com vs rival1.com, rival2.com"* returns the domains linking to your rivals and not to you - the outreach list, followed-first and spam-filtered. Add a **Majestic** key and it re-sorts on **Trust Flow** and shows each prospect's **Topical Trust Flow**, so the directories drop out and what's left is authority that's on your topic. → [Majestic, below](#link-intersect-and-the-majestic-trust-flow-tier)
 
 [![The Search performance tab - branded vs non-branded, ranking distribution over time (impressions by position bucket) and search visibility over time](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/search-performance.png)](https://github.com/houtini-ai/seo-audit)
@@ -180,8 +180,6 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 Everything above works with just your Search Console data. But GSC can only describe searches where you already appear. The moment your question is "how big is this market?" or "what do competitors rank for that I don't?", you need third-party data - and that's [DataForSEO](https://dataforseo.com/?aff=213701): a pay-as-you-go API for volumes, live rankings, competitor data and Lighthouse runs. No subscription; calls cost fractions of a cent to a few cents, cached for 7 days, and only ever run when you ask. My own usage runs to a few dollars a month.
 
 It unlocks the Semrush-replacement layer: the organic visibility overview for any domain, any site's top pages and ranked keywords (including which keywords cite a site in **AI Overviews**), the content gap, topic gaps, search intent, lab Core Web Vitals and backlinks. It also drives **content recon** - `recon_targets` pulls the live Google SERP for a losing page, reads whether the AI Overview cites you, and tells you *why* you're behind. The full workflows and setup: [competitive.md](manual/competitive.md).
-
-**Two more optional keys, for content recon only.** When you ask recon to fetch the competitors it finds, it routes each by source: videos to [Supadata](https://supadata.ai) (`SUPADATA_API_KEY`) for transcripts, and competitor pages to [Firecrawl](https://firecrawl.link/2d1PLD8) (`FIRECRAWL_API_KEY`) for clean markdown, with a free browser-profile fetch behind it. Both are pay-as-you-go and entirely optional - recon still classifies the page and lists the competitors without them. Grab a Firecrawl key here: **https://firecrawl.link/2d1PLD8**.
 
 One more thing DataForSEO unlocks gets a section of its own, because the link work has a second, optional service behind it.
 
@@ -242,11 +240,9 @@ Every environment variable the server reads, in one block - the first is require
         "SAC_DATA_DIR": "C:/path/to/where/audits/are/stored",
         "DATAFORSEO_USERNAME": "you@example.com",
         "DATAFORSEO_PASSWORD": "your-dataforseo-password",
-        "DATAFORSEO_CACHE_DAYS": "7",
+        "DATAFORSEO_CACHE_DAYS": "20",
         "MAJESTIC_API_KEY": "your-majestic-api-key",
-        "MAJESTIC_CACHE_DAYS": "30",
-        "FIRECRAWL_API_KEY": "your-firecrawl-key",
-        "SUPADATA_API_KEY": "your-supadata-key"
+        "MAJESTIC_CACHE_DAYS": "30"
       }
     }
   }
@@ -255,7 +251,7 @@ Every environment variable the server reads, in one block - the first is require
 
 Built from source instead? Swap the two launch lines for `"command": "node"` and `"args": ["C:/path/to/seo-audit-console/dist/index.js"]`; the `env` block is identical.
 
-`GOOGLE_APPLICATION_CREDENTIALS` gets you the whole core audit. DataForSEO adds the market layer, `MAJESTIC_API_KEY` adds the Trust Flow re-sort to `link_intersect`, and Firecrawl and Supadata are content recon's fetchers. Line-by-line, including the two advanced ones you'll probably never need: [getting-started.md](manual/getting-started.md#environment-variables).
+`GOOGLE_APPLICATION_CREDENTIALS` gets you the whole core audit. DataForSEO adds the market layer, and `MAJESTIC_API_KEY` adds the Trust Flow re-sort to `link_intersect`. Line-by-line, including the two advanced ones you'll probably never need: [getting-started.md](manual/getting-started.md#environment-variables).
 
 Then: *"list properties"* to check it's connected, *"refresh"*, *"run an SEO audit"*.
 
@@ -320,7 +316,7 @@ The one-line version - full descriptions, inputs and example prompts for every t
 
 ## Privacy and data
 
-Your Search Console data and the crawl live in local SQLite files under `SAC_DATA_DIR`. The passage-scoring model runs locally too. Nothing leaves your machine except the API calls *you* trigger - Google (your own GSC) and, if you've set them up, DataForSEO, Majestic (`link_intersect` sends prospect domain names, nothing else), and Firecrawl/Supadata (content recon sends the competitor URLs it found). Every one of those is keyed by you, called on demand, and cached locally so it isn't called twice. No telemetry. None.
+Your Search Console data and the crawl live in local SQLite files under `SAC_DATA_DIR`. The passage-scoring model runs locally too. Nothing leaves your machine except the API calls *you* trigger - Google (your own GSC) and, if you've set them up, DataForSEO and Majestic (`link_intersect` sends prospect domain names, nothing else). Content recon's competitor fetch requests those public pages directly, with no service in between. Every one of those is keyed by you, called on demand, and cached locally so it isn't called twice. No telemetry. None.
 
 ---
 
@@ -349,7 +345,6 @@ SEO Audit Console stands on a few third-party services - all optional except you
 - **[Google Search Console](https://search.google.com/search-console)** - your own search-performance history (the one required credential).
 - **[DataForSEO](https://dataforseo.com/?aff=213701)** - SERP, keyword, Labs and backlink data: keyword volumes, competitor footprints, rank history, and the `link_intersect` domain intersection. Pay-as-you-go, optional.
 - **[Majestic](https://majestic.com)** - **Trust Flow** and **Topical Trust Flow** for the `link_intersect` enrichment tier, which re-sorts link prospects by real editorial authority. Trust Flow and Topical Trust Flow are trademarks of Majestic (Majestic-12 Ltd). Optional; get a key on their [plans page](https://majestic.com/plans-pricing).
-- **[Firecrawl](https://firecrawl.link/2d1PLD8)** and **[Supadata](https://supadata.ai)** - competitor-page and ranking-video fetching for content recon. Optional.
 
 Built with [better-sqlite3](https://github.com/WiseLibs/better-sqlite3), [cheerio](https://cheerio.js.org), [Apache ECharts](https://echarts.apache.org), and a local [ms-marco cross-encoder](https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2) (via [Transformers.js](https://github.com/huggingface/transformers.js)) for on-device passage scoring - no data leaves your machine for that.
 

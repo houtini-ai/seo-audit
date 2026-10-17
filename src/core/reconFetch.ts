@@ -3,7 +3,7 @@ import { extractPage } from './extract.js';
 /**
  * Owned-page access path for content recon: fetch one of OUR pages live and run the
  * crawler's own extractor. Owned content goes through the crawler (this), never a
- * third-party scraper — that stays for competitor pages (FirecrawlClient).
+ * third-party scraper; competitor pages go through reconResearch's browser-profile fetch.
  */
 export interface OwnPageView {
   url: string;

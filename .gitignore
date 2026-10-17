@@ -95,6 +95,7 @@ scripts/*
 !scripts/probe-probeurls.mjs
 !scripts/probe-triage404.mjs
 !scripts/probe-fts.mjs
+!scripts/probe-review-0-15.mjs
 !scripts/probe-external.mjs
 !scripts/probe-blocking.mjs
 

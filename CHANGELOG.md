@@ -10,6 +10,27 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-10-17
+
+### Removed
+- **The paid competitor fetchers.** `FIRECRAWL_API_KEY` and `SUPADATA_API_KEY` are no longer read; delete them from your config at leisure (they're harmless if left). Content recon's competitor fetch now needs no API key at all: competitor pages go through the browser-profile HTTP fetch, Reddit threads through their `.json`, and the ranking videos are listed for you to watch rather than transcribed. The Claude Desktop extension no longer asks for those two keys.
+
+### Fixed
+- **`probe_urls` could be walked off the property by a redirect.** Only the input URLs were host-checked; every `Location` was then followed and parsed, so an open redirect on the site (`/out?to=…`) turned a probe into a fetch of an arbitrary or internal-network URL. The own-host guard now applies at every hop: an off-property redirect is recorded (target and status, flagged `redirectsOffProperty`) and not fetched. `triage_404s`, which verifies candidates through `probe_urls`, says so in its reason.
+- **`recon_targets scrapeCompetitors:true` silently did nothing without a paid-fetcher key**, including the free Reddit and plain-HTTP paths it advertised. It now always runs. Ranking videos no longer take a fetch slot; they're listed separately. Competitor pages are decoded through their declared charset.
+- **Job status is per property, and destructive guards are conservative.** Every job now records which property database it works on (`scope`) from its first registry write. The dashboard asks "is a crawl live for *this* property", so a live crawl on one site no longer keeps another site's dead crawl showing as running; the crawled-but-unsynced view gets the same check. `data_storage` vacuum / delete-property / repair now refuse while any job *may* be running (stored running, heartbeat within 30 minutes), not just while one reads as live: a long synchronous step can starve the 20-second heartbeat and make a busy job look interrupted for a while, which is cosmetic on screen but must never let a prune write under it. The full-text index build is deduplicated per property from its first write, and a job's first progress update is recorded straight away.
+- **An audit killed mid-run showed as "running" forever.** The engine writes `status='running'` at start, and the 30-minute "interrupted" fallback only applied to rows with no status. A `running` audit now gets the same age check.
+- **The crawl-health URL flow under-counted redirects.** It counted 3xx in `pages`, but an internal redirect is stored under its final URL with the final 200, so only the few redirect-outs that leave the site showed up. Redirect buckets now come from `redirect_sources` (plus any 3xx page never followed), counting each source once.
+- **Sitemap discovery reported declared sitemaps as undeclared, and re-parsed them.** Sitemaps were compared as raw strings, so a www/apex or scheme respelling of a declared index looked like a different, undeclared one, and Yoast's `/sitemap.xml` and `/wp-sitemap.xml` (both redirecting to `/sitemap_index.xml`) were parsed again and listed as undeclared. Discovery now compares by URL key and by redirect target; a spelling that fails to fetch still lets another spelling of the same sitemap be tried.
+- **The DataForSEO cache had two defaults.** The MCP treated a cached response as fresh for 20 days and the dashboard sidecar for 7, on the same cache file, so the sidecar could pay to refetch what the MCP still served. One shared default now: 20 days (`DATAFORSEO_CACHE_DAYS` still overrides).
+- **Full-text index on query strings, hardened.** Its content table used an implicit rowid, which SQLite reserves the right to renumber on `VACUUM`; that would leave `query_data` `match` resolving to the wrong queries. It now uses an explicit integer key (existing databases migrate and re-index on first use). Not reproducible on the SQLite currently bundled, which kept rowids in a direct test, so this is a guard against undocumented behaviour rather than a live bug.
+
+### Docs
+- A **Quick start** near the top of the README with the npm (`npx`) setup for Claude Desktop and a one-line `claude mcp add` for Claude Code. The install section and the Claude Code guide are npx-first, including the team `.mcp.json`, where a local clone path doesn't exist on teammates' machines.
+
+### Tests
+- New `scripts/probe-review-0-15.mjs` (off-property redirects, sitemap dedupe, URL-flow counts, the cache default, keyless competitor fetch, all against a local HTTP server) and new cases in `probe-jobs` and `probe-fts`. `npm test` now also runs `probe:fts` and `probe:review-0-15`.
+
 ## [0.14.1] — 2026-10-17
 
 ### Changed

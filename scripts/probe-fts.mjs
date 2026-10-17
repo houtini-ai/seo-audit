@@ -93,6 +93,56 @@ w.close();
   check('an aborted backfill job rejects as cancelled and releases the worker', cancelled, '');
 }
 
+// 0.15.0: sa_queries had a TEXT primary key, so its rowid was implicit, and VACUUM may renumber
+// implicit rowids - after which the external-content sa_query_fts resolved `match` to the WRONG
+// query strings with no error. An explicit INTEGER PRIMARY KEY is VACUUM-stable.
+{
+  // Control: does this SQLite actually renumber an implicit rowid on VACUUM? If not, the next
+  // check can't tell broken from fixed, and we say so instead of passing silently.
+  const cp = path.join(dir, 'control.db');
+  const c = new Database(cp);
+  c.exec(`CREATE TABLE t (q TEXT PRIMARY KEY)`);
+  const ci = c.prepare(`INSERT INTO t (q) VALUES (?)`);
+  c.transaction(() => { for (let i = 0; i < 50; i++) ci.run(`q${i}`); })();
+  c.exec(`DELETE FROM t WHERE rowid <= 25`);
+  const before = c.prepare(`SELECT rowid r FROM t WHERE q = 'q40'`).get().r;
+  c.exec('VACUUM');
+  const after = c.prepare(`SELECT rowid r FROM t WHERE q = 'q40'`).get().r;
+  c.close();
+  const renumbers = before !== after;
+  console.log(`  ..  control: VACUUM ${renumbers ? 'renumbers' : 'did NOT renumber'} an implicit rowid here (${before} -> ${after})`);
+
+  const p3 = dbPathFor(dir, 'https://vac.com/');
+  const a = new AuditDatabase(p3);
+  const ins = a.db.prepare(`INSERT INTO search_analytics (date,query,page,page_key,device,country,clicks,impressions,ctr,position) VALUES ('2026-10-01',?,'u','u','','',1,10,0.1,5)`);
+  const qs = Array.from({ length: 50 }, (_, i) => `vacq${i}token wheel`);
+  a.db.transaction(() => { for (const q of qs) ins.run(q); })();
+  a.close();
+  runQueryData(p3, { table: 'search_analytics', mode: 'rows', filters: [{ column: 'query', op: 'match', value: 'vacq1token' }], columns: ['query'] }); // builds the index inline
+  const b = new AuditDatabase(p3);
+  b.db.prepare(`DELETE FROM sa_queries WHERE query IN (${qs.slice(0, 25).map(() => '?').join(',')})`).run(...qs.slice(0, 25));
+  b.db.exec('VACUUM');
+  b.close();
+  const r = runQueryData(p3, { table: 'search_analytics', mode: 'rows', filters: [{ column: 'query', op: 'match', value: 'vacq40token' }], columns: ['query'] }).structured;
+  check(`match resolves the right query after VACUUM${renumbers ? '' : ' (control did not renumber: weak check here)'}`, r.rows?.length === 1 && r.rows[0].query === 'vacq40token wheel', JSON.stringify(r.rows));
+
+  // Migration: a DB carrying the OLD schema is moved to the stable one, and re-backfills on use.
+  const p4 = path.join(dir, 'oldschema.db');
+  const o = new Database(p4);
+  o.exec(`CREATE TABLE fts_meta (name TEXT PRIMARY KEY, built_at TEXT);
+    CREATE TABLE sa_queries (query TEXT PRIMARY KEY);
+    CREATE VIRTUAL TABLE sa_query_fts USING fts5(query, content='sa_queries', content_rowid='rowid');
+    INSERT INTO sa_queries (query) VALUES ('legacy query');
+    INSERT INTO fts_meta (name, built_at) VALUES ('sa_query_fts', datetime('now'));`);
+  o.close();
+  const m = new AuditDatabase(p4);
+  const cols = m.db.prepare(`PRAGMA table_info(sa_queries)`).all().map(x => x.name);
+  const meta = m.db.prepare(`SELECT 1 FROM fts_meta WHERE name='sa_query_fts'`).get();
+  m.close();
+  check('an old-schema sa_queries is migrated to an explicit INTEGER PRIMARY KEY', cols.includes('id') && cols.includes('query'), JSON.stringify(cols));
+  check('and its index is marked unbuilt, so it re-backfills on next use', !meta, JSON.stringify(meta));
+}
+
 rmSync(dir, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

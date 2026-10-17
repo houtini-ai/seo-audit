@@ -13,8 +13,6 @@ import { startDashboardServer, stopDashboardServer, dashboardServerUrl, type Web
 import { buildWebCallHandlers } from './core/webHandlers.js';
 import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
 import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
-import { FirecrawlClient } from './core/FirecrawlClient.js';
-import { SupadataClient } from './core/SupadataClient.js';
 import { fetchCompetitorContent, routeFor } from './core/reconResearch.js';
 import { fetchOwnPage } from './core/reconFetch.js';
 import { parseSerpForRecon, reconVerdict } from './core/serpRecon.js';
@@ -38,7 +36,7 @@ import { detectTemplates } from './audit/templates.js';
 import { suggestPages } from './audit/opportunities.js';
 import { computeTopicGaps, type GapKeywordRow } from './audit/topicGaps.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
-import { dbPathFor, sanitizeProperty } from './core/paths.js';
+import { dbPathFor, sanitizeProperty, jobScopeFor } from './core/paths.js';
 import Database from 'better-sqlite3';
 import { runQueryData, QUERYABLE_TABLES, FILTER_OPS, METRIC_FNS, truncateCell } from './core/queryData.js';
 import { ftsIndexFor, pendingBackfills, backfillInWorker, INLINE_BACKFILL_MAX_ROWS, type FtsIndex } from './core/fts.js';
@@ -55,7 +53,7 @@ import { GscSync, FULL_DIMENSIONS } from './core/GscSync.js';
 import { UrlInspector } from './core/UrlInspector.js';
 import { Crawler } from './core/Crawler.js';
 import { Refresh } from './core/Refresh.js';
-import { DataForSeoClient, historicalDateFrom } from './core/DataForSeoClient.js';
+import { DataForSeoClient, historicalDateFrom, dfsCacheDaysFromEnv } from './core/DataForSeoClient.js';
 import { RankTracker } from './core/RankTracker.js';
 import { Backlinks } from './core/Backlinks.js';
 import { LinkIntersect } from './core/LinkIntersect.js';
@@ -197,7 +195,7 @@ Raw access: query_audit runs any single check with full evidence; every table ab
 - **Market read:** serp_features (feature/AIO exposure, volume-weighted) + domain_visibility for the client and each named rival (one cached call each) → who is structurally winning, and how much of the market SERP features already absorb.
 - **Content plan:** suggest_pages (demand you already earn impressions for) + topic_gaps (demand rivals own that you don't) → draft_content for the winners. Every proposal traces to real impressions or a rival's real footprint - no invented "keyword ideas".
 - **Fix-and-prove cycle:** fix_finding on the top finding → ship → start_crawl → detect_changes shows the fix landed → re-run run_audit and watch the finding drop off. That screenshot is the client update.
-- **Content recon (why a page is losing):** recon_targets picks the worst declining/striking pages, fetches our live page + the Google SERP (organic rank + AI-Overview citations + video), and classifies WHY — the sharpest class is "we rank but the AI Overview won't quote us" = a data-accuracy/freshness/markup problem. Then research the competitor set it returns (firecrawl for pages, supadata for the ranking videos), write the gaps back with save_recon_todo, and track the fixes with recon_todos (which can re-measure whether you moved from uncited→cited). Pass location to match where your impressions come from — organic rank is location-sensitive.
+- **Content recon (why a page is losing):** recon_targets picks the worst declining/striking pages, fetches our live page + the Google SERP (organic rank + AI-Overview citations + video), and classifies WHY — the sharpest class is "we rank but the AI Overview won't quote us" = a data-accuracy/freshness/markup problem. Then research the competitor set it returns (scrapeCompetitors:true fetches the pages and Reddit threads free; ranking videos are listed for you to watch), write the gaps back with save_recon_todo, and track the fixes with recon_todos (which can re-measure whether you moved from uncited→cited). Pass location to match where your impressions come from — organic rank is location-sensitive.
 - **Cost rule of thumb:** an entire competitive read (visibility + footprint + gaps for 4 domains) is a handful of cached Labs calls - under a dollar. If a plan involves looping SERP calls over a keyword list, it is the wrong plan; a Labs endpoint already has that answer top-down.
 
 Plan the join first (url_key / query / domain), state the grain of each side, then run the fewest paid calls that answer it.`;
@@ -293,7 +291,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
 
   const dfsUser = process.env.DATAFORSEO_USERNAME;
   const dfsPass = process.env.DATAFORSEO_PASSWORD;
-  const dfsCacheDays = Number(process.env.DATAFORSEO_CACHE_DAYS) || 20;
+  const dfsCacheDays = dfsCacheDaysFromEnv();
   const dfs = dfsUser && dfsPass
     ? new DataForSeoClient(dfsUser, dfsPass, path.join(dataDir(), 'dataforseo-cache.db'), dfsCacheDays)
     : null;
@@ -305,14 +303,15 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const majestic = majesticKey ? new MajesticClient(majesticKey, path.join(dataDir(), 'majestic-cache.db'), majesticCacheDays) : null;
   // Backlinks after Majestic, so pull_backlinks can enrich per-URL pages with Trust Flow.
   const backlinks = dfs ? new Backlinks(dfs, dataDir(), majestic) : null;
-  // Firecrawl (competitor-page scraping for content recon) — optional; degrades gracefully.
-  const firecrawlKey = process.env.FIRECRAWL_API_KEY;
-  const firecrawl = firecrawlKey ? new FirecrawlClient(firecrawlKey, path.join(dataDir(), 'firecrawl-cache.db')) : null;
-  // Supadata (transcribes the ranking videos for content recon) — optional; degrades gracefully.
-  const supadataKey = process.env.SUPADATA_API_KEY;
-  const supadata = supadataKey ? new SupadataClient(supadataKey, path.join(dataDir(), 'supadata-cache.db')) : null;
   const entities = new Entities(new WikidataClient(path.join(dataDir(), 'wikidata-cache.db')), dataDir());
   const refresh = new Refresh(sync, crawler, inspector, rankTracker);
+  // Every job works on one property; record which (its DB file name, stable across the different
+  // mounts a gateway container and a Desktop process see of the same data dir) so per-property
+  // questions - "is a crawl live for THIS site?", "is this DB's FTS build already running?" - can
+  // be answered from the registry, from the job's very first write.
+  const jobScope = (siteUrl: string): string => jobScopeFor(dataDir(), siteUrl);
+  const startFor = (siteUrl: string, type: string, fn: Parameters<typeof jobs.start>[1]): string =>
+    jobs.start(type, fn, { scope: jobScope(siteUrl) });
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
     return v;
@@ -324,8 +323,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   // Which optional integrations have a key set — drives the dashboard's key-gated tabs
   // (Links, Content research) and their affiliate-linked upsell states. The data layer has
   // no env access, so it's injected here onto every dashboard payload surface.
-  const apiKeysStatus = (): { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean } =>
-    ({ dataforseo: !!dfs, majestic: !!majestic, firecrawl: !!firecrawl, supadata: !!supadata });
+  const apiKeysStatus = (): { dataforseo: boolean; majestic: boolean } =>
+    ({ dataforseo: !!dfs, majestic: !!majestic });
 
   // The dashboard webserver's options — one definition shared by serve_dashboard AND the
   // auto-start at the end of refresh_property / run_audit, so a populated property always has
@@ -447,12 +446,12 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         if (!siteUrl) throw new Error('check needs a siteUrl.');
         const mode = check === 'quick' ? 'quick' : 'full';
         propertyDbFile(dataDir(), siteUrl); // fail fast on an unknown property
-        const jobId = jobs.start('integrity', () => checkIntegrity(dataDir(), siteUrl, mode));
+        const jobId = startFor(siteUrl, 'integrity', () => checkIntegrity(dataDir(), siteUrl, mode));
         return jobStarted({ jobId, status: 'running', siteUrl, mode },
           `Integrity check (${mode === 'full' ? 'full integrity_check — can take minutes on a large DB' : 'quick_check — misses missing-index-row damage'}) started for ${siteUrl}. Poll check_sync_status; the result lists damaged indexes. If any are reported, run data_storage prune:{siteUrl, action:"repair"} confirm:true.`);
       }
       if (prune?.action === 'repair') {
-        const running = jobs.list().filter(j => j.state === 'running');
+        const running = jobs.possiblyRunning(); // conservative: a busy owner can look stale for a while
         if (running.length) {
           return { content: [{ type: 'text', text: `Refusing to repair while ${running.length} job(s) are running (${running.map(j => `${j.type}#${j.id}`).join(', ')}). Wait for them to finish and retry.` }], structuredContent: { ok: false, refused: 'jobs_running' } };
         }
@@ -461,11 +460,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           const bytes = storageSummary(dataDir(), prune.siteUrl).properties[0]?.bytes ?? 0;
           return { content: [{ type: 'text', text: `REFUSED: repair needs confirm:true. It will run a full integrity_check, copy ${dbFile} to a timestamped .bak file alongside it (${fmtBytes(bytes)} of extra disk), REINDEX only the damaged indexes, then re-check. Table data is never modified; damage that isn't in an index is reported, not "fixed".` }], structuredContent: { ok: false, refused: 'confirm_required', dbFile, bytes } };
         }
-        const jobId = jobs.start('repair', () => repairIndexes(dataDir(), prune.siteUrl));
+        const jobId = startFor(prune.siteUrl, 'repair', () => repairIndexes(dataDir(), prune.siteUrl));
         return jobStarted({ jobId, status: 'running', siteUrl: prune.siteUrl }, `Repair started for ${prune.siteUrl}: integrity check, backup, REINDEX of damaged indexes, re-check. Poll check_sync_status.`);
       }
       if (prune) {
-        const running = jobs.list().filter(j => j.state === 'running').map(j => ({ id: j.id, type: j.type }));
+        const running = jobs.possiblyRunning().map(j => ({ id: j.id, type: j.type })); // conservative: a busy owner can look stale for a while
         const r = pruneProperty(dataDir(), prune.siteUrl, prune.action as 'vacuum' | 'clear-crawl-history' | 'delete-property', confirm === true, running);
         if (!r.ok) {
           return { content: [{ type: 'text', text: r.refused ?? `Could not ${prune.action}.` }], structuredContent: r as unknown as Record<string, unknown> };
@@ -612,8 +611,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         const big = pending.filter(p => p.rows > INLINE_BACKFILL_MAX_ROWS);
         if (big.length) {
           // One build per database: a running fts-index job for ANOTHER property must not be handed back.
-          const running = jobs.list().find(j => j.type === 'fts-index' && j.state === 'running' && (j.progress as { dbFile?: string }).dbFile === dbFile);
-          const jobId = running?.id ?? jobs.start('fts-index', (update, signal) => { update({ dbFile, siteUrl, indexes: pending.map(p => p.index) }); return backfillInWorker(dbFile, pending.map(p => p.index), signal); });
+          const running = jobs.list().find(j => j.type === 'fts-index' && j.state === 'running' && j.scope === jobScope(siteUrl)); // scope is in the registry from the job's first write; progress.dbFile wasn't until the first heartbeat
+          const jobId = running?.id ?? startFor(siteUrl, 'fts-index', (update, signal) => { update({ dbFile, siteUrl, indexes: pending.map(p => p.index) }); return backfillInWorker(dbFile, pending.map(p => p.index), signal); });
           return jobStarted({ jobId, status: 'running', siteUrl, building: pending.map(p => p.index) },
             `Building the full-text index for ${pending.map(p => p.index).join(', ')} (one-time, ~${big.reduce((a, p) => a + p.rows, 0).toLocaleString('en-US')} rows, in the background). Poll check_sync_status, then re-run this query. Meanwhile op "like" works, just slower.`);
         }
@@ -710,7 +709,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(200).optional(), urls: z.array(z.string()).optional() },
     },
     async ({ siteUrl, limit, urls }) => {
-      const jobId = jobs.start('render', (update, signal) => auditRender(dataDir(), siteUrl, { ...(limit != null ? { limit } : {}), ...(urls?.length ? { urls } : {}) }, update, signal));
+      const jobId = startFor(siteUrl, 'render', (update, signal) => auditRender(dataDir(), siteUrl, { ...(limit != null ? { limit } : {}), ...(urls?.length ? { urls } : {}) }, update, signal));
       return jobStarted({ jobId, status: 'running', siteUrl }, `Render pass started for ${siteUrl} (job ${jobId}). Headless Chromium renders each sampled page (a few seconds each), so poll check_crawl_status with jobId "${jobId}"; the finished job reports which pages depend on JavaScript. If Playwright/Chromium isn’t installed the job returns a one-line install hint and the HTTP audit is unaffected.`);
     },
   );
@@ -725,7 +724,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     async ({ siteUrl, threshold, limit }) => {
       // Async job: the first run downloads the model and embedding up to `limit` pages (CPU, cold
       // cache, large sites) can exceed the ~60s tool ceiling — return a jobId and poll.
-      const jobId = jobs.start('duplicates', () => findNearDuplicates(dataDir(), siteUrl, { ...(threshold != null ? { threshold } : {}), ...(limit != null ? { limit } : {}) }));
+      const jobId = startFor(siteUrl, 'duplicates', () => findNearDuplicates(dataDir(), siteUrl, { ...(threshold != null ? { threshold } : {}), ...(limit != null ? { limit } : {}) }));
       return jobStarted({ jobId, status: 'running', siteUrl }, `Near-duplicate scan started for ${siteUrl} (job ${jobId}). Embedding runs locally (first run downloads ~25MB); poll check_crawl_status with jobId "${jobId}". The finished job lists the near-duplicate pairs; run_audit includeJudgement:true then surfaces them as near-duplicate-content.`);
     },
   );
@@ -984,7 +983,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, segments, full, location, startDate, endDate, maxPages, inspectLimit }) => {
       // Property is now populated: the shared helper starts the browser dashboard and puts its link
       // on the finished job (polled via check_sync_status), and skips that if the job was cancelled.
-      const jobId = jobs.start('refresh', withDashboard(siteUrl, (update, signal) =>
+      const jobId = startFor(siteUrl, 'refresh', withDashboard(siteUrl, (update, signal) =>
         refresh.run(siteUrl, { gsc: doGsc, crawl, inspect, ranks, segments, full, location, startDate, endDate, maxPages, inspectLimit }, update, signal)));
       return jobStarted({ jobId, status: 'running', siteUrl }, `Refresh started for ${siteUrl} (job ${jobId}). Poll check_sync_status.`);
     },
@@ -1015,7 +1014,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         searchType,
       };
       const planned = syncer.plannedRange(siteUrl, options); // before the job can write
-      const jobId = jobs.start('sync', withDashboard(siteUrl, (update, signal) => syncer.run(siteUrl, options, update, signal)));
+      const jobId = startFor(siteUrl, 'sync', withDashboard(siteUrl, (update, signal) => syncer.run(siteUrl, options, update, signal)));
       // Show the range this sync will actually fetch, not the requested default (#33). planned is
       // computed by the same rule as the job; a shape change can still widen it, and the finished
       // job reports the range used.
@@ -1043,7 +1042,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async ({ siteUrl, limit }) => {
       const insp = requireGsc(inspector);
-      const jobId = jobs.start('inspect', withDashboard(siteUrl, (update, signal) => insp.run(siteUrl, { limit }, update, signal)));
+      const jobId = startFor(siteUrl, 'inspect', withDashboard(siteUrl, (update, signal) => insp.run(siteUrl, { limit }, update, signal)));
       return jobStarted({ jobId, status: 'running', siteUrl }, `Inspection started for ${siteUrl} (job ${jobId}). Poll check_sync_status.`);
     },
   );
@@ -1069,7 +1068,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       },
     },
     async ({ siteUrl, maxPages, maxDepth, maxConcurrency, delayMs, userAgent, excludePatterns, headResources, checkExternal, externalCacheDays, chromeFallback }) => {
-      const jobId = jobs.start('crawl', withDashboard(siteUrl, (update, signal) =>
+      const jobId = startFor(siteUrl, 'crawl', withDashboard(siteUrl, (update, signal) =>
         crawler.run(siteUrl, { maxPages, maxDepth, maxConcurrency, delayMs, userAgent, excludePatterns, headResources, checkExternal, externalCacheDays, chromeFallback }, update, signal),
       ));
       return jobStarted({ jobId, status: 'running', siteUrl }, `Crawl started for ${siteUrl} (job ${jobId}). Poll check_crawl_status.`);
@@ -1239,7 +1238,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'youtube_discovery',
     {
       title: 'YouTube video discovery (DataForSEO SERP)',
-      description: '[Paid: SERP call PER KEYWORD, cached 20d | Use for: finding the videos that rank for a topic — content research, competitor video scan, freshness] The ranking YouTube videos for a keyword (DataForSEO YouTube organic SERP). Returns title, URL, channel, view count, publish date, duration and shorts/live flags, in rank order. Pair with a transcript tool (Supadata) to read what the winning videos actually say. SERP scope, 20-day cache. Default location: United States (2840).',
+      description: '[Paid: SERP call PER KEYWORD, cached 20d | Use for: finding the videos that rank for a topic — content research, competitor video scan, freshness] The ranking YouTube videos for a keyword (DataForSEO YouTube organic SERP). Returns title, URL, channel, view count, publish date, duration and shorts/live flags, in rank order. Watch the top few to see what the winning videos actually cover. SERP scope, 20-day cache. Default location: United States (2840).',
       inputSchema: {
         keyword: z.string(),
         location: z.union([z.string(), z.number()]).optional(),
@@ -1457,7 +1456,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'recon_targets',
     {
       title: 'Content recon: why a page is losing, and what to do about it',
-      description: '[Paid: DataForSEO SERP per page (~$0.004 each, plus a small refundable surcharge for loading async AI Overviews), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced, depth 20 organic), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, competitive-gap, or page-cannot-rank (the crawl says the URL is noindex/canonicalised away, so its GSC history is legacy and the SERP read belongs to another page). Honesty rules baked in: every GSC figure carries its 28-day window; organicRank:null means "absent from the top 20 ORGANIC results", never a position; and an AI Overview whose citations could not be resolved reports aioCitesUs:null (UNKNOWN) rather than "not cited". To-dos are prioritised by OPPORTUNITY (impressions x the CTR gap between where you rank and a realistic target, damped by the verdict), not by raw impressions, and cannibalisation is counted across the whole query cluster. Set scrapeCompetitors:true to also pull the top competitors as content, routed by host: YouTube/video → Supadata transcript (SUPADATA_API_KEY), Reddit → its .json, other pages → Firecrawl (FIRECRAWL_API_KEY) with a free HTTP fallback; competitorLimit (default 5) caps how many are fetched and everything above the cap is listed as skipped. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Transcribe the videos (usually what wins these SERPs) and use the reachable pages. Then write findings back with save_recon_todo; track with recon_todos. **Async job:** returns a jobId immediately - poll check_sync_status; the finished job carries the per-page verdicts, to-dos and a summary. (Each page is persisted to the ledger as it completes, so recon_todos shows results even mid-run.)',
+      description: '[Paid: DataForSEO SERP per page (~$0.004 each, plus a small refundable surcharge for loading async AI Overviews), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your worst declining / striking-distance pages (auto-selected by impressions x decline, position 3-15; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced, depth 20 organic), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, competitive-gap, or page-cannot-rank (the crawl says the URL is noindex/canonicalised away, so its GSC history is legacy and the SERP read belongs to another page). Honesty rules baked in: every GSC figure carries its 28-day window; organicRank:null means "absent from the top 20 ORGANIC results", never a position; and an AI Overview whose citations could not be resolved reports aioCitesUs:null (UNKNOWN) rather than "not cited". To-dos are prioritised by OPPORTUNITY (impressions x the CTR gap between where you rank and a realistic target, damped by the verdict), not by raw impressions, and cannibalisation is counted across the whole query cluster. Set scrapeCompetitors:true to also pull the top competitors as content, free and with no API key, routed by host: Reddit → its .json, other pages → a browser-profile HTTP fetch, and ranking videos are listed rather than fetched (a video page has no readable text over HTTP); competitorLimit (default 5) caps how many are fetched and everything above the cap is listed as skipped. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Watch the ranking videos (usually what wins these SERPs) and use the fetched pages. Then write findings back with save_recon_todo; track with recon_todos. **Async job:** returns a jobId immediately - poll check_sync_status; the finished job carries the per-page verdicts, to-dos and a summary. (Each page is persisted to the ledger as it completes, so recon_todos shows results even mid-run.)',
       inputSchema: {
         siteUrl: z.string(),
         limit: z.number().int().min(1).max(50).optional().describe('Pages per batch (default 5; async so large batches are fine)'),
@@ -1474,7 +1473,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const count = urls?.length || limit || 5;
       // Async job: N live page-fetches + N serialised SERP calls exceed the ~60s MCP ceiling
       // past a handful of pages, so return a jobId and poll (like refresh_property).
-      const jobId = jobs.start('recon', async (update, signal) => {
+      const jobId = startFor(siteUrl, 'recon', async (update, signal) => {
         const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
         try {
           const fresh = gscFreshness(db.db);
@@ -1534,11 +1533,15 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
 
             let competitorContent: any = undefined;
             let competitorFetch: any = undefined;
-            if (scrapeCompetitors && (firecrawl || supadata)) {
-              // Build a routed candidate set: organic-above + AI-Overview references + one ranking
-              // video, deduped, our own domain removed. Each URL routes by HOST (YouTube→supadata,
-              // Reddit→.json, else→firecrawl). What we don't fetch is REPORTED, not silently dropped
-              // — an undeclared cap of 3 is what made this look like it returned nothing.
+            // No API keys are needed: every route is a free fetch. (It used to be gated on a
+            // paid-fetcher key, so without one scrapeCompetitors:true silently did nothing -
+            // including the keyless Reddit and plain-HTTP paths it advertised.)
+            if (scrapeCompetitors) {
+              // Build a routed candidate set: organic-above + AI-Overview references + the ranking
+              // videos, deduped, our own domain removed. Each URL routes by HOST (Reddit→.json,
+              // video→listed not fetched, else→browser-profile fetch). What we don't fetch is
+              // REPORTED, not silently dropped — an undeclared cap of 3 is what made this look like
+              // it returned nothing.
               const seen = new Set<string>();
               const candidates: { url: string; from: string; route: string }[] = [];
               const add = (url: string | undefined, from: string) => {
@@ -1549,18 +1552,22 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
               serp.videoItems.slice(0, 2).forEach(v => add(v.url, 'video-pack'));
 
               const lim = competitorLimit ?? 5;
-              // Organic-above first (the editorial pages actually worth diffing), but keep one slot
-              // for a ranking video — video is usually what wins these SERPs.
-              const video = candidates.find(c => c.route === 'video');
-              const rest = candidates.filter(c => c !== video);
-              const reserve = video && lim >= 3 ? 1 : 0;
-              const chosen = [...rest.slice(0, lim - reserve), ...(reserve && video ? [video] : [])];
-              const skipped = candidates.filter(c => !chosen.includes(c));
+              // Video can't be read over HTTP (a player shell), so ranking videos don't spend a
+              // fetch slot: they're listed for the research session to watch. Every slot goes to an
+              // editorial page or thread, organic-above first - the pages actually worth diffing.
+              const videos = candidates.filter(c => c.route === 'video');
+              const readable = candidates.filter(c => c.route !== 'video');
+              const chosen = readable.slice(0, lim);
+              const skipped = readable.slice(lim);
 
               competitorContent = [];
               for (const c of chosen) {
-                competitorContent.push(await fetchCompetitorContent(c.url, { firecrawl, supadata }, { maxChars: 4000, ua: crawlAs }));
+                competitorContent.push(await fetchCompetitorContent(c.url, { maxChars: 4000, ua: crawlAs }));
               }
+              const notes = [
+                skipped.length ? `${skipped.length} identified competitor page(s) not fetched (competitorLimit ${lim}) — raise competitorLimit or fetch them directly.` : '',
+                videos.length ? `${videos.length} ranking video(s) listed, not fetched (no readable text over HTTP) — watch them; video often wins these SERPs.` : '',
+              ].filter(Boolean);
               competitorFetch = {
                 limit: lim,
                 identified: candidates.length,
@@ -1570,7 +1577,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
                 empty: competitorContent.filter((c: any) => !c.error && !c.content).length,
                 routes: chosen.map(c => ({ url: c.url, from: c.from, route: c.route })),
                 skipped: skipped.map(c => ({ url: c.url, from: c.from, route: c.route })),
-                note: skipped.length ? `${skipped.length} identified competitor(s) not fetched (competitorLimit ${lim}) — raise competitorLimit or fetch them directly.` : undefined,
+                videos: videos.map(c => ({ url: c.url, from: c.from })),
+                note: notes.length ? notes.join(' ') : undefined,
               };
             }
 
@@ -1603,21 +1611,17 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
               const rank = r.organicRank != null ? `organic #${r.organicRank}` : `not in the top ${SERP_DEPTH} organic`;
               const cann = r.cannibalisationCluster?.cannibalising ? `\nCluster overlap: ${r.cannibalisationCluster.urls.length} of your URLs across "${r.cannibalisationCluster.core.join(' ')}", colliding on ${r.cannibalisationCluster.collidingQueries} of ${r.cannibalisationCluster.clusterQueries} queries.` : '';
               const cf = r.competitorFetch
-                ? `\nCompetitors: ${r.competitorFetch.fetched}/${r.competitorFetch.attempted} fetched of ${r.competitorFetch.identified} identified (limit ${r.competitorFetch.limit})${r.competitorFetch.skipped.length ? `; skipped ${r.competitorFetch.skipped.map((s: any) => s.url).join(', ')}` : ''}.`
+                ? `\nCompetitors: ${r.competitorFetch.fetched}/${r.competitorFetch.attempted} fetched of ${r.competitorFetch.identified} identified (limit ${r.competitorFetch.limit})${r.competitorFetch.skipped.length ? `; skipped ${r.competitorFetch.skipped.map((s: any) => s.url).join(', ')}` : ''}.` +
+                  (r.competitorFetch.videos?.length ? `\nRanking videos (watch these; not fetched): ${r.competitorFetch.videos.map((v: any) => v.url).join(', ')}` : '')
                 : '';
               return `## ${r.urlKey}\n"${r.query}" — ${rank} (GSC avg ${r.gscPosition}${r.slipped ? `, slipped from ${r.priorPosition}` : ''}), ${r.impressions} impr. ${flags}\n` +
                 `**${r.verdict}** — ${r.verdictNote}\nOpportunity: ~${r.priorityBasis.opportunityClicks} clicks/28d if it moved from ${r.priorityBasis.position} (${r.priorityBasis.positionSource}) to ${r.priorityBasis.targetPosition}.${cann}${cf}\n` +
                 (r.todos.length ? '\nTo do:\n' + r.todos.map((t: any) => `- [${t.type}] ${t.action}`).join('\n') : '');
             }).join('\n\n') +
             (() => {
-              const errs = results.flatMap(r => (r.competitorContent ?? []).filter((c: any) => c.error) as any[]);
-              if (!errs.length) return '';
-              const needKey = errs.filter(c => /not set/i.test(c.error));
-              const blocked = errs.filter(c => !/not set/i.test(c.error));
-              let note = '';
-              if (blocked.length) note += `\n\n${blocked.length} competitor(s) couldn't be fetched (bot-protection like Cloudflare, a block, or a fetch error): ${blocked.slice(0, 5).map(c => `${c.url} [${c.via}: ${c.error}]`).join('; ')}. If one matters, paste its copy here or drop a text file and I'll diff it in.`;
-              if (needKey.length) note += `\n\n${needKey.length} competitor(s) skipped for a missing API key: ${[...new Set(needKey.map(c => c.error))].join('; ')}.`;
-              return note;
+              const blocked = results.flatMap(r => (r.competitorContent ?? []).filter((c: any) => c.error) as any[]);
+              if (!blocked.length) return '';
+              return `\n\n${blocked.length} competitor(s) couldn't be fetched (bot-protection like Cloudflare, a block, or a fetch error): ${blocked.slice(0, 5).map(c => `${c.url} [${c.via}: ${c.error}]`).join('; ')}. If one matters, paste its copy here or drop a text file and I'll diff it in.`;
             })() +
             `\n\nNext: research the competitors (transcribe the videos, read the reachable pages), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
           // The poll (check_sync_status) injects this result into the model's context, which the
@@ -1649,7 +1653,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'save_recon_todo',
     {
       title: 'Save content-recon to-dos (research writeback)',
-      description: 'Write content-recon findings back into the trackable ledger for a page — the gaps and originality the research session found by diffing competitors (firecrawl) and videos (supadata) against our content. Each to-do is an action with a type (content-gap / originality / schema / freshness / format), rationale and evidence. Snapshots the page baseline so the fix\'s effect on rank/AIO-citation is measurable later. Run recon_targets first (it classifies the page and seeds the deterministic to-dos); this adds the judgement ones. Track everything with recon_todos.',
+      description: 'Write content-recon findings back into the trackable ledger for a page — the gaps and originality the research session found by diffing the competitor pages and ranking videos against our content. Each to-do is an action with a type (content-gap / originality / schema / freshness / format), rationale and evidence. Snapshots the page baseline so the fix\'s effect on rank/AIO-citation is measurable later. Run recon_targets first (it classifies the page and seeds the deterministic to-dos); this adds the judgement ones. Track everything with recon_todos.',
       inputSchema: {
         siteUrl: z.string(),
         urlKey: z.string().describe('The page (any URL form — normalised to its key)'),
@@ -2552,7 +2556,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async ({ siteUrl, limit, statusLimit }) => {
       const bl = requireDfs(backlinks);
-      const jobId = jobs.start('backlinks', (update, signal) => bl.run(siteUrl, { limit, statusLimit }, update, signal));
+      const jobId = startFor(siteUrl, 'backlinks', (update, signal) => bl.run(siteUrl, { limit, statusLimit }, update, signal));
       return jobStarted({ jobId, status: 'running', siteUrl }, `Backlink pull started for ${siteUrl} (job ${jobId}). Poll check_sync_status, then run_audit for backlinks-to-404.`);
     },
   );
@@ -2662,7 +2666,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(500).optional(), language: z.string().optional() },
     },
     async ({ siteUrl, limit, language }) => {
-      const jobId = jobs.start('entities', (update, signal) => entities.run(siteUrl, { ...(limit != null ? { limit } : {}), ...(language ? { language } : {}) }, update, signal));
+      const jobId = startFor(siteUrl, 'entities', (update, signal) => entities.run(siteUrl, { ...(limit != null ? { limit } : {}), ...(language ? { language } : {}) }, update, signal));
       return jobStarted({ jobId, status: 'running', siteUrl }, `Entity resolution started for ${siteUrl} (job ${jobId}). Poll check_sync_status, then run_audit includeJudgement:true for entity-internal-link-gap.`);
     },
   );
@@ -2723,7 +2727,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async ({ siteUrl, location }) => {
       const tracker = requireDfs(rankTracker);
-      const jobId = jobs.start('rank_history', (update, signal) => tracker.run(siteUrl, { location }, update, signal));
+      const jobId = startFor(siteUrl, 'rank_history', (update, signal) => tracker.run(siteUrl, { location }, update, signal));
       return jobStarted({ jobId, status: 'running', siteUrl }, `Rank-history ingest started for ${siteUrl} (job ${jobId}). Poll check_sync_status.`);
     },
   );

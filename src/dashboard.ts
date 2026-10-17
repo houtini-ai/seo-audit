@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startDashboardServer } from './core/webServer.js';
 import { buildWebCallHandlers } from './core/webHandlers.js';
-import { DataForSeoClient } from './core/DataForSeoClient.js';
+import { DataForSeoClient, dfsCacheDaysFromEnv } from './core/DataForSeoClient.js';
 
 /**
  * Standalone dashboard server — the Docker-aware delivery surface.
@@ -34,13 +34,11 @@ const dataDir = (): string => DATA_DIR;
 const dfsUser = process.env.DATAFORSEO_USERNAME;
 const dfsPass = process.env.DATAFORSEO_PASSWORD;
 const dfs = dfsUser && dfsPass
-  ? new DataForSeoClient(dfsUser, dfsPass, path.join(DATA_DIR, 'dataforseo-cache.db'), Number(process.env.DATAFORSEO_CACHE_DAYS) || 7)
+  ? new DataForSeoClient(dfsUser, dfsPass, path.join(DATA_DIR, 'dataforseo-cache.db'), dfsCacheDaysFromEnv())
   : null;
-const apiKeys = (): { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean } => ({
+const apiKeys = (): { dataforseo: boolean; majestic: boolean } => ({
   dataforseo: !!dfs,
   majestic: !!process.env.MAJESTIC_API_KEY,
-  firecrawl: !!process.env.FIRECRAWL_API_KEY,
-  supadata: !!process.env.SUPADATA_API_KEY,
 });
 
 // Same built UI the MCP serves (Vite output tree: dist/src/ui/dashboard.html, next to this file).

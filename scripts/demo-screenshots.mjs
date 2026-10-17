@@ -55,7 +55,7 @@ const fixtures = {
   keyword_volume: async () => ({ keywords: [{ keyword: 'waterproof jackets', searchVolume: 40500, cpc: 0.62, competition: 1 }] }),
 };
 
-const base = buildWebCallHandlers({ dataDir: () => DATA, dfs: null, apiKeys: () => ({ dataforseo: true, majestic: true, firecrawl: false, supadata: false }) });
+const base = buildWebCallHandlers({ dataDir: () => DATA, dfs: null, apiKeys: () => ({ dataforseo: true, majestic: true }) });
 const uiHtml = () => readFileSync(path.join(root, 'dist', 'src', 'ui', 'dashboard.html'), 'utf8');
 const { url } = await startDashboardServer({ dataDir: () => DATA, uiHtml, call: { ...base, ...fixtures } });
 const siteUrl = 'sc-domain:larchmere.example';

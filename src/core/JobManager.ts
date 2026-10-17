@@ -15,6 +15,9 @@ export interface Job {
   result?: unknown;
   /** Last time the owning process said it was still working on this job (durable jobs only). */
   heartbeatAt?: string;
+  /** What the job works on - the property's database file name - so "is a job running FOR THIS
+   * property" can be answered. Recorded at start, so it is in the registry from the first write. */
+  scope?: string;
 }
 
 /**
@@ -39,6 +42,15 @@ export const INTERRUPTED_ERROR =
 
 const HEARTBEAT_MS = 20_000;
 const STALE_MS = 90_000;
+/**
+ * How long a job stored as `running` is treated as possibly alive by DESTRUCTIVE guards (vacuum,
+ * delete-property, repair). The heartbeat is a timer on the main thread, so a long synchronous step
+ * in the owning process (a big run_audit, a large triage_404s) can starve it past STALE_MS and the
+ * job briefly reads `interrupted` everywhere else. That is cosmetic and clears on the next beat, but
+ * a prune that trusted it would write to a database the job is still writing. So guards use this
+ * far longer window instead.
+ */
+const SAFETY_STALE_MS = 30 * 60_000;
 const PROGRESS_THROTTLE_MS = 2_000;
 /** Results above this are not persisted (the in-process copy is kept); a crawl result is a few KB. */
 const MAX_RESULT_BYTES = 2_000_000;
@@ -58,7 +70,7 @@ export interface JobManagerOptions {
 
 interface JobRow {
   id: string; type: string; state: string; started_at: string; updated_at: string; heartbeat_at: string | null;
-  progress: string | null; error: string | null; result: string | null; instance_id: string;
+  progress: string | null; error: string | null; result: string | null; instance_id: string; scope: string | null;
 }
 
 const FINISHED = new Set<JobState>(['completed', 'failed', 'cancelled', 'interrupted']);
@@ -129,6 +141,9 @@ export class JobManager {
         instance_id TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS jobs_started ON jobs(started_at);`);
+      // scope arrived after the first durable registry shipped: add it to existing files.
+      const cols = db.prepare(`PRAGMA table_info(jobs)`).all() as { name: string }[];
+      if (!cols.some(c => c.name === 'scope')) db.exec(`ALTER TABLE jobs ADD COLUMN scope TEXT`);
       this.db = db;
     } catch (err) {
       this.db = null;
@@ -153,24 +168,26 @@ export class JobManager {
           result = s.length <= MAX_RESULT_BYTES ? s : JSON.stringify({ note: `Result too large to persist (${s.length} bytes); it was only available from the process that ran the job.` });
         } catch { result = null; }
       }
-      this.db.prepare(`INSERT INTO jobs (id, type, state, started_at, updated_at, heartbeat_at, progress, error, result, instance_id)
-        VALUES (@id, @type, @state, @startedAt, @updatedAt, @heartbeatAt, @progress, @error, @result, @instanceId)
+      this.db.prepare(`INSERT INTO jobs (id, type, state, started_at, updated_at, heartbeat_at, progress, error, result, instance_id, scope)
+        VALUES (@id, @type, @state, @startedAt, @updatedAt, @heartbeatAt, @progress, @error, @result, @instanceId, @scope)
         ON CONFLICT(id) DO UPDATE SET state=excluded.state, updated_at=excluded.updated_at, heartbeat_at=excluded.heartbeat_at,
           progress=excluded.progress, error=excluded.error, result=COALESCE(excluded.result, jobs.result)`)
         .run({
           id: job.id, type: job.type, state: job.state, startedAt: job.startedAt, updatedAt: job.updatedAt,
           heartbeatAt: job.heartbeatAt ?? null, progress: JSON.stringify(job.progress ?? {}), error: job.error ?? null,
-          result, instanceId: this.instanceId,
+          result, instanceId: this.instanceId, scope: job.scope ?? null,
         });
     } catch (err) {
       this.warn(`writing to the job registry failed (${errText(err)}); continuing in memory.`);
     }
   }
 
-  start(type: string, fn: JobFn): string {
+  /** `opts.scope`: what the job works on (the property DB file name) - see Job.scope. */
+  start(type: string, fn: JobFn, opts: { scope?: string } = {}): string {
     const id = randomUUID().slice(0, 8);
     const now = new Date().toISOString();
     const job: Job = { id, type, state: 'running', startedAt: now, updatedAt: now, progress: {} };
+    if (opts.scope) job.scope = opts.scope;
     if (this.db) job.heartbeatAt = now;
     const controller = new AbortController();
     this.jobs.set(id, job);
@@ -179,8 +196,10 @@ export class JobManager {
     this.prune();
 
     // Progress is written at most once per throttle window; anything newer is flushed by the
-    // next heartbeat or the final write.
-    let lastWrite = Date.now();
+    // next heartbeat or the final write. Starts at 0 so the FIRST update is written straight away -
+    // a job that reports once and then works silently (the FTS worker) would otherwise keep that
+    // progress out of the registry until the first heartbeat, ~20 s later.
+    let lastWrite = 0;
     const update = (p: Record<string, unknown>): void => {
       job.progress = { ...job.progress, ...p };
       job.updatedAt = new Date().toISOString();
@@ -247,6 +266,7 @@ export class JobManager {
       progress: (parseJson(r.progress) as Record<string, unknown> | undefined) ?? {},
     };
     if (r.heartbeat_at) job.heartbeatAt = r.heartbeat_at;
+    if (r.scope) job.scope = r.scope;
     if (error !== undefined) job.error = error;
     const result = parseJson(r.result);
     if (result !== undefined) job.result = result;
@@ -279,6 +299,31 @@ export class JobManager {
       }
     }
     return [...out.values()].sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+  }
+
+  /**
+   * Jobs that may still be writing, for DESTRUCTIVE guards: this process's running jobs plus any
+   * registry row stored as `running` whose heartbeat is within SAFETY_STALE_MS. Deliberately not
+   * list()'s derived state, which reads a job `interrupted` once its heartbeat is 90 s stale - an
+   * owner that is merely busy (event loop blocked by a long synchronous step) looks dead for a while.
+   */
+  possiblyRunning(windowMs = SAFETY_STALE_MS): Job[] {
+    const out = new Map<string, Job>();
+    for (const j of this.jobs.values()) if (j.state === 'running') out.set(j.id, j);
+    if (this.db) {
+      try {
+        const since = new Date(Date.now() - windowMs).toISOString();
+        const rows = this.db.prepare(`SELECT * FROM jobs WHERE state = 'running' AND COALESCE(heartbeat_at, updated_at) >= ?`).all(since) as JobRow[];
+        for (const r of rows) {
+          if (out.has(r.id)) continue;
+          const j = this.fromRow(r);
+          out.set(r.id, { ...j, state: 'running' }); // a guard treats it as live, whatever list() would show
+        }
+      } catch (err) {
+        this.warn(`reading the job registry failed (${errText(err)}).`);
+      }
+    }
+    return [...out.values()];
   }
 
   /** Only this process's jobs can be cancelled: another process's job has no handle here. */
@@ -321,13 +366,20 @@ export class JobManager {
  * Job types with a live owner (state running, fresh heartbeat) in a data dir's registry, read
  * without a JobManager - for the dashboard, which may run in its own process. Null when there is
  * no registry to ask (an older server, or memory-only), so callers conclude nothing from it.
+ *
+ * `scope` (a property's DB file name) narrows it to jobs for that property, so a live crawl on
+ * property A no longer vouches for property B's dead one. Rows with no scope (written before it
+ * existed) still count for every property: unknown is treated as possibly ours, never as dead.
  */
-export function liveJobTypes(dataDir: string, staleMs = STALE_MS): Set<string> | null {
+export function liveJobTypes(dataDir: string, scope?: string | null, staleMs = STALE_MS): Set<string> | null {
   let db: Database.Database | null = null;
   try {
     db = new Database(jobsDbPath(dataDir), { readonly: true, fileMustExist: true });
     const since = new Date(Date.now() - staleMs).toISOString();
-    const rows = db.prepare(`SELECT DISTINCT type FROM jobs WHERE state = 'running' AND COALESCE(heartbeat_at, updated_at) >= ?`).all(since) as { type: string }[];
+    const hasScope = (db.prepare(`PRAGMA table_info(jobs)`).all() as { name: string }[]).some(c => c.name === 'scope');
+    const rows = (scope && hasScope
+      ? db.prepare(`SELECT DISTINCT type FROM jobs WHERE state = 'running' AND COALESCE(heartbeat_at, updated_at) >= ? AND (scope = ? OR scope IS NULL)`).all(since, scope)
+      : db.prepare(`SELECT DISTINCT type FROM jobs WHERE state = 'running' AND COALESCE(heartbeat_at, updated_at) >= ?`).all(since)) as { type: string }[];
     return new Set(rows.map(r => r.type));
   } catch {
     return null;

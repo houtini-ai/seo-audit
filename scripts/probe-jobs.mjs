@@ -229,6 +229,62 @@ const site = 'https://example.com/';
   fdb.close();
 }
 
+// ── 0.15.0: an audit stored 'running' isn't taken at its word ──────────────────────────────────
+// run_audit writes status='running' at start, so a process killed mid-audit left it 'running'
+// forever: the 30-minute fallback only ever applied to legacy NULL-status rows.
+{
+  const adb = new AuditDatabase(path.join(dir, 'audit-state.db'));
+  const auditState = () => getDataFreshness(adb.db, null).sources.find(s => s.kind === 'audit')?.state;
+  adb.db.prepare("INSERT INTO audit_runs (run_id, scope, started_at, status) VALUES ('r-old', 'full', datetime('now','-2 hours'), 'running')").run();
+  check('an audit left running for hours reads as interrupted', auditState() === 'interrupted', auditState());
+  adb.db.prepare("INSERT INTO audit_runs (run_id, scope, started_at, status) VALUES ('r-new', 'full', datetime('now','-1 minute'), 'running')").run();
+  check('an audit that started a minute ago still reads as running', auditState() === 'running', auditState());
+  adb.db.prepare("UPDATE audit_runs SET status='failed' WHERE run_id='r-new'").run();
+  check('a recorded terminal status is still reported as-is', auditState() === 'failed', auditState());
+  adb.close();
+}
+
+// ── 0.15.0: job scope, per-property liveness, the conservative guard, first progress write ─────
+{
+  const sdir = path.join(dir, 'scope');
+  const sjdb = jobsDbPath(sdir);
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const a = new JobManager({ dbPath: sjdb });
+  let release; const gate = new Promise(r => { release = r; });
+  const id = a.start('crawl', async (update) => { update({ phase: 'crawl' }); await gate; return {}; }, { scope: 'a.example.db' });
+  await sleep(20);
+  const ro = new Database(sjdb, { readonly: true });
+  const row = ro.prepare('SELECT scope, progress FROM jobs WHERE id = ?').get(id);
+  ro.close();
+  check('a job\'s scope is in the registry from its first write', row?.scope === 'a.example.db', JSON.stringify(row));
+  check('the first progress update is written at once, not held for the ~20 s heartbeat', JSON.parse(row?.progress ?? '{}').phase === 'crawl', row?.progress);
+  const forA = liveJobTypes(sdir, 'a.example.db');
+  const forB = liveJobTypes(sdir, 'b.example.db');
+  check('liveJobTypes(scope) sees the live crawl for its own property', !!forA && forA.has('crawl'), JSON.stringify(forA && [...forA]));
+  check('...and NOT for another property (a live crawl on A no longer vouches for B)', !!forB && !forB.has('crawl'), JSON.stringify(forB && [...forB]));
+
+  const raw = new Database(sjdb);
+  const at = (msAgo) => new Date(Date.now() - msAgo).toISOString();
+  const ins = raw.prepare('INSERT INTO jobs (id,type,state,started_at,updated_at,heartbeat_at,progress,instance_id,scope) VALUES (?,?,?,?,?,?,?,?,?)');
+  ins.run('legacy01', 'refresh', 'running', at(0), at(0), at(0), '{}', 'old-proc', null);                 // pre-scope row
+  ins.run('busy0001', 'sync', 'running', at(5 * 60_000), at(5 * 60_000), at(5 * 60_000), '{}', 'busy-proc', 'a.example.db'); // starved heartbeat
+  ins.run('dead0001', 'crawl', 'running', at(2 * 3600_000), at(2 * 3600_000), at(2 * 3600_000), '{}', 'dead-proc', 'a.example.db'); // long dead
+  raw.close();
+  const forB2 = liveJobTypes(sdir, 'b.example.db');
+  check('an unscoped (pre-0.15) live job still counts for every property', !!forB2 && forB2.has('refresh'), JSON.stringify(forB2 && [...forB2]));
+
+  const b = new JobManager({ dbPath: sjdb });
+  check('list() reads a 5-minute-stale owner as interrupted (display state)', b.get('busy0001')?.state === 'interrupted', JSON.stringify(b.get('busy0001')));
+  const guard = b.possiblyRunning().map(j => j.id);
+  check('possiblyRunning() still counts that busy owner, so no prune runs under it', guard.includes('busy0001'), JSON.stringify(guard));
+  check('...but not an owner dead for hours', !guard.includes('dead0001'), JSON.stringify(guard));
+  check('...and a process\'s own live job is always included', a.possiblyRunning().some(j => j.id === id), JSON.stringify(a.possiblyRunning().map(j => j.id)));
+  check('possiblyRunning() reports every guarded job as running', b.possiblyRunning().every(j => j.state === 'running'), '');
+  release();
+  await sleep(20);
+  a.close(); b.close();
+}
+
 rmSync(dir, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -22,16 +22,30 @@ const TOKENIZE = `tokenize='unicode61 remove_diacritics 2'`;
 const BODY_SQL = (alias: string) => `(SELECT group_concat(COALESCE(json_extract(value,'$.heading'),'') || ' ' || COALESCE(json_extract(value,'$.text'),''), ' ') FROM json_each(CASE WHEN json_valid(${alias}.body_chunks) THEN ${alias}.body_chunks ELSE '[]' END))`;
 
 export function ensureFtsSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS fts_meta (name TEXT PRIMARY KEY, built_at TEXT);`);
+  // sa_query_fts is an external-content index that resolves `query` through the content table's
+  // rowid. The first schema gave sa_queries a TEXT primary key, so its rowid was implicit — and
+  // VACUUM may renumber implicit rowids, after which `match` silently returned the wrong queries.
+  // An explicit INTEGER PRIMARY KEY is VACUUM-stable. Migrate old DBs by dropping the (distinct-
+  // query, cheap to rebuild) index; it re-backfills on next use.
+  const saCols = db.prepare(`PRAGMA table_info(sa_queries)`).all() as { name: string }[];
+  if (saCols.length && !saCols.some(c => c.name === 'id')) {
+    db.exec(`
+      DROP TRIGGER IF EXISTS sa_queries_ai;
+      DROP TRIGGER IF EXISTS sa_queries_ad;
+      DROP TABLE IF EXISTS sa_query_fts;
+      DROP TABLE IF EXISTS sa_queries;
+      DELETE FROM fts_meta WHERE name = 'sa_query_fts';
+    `);
+  }
   db.exec(`
-    CREATE TABLE IF NOT EXISTS fts_meta (name TEXT PRIMARY KEY, built_at TEXT);
-
-    CREATE TABLE IF NOT EXISTS sa_queries (query TEXT PRIMARY KEY);
-    CREATE VIRTUAL TABLE IF NOT EXISTS sa_query_fts USING fts5(query, content='sa_queries', content_rowid='rowid', ${TOKENIZE});
+    CREATE TABLE IF NOT EXISTS sa_queries (id INTEGER PRIMARY KEY, query TEXT NOT NULL UNIQUE);
+    CREATE VIRTUAL TABLE IF NOT EXISTS sa_query_fts USING fts5(query, content='sa_queries', content_rowid='id', ${TOKENIZE});
     CREATE TRIGGER IF NOT EXISTS sa_queries_ai AFTER INSERT ON sa_queries BEGIN
-      INSERT INTO sa_query_fts(rowid, query) VALUES (new.rowid, new.query);
+      INSERT INTO sa_query_fts(rowid, query) VALUES (new.id, new.query);
     END;
     CREATE TRIGGER IF NOT EXISTS sa_queries_ad AFTER DELETE ON sa_queries BEGIN
-      INSERT INTO sa_query_fts(sa_query_fts, rowid, query) VALUES ('delete', old.rowid, old.query);
+      INSERT INTO sa_query_fts(sa_query_fts, rowid, query) VALUES ('delete', old.id, old.query);
     END;
     -- No per-row trigger on search_analytics: it added ~50% to sync insert time. GscSync adds each
     -- batch's DISTINCT queries inside the batch's own transaction instead (addQueries).

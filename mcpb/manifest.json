@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "seo-audit-console",
   "display_name": "SEO Audit Console",
-  "version": "0.14.1",
+  "version": "0.15.0",
   "icon": "icon.png",
   "description": "The complete technical SEO audit at conversation speed: Google Search Console history + a first-party crawl + on-demand DataForSEO, merged into one prioritised audit inside Claude - 111 checks ranked by recoverable clicks, with paste-ready fixes, keyword and content-gap research, and AI-search readiness.",
   "long_description": "Merges Google Search Console history with a first-party site crawl (and on-demand DataForSEO) into one SQLite database per property, then runs 111 deterministic and judgement-labelled checks scored by expected recoverable clicks per hour of effort. Includes a findings dashboard, finding-to-fix generators (JSON-LD, 301 maps, internal-link suggestions), change detection, keyword and content-gap research, and an agent-readiness score. Requires a Google Cloud service account with Search Console API access; DataForSEO credentials are optional.",
@@ -47,9 +47,7 @@
         "DATAFORSEO_PASSWORD": "${user_config.dataforseo_password}",
         "DATAFORSEO_CACHE_DAYS": "${user_config.dataforseo_cache_days}",
         "MAJESTIC_API_KEY": "${user_config.majestic_api_key}",
-        "MAJESTIC_CACHE_DAYS": "${user_config.majestic_cache_days}",
-        "FIRECRAWL_API_KEY": "${user_config.firecrawl_api_key}",
-        "SUPADATA_API_KEY": "${user_config.supadata_api_key}"
+        "MAJESTIC_CACHE_DAYS": "${user_config.majestic_cache_days}"
       }
     }
   },
@@ -102,20 +100,6 @@
       "default": 20,
       "min": 1,
       "max": 90,
-      "required": false
-    },
-    "firecrawl_api_key": {
-      "type": "string",
-      "title": "Firecrawl API key (optional)",
-      "description": "Firecrawl API key. Optional - lets content recon scrape competitor pages to clean markdown. Recon works without it.",
-      "sensitive": true,
-      "required": false
-    },
-    "supadata_api_key": {
-      "type": "string",
-      "title": "Supadata API key (optional)",
-      "description": "Supadata API key. Optional - lets content recon transcribe the ranking videos (YouTube/TikTok/X). Recon works without it, it just skips video.",
-      "sensitive": true,
       "required": false
     }
   },

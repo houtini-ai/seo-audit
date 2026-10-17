@@ -13,7 +13,7 @@ export interface DashboardData {
   freshness?: { sources: { kind: string; state: string; at: string | null; detail: string; error?: string | null }[]; crawlRuns: unknown[]; shownCrawl?: { crawlId: string; status: string; at: string | null; partial: boolean } };
   empty?: boolean;
   linkProspects?: { domain: string; intersections: number; linkedTargets: string[]; domainTrust: number | null; spamScore: number | null; dofollow: boolean; trustFlow: number | null; citationFlow: number | null; topTopic: string | null; competitors: string[]; fetchedAt: string | null }[];
-  apiKeys?: { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean };
+  apiKeys?: { dataforseo: boolean; majestic: boolean };
   trappedAuthority?: { url: string; referringDomains: number; backlinks: number; clickDepth: number | null; ipr: number; trustFlow: number | null; topTopic: string | null }[];
   dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number };
   summary?: { current: Totals; prior: Totals };
@@ -1344,8 +1344,6 @@ function buildExportBar(data: DashboardData): void {
 const AFFILIATE: Record<string, string> = {
   dataforseo: 'https://dataforseo.com/?aff=213701',
   majestic: 'https://majestic.com/plans-pricing',
-  firecrawl: 'https://firecrawl.link/2d1PLD8',
-  supadata: 'https://supadata.ai',
 };
 function upsellCard(o: { title: string; lead: string; provider: keyof typeof AFFILIATE; cta: string }): string {
   return `<div class="chart-card upsell">

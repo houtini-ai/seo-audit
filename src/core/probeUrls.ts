@@ -30,6 +30,9 @@ export interface ProbeResult {
   ms: number;
   fetchedAs: FetchedAs;             // which user agent produced this result
   blockedAsBot?: boolean;           // the crawler's UA was bot-blocked; this result is the Chrome retry
+  /** Set when a redirect points off the property: the target was recorded (as finalUrl, with the
+   * redirect's own status as finalStatus) but NOT fetched. */
+  redirectsOffProperty?: string;
   error?: string;
 }
 
@@ -40,7 +43,7 @@ const emptyResult = (url: string): ProbeResult => ({ url, status: null, redirect
 const UA = 'Mozilla/5.0 (compatible; seo-audit-console probe; +https://github.com/houtini-ai/seo-audit)';
 const MAX_BODY = 2_000_000;
 
-async function probeOne(url: string, o: Required<ProbeOptions>, deadline: number, chrome = false): Promise<ProbeResult & { botBlocked?: boolean }> {
+async function probeOne(url: string, o: Required<ProbeOptions>, deadline: number, baseHost: string, chrome = false): Promise<ProbeResult & { botBlocked?: boolean }> {
   const t0 = Date.now();
   const out: ProbeResult & { botBlocked?: boolean } = { ...emptyResult(url), fetchedAs: chrome ? 'chrome' : 'bot' };
   let current = url;
@@ -54,7 +57,20 @@ async function probeOne(url: string, o: Required<ProbeOptions>, deadline: number
         out.redirectChain.push({ url: current, status: res.status, location: loc });
         try { await res.body?.cancel(); } catch { /* already closed */ }
         if (!o.followRedirects) { out.finalUrl = current; out.finalStatus = res.status; break; }
-        current = new URL(loc, current).toString();
+        let nextUrl: URL;
+        try { nextUrl = new URL(loc, current); } catch {
+          out.finalUrl = current; out.finalStatus = res.status; out.error = `unparseable redirect Location: ${loc}`; break;
+        }
+        // The same own-host guard as the input URLs, at EVERY hop. Checking only the input let an
+        // open redirect on the property (/out?to=...) turn the probe into a fetch of an arbitrary
+        // or internal-network URL whose title, canonical and content hash came back to the model.
+        if ((nextUrl.protocol !== 'http:' && nextUrl.protocol !== 'https:') || !isInternalHost(nextUrl.hostname, baseHost)) {
+          out.finalUrl = nextUrl.toString();
+          out.finalStatus = res.status;
+          out.redirectsOffProperty = `redirects to ${nextUrl.protocol}//${nextUrl.host}, outside ${baseHost} - recorded, not fetched`;
+          break;
+        }
+        current = nextUrl.toString();
         continue;
       }
       out.finalUrl = current;
@@ -110,10 +126,10 @@ export async function probeUrls(urls: { url: string; variantType?: string }[], b
         results[i] = { ...emptyResult(u.url), ...(u.variantType ? { variantType: u.variantType } : {}), error: 'not probed: time budget reached (probe fewer URLs per call)' };
         continue;
       }
-      let r = await probeOne(u.url, o, deadline);
+      let r = await probeOne(u.url, o, deadline, baseHost);
       // Bot-blocked under our own UA: one retry as Chrome, flagged so the reader knows (and so a
       // site that walls crawlers is visible as such).
-      if (r.botBlocked && o.chromeFallback && Date.now() < deadline - 1000) r = { ...(await probeOne(u.url, o, deadline, true)), blockedAsBot: true };
+      if (r.botBlocked && o.chromeFallback && Date.now() < deadline - 1000) r = { ...(await probeOne(u.url, o, deadline, baseHost, true)), blockedAsBot: true };
       delete r.botBlocked;
       results[i] = { ...r, ...(u.variantType ? { variantType: u.variantType } : {}) };
     }

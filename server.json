@@ -7,12 +7,12 @@
     "source": "github"
   },
   "websiteUrl": "https://houtini.com",
-  "version": "0.14.1",
+  "version": "0.15.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@houtini/seo-audit-console",
-      "version": "0.14.1",
+      "version": "0.15.0",
       "transport": {
         "type": "stdio"
       },
@@ -51,20 +51,6 @@
           "isRequired": false,
           "format": "string",
           "isSecret": false
-        },
-        {
-          "name": "FIRECRAWL_API_KEY",
-          "description": "Firecrawl API key (optional). Lets content recon scrape competitor pages. Get one at https://firecrawl.link/2d1PLD8",
-          "isRequired": false,
-          "format": "string",
-          "isSecret": true
-        },
-        {
-          "name": "SUPADATA_API_KEY",
-          "description": "Supadata API key (optional). Lets content recon transcribe the ranking videos (YouTube/TikTok/X).",
-          "isRequired": false,
-          "format": "string",
-          "isSecret": true
         },
         {
           "name": "MAJESTIC_API_KEY",

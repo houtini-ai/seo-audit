@@ -6,8 +6,7 @@
 # already-compiled node_modules + built dist (no toolchain shipped).
 #
 # Runtime config (set by the MCP client, not baked in): GOOGLE_APPLICATION_CREDENTIALS
-# (GSC service-account json), SAC_DATA_DIR (SQLite data dir), DataForSEO / Majestic /
-# Firecrawl / Supadata keys.
+# (GSC service-account json), SAC_DATA_DIR (SQLite data dir), DataForSEO / Majestic keys.
 
 # --- build stage: toolchain + full build ------------------------------------
 FROM node:22-slim AS build

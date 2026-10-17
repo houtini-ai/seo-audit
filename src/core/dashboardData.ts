@@ -1,7 +1,7 @@
 import { AuditDatabase } from './AuditDatabase.js';
 import { getDataFreshness, type DataFreshness } from './dataFreshness.js';
 import { liveJobTypes } from './JobManager.js';
-import { dbPathFor } from './paths.js';
+import { dbPathFor, jobScopeFor } from './paths.js';
 import { gscFreshness } from './gscFreshness.js';
 import { expectedCtr } from './ctrModel.js';
 import { brandToken } from './url-key.js';
@@ -116,7 +116,7 @@ export interface DashboardData {
   }[];
   // Which optional integrations have a key set (drives the key-gated tabs + upsell CTAs).
   // Injected by the server layer (the data layer has no env access).
-  apiKeys?: { dataforseo: boolean; majestic: boolean; firecrawl: boolean; supadata: boolean };
+  apiKeys?: { dataforseo: boolean; majestic: boolean };
   // Trapped authority — pages with real external authority (referring domains) buried deep
   // internally (high click depth / low iPR), so their link equity isn't reaching money pages.
   trappedAuthority?: { url: string; referringDomains: number; backlinks: number; clickDepth: number | null; ipr: number; trustFlow: number | null; topTopic: string | null }[];
@@ -147,7 +147,7 @@ interface Totals { clicks: number; impressions: number; position: number }
 
 // Bump when the dashboard payload SHAPE/content changes, so cached entries from older code are
 // invalidated even if the underlying GSC/crawl data hasn't changed. Part of the cache version key.
-const PAYLOAD_VERSION = '21';
+const PAYLOAD_VERSION = '22'; // 22: crawl-health urlFlow counts redirects from redirect_sources
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 export function getDashboardData(dataDir: string, siteUrl: string): DashboardData {
@@ -173,14 +173,14 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
     const version = `${PAYLOAD_VERSION}|${ver.sa ?? 'none'}|${ver.run ?? 'none'}|${ver.pg}|${ver.ar ?? ''}|${ver.rh ?? ''}|${ver.sf}|${ver.ms}|${ver.pb ?? ''}|${ver.lp ?? ''}`;
     const hit = db.db.prepare('SELECT payload FROM dashboard_cache WHERE id=1 AND version=?').get(version) as { payload: string } | undefined;
     // A corrupt/truncated cache row must fall through to a rebuild, not throw forever.
-    if (hit) { try { return { ...(JSON.parse(hit.payload) as DashboardData), freshness: getDataFreshness(db.db, liveJobTypes(dataDir)) }; } catch { /* rebuild below */ } }
+    if (hit) { try { return { ...(JSON.parse(hit.payload) as DashboardData), freshness: getDataFreshness(db.db, liveJobTypes(dataDir, jobScopeFor(dataDir, siteUrl))) }; } catch { /* rebuild below */ } }
 
     // Use the finalised date (trailing partial GSC days trimmed) for ALL windows + charts, so the
     // dashboard never shows the "traffic tanking" cliff of unfinalised data.
     const fresh = gscFreshness(db.db);
     const maxDate = fresh.effectiveMax;
     // No GSC data yet: still carry freshness, so a crawled-but-unsynced property shows its job status.
-    if (!maxDate) return { siteUrl, empty: true, freshness: getDataFreshness(db.db) };
+    if (!maxDate) return { siteUrl, empty: true, freshness: getDataFreshness(db.db, liveJobTypes(dataDir, jobScopeFor(dataDir, siteUrl))) };
     // Upper bound: never include unfinalised days past effectiveMax. Windows anchored on maxDate
     // only set a lower bound (date > date(maxDate,'-Nd')), so without this the partial trailing
     // days would still slip into current-period sums and the daily charts. (Prior windows already
@@ -770,22 +770,45 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         const imgSampled = one(`SELECT COUNT(*) n FROM image_assets WHERE bytes IS NOT NULL`);
         const largeImages = (db.db.prepare(`SELECT url, bytes, used_on FROM image_assets WHERE bytes >= 100000 ORDER BY bytes DESC LIMIT 15`).all() as { url: string; bytes: number; used_on: number }[])
           .map(r => ({ url: r.url, kb: Math.round(r.bytes / 1024), usedOn: r.used_on }));
-        // Canonical / redirect / not-found breakdown (the crawl-health "where do URLs leak" view):
-        // one pass, with the most-linked example URL per bucket.
+        // Canonical / redirect / not-found breakdown (the crawl-health "where do URLs leak" view),
+        // with the most-linked example URL per bucket.
+        // Redirects come from redirect_sources, NOT pages.status_code: the crawler stores an internal
+        // redirect under its FINAL URL with the final status (200), so counting 3xx in pages saw only
+        // the few redirect-outs that leave the site. redirect_sources holds every redirected source
+        // (internal and off-site); a 3xx page that isn't in it (no Location header, so never followed)
+        // is added so nothing drops out. Off-site redirect-outs sit in BOTH tables, which is why the
+        // pages buckets below no longer count 3xx at all.
+        const redirectRows = db.db.prepare(
+          `WITH r AS (
+             SELECT url_key, status FROM redirect_sources WHERE status IN (301,302,303,307,308)
+             UNION ALL
+             SELECT url_key, status_code FROM pages WHERE is_internal=1 AND status_code IN (301,302,303,307,308)
+               AND url_key NOT IN (SELECT url_key FROM redirect_sources)
+           ),
+           rb AS (
+             SELECT r.url_key,
+                    CASE WHEN r.status IN (301,308) THEN 'Permanent redirect (301/308)' ELSE 'Temporary redirect (302/303/307)' END b,
+                    (SELECT COUNT(*) FROM links l WHERE l.target_key = r.url_key) inl
+             FROM r
+           )
+           SELECT b label, COUNT(*) count, MAX(CASE WHEN rn = 1 THEN url_key END) example
+           FROM (SELECT url_key, b, ROW_NUMBER() OVER (PARTITION BY b ORDER BY inl DESC) rn FROM rb)
+           GROUP BY b`,
+        ).all() as { label: string; count: number; example: string | null }[];
         const bucketSql = `CASE
-            WHEN status_code IN (301,308) THEN 'Permanent redirect (301/308)'
-            WHEN status_code IN (302,303,307) THEN 'Temporary redirect (302/303/307)'
             WHEN status_code = 404 THEN 'Not found (404)'
             WHEN status_code = 410 THEN 'Gone (410)'
             WHEN status_code = 200 AND indexable_reason = 'canonicalised' THEN 'Canonicalised elsewhere'
             WHEN status_code = 200 AND indexable = 1 AND ${HTML_CT} AND (canonical_url IS NULL OR canonical_url = '') THEN 'Missing canonical'
             ELSE NULL END`;
-        const urlFlow = (db.db.prepare(
+        const pageRows = db.db.prepare(
           `SELECT b label, COUNT(*) count, MAX(CASE WHEN rn = 1 THEN url_key END) example
            FROM (SELECT url_key, b, ROW_NUMBER() OVER (PARTITION BY b ORDER BY inlink_count DESC) rn
                  FROM (SELECT url_key, inlink_count, ${bucketSql} b FROM pages WHERE is_internal=1))
-           WHERE b IS NOT NULL GROUP BY b ORDER BY count DESC`,
-        ).all() as { label: string; count: number; example: string | null }[])
+           WHERE b IS NOT NULL GROUP BY b`,
+        ).all() as { label: string; count: number; example: string | null }[];
+        const urlFlow = [...redirectRows, ...pageRows]
+          .sort((a, b) => b.count - a.count)
           .map(r => ({ ...r, tone: /404|410/.test(r.label) ? 'bad' : /Missing/.test(r.label) ? 'warn' : 'muted' }));
         crawlHealth = {
           urlFlow,
@@ -965,7 +988,7 @@ export function getDashboardData(dataDir: string, siteUrl: string): DashboardDat
         .run(version, JSON.stringify(payload));
     } catch { /* cache is an optimisation, never block the dashboard on it */ }
     // Freshness is read live on every load (outside the cache) - see dataFreshness.ts.
-    return { ...payload, freshness: getDataFreshness(db.db, liveJobTypes(dataDir)) };
+    return { ...payload, freshness: getDataFreshness(db.db, liveJobTypes(dataDir, jobScopeFor(dataDir, siteUrl))) };
   } finally {
     db.close();
   }

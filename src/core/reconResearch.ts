@@ -1,8 +1,6 @@
 import { Agent, fetch as ufetch } from 'undici';
-import type { FirecrawlClient } from './FirecrawlClient.js';
-import type { SupadataClient } from './SupadataClient.js';
 import { hostOf } from './serpRecon.js';
-import { extractPage } from './extract.js';
+import { extractPage, decodeHtmlBody } from './extract.js';
 
 const httpAgent = new Agent({ allowH2: true, connections: 6, keepAliveTimeout: 30_000 });
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -33,28 +31,29 @@ function browserHeaders(mode: UaMode): Record<string, string> {
 
 /**
  * Route a competitor URL to the right fetcher by who owns the source:
- *   YouTube/TikTok/X → Supadata (transcript)   — Firecrawl can't read video
- *   Reddit           → its own .json endpoint   — Firecrawl hard-blocks Reddit
- *   everything else  → Firecrawl (markdown, proxy:auto for bot-protected sites)
+ *   Reddit           → its own .json endpoint (clean post + top comments)
+ *   video hosts      → not fetched: the page is a player shell over HTTP, so it is reported as a
+ *                      ranking video rather than returned as navigation chrome
+ *   everything else  → the free browser-profile HTTP fetch, through our own extractor
  * Each returns a uniform shape so the recon packet is easy for the research session to diff.
  */
 export interface CompetitorContent {
   url: string;
   kind: 'video' | 'reddit' | 'page';
-  via: 'supadata' | 'reddit-json' | 'firecrawl' | 'plain-fetch' | 'none';  // which fetcher actually ran
+  via: 'reddit-json' | 'plain-fetch' | 'none';  // which fetcher actually ran
   title: string | null;
   content: string;
   cached: boolean;
   error?: string;
 }
 
-/** Hosts whose content only Supadata can read (transcripts) and hosts we read via Reddit's own JSON. */
+/** Hosts whose pages are video players (no readable text over HTTP) and hosts we read via Reddit's own JSON. */
 const VIDEO_HOSTS = ['youtube.com', 'youtu.be', 'tiktok.com', 'twitter.com', 'x.com', 'vimeo.com', 'dailymotion.com', 'instagram.com', 'facebook.com'];
 const REDDIT_HOSTS = ['reddit.com', 'redd.it'];
 
 /** Exact host or subdomain match — NEVER a substring test. A substring `/x\.com/` classified
- * pimax.com as video and sent every Shopify product page to the transcriber, which 400'd
- * (build lesson, 2026-08-07: that one regex is why scrapeCompetitors returned almost nothing). */
+ * pimax.com as video and misrouted every Shopify product page (build lesson, 2026-08-07: that
+ * one regex is why scrapeCompetitors returned almost nothing). */
 export function hostIsOneOf(host: string, domains: string[]): boolean {
   const h = hostOf(host);
   return domains.some(d => h === d || h.endsWith(`.${d}`));
@@ -92,50 +91,41 @@ export async function fetchRedditJson(url: string, maxChars = 4000, ua: UaMode =
   return { title: post.title ?? null, content: parts.join('\n\n').slice(0, maxChars) };
 }
 
-/** Free HTTP fallback for pages Firecrawl refuses (its blocklist covers major publishers).
- * Fetches with a browser-like UA and reuses our own extractor for clean main-content text. */
+/** The page fetcher: a browser-like request profile, then our own extractor for clean
+ * main-content text. Decoded through the declared charset (res.text() forces UTF-8, which
+ * mojibakes the Latin-1 pages third-party sites still serve). */
 export async function fetchPlainPage(url: string, maxChars = 4000, ua: UaMode = 'browser'): Promise<{ title: string | null; content: string }> {
   const res = await ufetch(url, { headers: browserHeaders(ua), dispatcher: httpAgent, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`plain fetch ${res.status}`);
-  const html = await res.text();
+  const html = decodeHtmlBody(Buffer.from(await res.arrayBuffer()), res.headers.get('content-type'));
   const host = new URL(url).hostname.replace(/^www\./, '');
   const ex = extractPage(html, url, host, { hostForm: 'asis' }, null);
   const text = (ex.bodyChunks ?? []).map(c => `${c.heading} ${c.text}`).join('\n').trim();
   return { title: ex.title, content: text.slice(0, maxChars) };
 }
 
+/** No API keys: every route is a free fetch, so scrapeCompetitors works out of the box. */
 export async function fetchCompetitorContent(
   url: string,
-  clients: { firecrawl: FirecrawlClient | null; supadata: SupadataClient | null },
   opts: { maxChars?: number; ua?: UaMode } = {},
 ): Promise<CompetitorContent> {
   const max = opts.maxChars ?? 4000;
   const ua = opts.ua ?? 'browser';
   const kind = routeFor(url);
-  let firecrawlError: string | null = null;
+  // A video page over HTTP is a player shell: returning its navigation text would read as the
+  // competitor's content. Report it as a ranking video instead.
+  if (kind === 'video') {
+    return { url, kind, via: 'none', title: null, content: '', cached: false, error: 'video result - not fetched (a video page has no readable text over HTTP); watch it, or paste its transcript to diff it in' };
+  }
   try {
-    if (kind === 'video') {
-      if (!clients.supadata) return { url, kind, via: 'none', title: null, content: '', cached: false, error: 'SUPADATA_API_KEY not set — cannot transcribe video' };
-      const t = await clients.supadata.transcript(url, { maxChars: Math.max(max, 5000) });
-      return { url, kind, via: 'supadata', title: null, content: t.content, cached: t.cached };
-    }
     if (kind === 'reddit') {
       // .json first (cleaner structured data); HTML fallback. Both need the browser profile.
       try { const r = await fetchRedditJson(url, max, ua); return { url, kind, via: 'reddit-json', title: r.title, content: r.content, cached: false }; }
       catch { const r = await fetchPlainPage(url, max, ua); return { url, kind, via: 'plain-fetch', title: r.title, content: r.content, cached: false }; }
     }
-    // Pages: Firecrawl first (cleaner, handles JS); fall back to the free browser-profile fetch
-    // for sites Firecrawl refuses ("we do not support this site") or when no key is set.
-    if (clients.firecrawl) {
-      try { const s = await clients.firecrawl.scrape(url, { maxChars: max, proxy: 'auto' }); return { url, kind, via: 'firecrawl', title: s.title, content: s.markdown, cached: s.cached }; }
-      catch (e) { firecrawlError = e instanceof Error ? e.message : String(e); /* fall through to the browser-profile fetch */ }
-    }
     const p = await fetchPlainPage(url, max, ua);
     return { url, kind, via: 'plain-fetch', title: p.title, content: p.content, cached: false };
   } catch (e) {
-    // Report BOTH failures when Firecrawl was tried first — "plain fetch 403" alone hides the
-    // fact that the paid fetcher refused the site for a different reason.
-    const msg = e instanceof Error ? e.message : String(e);
-    return { url, kind, via: 'none', title: null, content: '', cached: false, error: firecrawlError ? `${msg} (firecrawl first: ${firecrawlError})` : msg };
+    return { url, kind, via: 'none', title: null, content: '', cached: false, error: e instanceof Error ? e.message : String(e) };
   }
 }

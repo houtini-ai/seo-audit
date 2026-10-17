@@ -13,7 +13,10 @@ import { dbPathFor, sanitizeProperty } from './paths.js';
 export const KEEP_RECENT = 5;
 
 const CACHE_DB_NAMES = new Set([
-  'dataforseo-cache.db', 'wikidata-cache.db', 'majestic-cache.db', 'firecrawl-cache.db', 'supadata-cache.db',
+  'dataforseo-cache.db', 'wikidata-cache.db', 'majestic-cache.db',
+  // Legacy: caches of the competitor fetchers removed in 0.15.0. Still listed so a leftover file on
+  // an existing install is reported as a (deletable) cache, never mistaken for a property database.
+  'firecrawl-cache.db', 'supadata-cache.db',
 ]);
 
 export interface PropertyStorage {

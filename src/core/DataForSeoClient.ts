@@ -13,9 +13,18 @@ import { dirname } from 'node:path';
  *    chain, so we never fan out paid calls concurrently.
  *  - TTL CACHE: every response is written to a shared SQLite cache keyed on
  *    (endpoint + body); a cache hit costs nothing and skips the worker entirely.
- *    TTL is set by the caller (DATAFORSEO_CACHE_DAYS, default 7); SERP/keyword/
- *    domain data is stable enough that a ~7-day TTL is safe.
+ *    TTL comes from DATAFORSEO_CACHE_DAYS (default DEFAULT_DFS_CACHE_DAYS, 20); SERP/keyword/
+ *    domain data is stable enough that a ~3-week TTL is safe.
  */
+
+/**
+ * The ONE default TTL for the shared dataforseo-cache.db. The MCP and the dashboard sidecar open the
+ * same file, so they must agree on when an entry is stale: with different defaults, one process
+ * would pay to refetch what the other still serves from cache.
+ */
+export const DEFAULT_DFS_CACHE_DAYS = 20;
+export const dfsCacheDaysFromEnv = (): number => Number(process.env.DATAFORSEO_CACHE_DAYS) || DEFAULT_DFS_CACHE_DAYS;
+
 export interface DfsResponse {
   tasks: any[];
   cached: boolean;
@@ -50,7 +59,7 @@ export class DataForSeoClient {
   private readonly cache: Database.Database;
   private chain: Promise<unknown> = Promise.resolve();
 
-  constructor(login: string, password: string, cacheDbPath: string, ttlDays = 7) {
+  constructor(login: string, password: string, cacheDbPath: string, ttlDays = DEFAULT_DFS_CACHE_DAYS) {
     this.auth = 'Basic ' + Buffer.from(`${login}:${password}`).toString('base64');
     this.ttlMs = ttlDays * 86400000;
     mkdirSync(dirname(cacheDbPath), { recursive: true });
