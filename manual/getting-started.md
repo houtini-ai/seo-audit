@@ -168,19 +168,19 @@ claude mcp add seo-audit-console \
   --env DATAFORSEO_USERNAME=you@example.com \
   --env DATAFORSEO_PASSWORD=your-dataforseo-password \
   --env MAJESTIC_API_KEY=your-majestic-api-key \
-  -- node C:/path/to/seo-audit-console/dist/index.js
+  -- npx -y @houtini/seo-audit-console
 ```
 
-(Drop any `--env` line you don't need - the first one is the only one that's required.)
+(Drop any `--env` line you don't need - the first one is the only one that's required. Built from source? End the command with `-- node C:/path/to/seo-audit-console/dist/index.js` instead.)
 
-**Or a project-level `.mcp.json`** (checked into your site's repo, so the whole team gets it):
+**Or a project-level `.mcp.json`** (checked into your site's repo, so the whole team gets it). npx is the right fit here - teammates run the published package without needing a local clone of this repo:
 
 ```json
 {
   "mcpServers": {
     "seo-audit-console": {
-      "command": "node",
-      "args": ["C:/path/to/seo-audit-console/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@houtini/seo-audit-console"],
       "env": {
         "GOOGLE_APPLICATION_CREDENTIALS": "C:/path/to/service-account.json"
       }

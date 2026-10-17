@@ -39,6 +39,36 @@ you  › generate the fix for #1 ▍
 
 [![The Network tab - the site-network map of your internal link skeleton, equity vs traffic by template, and the folder-to-folder equity flow](https://raw.githubusercontent.com/houtini-ai/seo-audit/master/assets/network.png)](https://github.com/houtini-ai/seo-audit)
 
+## Quick start
+
+It's on npm, so there's nothing to clone or build. You need Node.js 20 or newer and a Search Console property you own.
+
+**Claude Desktop** - add this to `claude_desktop_config.json`, then restart Claude:
+
+```json
+{
+  "mcpServers": {
+    "seo-audit-console": {
+      "command": "npx",
+      "args": ["-y", "@houtini/seo-audit-console"],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "C:/path/to/service-account.json"
+      }
+    }
+  }
+}
+```
+
+**Claude Code** - one command:
+
+```bash
+claude mcp add seo-audit-console --env GOOGLE_APPLICATION_CREDENTIALS=C:/path/to/service-account.json -- npx -y @houtini/seo-audit-console
+```
+
+That one env var is the whole core audit. The step everyone misses: the JSON key belongs to a Google Cloud service account, and that account's email has to be **added as a user on your property** in Search Console, or the tool can't see any of your data. [Getting started](manual/getting-started.md) walks through it with screenshots, plus the one-click Claude Desktop extension and the build-from-source route.
+
+Then ask Claude: *"list properties"*, *"refresh mysite.com"*, *"run an SEO audit"*.
+
 ## The manual
 
 This README is the story and the quick start. The detail lives in the manual:
@@ -193,11 +223,11 @@ Optional, and I mean optional: with no key, `link_intersect` still runs and stil
 
 ## Installation, in brief
 
-Three steps - the full walkthrough with the gotchas is [getting-started.md](manual/getting-started.md):
+Three steps - the [quick start](#quick-start) above is the short version, and the full walkthrough with the gotchas is [getting-started.md](manual/getting-started.md):
 
 1. **Get it:** the quick route is npx - point your MCP config at `npx -y @houtini/seo-audit-console` and there's nothing to build. Or clone this repo, `npm install`, `npm run build` if you want the source. Either way, Node ≥ 20.
 2. **Connect Search Console:** create a Google Cloud service account, download its JSON key, and - the step everyone misses - **add the service account's email as a user on your property** in Search Console. Prefer a walkthrough with pictures? [Setting it up from scratch](https://houtini.com/articles/better-search-console/#setting-it-up-from-scratch) covers the whole flow.
-3. **Point your MCP client at `dist/index.js`** with `GOOGLE_APPLICATION_CREDENTIALS` set. Works in Claude Desktop and Claude Code; only the one env var is required.
+3. **Point your MCP client at it** with `GOOGLE_APPLICATION_CREDENTIALS` set: `npx -y @houtini/seo-audit-console` for the published package, or `node /path/to/seo-audit-console/dist/index.js` if you built from source. Works in Claude Desktop and Claude Code; only the one env var is required.
 
 Every environment variable the server reads, in one block - the first is required and everything below it is optional, so delete the lines for services you don't use:
 
@@ -205,8 +235,8 @@ Every environment variable the server reads, in one block - the first is require
 {
   "mcpServers": {
     "seo-audit-console": {
-      "command": "node",
-      "args": ["C:/path/to/seo-audit-console/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@houtini/seo-audit-console"],
       "env": {
         "GOOGLE_APPLICATION_CREDENTIALS": "C:/path/to/service-account.json",
         "SAC_DATA_DIR": "C:/path/to/where/audits/are/stored",
@@ -222,6 +252,8 @@ Every environment variable the server reads, in one block - the first is require
   }
 }
 ```
+
+Built from source instead? Swap the two launch lines for `"command": "node"` and `"args": ["C:/path/to/seo-audit-console/dist/index.js"]`; the `env` block is identical.
 
 `GOOGLE_APPLICATION_CREDENTIALS` gets you the whole core audit. DataForSEO adds the market layer, `MAJESTIC_API_KEY` adds the Trust Flow re-sort to `link_intersect`, and Firecrawl and Supadata are content recon's fetchers. Line-by-line, including the two advanced ones you'll probably never need: [getting-started.md](manual/getting-started.md#environment-variables).
 
