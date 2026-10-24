@@ -1,0 +1,84 @@
+{
+  "endpoint": "/v3/dataforseo_labs/google/bulk_traffic_estimation/live",
+  "request": [
+    {
+      "targets": [
+        "simracingcockpit.gg",
+        "ehi.com.au"
+      ],
+      "location_code": 2840,
+      "language_code": "en"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242023-1165-0391-0000-d1ad8c16122a",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.0817 sec.",
+      "cost": 0.01224,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "dataforseo_labs",
+        "google",
+        "bulk_traffic_estimation",
+        "live"
+      ],
+      "data": {
+        "api": "dataforseo_labs",
+        "function": "bulk_traffic_estimation",
+        "se_type": "google",
+        "targets": [
+          "simracingcockpit.gg",
+          "ehi.com.au"
+        ],
+        "location_code": 2840,
+        "language_code": "en"
+      },
+      "result": [
+        {
+          "se_type": "google",
+          "location_code": 2840,
+          "language_code": "en",
+          "total_count": 2,
+          "items_count": 2,
+          "items": [
+            {
+              "se_type": "google",
+              "target": "ehi.com.au",
+              "metrics": {
+                "organic": {
+                  "etv": 257.56600005179644,
+                  "count": 73
+                },
+                "paid": {
+                  "etv": 0,
+                  "count": 0
+                },
+                "local_pack": null,
+                "featured_snippet": null
+              }
+            },
+            {
+              "se_type": "google",
+              "target": "simracingcockpit.gg",
+              "metrics": {
+                "organic": {
+                  "etv": 39906.40604851954,
+                  "count": 5370
+                },
+                "paid": {
+                  "etv": 0,
+                  "count": 0
+                },
+                "local_pack": null,
+                "featured_snippet": null
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+{
+  "endpoint": "/v3/ai_optimization/llm_mentions/historical/live",
+  "request": [
+    {
+      "location_code": 2840,
+      "language_code": "en",
+      "platform": "google",
+      "target": [
+        {
+          "domain": "simracingcockpit.gg"
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242023-1165-0662-0000-a101a67d27b7",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.1516 sec.",
+      "cost": 0.101,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "ai_optimization",
+        "llm_mentions",
+        "historical",
+        "live"
+      ],
+      "data": {
+        "api": "ai_optimization",
+        "function": "historical",
+        "location_code": 2840,
+        "language_code": "en",
+        "platform": "google",
+        "target": [
+          {
+            "domain": "simracingcockpit.gg"
+          }
+        ]
+      },
+      "result": [
+        {
+          "items_count": 15,
+          "items": [
+            {
+              "year": 2026,
+              "month": 10,
+              "metrics": {
+                "mentions": 280,
+                "ai_search_volume": 10240
+              }
+            },
+            {
+              "year": 2026,
+              "month": 9,
+              "metrics": {
+                "mentions": 866,
+                "ai_search_volume": 145670
+              }
+            },
+            {
+              "year": 2026,
+              "month": 8,
+              "metrics": {
+                "mentions": 430,
+                "ai_search_volume": 43660
+              }
+            },
+            {
+              "year": 2026,
+              "month": 7,
+              "metrics": {
+                "mentions": 525,
+                "ai_search_volume": 89760
+              }
+            },
+            {
+              "year": 2026,
+              "month": 6,
+              "metrics": {
+                "mentions": 161,
+                "ai_search_volume": 51340
+              }
+            },
+            {
+              "year": 2026,
+              "month": 5,
+              "metrics": {
+                "mentions": 263,
+                "ai_search_volume": 37320
+              }
+            },
+            {
+              "year": 2026,
+              "month": 4,
+              "metrics": {
+                "mentions": 163,
+                "ai_search_volume": 16230
+              }
+            },
+            {
+              "year": 2026,
+              "month": 3,
+              "metrics": {
+                "mentions": 247,
+                "ai_search_volume": 117690
+              }
+            },
+            {
+              "year": 2026,
+              "month": 2,
+              "metrics": {
+                "mentions": 107,
+                "ai_search_volume": 13460
+              }
+            },
+            {
+              "year": 2026,
+              "month": 1,
+              "metrics": {
+                "mentions": 146,
+                "ai_search_volume": 35090
+              }
+            },
+            {
+              "year": 2025,
+              "month": 12,
+              "metrics": {
+                "mentions": 150,
+                "ai_search_volume": 56970
+              }
+            },
+            {
+              "year": 2025,
+              "month": 11,
+              "metrics": {
+                "mentions": 220,
+                "ai_search_volume": 37860
+              }
+            },
+            {
+              "year": 2025,
+              "month": 10,
+              "metrics": {
+                "mentions": 172,
+                "ai_search_volume": 99110
+              }
+            },
+            {
+              "year": 2025,
+              "month": 9,
+              "metrics": {
+                "mentions": 78,
+                "ai_search_volume": 17140
+              }
+            },
+            {
+              "year": 2025,
+              "month": 8,
+              "metrics": {
+                "mentions": 168,
+                "ai_search_volume": 32990
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -53,13 +53,29 @@ export function historicalDateFrom(months: number, now: Date = new Date()): stri
   return iso < HISTORICAL_MIN_DATE_FROM ? HISTORICAL_MIN_DATE_FROM : iso;
 }
 
+/** Per-call options. `maxAgeDays` narrows the cache age for one call (the portfolio's weekly tier
+ * wants last week's numbers, not the 20-day shared default); it never widens past the client TTL. */
+export interface DfsCallOptions { timeoutMs?: number; maxAgeDays?: number }
+
+/** Client-level hooks: `fetchImpl` lets tests serve saved fixtures with no network; `onCost` sees every
+ * paid response (cache hits cost nothing and never call it), which is how a portfolio run totals its
+ * actual spend instead of trusting the quote. */
+export interface DfsClientHooks {
+  fetchImpl?: typeof fetch;
+  onCost?: (endpoint: string, usd: number) => void;
+}
+
 export class DataForSeoClient {
   private readonly auth: string;
   private readonly ttlMs: number;
   private readonly cache: Database.Database;
   private chain: Promise<unknown> = Promise.resolve();
+  private readonly fetchImpl: typeof fetch;
+  onCost?: (endpoint: string, usd: number) => void;
 
-  constructor(login: string, password: string, cacheDbPath: string, ttlDays = DEFAULT_DFS_CACHE_DAYS) {
+  constructor(login: string, password: string, cacheDbPath: string, ttlDays = DEFAULT_DFS_CACHE_DAYS, hooks: DfsClientHooks = {}) {
+    this.fetchImpl = hooks.fetchImpl ?? fetch;
+    this.onCost = hooks.onCost;
     this.auth = 'Basic ' + Buffer.from(`${login}:${password}`).toString('base64');
     this.ttlMs = ttlDays * 86400000;
     mkdirSync(dirname(cacheDbPath), { recursive: true });
@@ -96,12 +112,14 @@ export class DataForSeoClient {
   }
 
   /** POST to a DataForSEO endpoint, served from the cache (DEFAULT_DFS_CACHE_DAYS) when fresh. */
-  async call(endpoint: string, body: unknown[], timeoutMs = 60000): Promise<DfsResponse> {
+  async call(endpoint: string, body: unknown[], opts: number | DfsCallOptions = 60000): Promise<DfsResponse> {
+    const { timeoutMs = 60000, maxAgeDays } = typeof opts === 'number' ? { timeoutMs: opts } : opts;
+    const ttlMs = maxAgeDays != null ? Math.min(this.ttlMs, maxAgeDays * 86400000) : this.ttlMs;
     const key = this.keyFor(endpoint, body);
     const row = this.cache
       .prepare('SELECT response_json, cost, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
       .get(key) as { response_json: string; cost: number; fetched_at: string } | undefined;
-    if (row && Date.now() - Date.parse(row.fetched_at) < this.ttlMs) {
+    if (row && Date.now() - Date.parse(row.fetched_at) < ttlMs) {
       return { tasks: JSON.parse(row.response_json), cached: true, cost: 0 };
     }
 
@@ -111,10 +129,10 @@ export class DataForSeoClient {
       const again = this.cache
         .prepare('SELECT response_json, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
         .get(key) as { response_json: string; fetched_at: string } | undefined;
-      if (again && Date.now() - Date.parse(again.fetched_at) < this.ttlMs) {
+      if (again && Date.now() - Date.parse(again.fetched_at) < ttlMs) {
         return { tasks: JSON.parse(again.response_json), cached: true, cost: 0 };
       }
-      const res = await fetch(`${BASE_URL}${endpoint}`, {
+      const res = await this.fetchImpl(`${BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { Authorization: this.auth, 'content-type': 'application/json' },
         body: JSON.stringify(body),
@@ -135,6 +153,7 @@ export class DataForSeoClient {
         );
       }
       const cost = Number(json.cost) || 0;
+      if (cost > 0) this.onCost?.(endpoint, cost);
       // Only cache genuinely successful responses — a task-level failure (40xxx) or
       // all-null results must not be cached for the TTL; let a later call retry.
       const taskOk = tasks.length > 0 && (tasks[0]?.status_code ?? 20000) < 40000 && tasks.some((t: any) => t?.result != null);
@@ -498,6 +517,77 @@ export class DataForSeoClient {
    * (content gap). `competitorUrls` → the `pages` map (max 20); `excludeUrls` → our own
    * page(s) to subtract (max 10). Sorted by search volume. Wildcards like `…/*` allowed.
    */
+  // ── Portfolio (design/portfolio/SPEC.md). Request bodies verified live 2026-10-24; the raw
+  // responses are the fixtures in scripts/fixtures/portfolio/. The bulk endpoints take up to 1,000
+  // targets per call (one task), so a whole portfolio costs one task each.
+
+  /** Backlinks: DataForSEO Domain Rank per target, 0-100. NOT Semrush's Authority Score: label it as DataForSEO's. */
+  async bulkRanks(targets: string[], opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/backlinks/bulk_ranks/live', [{ targets, rank_scale: 'one_hundred' }], opts);
+  }
+
+  /** Backlinks: referring_domains / referring_main_domains (+ nofollow) per target. */
+  async bulkReferringDomains(targets: string[], opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/backlinks/bulk_referring_domains/live', [{ targets }], opts);
+  }
+
+  /** Backlinks: backlink count per target. */
+  async bulkBacklinks(targets: string[], opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/backlinks/bulk_backlinks/live', [{ targets }], opts);
+  }
+
+  /** Backlinks: new / lost referring (main) domains since dateFrom (YYYY-MM-DD, up to 365 days back). */
+  async bulkNewLostReferringDomains(targets: string[], dateFrom: string, opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/backlinks/bulk_new_lost_referring_domains/live', [{ targets, date_from: dateFrom }], opts);
+  }
+
+  /** Labs: current organic / paid ETV + keyword count per target, at ONE location (ETV is per
+   * location: an AU site read at the US default is near zero), so callers group targets by location. */
+  async bulkTrafficEstimation(targets: string[], location?: string | number, languageCode = 'en', opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/dataforseo_labs/google/bulk_traffic_estimation/live', [{ targets, ...this.loc(location), language_code: languageCode }], opts);
+  }
+
+  /** Labs: one row per location the target ranks in (no location sent). Rows come sorted by
+   * location_code, not by traffic, so ask for enough rows and sort client-side. */
+  async domainRankOverviewAllLocations(target: string, limit = 300, opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/dataforseo_labs/google/domain_rank_overview/live', [{ target, limit }], opts);
+  }
+
+  /** Labs: ranked_keywords with limit 1, for its result-level `metrics` block (organic / paid /
+   * featured_snippet / local_pack / ai_overview_reference position counts). A null block means none counted. */
+  async rankedKeywordsMetrics(target: string, location?: string | number, languageCode = 'en', opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/dataforseo_labs/google/ranked_keywords/live', [{ target, ...this.loc(location), language_code: languageCode, limit: 1 }], opts);
+  }
+
+  /** Backlinks: a domain's pages ordered by referring main domains ("top pages by links"). */
+  async domainPages(target: string, limit = 100, opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/backlinks/domain_pages/live', [{ target, limit, order_by: ['page_summary.referring_main_domains,desc'] }], opts);
+  }
+
+  /** LLM Mentions: mentions + ai_search_volume for up to 10 domains in one task, for ONE platform
+   * ('google' = AI Overviews, 'chat_gpt'; ChatGPT data is United States only). */
+  async llmMultiTargetMetrics(platform: 'google' | 'chat_gpt', domains: string[], location: number = 2840, languageCode = 'en', opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/ai_optimization/llm_mentions/multi_target_metrics/live', [{
+      location_code: location, language_code: languageCode, platform,
+      targets: domains.map(d => ({ key: d, target: [{ domain: d }] })),
+    }], opts);
+  }
+
+  /** LLM Mentions: monthly mentions + ai_search_volume for a domain (from 2025-08; the current month is partial). */
+  async llmHistorical(domain: string, platform: 'google' | 'chat_gpt', location: number = 2840, languageCode = 'en', opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/ai_optimization/llm_mentions/historical/live', [{ location_code: location, language_code: languageCode, platform, target: [{ domain }] }], opts);
+  }
+
+  /** LLM Mentions: the domain's pages cited most. */
+  async llmTopMentionedPages(domain: string, platform: 'google' | 'chat_gpt', location: number = 2840, languageCode = 'en', limit = 20, opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/ai_optimization/llm_mentions/top_mentioned_pages/live', [{ location_code: location, language_code: languageCode, platform, target: [{ domain }], limit }], opts);
+  }
+
+  /** LLM Mentions: domains cited in the same answers as the target ("top cited sources"). */
+  async llmTopMentionedDomains(domain: string, platform: 'google' | 'chat_gpt', location: number = 2840, languageCode = 'en', limit = 20, opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/ai_optimization/llm_mentions/top_mentioned_domains/live', [{ location_code: location, language_code: languageCode, platform, target: [{ domain }], limit }], opts);
+  }
+
   async pageIntersection(
     competitorUrls: string[],
     excludeUrls: string[],

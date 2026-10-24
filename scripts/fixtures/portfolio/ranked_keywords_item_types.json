@@ -1,0 +1,362 @@
+{
+  "endpoint": "/v3/dataforseo_labs/google/ranked_keywords/live",
+  "request": [
+    {
+      "target": "simracingcockpit.gg",
+      "location_code": 2840,
+      "language_code": "en",
+      "limit": 1,
+      "item_types": [
+        "organic",
+        "paid",
+        "featured_snippet",
+        "local_pack",
+        "ai_overview_reference"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242035-1165-0381-0000-681f0e608f4b",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.4714 sec.",
+      "cost": 0.01212,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "dataforseo_labs",
+        "google",
+        "ranked_keywords",
+        "live"
+      ],
+      "data": {
+        "api": "dataforseo_labs",
+        "function": "ranked_keywords",
+        "se_type": "google",
+        "target": "simracingcockpit.gg",
+        "location_code": 2840,
+        "language_code": "en",
+        "limit": 1,
+        "item_types": [
+          "organic",
+          "paid",
+          "featured_snippet",
+          "local_pack",
+          "ai_overview_reference"
+        ]
+      },
+      "result": [
+        {
+          "se_type": "google",
+          "target": "simracingcockpit.gg",
+          "location_code": 2840,
+          "language_code": "en",
+          "total_count": 6835,
+          "items_count": 1,
+          "metrics": {
+            "organic": {
+              "pos_1": 116,
+              "pos_2_3": 577,
+              "pos_4_10": 2184,
+              "pos_11_20": 1610,
+              "pos_21_30": 511,
+              "pos_31_40": 250,
+              "pos_41_50": 85,
+              "pos_51_60": 22,
+              "pos_61_70": 7,
+              "pos_71_80": 4,
+              "pos_81_90": 3,
+              "pos_91_100": 1,
+              "etv": 39906.40604851954,
+              "count": 5370,
+              "estimated_paid_traffic_cost": 48840.36750215758,
+              "is_new": 2069,
+              "is_up": 1423,
+              "is_down": 1442,
+              "is_lost": 0,
+              "clickstream_etv": null,
+              "clickstream_gender_distribution": null,
+              "clickstream_age_distribution": null
+            },
+            "paid": {
+              "pos_1": 0,
+              "pos_2_3": 0,
+              "pos_4_10": 0,
+              "pos_11_20": 0,
+              "pos_21_30": 0,
+              "pos_31_40": 0,
+              "pos_41_50": 0,
+              "pos_51_60": 0,
+              "pos_61_70": 0,
+              "pos_71_80": 0,
+              "pos_81_90": 0,
+              "pos_91_100": 0,
+              "etv": 0,
+              "count": 0,
+              "estimated_paid_traffic_cost": 0,
+              "is_new": 0,
+              "is_up": 0,
+              "is_down": 0,
+              "is_lost": 0,
+              "clickstream_etv": null,
+              "clickstream_gender_distribution": null,
+              "clickstream_age_distribution": null
+            },
+            "featured_snippet": {
+              "pos_1": 0,
+              "pos_2_3": 0,
+              "pos_4_10": 0,
+              "pos_11_20": 0,
+              "pos_21_30": 0,
+              "pos_31_40": 0,
+              "pos_41_50": 0,
+              "pos_51_60": 0,
+              "pos_61_70": 0,
+              "pos_71_80": 0,
+              "pos_81_90": 0,
+              "pos_91_100": 0,
+              "etv": 0,
+              "count": 0,
+              "estimated_paid_traffic_cost": 0,
+              "is_new": 0,
+              "is_up": 0,
+              "is_down": 0,
+              "is_lost": 0,
+              "clickstream_etv": null,
+              "clickstream_gender_distribution": null,
+              "clickstream_age_distribution": null
+            },
+            "local_pack": {
+              "pos_1": 0,
+              "pos_2_3": 0,
+              "pos_4_10": 0,
+              "pos_11_20": 0,
+              "pos_21_30": 0,
+              "pos_31_40": 0,
+              "pos_41_50": 0,
+              "pos_51_60": 0,
+              "pos_61_70": 0,
+              "pos_71_80": 0,
+              "pos_81_90": 0,
+              "pos_91_100": 0,
+              "etv": 0,
+              "count": 0,
+              "estimated_paid_traffic_cost": 0,
+              "is_new": 0,
+              "is_up": 0,
+              "is_down": 0,
+              "is_lost": 0,
+              "clickstream_etv": null,
+              "clickstream_gender_distribution": null,
+              "clickstream_age_distribution": null
+            },
+            "ai_overview_reference": {
+              "pos_1": 240,
+              "pos_2_3": 404,
+              "pos_4_10": 724,
+              "pos_11_20": 94,
+              "pos_21_30": 3,
+              "pos_31_40": 0,
+              "pos_41_50": 0,
+              "pos_51_60": 0,
+              "pos_61_70": 0,
+              "pos_71_80": 0,
+              "pos_81_90": 0,
+              "pos_91_100": 0,
+              "etv": 26662.983950076625,
+              "count": 1465,
+              "estimated_paid_traffic_cost": 25055.625826872885,
+              "is_new": 0,
+              "is_up": 0,
+              "is_down": 0,
+              "is_lost": 0,
+              "clickstream_etv": null,
+              "clickstream_gender_distribution": null,
+              "clickstream_age_distribution": null
+            }
+          },
+          "metrics_absolute": null,
+          "items": [
+            {
+              "se_type": "google",
+              "keyword_data": {
+                "se_type": "google",
+                "keyword": "3 screen wallpaper 5760 x 1080",
+                "location_code": 2840,
+                "language_code": "en",
+                "keyword_info": {
+                  "se_type": "google",
+                  "last_updated_time": "2026-09-12 07:46:32 +00:00",
+                  "competition": 0,
+                  "competition_level": "LOW",
+                  "cpc": null,
+                  "search_volume": 30,
+                  "low_top_of_page_bid": null,
+                  "high_top_of_page_bid": null,
+                  "categories": [
+                    10019,
+                    10168,
+                    10885,
+                    12204,
+                    13372
+                  ],
+                  "monthly_searches": [
+                    {
+                      "year": 2026,
+                      "month": 8,
+                      "search_volume": 30
+                    },
+                    {
+                      "year": 2026,
+                      "month": 7,
+                      "search_volume": 40
+                    },
+                    {
+                      "year": 2026,
+                      "month": 6,
+                      "search_volume": 30
+                    },
+                    {
+                      "year": 2026,
+                      "month": 5,
+                      "search_volume": 30
+                    },
+                    {
+                      "year": 2026,
+                      "month": 4,
+                      "search_volume": 30
+                    },
+                    {
+                      "year": 2026,
+                      "month": 3,
+                      "search_volume": 20
+                    },
+                    {
+                      "year": 2026,
+                      "month": 2,
+                      "search_volume": 30
+                    },
+                    {
+                      "year": 2026,
+                      "month": 1,
+                      "search_volume": 40
+                    },
+                    {
+                      "year": 2025,
+                      "month": 12,
+                      "search_volume": 20
+                    },
+                    {
+                      "year": 2025,
+                      "month": 11,
+                      "search_volume": 30
+                    },
+                    {
+                      "year": 2025,
+                      "month": 10,
+                      "search_volume": 20
+                    },
+                    {
+                      "year": 2025,
+                      "month": 9,
+                      "search_volume": 20
+                    }
+                  ],
+                  "search_volume_trend": {
+                    "monthly": -25,
+                    "quarterly": 0,
+                    "yearly": 50
+                  }
+                },
+                "keyword_info_normalized_with_bing": null,
+                "keyword_info_normalized_with_clickstream": null,
+                "clickstream_keyword_info": null,
+                "keyword_properties": {
+                  "se_type": "google",
+                  "core_keyword": null,
+                  "synonym_clustering_algorithm": null,
+                  "keyword_difficulty": 3,
+                  "detected_language": "en",
+                  "is_another_language": false
+                },
+                "serp_info": {
+                  "se_type": "google",
+                  "check_url": "https://www.google.com/search?q=3%20screen%20wallpaper%205760%20x%201080&hl=en&gl=US&ie=UTF-8&uule=w+CAIQIFISCQs2MuSEtepUEUK33kOSuTsc",
+                  "serp_item_types": [
+                    "organic",
+                    "ai_overview",
+                    "images",
+                    "related_searches"
+                  ],
+                  "se_results_count": 91,
+                  "last_updated_time": "2026-09-01 08:36:31 +00:00",
+                  "previous_updated_time": null
+                },
+                "avg_backlinks_info": {
+                  "se_type": "google",
+                  "backlinks": 4583.10009765625,
+                  "dofollow": 4567.7001953125,
+                  "referring_pages": 4582.2001953125,
+                  "referring_domains": 17.299999237060547,
+                  "referring_main_domains": 12.399999618530273,
+                  "rank": 61.099998474121094,
+                  "main_domain_rank": 609.5999755859375,
+                  "last_updated_time": "2026-09-01 08:36:31 +00:00"
+                },
+                "search_intent_info": {
+                  "se_type": "google",
+                  "main_intent": "transactional",
+                  "foreign_intent": null,
+                  "last_updated_time": "2026-04-24 23:50:29 +00:00"
+                }
+              },
+              "ranked_serp_element": {
+                "se_type": "google",
+                "serp_item": {
+                  "se_type": "google",
+                  "type": "ai_overview_reference",
+                  "rank_group": 1,
+                  "rank_absolute": 7,
+                  "source": "SIMRACINGCOCKPIT.gg",
+                  "domain": "simracingcockpit.gg",
+                  "title": "Sim Racing Triple Monitors in 2026: 1080p vs 1440p, and When NOT to ...",
+                  "url": "https://simracingcockpit.gg/triple-monitors-1080p-vs-1440p/",
+                  "text": "A triple 1080p setup runs at 5760 by 1080. A triple 1440p setup runs at 7680 by 1440. That's 6.22 million pixels versus 11.06 mill...",
+                  "main_domain": "simracingcockpit.gg",
+                  "relative_url": "/triple-monitors-1080p-vs-1440p/",
+                  "etv": 9.119999885559082,
+                  "estimated_paid_traffic_cost": null,
+                  "clickstream_etv": null,
+                  "rank_changes": {
+                    "previous_rank_absolute": null,
+                    "is_new": false,
+                    "is_up": false,
+                    "is_down": false
+                  },
+                  "backlinks_info": null,
+                  "rank_info": {
+                    "page_rank": 0,
+                    "main_domain_rank": 249
+                  }
+                },
+                "check_url": "https://www.google.com/search?q=3%20screen%20wallpaper%205760%20x%201080&hl=en&gl=US&ie=UTF-8&uule=w+CAIQIFISCQs2MuSEtepUEUK33kOSuTsc",
+                "serp_item_types": [
+                  "organic",
+                  "ai_overview",
+                  "images",
+                  "related_searches"
+                ],
+                "se_results_count": 91,
+                "keyword_difficulty": 3,
+                "is_lost": false,
+                "last_updated_time": "2026-09-01 08:36:31 +00:00",
+                "previous_updated_time": null
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

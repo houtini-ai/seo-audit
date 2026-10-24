@@ -82,7 +82,7 @@ export function containerDashboardNote(siteUrl?: string, containerUrl?: string |
   return `Running in a container: this link only works inside it${inner}. Run the dashboard sidecar on the same data volume (use your volume's name), then open ${open}:\n${DASHBOARD_SIDECAR_CMD}\nOr run get_dashboard${target} to see the dashboard in chat.`;
 }
 
-const CACHE_DBS = new Set(['dataforseo-cache.db']);
+const CACHE_DBS = new Set(['dataforseo-cache.db', '_portfolio.db', '_jobs.db']);
 
 /** Enumerate properties that have a local DB (property_meta.site_url is the source of truth). */
 export function listLocalProperties(dataDir: string): { siteUrl: string; file: string }[] {

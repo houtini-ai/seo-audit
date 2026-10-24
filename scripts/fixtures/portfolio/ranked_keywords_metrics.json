@@ -1,0 +1,332 @@
+{
+  "endpoint": "/v3/dataforseo_labs/google/ranked_keywords/live",
+  "request": [
+    {
+      "target": "simracingcockpit.gg",
+      "location_code": 2840,
+      "language_code": "en",
+      "limit": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242023-1165-0381-0000-dc5a49a9245b",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.3772 sec.",
+      "cost": 0.01212,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "dataforseo_labs",
+        "google",
+        "ranked_keywords",
+        "live"
+      ],
+      "data": {
+        "api": "dataforseo_labs",
+        "function": "ranked_keywords",
+        "se_type": "google",
+        "target": "simracingcockpit.gg",
+        "location_code": 2840,
+        "language_code": "en",
+        "limit": 1
+      },
+      "result": [
+        {
+          "se_type": "google",
+          "target": "simracingcockpit.gg",
+          "location_code": 2840,
+          "language_code": "en",
+          "total_count": 5370,
+          "items_count": 1,
+          "metrics": {
+            "organic": {
+              "pos_1": 116,
+              "pos_2_3": 577,
+              "pos_4_10": 2184,
+              "pos_11_20": 1610,
+              "pos_21_30": 511,
+              "pos_31_40": 250,
+              "pos_41_50": 85,
+              "pos_51_60": 22,
+              "pos_61_70": 7,
+              "pos_71_80": 4,
+              "pos_81_90": 3,
+              "pos_91_100": 1,
+              "etv": 39906.40604851954,
+              "count": 5370,
+              "estimated_paid_traffic_cost": 48840.36750215758,
+              "is_new": 2069,
+              "is_up": 1423,
+              "is_down": 1442,
+              "is_lost": 0,
+              "clickstream_etv": null,
+              "clickstream_gender_distribution": null,
+              "clickstream_age_distribution": null
+            },
+            "paid": {
+              "pos_1": 0,
+              "pos_2_3": 0,
+              "pos_4_10": 0,
+              "pos_11_20": 0,
+              "pos_21_30": 0,
+              "pos_31_40": 0,
+              "pos_41_50": 0,
+              "pos_51_60": 0,
+              "pos_61_70": 0,
+              "pos_71_80": 0,
+              "pos_81_90": 0,
+              "pos_91_100": 0,
+              "etv": 0,
+              "count": 0,
+              "estimated_paid_traffic_cost": 0,
+              "is_new": 0,
+              "is_up": 0,
+              "is_down": 0,
+              "is_lost": 0,
+              "clickstream_etv": null,
+              "clickstream_gender_distribution": null,
+              "clickstream_age_distribution": null
+            },
+            "featured_snippet": null,
+            "local_pack": null,
+            "ai_overview_reference": null
+          },
+          "metrics_absolute": null,
+          "items": [
+            {
+              "se_type": "google",
+              "keyword_data": {
+                "se_type": "google",
+                "keyword": "acc cars list",
+                "location_code": 2840,
+                "language_code": "en",
+                "keyword_info": {
+                  "se_type": "google",
+                  "last_updated_time": "2026-09-16 11:29:04 +00:00",
+                  "competition": 0,
+                  "competition_level": "LOW",
+                  "cpc": null,
+                  "search_volume": 70,
+                  "low_top_of_page_bid": null,
+                  "high_top_of_page_bid": null,
+                  "categories": [
+                    10001,
+                    13655
+                  ],
+                  "monthly_searches": [
+                    {
+                      "year": 2026,
+                      "month": 8,
+                      "search_volume": 70
+                    },
+                    {
+                      "year": 2026,
+                      "month": 7,
+                      "search_volume": 70
+                    },
+                    {
+                      "year": 2026,
+                      "month": 6,
+                      "search_volume": 90
+                    },
+                    {
+                      "year": 2026,
+                      "month": 5,
+                      "search_volume": 50
+                    },
+                    {
+                      "year": 2026,
+                      "month": 4,
+                      "search_volume": 90
+                    },
+                    {
+                      "year": 2026,
+                      "month": 3,
+                      "search_volume": 70
+                    },
+                    {
+                      "year": 2026,
+                      "month": 2,
+                      "search_volume": 70
+                    },
+                    {
+                      "year": 2026,
+                      "month": 1,
+                      "search_volume": 90
+                    },
+                    {
+                      "year": 2025,
+                      "month": 12,
+                      "search_volume": 90
+                    },
+                    {
+                      "year": 2025,
+                      "month": 11,
+                      "search_volume": 90
+                    },
+                    {
+                      "year": 2025,
+                      "month": 10,
+                      "search_volume": 90
+                    },
+                    {
+                      "year": 2025,
+                      "month": 9,
+                      "search_volume": 70
+                    }
+                  ],
+                  "search_volume_trend": {
+                    "monthly": 0,
+                    "quarterly": -22,
+                    "yearly": -22
+                  }
+                },
+                "keyword_info_normalized_with_bing": null,
+                "keyword_info_normalized_with_clickstream": null,
+                "clickstream_keyword_info": null,
+                "keyword_properties": {
+                  "se_type": "google",
+                  "core_keyword": "acc car list",
+                  "synonym_clustering_algorithm": "text_processing",
+                  "keyword_difficulty": 12,
+                  "detected_language": "en",
+                  "is_another_language": false
+                },
+                "serp_info": {
+                  "se_type": "google",
+                  "check_url": "https://www.google.com/search?q=acc%20cars%20list&hl=en&gl=US&ie=UTF-8&uule=w+CAIQIFISCQs2MuSEtepUEUK33kOSuTsc",
+                  "serp_item_types": [
+                    "organic",
+                    "people_also_ask",
+                    "ai_overview",
+                    "related_searches",
+                    "images"
+                  ],
+                  "se_results_count": 129,
+                  "last_updated_time": "2026-09-25 06:08:14 +00:00",
+                  "previous_updated_time": "2026-07-17 03:52:26 +00:00"
+                },
+                "avg_backlinks_info": {
+                  "se_type": "google",
+                  "backlinks": 308.5,
+                  "dofollow": 233.39999389648438,
+                  "referring_pages": 265.3999938964844,
+                  "referring_domains": 44.29999923706055,
+                  "referring_main_domains": 43.400001525878906,
+                  "rank": 105.9000015258789,
+                  "main_domain_rank": 548,
+                  "last_updated_time": "2026-09-25 06:08:14 +00:00"
+                },
+                "search_intent_info": {
+                  "se_type": "google",
+                  "main_intent": "informational",
+                  "foreign_intent": [
+                    "navigational",
+                    "commercial"
+                  ],
+                  "last_updated_time": "2026-04-29 02:16:21 +00:00"
+                }
+              },
+              "ranked_serp_element": {
+                "se_type": "google",
+                "serp_item": {
+                  "se_type": "google",
+                  "type": "organic",
+                  "rank_group": 1,
+                  "rank_absolute": 1,
+                  "position": "left",
+                  "xpath": "/html[1]/body[1]/div[3]/div[1]/div[13]/div[1]/div[2]/div[2]/div[1]/div[1]/div[1]/div[1]/div[1]",
+                  "domain": "simracingcockpit.gg",
+                  "title": "Assetto Corsa Competizione: Full Car List",
+                  "url": "https://simracingcockpit.gg/assetto-corsa-competizione-car-list/",
+                  "breadcrumb": "https://simracingcockpit.gg › assetto-corsa-competizion...",
+                  "website_name": "SIMRACINGCOCKPIT.gg",
+                  "is_image": true,
+                  "is_video": false,
+                  "is_featured_snippet": false,
+                  "is_malicious": false,
+                  "checks": [
+                    "is_image"
+                  ],
+                  "description": "Aug 11, 2026 — Thirty-one cars, all fully licensed, all rear-wheel drive, all separated by Balance of Performance rather than raw power. Here they are, best- ... Read more",
+                  "pre_snippet": "08/11/2026 00:00:00",
+                  "extended_snippet": null,
+                  "amp_version": false,
+                  "rating": null,
+                  "highlighted": [
+                    "Thirty-one cars"
+                  ],
+                  "links": [
+                    {
+                      "type": "link_element",
+                      "title": "GT3 Cars",
+                      "description": null,
+                      "url": "https://simracingcockpit.gg/assetto-corsa-competizione-car-list/#gt3-cars"
+                    },
+                    {
+                      "type": "link_element",
+                      "title": "GT2 Cars",
+                      "description": null,
+                      "url": "https://simracingcockpit.gg/assetto-corsa-competizione-car-list/#gt2-cars"
+                    },
+                    {
+                      "type": "link_element",
+                      "title": "GT4 Cars",
+                      "description": null,
+                      "url": "https://simracingcockpit.gg/assetto-corsa-competizione-car-list/#gt4-cars"
+                    },
+                    {
+                      "type": "link_element",
+                      "title": "Cup & One-Make",
+                      "description": null,
+                      "url": "https://simracingcockpit.gg/assetto-corsa-competizione-car-list/#cup-open-cars"
+                    }
+                  ],
+                  "about_this_result": null,
+                  "main_domain": "simracingcockpit.gg",
+                  "relative_url": "/assetto-corsa-competizione-car-list/",
+                  "etv": 21.280000686645508,
+                  "estimated_paid_traffic_cost": null,
+                  "clickstream_etv": null,
+                  "rank_changes": {
+                    "previous_rank_absolute": 1,
+                    "is_new": false,
+                    "is_up": false,
+                    "is_down": false
+                  },
+                  "backlinks_info": {
+                    "referring_domains": 6,
+                    "referring_main_domains": 6,
+                    "referring_pages": 762,
+                    "dofollow": 759,
+                    "backlinks": 768,
+                    "time_update": "2026-10-11 02:59:31 +00:00"
+                  },
+                  "rank_info": {
+                    "page_rank": 396,
+                    "main_domain_rank": 299
+                  }
+                },
+                "check_url": "https://www.google.com/search?q=acc%20cars%20list&hl=en&gl=US&ie=UTF-8&uule=w+CAIQIFISCQs2MuSEtepUEUK33kOSuTsc",
+                "serp_item_types": [
+                  "organic",
+                  "people_also_ask",
+                  "ai_overview",
+                  "related_searches",
+                  "images"
+                ],
+                "se_results_count": 129,
+                "keyword_difficulty": 12,
+                "is_lost": false,
+                "last_updated_time": "2026-09-25 06:08:14 +00:00",
+                "previous_updated_time": "2026-07-17 03:52:26 +00:00"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

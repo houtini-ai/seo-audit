@@ -1,0 +1,58 @@
+{
+  "endpoint": "/v3/backlinks/bulk_new_lost_referring_domains/live",
+  "request": [
+    {
+      "targets": [
+        "simracingcockpit.gg",
+        "ehi.com.au"
+      ],
+      "date_from": "2026-09-24"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242023-1165-0350-0000-dfca75d69a54",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.0542 sec.",
+      "cost": 0.024072,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "backlinks",
+        "bulk_new_lost_referring_domains",
+        "live"
+      ],
+      "data": {
+        "api": "backlinks",
+        "function": "bulk_new_lost_referring_domains",
+        "targets": [
+          "simracingcockpit.gg",
+          "ehi.com.au"
+        ],
+        "date_from": "2026-09-24"
+      },
+      "result": [
+        {
+          "items_count": 2,
+          "items": [
+            {
+              "target": "simracingcockpit.gg",
+              "new_referring_domains": 81,
+              "lost_referring_domains": 15,
+              "new_referring_main_domains": 40,
+              "lost_referring_main_domains": 7
+            },
+            {
+              "target": "ehi.com.au",
+              "new_referring_domains": 209,
+              "lost_referring_domains": 8,
+              "new_referring_main_domains": 29,
+              "lost_referring_main_domains": 4
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

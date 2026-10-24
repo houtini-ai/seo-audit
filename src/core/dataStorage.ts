@@ -14,6 +14,8 @@ export const KEEP_RECENT = 5;
 
 const CACHE_DB_NAMES = new Set([
   'dataforseo-cache.db', 'wikidata-cache.db', 'majestic-cache.db',
+  // The portfolio database (cross-property; holds no property_meta), reported with the caches.
+  '_portfolio.db',
   // Legacy: caches of the competitor fetchers removed in 0.15.0. Still listed so a leftover file on
   // an existing install is reported as a (deletable) cache, never mistaken for a property database.
   'firecrawl-cache.db', 'supadata-cache.db',

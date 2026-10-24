@@ -1,0 +1,30 @@
+Design ONE desktop screen (1440 wide, light theme) for a local SEO console: the "Domains" portfolio page. It is the landing page of a self-hosted dashboard for an SEO consultant who monitors 5-30 websites: some they own (with Google Search Console data, a site crawl and an audit), some they only watch (competitors, prospects). Keep the existing design system: warm monochrome, crisp 1px borders, mono numerals, pale pastel badges, one green accent, no gradients, no heavy shadows, no emoji. Every number on the screen must be a literal "[figure]" placeholder. Do not invent product names, brands, logos or marketing copy. Spell out every table header in full words. Do not use em dashes anywhere.
+
+Layout, top to bottom:
+
+1. Left sidebar (narrow): product wordmark placeholder "SEO Console", nav items "Domains" (active), and a "Properties" list below it (owned sites). At the bottom of the sidebar a muted block "System: read-only" with a one-line note "Data refreshes are started from chat".
+
+2. Page header: title "Domains", a subline "[figure] owned · [figure] watched". On the right: a segmented toggle "Month | Year" (compares the last complete month with the previous month, or with the same month last year), a button "Export CSV", and a secondary button "Add domain".
+
+3. Refresh status strip (one row, quiet): "Weekly data: captured [figure]" · "Monthly history: captured [figure]" · "Schedule: weekly on Monday, budget $[figure] a month, spent $[figure] this month" · a small link-style action "Copy refresh prompt". When there is no schedule, the same slot reads "No schedule. Ask in chat to schedule a refresh." Show the scheduled version.
+
+4. Tabs: "All", "Needs attention ([figure])", "Owned", "Watched". Plus a group filter dropdown "Group: All groups".
+
+5. The main table (the heart of the page). One row per domain, about 8 rows. Columns, in order:
+   - Domain: domain name as a link, a small country flag + country code, an owned rows badge "GSC" (owned) or "Watched". Watched rows can show a muted group label (e.g. "competitors").
+   - Clicks, 28 days (measured): only for owned rows; watched rows show a muted "not available" dash text. Value plus a small signed % change chip.
+   - Organic keywords: value, % change chip, and a tiny 12-point sparkline under the value.
+   - Organic traffic (estimated): value, % change, sparkline. The header carries a small "est." tag.
+   - Paid keywords
+   - Paid traffic (estimated)
+   - Referring domains: value, change, sparkline.
+   - Domain Rank: value out of 100 with a change chip (this is a third-party rank, so no gauge, no grade word).
+   - AI mentions: value with change and sparkline; a tiny caption under the header "AI Overviews + ChatGPT".
+   - Audit health: only for owned rows, value out of 100 with change.
+   Sparklines are thin single-colour lines with no axes. Change chips are coloured by direction only (up green, down red, flat grey). Some cells must show honest empty states in small muted text instead of a number: "not fetched yet", "Backlinks API not enabled", "no data at this location".
+
+6. Under the table, when the "Needs attention" tab is shown, each flagged row has a one-line reason under the domain name in small text, e.g. "Organic traffic (estimated) down [figure]% two months running" or "Search Console clicks down [figure]% while the estimate rose". Show two rows with such reasons in the All tab as well, as an inline red-dot note.
+
+7. A footnote line at the bottom of the table: "Estimated figures are DataForSEO estimates for the selected country. Clicks are measured by Google Search Console. Domain Rank is DataForSEO's, not an Authority Score." Keep it small and muted.
+
+Generous whitespace, dense but calm table rows (about 64px tall to fit the sparkline), right-aligned numerals in a monospace face, a sticky table header. The page should feel like a professional analyst's tool, closer to Linear or Notion than to a marketing dashboard.
