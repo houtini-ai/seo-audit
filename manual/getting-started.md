@@ -280,43 +280,40 @@ Refresh weekly, run *"detect changes"* right after (it diffs your two most recen
 
 Skip this unless you run the server through the Docker MCP gateway. With npx or Claude Desktop the server is one long-lived process, and it runs its own background jobs.
 
-The gateway runs the server in worker containers that it replaces whenever it likes (a disconnect, a router recreate, an idle reap), and a crawl running inside a worker dies with it. So under the gateway the jobs run somewhere else: in one long-running **job runner** container, `seo-audit-runner`, which ships in the same npm package. The server only queues each job in `_jobs.db` in the data directory, and the runner picks it up from there.
+The gateway causes two problems, and each has its own fix.
 
-Start the runner once, on the same data volume and credentials the gateway uses:
+- **Slow start.** The gateway runs the server in a worker container: a new one for every tool call, or one per client connection with `longLived: true` on the catalog entry. Started with `npx` on `node:22-slim`, each new worker installs the package first, which takes 60-90 seconds. Claude Code gives up at about 60, so every call times out. **Fix: an image with the package preinstalled, plus `longLived: true`.** First call about 2 seconds, later calls instant.
+- **Jobs dying.** The gateway replaces workers whenever it likes (a disconnect, a router recreate, an idle reap), and a crawl running inside a worker dies with it. **Fix: the job runner**, one long-running container, `seo-audit-runner`, from the same package. The server only queues each job in `_jobs.db` in the data directory, and the runner picks it up from there.
+
+**1. Build the image** from this Dockerfile (pin the release):
+
+```dockerfile
+FROM node:22-slim
+RUN npm install -g @houtini/seo-audit-console@0.16.2
+ENTRYPOINT ["seo-audit-console"]
+```
+
+`docker build -t seo-audit-console:0.16.2 .`, then in the server's catalog entry set `image: seo-audit-console:0.16.2`, delete the `command:` line, and add `longLived: true`.
+
+**2. Start the runner** once, from the same image, on the same data volume and credentials the gateway uses:
 
 ```bash
 docker run -d --init --name seo-audit-runner --restart unless-stopped \
   -v mcp-sac-data:/data -v mcp-sac-creds:/creds:ro \
   -e SAC_DATA_DIR=/data -e GOOGLE_APPLICATION_CREDENTIALS=/creds/gsc.json \
   -e DATAFORSEO_USERNAME -e DATAFORSEO_PASSWORD -e MAJESTIC_API_KEY -e CRUX_API_KEY \
-  node:22-slim npx -y -p @houtini/seo-audit-console seo-audit-runner
+  --entrypoint seo-audit-runner seo-audit-console:0.16.2
 ```
 
 - The `-e NAME` flags with no value copy those keys from your shell; drop any you don't use. The runner needs the same keys as the server, because it is the one that calls the APIs.
 - Windows, Git Bash: put `MSYS_NO_PATHCONV=1` in front, or MSYS turns `/data` and `/creds` into Windows paths. PowerShell doesn't need it.
-- `docker logs seo-audit-runner` shows the runner start and every job it claims. The first start takes about a minute while npx installs the package.
+- `docker logs seo-audit-runner` shows the runner start and every job it claims.
 
-Then add `SAC_JOB_RUNNER=external` to the env of the server's gateway catalog entry, and take `longLived: true` off it.
+**3. Add `SAC_JOB_RUNNER=external`** to the env of the server's gateway catalog entry. Keep `longLived: true`: the runner keeps jobs alive, `longLived` keeps the worker warm, and they work together.
 
-A job now reads `queued: waiting for the job runner` until the runner claims it. If it stays queued for over a minute with no runner checking in, the status tells you no runner seems to be running, with the command above. After about two minutes without a runner heartbeat it reads `queued (no runner)`, and it no longer blocks `data_storage` prune or repair. The runner does one job at a time; `SAC_RUNNER_CONCURRENCY=2` (or more) on the runner lets jobs for different properties run side by side. To update, remove the runner container and run the command again, so npx fetches the new release; a job that was running at that moment reads `interrupted`, so start it again.
+A job now reads `queued: waiting for the job runner` until the runner claims it. If it stays queued for over a minute with no runner checking in, the status tells you no runner seems to be running, with the command above. After about two minutes without a runner heartbeat it reads `queued (no runner)`, and it no longer blocks `data_storage` prune or repair. The runner does one job at a time; `SAC_RUNNER_CONCURRENCY=2` (or more) on the runner lets jobs for different properties run side by side. To update, build the image for the new release, change the tag in the catalog entry, restart the gateway, then remove the runner container and run the command again with the new tag. A job that was running at that moment reads `interrupted`, so start it again.
 
-**The first call after a worker starts is slow.** Each gateway worker is a fresh container, and `npx` installs the package before the server can answer: about 60 seconds on a cold npm cache. That can outlast the client's tool-call timeout, and a client that retries can start extra workers, each installing again. Two ways round it:
-
-- **Pin the version** in the catalog entry's command (`npx -y -p @houtini/seo-audit-console@0.16.1 ...` rather than the bare name), so npx never has to look up "latest", and the runner and the server stay on the same release. If the entry mounts a named volume at `/root/.npm` (the npm cache), pre-warm it once after each upgrade, so workers start from a warm cache:
-
-  ```bash
-  docker run --rm -v sac-npm-cache:/root/.npm node:22-slim npx -y -p @houtini/seo-audit-console@0.16.1 node -e 0
-  ```
-
-- **Or build a small image with the package preinstalled** and point the catalog entry at it. Workers then start in a second or two:
-
-  ```dockerfile
-  FROM node:22-slim
-  RUN npm install -g @houtini/seo-audit-console@0.16.1
-  ENTRYPOINT ["seo-audit-console"]
-  ```
-
-  `docker build -t seo-audit-console:0.16.1 .`, then use that image (the runner runs from it too, with `--entrypoint seo-audit-runner`). Rebuild it for each release.
+If the catalog entry still runs `npx`, the server logs a warning at start-up (in `docker logs` for the gateway) pointing at this section.
 
 **After upgrading, restart the MCP client.** Clients read the tool list once, when they connect, and keep it. Until Claude Desktop or Claude Code is restarted (fully, from the tray on Windows), tools added in the new release, such as `sync_crux`, stay invisible even though the server has them.
 

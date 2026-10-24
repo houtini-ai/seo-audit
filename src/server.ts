@@ -47,6 +47,7 @@ import { suggestPages } from './audit/opportunities.js';
 import { computeTopicGaps, type GapKeywordRow } from './audit/topicGaps.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
 import { dbPathFor, sanitizeProperty, jobScopeFor, CONFIG_PATH, DEFAULT_DATA_DIR, resolveDataDir } from './core/paths.js';
+import { npxInContainerWarning } from './core/startupHints.js';
 import { fmtDuration, crawlNotes } from './core/crawlProgress.js';
 import Database from 'better-sqlite3';
 import { runQueryData, QUERYABLE_TABLES, FILTER_OPS, METRIC_FNS, truncateCell } from './core/queryData.js';
@@ -2675,6 +2676,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error(`${SERVER_NAME} v${SERVER_VERSION} running on stdio (data: ${dataDir()}${credPath ? '' : ', GSC disabled — no credentials'})`);
+    const npxHint = npxInContainerWarning();
+    if (npxHint) console.error(npxHint);
   };
 
   return { server, run };

@@ -67,7 +67,7 @@ export const jobsDbPath = (dataDir: string): string => path.join(dataDir, JOBS_D
 export const INTERRUPTED_ERROR =
   'The server process running this job exited before it finished, so no further work was done. ' +
   'Under the Docker MCP gateway, run the job runner sidecar and set SAC_JOB_RUNNER=external on the catalog entry ' +
-  "(see README, Docker); the older stopgap is longLived: true on this server's catalog entry.";
+  "(see README, Docker), and keep longLived: true on this server's catalog entry.";
 /** A job the job runner claimed, whose runner stopped heartbeating (killed, crashed, host restarted). */
 export const RUNNER_INTERRUPTED_ERROR =
   'The job runner running this job exited before it finished (it was killed, crashed or restarted), so no further work was done. ' +
