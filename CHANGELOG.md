@@ -8,6 +8,30 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [Unreleased]
+
+### Added
+- **The portfolio** (`design/portfolio/SPEC.md`, `manual/portfolio.md`): a Semrush "Domains for monitoring" style table across owned properties (auto) and watched domains (competitors, prospects), plus a per-domain overview. It is the browser dashboard's landing page once there is more than one property (`/`, `/portfolio`), and `get_portfolio` in chat.
+  - **Measured vs estimated is always labelled:** Search Console clicks (measured) sit beside DataForSEO estimates (organic and paid keywords and traffic for the row's country), referring domains (root), **DataForSEO Domain Rank** (0-100, never called Authority Score), **AI mentions** (Google AI Overviews + ChatGPT, monthly; ChatGPT US-only) and audit health.
+  - **Change maths:** changes compare the last COMPLETE month (each series its own latest, since Labs history lags); the month in progress is hollow "to date". Empty cells name the reason. A de-noised "needs attention" rule list names its numbers.
+  - **Domain overview:**
+    - estimated and measured KPI blocks, and traffic share;
+    - AI search per platform, with a rank x citation table and quadrant from content recon (unknown is never "no"), cited pages joined to crawl status and GSC clicks, and co-cited sources;
+    - a traffic trend (estimated vs measured), Semrush's five position bands, the search-results mix incl. AI Overview references, countries, backlinks new/lost;
+    - top pages by traffic and by links, with our crawl status.
+  - **Tools:** `portfolio` (list / add / remove / group / location, free), `refresh_portfolio` (quotes first; `confirm` runs a job and records actual spend), `schedule_portfolio_refresh` (two-step consent to a monthly budget cap; the atomic claim means two processes never run it twice; it skips with re-confirm if the cost grows 25%+), `get_portfolio` (App).
+  - **DataForSEO:** new client methods for the bulk Backlinks endpoints, Labs bulk traffic / all-locations rank overview / ranked_keywords metrics, Backlinks domain_pages, and the LLM Mentions API. Request bodies were verified live and the raw responses are saved as test fixtures. Prices in the quote are the costs observed on live runs.
+  - **Location:** an owned property with no saved DataForSEO location uses its country-code TLD (.com.au = Australia) before the US default.
+  - **Live run (24 Oct 2026):** 8 owned domains on the weekly tier for $0.22; 2 on the monthly tier for $1.40.
+
+### Fixed
+- **RankTracker** and the portfolio share one property -> target derivation that strips `www.`, so both send the same body and share the cache. A www URL-prefix property re-fetches its rank history once.
+- **`ranked_keywords`:** a code comment claimed `item_types` is rejected (40501). It is accepted, and the SERP-feature counts need it.
+- **Backlinks history** is monthly, not daily (comments corrected). Its new/lost fields are referring domains, not main domains.
+
+### Tests
+- `scripts/probe-portfolio.mjs` (50 assertions, fixture-fed, no network), added to `npm test`.
+
 ## [0.16.3] — 2026-10-24
 
 The Docker MCP gateway cold-start fix (#76) and a dependency security update.

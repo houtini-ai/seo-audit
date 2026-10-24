@@ -159,7 +159,7 @@ export class Backlinks {
         } catch { /* Majestic optional — never fail the backlink pull on it */ }
       }
 
-      // 4. Backlink profile (#47): referring domains, anchors and the daily history, each its own
+      // 4. Backlink profile (#47): referring domains, anchors and the monthly history, each its own
       // paid call (cached like the rest) and each allowed to fail on its own — a 40204 or a quota
       // error on one endpoint leaves the others collected and is reported, not hidden as zero.
       const profile: BacklinksResult['profile'] = { referringDomains: null, lostDomains: null, anchors: null, historyDays: null, snapshotAt: null, errors: {} };
@@ -215,7 +215,7 @@ export class Backlinks {
             profile.anchors = count; profile.snapshotAt = snapshotAt;
           }
         } catch (e) { profile.errors.anchors = e instanceof Error ? e.message : String(e); }
-        // History — daily, from `historyMonths` ago (default 12); rows are keyed by date so re-pulls update in place.
+        // History - MONTHLY (one item per month, dated the month end; verified live 2026-10-24), from `historyMonths` ago (default 12); rows are keyed by date so re-pulls update in place.
         try {
           update({ phase: 'history' });
           const from = new Date(); from.setUTCMonth(from.getUTCMonth() - (opts.historyMonths ?? 12)); from.setUTCDate(1);

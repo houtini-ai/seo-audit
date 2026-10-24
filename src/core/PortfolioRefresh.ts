@@ -272,8 +272,8 @@ async function runCall(fam: PlanFamily, call: PlanFamily['calls'][number], c: Ct
       return;
     }
     case 'llm-top-pages': {
-      const r = paid(await dfs.llmTopMentionedPages(d0, 'google', loc, 'en', 50, M));
-      writeTopPages(store, d0, loc, capturedAt, 'cited', 'google', mapLlmTopPages(r.tasks, d0, 20));
+      const r = paid(await dfs.llmTopMentionedPages(d0, 'google', loc, 'en', 20, M));
+      writeTopPages(store, d0, loc, capturedAt, 'cited', 'google', mapLlmTopPages(r.tasks, d0, 20) /* rows bill $0.001 each: ask only for what's kept */);
       return;
     }
     case 'llm-top-sources': {

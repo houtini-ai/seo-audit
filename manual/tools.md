@@ -142,6 +142,35 @@ The *Response vs Render* check: render a bounded, sampled set of pages in headle
 Is your site ready for AI agents? Live HTTP probes of your origin scoring four categories - discoverability (robots rules, sitemap, Link headers), content (`llms.txt`, `agents.md`, Markdown negotiation), bot access control (AI-bot rules, Content Signals, Web Bot Auth) and capabilities (MCP server card, Agent Skills, API catalogue, OAuth discovery). Returns 0-100, a level, and copy-paste fixes for everything missing. No crawl or GSC data needed, and it isn't fooled by a catch-all route that returns 200 for everything.
 > Check agent readiness for mysite.com
 
+## The portfolio
+
+Every domain you look after on one page: owned properties automatically, plus watched domains. The full picture is in [portfolio.md](portfolio.md).
+
+### `portfolio`
+List and edit the portfolio. Free: it never calls DataForSEO.
+- The list shows Search Console clicks (measured) beside DataForSEO estimates: organic keywords and traffic, referring domains, Domain Rank (DataForSEO's, not an Authority Score), AI mentions (AI Overviews + ChatGPT) and audit health.
+- Each row carries its "needs attention" reasons. Changes compare the last complete month.
+- `action`: `add` (with `location`, `group`), `remove`, `group` or `location`.
+> Add rival.com to my portfolio as a competitor in the UK
+
+### `refresh_portfolio` [paid]
+Fetch the portfolio data.
+- **Quotes first:** calls and cost per endpoint family, nothing spent. With `confirm: true` it runs as a job and records actual spend.
+- **`tier`:** `weekly` (bulk: estimates, Domain Rank, links, search-results mix; cents for the portfolio), `monthly` (per domain: history, countries, top pages, AI mentions and citations; about $0.68 each) or `all`.
+- **Budget:** a manual run counts toward any scheduled budget, and is refused over the cap unless `overBudget: true`.
+> Refresh my SEO Console portfolio
+
+### `schedule_portfolio_refresh` [paid]
+Weekly and monthly refreshes under a monthly budget cap, set up in two steps: a preview, then `confirm: true`.
+- Runs in the MCP process, or in the job runner under the Docker gateway. Two processes never run it twice.
+- A run whose cost grew more than 25% since you agreed is skipped until you re-confirm.
+- `enabled: false` turns scheduling off.
+> Schedule a weekly portfolio refresh with a $10 a month budget
+
+### `get_portfolio`
+The portfolio dashboard in chat. Give it a `domain` to open that domain's overview. Free: stored data only.
+> Show me the portfolio overview for ehi.com.au
+
 ## Competitive and keyword data (DataForSEO)
 
 All **[paid]** except `trend_categories` and the free Google News source in `news_discovery`; all cached 20 days, all on-demand. Full workflows in [competitive.md](competitive.md).

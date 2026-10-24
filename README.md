@@ -109,6 +109,7 @@ This README is the story and the quick start. The detail lives in the manual:
 | [SEO Recon](manual/recon.md) | Why a page is losing: the live SERP + AI-Overview citation verdict, the competitor diff, and the trackable to-do ledger |
 | [DataForSEO functions](manual/dataforseo.md) | Every DataForSEO-backed tool grouped by API module - Keywords, SERP, Labs, Backlinks, OnPage - each with its endpoint and cost |
 | [Majestic functions](manual/majestic.md) | The optional Trust Flow tier - what it adds, and how `link_intersect` and `pull_backlinks` use it |
+| [The portfolio](manual/portfolio.md) | Every domain you look after on one page (owned + watched): measured vs estimated, Domain Rank, AI mentions, needs-attention, the domain overview, and quoted, budget-capped refreshes |
 | [Dashboard & reports](manual/dashboard.md) | The eight tabs, what each chart shows, the browser dashboard (and its standalone version for Docker), and the shareable export |
 
 ## Surprisingly little has changed in twenty years
@@ -213,6 +214,8 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 Everything above works with just your Search Console data. But GSC can only describe searches where you already appear. The moment your question is "how big is this market?" or "what do competitors rank for that I don't?", you need third-party data - and that's [DataForSEO](https://dataforseo.com/?aff=213701): a pay-as-you-go API for volumes, live rankings, competitor data and Lighthouse runs. No subscription; calls cost fractions of a cent to a few cents, cached for 20 days, and only ever run when you ask. My own usage runs to a few dollars a month.
 
 It unlocks the Semrush-replacement layer: the organic visibility overview for any domain, any site's top pages and ranked keywords (including which of them show an **AI Overview**), the content gap, topic gaps, search intent, lab Core Web Vitals and backlinks. It also drives **content recon** - `recon_targets` pulls the live Google SERP for a losing page, reads whether the AI Overview cites you, and tells you *why* you're behind. The full workflows and setup: [competitive.md](manual/competitive.md).
+
+It also powers the **portfolio**: a Semrush-style "Domains for monitoring" table across your owned properties and any domains you watch. Organic keywords and traffic, referring domains, Domain Rank and AI mentions (Google AI Overviews + ChatGPT) sit next to your measured Search Console clicks and audit health, with a "needs attention" tab and a per-domain overview. Every figure says whether it was measured or estimated, and refreshes quote their cost before anything is spent (8 domains on the weekly tier cost $0.22 on a live run). The detail: [portfolio.md](manual/portfolio.md).
 
 One more thing DataForSEO unlocks gets a section of its own, because the link work has a second, optional service behind it.
 
@@ -394,8 +397,9 @@ The one-line version - full descriptions, inputs and example prompts for every t
 | `market_sizing` · `serp_features` | Share of voice vs named competitors · AI-Overview / snippet / video exposure by volume |
 | `keyword_list` · `content_opportunities` | Cluster a keyword list (own / weak / absent) · the content marketer's report |
 | `recon_targets` · `save_recon_todo` · `recon_todos` | **Content recon:** why a page is losing (live SERP + AI Overview) → a tracked, annotatable to-do board |
+| `portfolio` · `refresh_portfolio` · `schedule_portfolio_refresh` · `get_portfolio` | **The portfolio:** every domain you look after (owned + watched) in a Semrush-style table, measured vs estimated · refresh it (quotes first) · schedule it under a monthly budget cap · see it in chat |
 | `get_dashboard` · `serve_dashboard` · `export_report` | In-chat dashboard · the same in a local browser tab · shareable HTML |
-| `get_dashboard_data` | Internal: the dashboard widget fetches its data through this; not for direct use |
+| `get_dashboard_data` · `get_portfolio_data` · `get_domain_overview` | Internal: the dashboard widgets fetch their data through these; not for direct use |
 | `composition_cookbook` | The data-surface map and recipes for bespoke analyses |
 | `data_storage` | Per-property disk usage and row counts, confirm-gated pruning, and an integrity check with index repair |
 | `normalize_url` · `data_location` · `list_properties` · `seo_audit_help` | Utilities and the help menu |

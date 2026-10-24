@@ -8,17 +8,19 @@ import type { PortfolioDomain } from './PortfolioStore.js';
  * actual spend (the ledger, summed from each response's `cost`) is what the budget is checked against.
  */
 export const DFS_PRICES = {
-  source: 'observed live 2026-10-24 (post-July-2026 price list: Labs $0.012/task, Backlinks $0.024/task, LLM Mentions $0.10/task, plus small per-row fees)',
+  source: 'observed on live portfolio runs, 24 Oct 2026 (Labs $0.012/task, Backlinks $0.024/task, LLM Mentions $0.10/task, plus per-row and per-month fees)',
   labsBulkTraffic: 0.0122,
   labsSerpMix: 0.0121,
-  labsHistorical: 0.127,
+  // $0.12/task + $0.0012 per month returned: the full history from 2020-10 is ~72 months (live: $0.2076).
+  labsHistorical: 0.21,
   labsCountries: 0.0126,
   labsTopPages: 0.015,
   backlinksBulk: 0.0241,
   backlinksHistory: 0.025,
   backlinksTopPages: 0.0245,
-  llmHistorical: 0.101,
-  llmTopList: 0.103,
+  llmHistorical: 0.076,   // live: $0.0758 per domain per platform
+
+  llmTopList: 0.121,      // $0.10/task + $0.001/row; 20-21 rows requested (live: $0.121)
 } as const;
 
 export type PortfolioTierSel = 'weekly' | 'monthly' | 'all';

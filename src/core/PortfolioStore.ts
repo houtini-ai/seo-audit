@@ -48,6 +48,19 @@ export function resolveLocation(loc: string | number | undefined | null): { code
   return { code: DEFAULT_LOCATION_CODE };
 }
 
+/** A country-code TLD → its DataForSEO location, used only when a property has no saved location:
+ * an unset .com.au site estimated at the US default reads near zero (ehi: US 258 vs AU 5,170 visits). */
+const TLD_LOCATIONS: [RegExp, number][] = [
+  [/.(com.)?au$/, 2036], [/.(co.)?nz$/, 2554], [/.(co.)?uk$/, 2826], [/.ie$/, 2372], [/.ca$/, 2124],
+  [/.de$/, 2276], [/.fr$/, 2250], [/.es$/, 2724], [/.it$/, 2380], [/.nl$/, 2528], [/.be$/, 2056], [/.se$/, 2752],
+  [/.no$/, 2578], [/.dk$/, 2208], [/.fi$/, 2246], [/.pl$/, 2616], [/.pt$/, 2620], [/.ch$/, 2756], [/.at$/, 2040],
+  [/.(co.)?in$/, 2356], [/.sg$/, 2702], [/.(co.)?za$/, 2710], [/.(co.)?jp$/, 2392], [/.(com.)?br$/, 2076], [/.(com.)?mx$/, 2484],
+];
+export function locationFromTld(domain: string): number | null {
+  for (const [re, code] of TLD_LOCATIONS) if (re.test(domain)) return code;
+  return null;
+}
+
 export interface PortfolioDomain {
   domain: string;
   locationCode: number;
@@ -162,7 +175,8 @@ export class PortfolioStore {
         if (!isValidDomain(domain)) continue;
         let loc: string | number | undefined;
         try { const a = new AuditDatabase(path.join(this.dataDir, p.file)); try { loc = a.getDfsLocation(p.siteUrl); } finally { a.close(); } } catch { /* unreadable */ }
-        const { code } = resolveLocation(loc);
+        // A saved location wins; else the country-code TLD; else the US default.
+        const { code } = loc != null && loc !== '' ? resolveLocation(loc) : { code: locationFromTld(domain) ?? DEFAULT_LOCATION_CODE };
         upDomain.run(domain, code);
         upProp.run(p.siteUrl, domain, code);
         seen.add(p.siteUrl);
