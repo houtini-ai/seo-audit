@@ -71,7 +71,7 @@ import { MajesticClient } from './core/MajesticClient.js';
 import { fetchGoogleNews } from './core/googleNews.js';
 import { WikidataClient } from './core/WikidataClient.js';
 import { Entities } from './core/Entities.js';
-import { JobManager, corruptionHint, jobsDbPath, jobRunnerModeFromEnv, type Job } from './core/JobManager.js';
+import { JobManager, corruptionHint, jobsDbPath, jobRunnerModeFromEnv, liveJobTypes, type Job } from './core/JobManager.js';
 import { submitJob, type JobKindName, type JobArgsByKind, type JobDeps } from './core/jobKinds.js';
 import { propertyDbFile } from './core/integrity.js';
 import { probeUrls, urlVariants, judgeVariants, type ProbeResult } from './core/probeUrls.js';
@@ -81,6 +81,11 @@ import { clusterKeywordList } from './audit/keywordList.js';
 import type { FetchOptions } from './core/types.js';
 import { dataForSeoCredentials, optionalSecret, cruxApiKey } from './core/secrets.js';
 import { CruxSync, CRUX_DEFAULT_URL_LIMIT } from './core/CruxSync.js';
+import { PortfolioStore, PORTFOLIO_JOB_SCOPE, resolveLocation, LOCATION_LABEL } from './core/PortfolioStore.js';
+import { normaliseDomain } from './core/portfolioTarget.js';
+import { quotePortfolioRefresh } from './core/PortfolioRefresh.js';
+import { getPortfolioData, getDomainOverview, readSchedule } from './core/portfolioData.js';
+import { previewSchedule, saveSchedule, disableSchedule, startPortfolioScheduler } from './core/portfolioSchedule.js';
 
 const SERVER_NAME = 'seo-audit-console';
 const SERVER_VERSION = (
@@ -103,6 +108,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // unversioned URI can pin users to a stale (or broken) cached bundle across releases.
 const DASHBOARD_URI = `ui://dashboard/main-${SERVER_VERSION}.html`;
 const SYNC_PROGRESS_URI = `ui://sync-progress/main-${SERVER_VERSION}.html`;
+const PORTFOLIO_URI = `ui://portfolio/main-${SERVER_VERSION}.html`;
 
 // Must match the categories actually used by CHECKS (src/audit/checks.ts) so category
 // filters never silently return empty. (Was listing performance/agentic/integrity/war-stories
@@ -356,6 +362,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const buildWebOpts = (port?: number): WebServerOptions => ({
     dataDir,
     uiHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8'),
+    portfolioHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'portfolio.html'), 'utf8'),
     call: buildWebCallHandlers({ dataDir, dfs, apiKeys: apiKeysStatus }),
     ...(port != null ? { port } : {}),
   });
@@ -2323,6 +2330,202 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
   );
 
+  // ── Portfolio (design/portfolio/SPEC.md): a Semrush-style domains table on DataForSEO + GSC ──
+  // Free tools read and edit the list; the paid refresh quotes first and runs only on confirm; a
+  // schedule is a two-step consent to spend up to a monthly cap. The dashboard never spends.
+  const portfolioNudge = (): string => {
+    try {
+      const st = PortfolioStore.openReadonly(dataDir());
+      if (!st) return '';
+      try {
+        const sched = readSchedule(st.db);
+        if (sched?.enabled) return '';
+        const m = (st.db.prepare(`SELECT MAX(fetched_at) m FROM domain_month`).get() as { m: string | null }).m;
+        const stale = !m || Date.now() - Date.parse(m.replace(' ', 'T') + 'Z') > 30 * 86400000;
+        return stale ? '\n\nNo refresh schedule is set and the portfolio data is over 30 days old (or missing). Ask the user whether they would like a scheduled refresh: schedule_portfolio_refresh previews the cost and a monthly budget cap before saving anything.' : '';
+      } finally { st.close(); }
+    } catch { return ''; }
+  };
+  const fmtN = (v: number | null | undefined): string => (v == null ? '-' : Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : `${Math.round(v)}`);
+  const fmtChange = (c: { mode: 'pct' | 'abs'; value: number } | null): string => (!c ? '' : c.mode === 'pct' ? ` (${c.value >= 0 ? '+' : ''}${c.value.toFixed(1)}%)` : ` (${c.value >= 0 ? '+' : ''}${Math.round(c.value)})`);
+  const portfolioLink = (domain?: string): string => {
+    const base = dashboardServerUrl();
+    if (base && dashboardReachable()) return `\n\nPortfolio in the browser: ${base}/portfolio${domain ? `/domain?d=${encodeURIComponent(domain)}` : ''}`;
+    return `\n\nSee it in chat with get_portfolio${domain ? ` (domain: ${domain})` : ''}, or in the browser via serve_dashboard then /portfolio.`;
+  };
+
+  server.registerTool(
+    'portfolio',
+    {
+      title: 'Portfolio: list and edit the monitored domains (free)',
+      description: 'The domains table (owned properties + watched domains such as competitors), Semrush "Domains for monitoring" style. Free: reads and edits only, never calls DataForSEO. action "list" (default) shows every domain with organic keywords and traffic (DataForSEO estimates), referring domains, Domain Rank (DataForSEO, not Semrush Authority Score), AI mentions (AI Overviews + ChatGPT) and, for owned sites, Search Console clicks (measured) and audit health, plus "needs attention" reasons. Changes compare the last COMPLETE month with the month before. "add" watches a domain (location = DataForSEO location code or country name, default United States; group e.g. "competitors"). "remove" stops watching. "group" sets a group label. "location" changes a watched domain\'s country, or an owned property\'s saved DataForSEO location. Owned domains come from the local property databases automatically. To fetch data use refresh_portfolio (paid, quotes first).',
+      inputSchema: {
+        action: z.enum(['list', 'add', 'remove', 'group', 'location']).optional(),
+        domain: z.string().optional(),
+        location: z.union([z.number().int(), z.string()]).optional().describe('DataForSEO location code (2840 US, 2826 UK, 2036 AU) or country name'),
+        group: z.string().max(60).optional(),
+      },
+    },
+    async ({ action = 'list', domain, location, group }) => {
+      const store = new PortfolioStore(dataDir());
+      try {
+        const loc = location != null ? resolveLocation(location) : null;
+        if (action !== 'list' && !domain) throw new Error(`${action} needs a domain.`);
+        if (action === 'add') {
+          const d = store.addWatched(domain!, { locationCode: loc?.code, group: group ?? null });
+          return { content: [{ type: 'text' as const, text: `Watching ${d.domain} (${LOCATION_LABEL[d.locationCode] ?? d.locationCode})${d.groupLabel ? ` in group "${d.groupLabel}"` : ''}.${loc?.note ? ` Note: ${loc.note}.` : ''} It has no data until the next refresh: refresh_portfolio quotes the cost first.` }], structuredContent: { added: d } };
+        }
+        if (action === 'remove') {
+          const n = store.removeWatched(domain!, loc?.code);
+          return { content: [{ type: 'text' as const, text: n ? `Stopped watching ${domain} (${n} row${n === 1 ? '' : 's'}); its history is kept.` : `${domain} is not a watched domain (owned properties can't be removed here).` }], structuredContent: { removed: n } };
+        }
+        if (action === 'group') {
+          const n = store.setGroup(domain!, group ?? null, loc?.code);
+          return { content: [{ type: 'text' as const, text: n ? `Group for ${domain} set to ${group ? `"${group}"` : 'none'}.` : `${domain} is not in the portfolio.` }], structuredContent: { updated: n } };
+        }
+        if (action === 'location') {
+          if (!loc) throw new Error('location needs a location code or country name.');
+          store.syncOwned();
+          const rows = store.list().filter(d => d.domain === normaliseDomain(domain!));
+          if (!rows.length) throw new Error(`${domain} is not in the portfolio.`);
+          const owned = rows.find(r => r.kind === 'owned');
+          if (owned) {
+            for (const siteUrl of owned.siteUrls) {
+              const a = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+              try { a.setDfsLocation(siteUrl, loc.code); } finally { a.close(); }
+            }
+            store.syncOwned();
+          } else {
+            const w = rows[0];
+            store.removeWatched(w.domain, w.locationCode);
+            store.addWatched(w.domain, { locationCode: loc.code, group: w.groupLabel });
+          }
+          return { content: [{ type: 'text' as const, text: `${domain} now uses ${LOCATION_LABEL[loc.code] ?? loc.code} for DataForSEO estimates. The next refresh fetches it there.` }], structuredContent: { domain, locationCode: loc.code } };
+        }
+      } finally { store.close(); }
+      const p = getPortfolioData(dataDir());
+      if (p.empty) return { content: [{ type: 'text' as const, text: 'The portfolio is empty: sync a property (sync_gsc / refresh_property) or add a watched domain with portfolio action "add".' }], structuredContent: { rows: 0 } };
+      const L = p.months.lastComplete, P = p.months.previous;
+      const lines = p.rows.map(r => {
+        const cell = (mt: { value: number | null; empty?: string; month: any }) => (mt.value == null ? `_${mt.empty ?? 'none'}_` : `${fmtN(mt.value)}${fmtChange(mt.month)}`);
+        return `| ${r.domain} | ${r.kind}${r.group ? ` (${r.group})` : ''} | ${r.country} | ${r.clicks28 ? `${fmtN(r.clicks28.value)}${fmtChange(r.clicks28.change)}` : '-'} | ${cell(r.organicKeywords)} | ${cell(r.organicTraffic)} | ${cell(r.referringDomains)} | ${cell(r.domainRank)} | ${cell(r.aiMentions)} | ${r.audit ? r.audit.score : '-'} | ${r.attention.join('; ') || ''} |`;
+      });
+      const text = `Portfolio: ${p.counts.owned} owned, ${p.counts.watched} watched, ${p.counts.attention} need attention. Changes compare ${L} with ${P} (last complete months).\n\n`
+        + `| Domain | Kind | Country | Clicks 28d (GSC, measured) | Organic keywords | Organic traffic (est.) | Referring domains | Domain Rank (DataForSEO) | AI mentions (AIO + ChatGPT) | Audit health | Needs attention |\n|---|---|---|---|---|---|---|---|---|---|---|\n${lines.join('\n')}`
+        + `\n\nRefresh: weekly data ${p.refresh.weeklyCapturedAt ?? 'never'}, monthly history ${p.refresh.monthlyCapturedAt ?? 'never'}; spent ${p.refresh.spentThisMonth} this month${p.refresh.schedule?.enabled ? `; scheduled, budget ${p.refresh.schedule.budgetUsd}/month` : '; no schedule'}.`
+        + (p.notes.length ? `\n${p.notes.join('\n')}` : '') + portfolioLink() + portfolioNudge();
+      return { content: [{ type: 'text' as const, text }], structuredContent: { counts: p.counts, months: p.months, rows: p.rows.length } };
+    },
+  );
+
+  server.registerTool(
+    'refresh_portfolio',
+    {
+      title: 'Refresh the portfolio from DataForSEO (paid: quotes first)',
+      description: '[Paid: DataForSEO Labs + Backlinks + LLM Mentions. Default is a QUOTE only, nothing spent] Fetch the portfolio data. tier "weekly" = current traffic estimates, Domain Rank, referring domains, backlinks, new/lost, search-results mix (bulk calls, cents for the whole portfolio); "monthly" = monthly history (keywords, traffic, positions, referring domains, AI mentions per platform), countries, top pages by traffic and by links, AI-cited pages and co-cited sources (per domain); "all" = both (default). Without confirm:true it returns the call count and estimated cost per family and spends nothing: show the user the quote and ask before confirming. With confirm:true it runs as an async job (poll check_sync_status) and records actual spend; cached responses cost nothing. If a refresh schedule with a monthly budget exists, a manual run counts toward it and is refused over the cap unless overBudget:true (only when the user explicitly agrees). An API family that is not enabled on the DataForSEO account fails on its own and the rest continues.',
+      inputSchema: {
+        tier: z.enum(['weekly', 'monthly', 'all']).optional(),
+        domains: z.array(z.string()).max(60).optional().describe('Limit to these domains (default: the whole portfolio)'),
+        confirm: z.boolean().optional(),
+        overBudget: z.boolean().optional(),
+      },
+    },
+    async ({ tier = 'all', domains, confirm, overBudget }) => {
+      const q = quotePortfolioRefresh(dataDir(), tier, domains);
+      if (!q.domains) return { content: [{ type: 'text' as const, text: 'Nothing to refresh: the portfolio is empty (or none of those domains is in it).' }], structuredContent: { quote: q } };
+      const st = PortfolioStore.openReadonly(dataDir());
+      let sched: ReturnType<typeof readSchedule> = null, spent = 0;
+      if (st) { try { sched = readSchedule(st.db); spent = st.spentThisMonth(); } finally { st.close(); } }
+      const cap = sched?.enabled ? sched.budgetUsd : null;
+      const famLines = q.families.map(f => `| ${f.label} | ${f.calls} | ${f.usd.toFixed(3)} |`).join('\n');
+      const quoteMd = `Quote for a ${tier} refresh of ${q.domains} domain${q.domains === 1 ? '' : 's'}: ${q.calls} calls, about ${q.usd.toFixed(2)}.\n\n| Family | Calls | Estimate |\n|---|---|---|\n${famLines}\n\n${q.note}`
+        + (cap != null ? `\nBudget: ${cap}/month, ${spent.toFixed(2)} spent so far this month.` : '');
+      if (!confirm) return { content: [{ type: 'text' as const, text: `${quoteMd}\n\nNothing has been spent. Ask the user to confirm, then call refresh_portfolio again with confirm:true.` }], structuredContent: { quote: q, confirmed: false } };
+      requireDfs(dfs);
+      const live = liveJobTypes(dataDir(), PORTFOLIO_JOB_SCOPE);
+      if (live && (live.has('portfolio') || live.queued?.has('portfolio'))) throw new Error('A portfolio refresh is already running or queued: poll check_sync_status.');
+      if (cap != null && spent + q.usd > cap && !overBudget) {
+        return { content: [{ type: 'text' as const, text: `${quoteMd}\n\nNot started: ${spent.toFixed(2)} spent + ${q.usd.toFixed(2)} would exceed the ${cap} monthly budget. Refresh fewer domains or tier "weekly", raise the budget with schedule_portfolio_refresh, or pass overBudget:true if the user explicitly agrees.` }], structuredContent: { quote: q, confirmed: false, overBudget: true } };
+      }
+      const jobId = submitJob(jobs, 'portfolio', { tier, trigger: 'manual', domains, budgetUsd: overBudget ? null : cap }, jobDeps, PORTFOLIO_JOB_SCOPE);
+      return jobStarted({ jobId, status: 'running', tier, quotedUsd: q.usd }, `Portfolio ${tier} refresh started (job ${jobId}), quoted about ${q.usd.toFixed(2)}. Poll check_sync_status; then portfolio or get_portfolio shows the table.`);
+    },
+  );
+
+  server.registerTool(
+    'schedule_portfolio_refresh',
+    {
+      title: 'Schedule portfolio refreshes with a monthly budget (two-step)',
+      description: 'Set up automatic portfolio refreshes: the weekly tier on a weekday plus the monthly tier on a day of the month, never exceeding a monthly USD budget (portfolio refreshes only). Two-step consent: without confirm:true it previews the cadence, the per-run quotes and the projected monthly cost and saves nothing; show that to the user and ask. With confirm:true it saves the schedule, which is the user\'s consent to spend up to the cap. A run whose cost has risen more than 25% since consent (domains added) is skipped until the schedule is re-confirmed. enabled:false with confirm:true turns scheduling off. The schedule runs in the job runner (SAC_JOB_RUNNER=external) or in this MCP process while it is running; a missed run happens once on the next start.',
+      inputSchema: {
+        budgetUsd: z.number().min(0).max(10000).optional(),
+        weeklyDow: z.number().int().min(0).max(6).optional().describe('0 = Sunday ... 6 = Saturday (default 1, Monday)'),
+        monthlyDom: z.number().int().min(1).max(28).optional().describe('Day of the month for the monthly tier (default 3)'),
+        enabled: z.boolean().optional(),
+        confirm: z.boolean().optional(),
+      },
+    },
+    async ({ budgetUsd, weeklyDow, monthlyDom, enabled, confirm }) => {
+      if (enabled === false) {
+        if (!confirm) return { content: [{ type: 'text' as const, text: 'This would turn scheduled portfolio refreshes off. Confirm with confirm:true.' }], structuredContent: { confirmed: false } };
+        disableSchedule(dataDir());
+        return { content: [{ type: 'text' as const, text: 'Scheduled portfolio refreshes are off. Manual refreshes still work (refresh_portfolio).' }], structuredContent: { enabled: false } };
+      }
+      if (budgetUsd == null) throw new Error('budgetUsd is required: the monthly cap in USD for scheduled portfolio refreshes.');
+      if (!confirm) {
+        const p = previewSchedule(dataDir(), { budgetUsd, weeklyDow, monthlyDom });
+        return { content: [{ type: 'text' as const, text: `${p.note}\nNext weekly run ${p.nextWeeklyDue}, next monthly run ${p.nextMonthlyDue}.\n\nNothing saved. Ask the user to confirm, then call again with confirm:true.` }], structuredContent: { preview: p, confirmed: false } };
+      }
+      requireDfs(dfs);
+      const s = saveSchedule(dataDir(), { budgetUsd, weeklyDow, monthlyDom });
+      const where = jobs.external ? 'the job runner' : 'this MCP process while it is running (or the job runner, if you use one)';
+      return { content: [{ type: 'text' as const, text: `Scheduled. ${s.note}\nNext weekly run ${s.nextWeeklyDue}, next monthly run ${s.nextMonthlyDue}. Runs happen in ${where}.` }], structuredContent: { schedule: s } };
+    },
+  );
+
+  registerAppTool(
+    server,
+    'get_portfolio',
+    {
+      title: 'Portfolio dashboard (domains table + domain overview)',
+      description: 'Interactive portfolio dashboard in chat: the domains table (owned + watched; Search Console measured vs DataForSEO estimated, Domain Rank, AI mentions, needs-attention), and, with domain, that domain\'s overview: traffic trend, keyword positions, AI search (mentions, cited pages, sources cited alongside, rank vs citation), countries, backlinks and top pages. Free: reads stored data only.',
+      inputSchema: { domain: z.string().optional() },
+      _meta: { ui: { resourceUri: PORTFOLIO_URI } },
+    },
+    async ({ domain }) => {
+      const p = getPortfolioData(dataDir());
+      const text = p.empty
+        ? 'The portfolio is empty: sync a property or add a watched domain with the portfolio tool.'
+        : `Portfolio opened: ${p.counts.owned} owned, ${p.counts.watched} watched, ${p.counts.attention} need attention${domain ? `; showing ${domain}` : ''}. The table and charts render in the widget.` + portfolioLink(domain) + portfolioNudge();
+      return { content: [{ type: 'text' as const, text }], structuredContent: { domain: domain ?? null } };
+    },
+  );
+  registerAppTool(
+    server,
+    'get_portfolio_data',
+    {
+      title: 'Portfolio data (internal)',
+      description: 'Portfolio dataset for the UI widget. App-only.',
+      inputSchema: {},
+      _meta: { ui: { visibility: ['app'] } },
+    },
+    async () => ({ content: [{ type: 'text' as const, text: 'ok' }], structuredContent: getPortfolioData(dataDir()) as unknown as Record<string, unknown> }),
+  );
+  registerAppTool(
+    server,
+    'get_domain_overview',
+    {
+      title: 'Domain overview data (internal)',
+      description: 'One portfolio domain\'s overview for the UI widget. App-only.',
+      inputSchema: { domain: z.string(), locationCode: z.number().int().optional() },
+      _meta: { ui: { visibility: ['app'] } },
+    },
+    async ({ domain, locationCode }) => {
+      const o = getDomainOverview(dataDir(), domain, locationCode);
+      return { content: [{ type: 'text' as const, text: o ? 'ok' : 'not found' }], structuredContent: (o ?? { notFound: domain }) as unknown as Record<string, unknown> };
+    },
+  );
+
   // ── Dashboard (MCP App UI — houtini design + ECharts) ───────────────────
   registerAppTool(
     server,
@@ -2629,6 +2832,16 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
 
   registerAppResource(
     server,
+    'Portfolio',
+    PORTFOLIO_URI,
+    {},
+    async () => ({
+      contents: [{ uri: PORTFOLIO_URI, mimeType: RESOURCE_MIME_TYPE, text: await readFile(path.join(__dirname, 'src', 'ui', 'portfolio.html'), 'utf-8') }],
+    }),
+  );
+
+  registerAppResource(
+    server,
     'Sync Progress',
     SYNC_PROGRESS_URI,
     {},
@@ -2678,6 +2891,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     console.error(`${SERVER_NAME} v${SERVER_VERSION} running on stdio (data: ${dataDir()}${credPath ? '' : ', GSC disabled — no credentials'})`);
     const npxHint = npxInContainerWarning();
     if (npxHint) console.error(npxHint);
+    // Scheduled portfolio refreshes run here unless a job runner owns jobs (then it runs them). The
+    // claim is atomic in _portfolio.db, so several MCP processes ticking at once start a run once.
+    if (dfs && !jobs.external) {
+      startPortfolioScheduler({ dataDir, submit: args => submitJob(jobs, 'portfolio', args, jobDeps, PORTFOLIO_JOB_SCOPE) });
+    }
   };
 
   return { server, run };

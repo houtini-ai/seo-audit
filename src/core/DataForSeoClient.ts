@@ -54,7 +54,8 @@ export function historicalDateFrom(months: number, now: Date = new Date()): stri
 }
 
 /** Per-call options. `maxAgeDays` narrows the cache age for one call (the portfolio's weekly tier
- * wants last week's numbers, not the 20-day shared default); it never widens past the client TTL. */
+ * wants last week's numbers, not the 20-day shared default). It may be longer or shorter than the
+ * client TTL: it only decides whether THIS call reuses a cached response. */
 export interface DfsCallOptions { timeoutMs?: number; maxAgeDays?: number }
 
 /** Client-level hooks: `fetchImpl` lets tests serve saved fixtures with no network; `onCost` sees every
@@ -114,7 +115,7 @@ export class DataForSeoClient {
   /** POST to a DataForSEO endpoint, served from the cache (DEFAULT_DFS_CACHE_DAYS) when fresh. */
   async call(endpoint: string, body: unknown[], opts: number | DfsCallOptions = 60000): Promise<DfsResponse> {
     const { timeoutMs = 60000, maxAgeDays } = typeof opts === 'number' ? { timeoutMs: opts } : opts;
-    const ttlMs = maxAgeDays != null ? Math.min(this.ttlMs, maxAgeDays * 86400000) : this.ttlMs;
+    const ttlMs = maxAgeDays != null ? maxAgeDays * 86400000 : this.ttlMs;
     const key = this.keyFor(endpoint, body);
     const row = this.cache
       .prepare('SELECT response_json, cost, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
@@ -415,8 +416,10 @@ export class DataForSeoClient {
     orderBy = 'ranked_serp_element.serp_item.etv,desc',
     filters?: unknown[],
   ): Promise<DfsResponse> {
-    // NB: item_types is NOT a valid field on Labs ranked_keywords (40501) — element-type
-    // scoping (e.g. AI Overview citations) is expressed via `filters` on serp_item.type.
+    // NB: element-type scoping (e.g. AI Overview citations) is expressed via `filters` on
+    // serp_item.type here. `item_types` itself IS accepted (verified live 2026-10-24 with limit 1 and
+    // no filters: rankedKeywordsMetrics), contrary to an earlier note; a 40501 seen before came from
+    // this body shape and wasn't re-tested, so this method doesn't send it.
     const body: Record<string, unknown> = {
       target,
       ...this.loc(location),
@@ -455,8 +458,10 @@ export class DataForSeoClient {
   }
 
   /** Backlinks (#47) — daily backlink / referring-domain history (new and lost) for a target since `dateFrom` (YYYY-MM-DD). */
-  async backlinksHistory(target: string, dateFrom: string, dateTo?: string): Promise<DfsResponse> {
-    return this.call('/v3/backlinks/history/live', [{ target, date_from: dateFrom, ...(dateTo ? { date_to: dateTo } : {}) }]);
+  /** Backlinks history is MONTHLY (one item per month), not daily. `rankScale` defaults to the API's
+   * 0-1000; the portfolio asks for 'one_hundred' so it matches bulk_ranks. */
+  async backlinksHistory(target: string, dateFrom: string, dateTo?: string, rankScale?: 'one_hundred' | 'one_thousand', opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/backlinks/history/live', [{ target, date_from: dateFrom, ...(dateTo ? { date_to: dateTo } : {}), ...(rankScale ? { rank_scale: rankScale } : {}) }], opts);
   }
 
   /**
@@ -556,7 +561,12 @@ export class DataForSeoClient {
   /** Labs: ranked_keywords with limit 1, for its result-level `metrics` block (organic / paid /
    * featured_snippet / local_pack / ai_overview_reference position counts). A null block means none counted. */
   async rankedKeywordsMetrics(target: string, location?: string | number, languageCode = 'en', opts: DfsCallOptions = {}): Promise<DfsResponse> {
-    return this.call('/v3/dataforseo_labs/google/ranked_keywords/live', [{ target, ...this.loc(location), language_code: languageCode, limit: 1 }], opts);
+    // item_types is required for the SERP-feature counts: without it featured_snippet, local_pack and
+    // ai_overview_reference come back null (verified live; fixtures ranked_keywords_metrics vs _item_types).
+    return this.call('/v3/dataforseo_labs/google/ranked_keywords/live', [{
+      target, ...this.loc(location), language_code: languageCode, limit: 1,
+      item_types: ['organic', 'paid', 'featured_snippet', 'local_pack', 'ai_overview_reference'],
+    }], opts);
   }
 
   /** Backlinks: a domain's pages ordered by referring main domains ("top pages by links"). */

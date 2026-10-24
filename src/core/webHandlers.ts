@@ -1,6 +1,8 @@
 import type { WebCallHandlers } from './webServer.js';
 import { listLocalProperties } from './webServer.js';
 import { getDashboardData } from './dashboardData.js';
+import { getPortfolioData, getDomainOverview } from './portfolioData.js';
+import { PortfolioStore, resolveLocation } from './PortfolioStore.js';
 import { fetchGoogleNews } from './googleNews.js';
 import type { DataForSeoClient } from './DataForSeoClient.js';
 
@@ -23,6 +25,26 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
     return deps.dfs;
   };
   return {
+    // Portfolio (design/portfolio/SPEC.md): free reads, and add/remove of WATCHED domains, which cost
+    // nothing (no API call). Paid refreshes are deliberately NOT here: they start only from chat.
+    get_portfolio_data: async () => getPortfolioData(dataDir()) as unknown as Record<string, unknown>,
+    get_domain_overview: async (a) => {
+      const o = getDomainOverview(dataDir(), String(a.domain ?? ''), typeof a.locationCode === 'number' ? a.locationCode : undefined);
+      if (!o) throw new Error(`${String(a.domain ?? '')} is not in the portfolio`);
+      return o as unknown as Record<string, unknown>;
+    },
+    portfolio_add_domain: async (a) => {
+      const store = new PortfolioStore(dataDir());
+      try {
+        const loc = a.location != null && a.location !== '' ? resolveLocation(a.location as string | number) : null;
+        const d = store.addWatched(String(a.domain ?? ''), { locationCode: loc?.code, group: typeof a.group === 'string' ? a.group : null });
+        return { added: d, note: loc?.note ?? null } as unknown as Record<string, unknown>;
+      } finally { store.close(); }
+    },
+    portfolio_remove_domain: async (a) => {
+      const store = new PortfolioStore(dataDir());
+      try { return { removed: store.removeWatched(String(a.domain ?? ''), typeof a.locationCode === 'number' ? a.locationCode : undefined) }; } finally { store.close(); }
+    },
     get_dashboard_data: async (a) => {
       const want = String(a.siteUrl ?? '');
       // Only serve properties that actually exist locally — getDashboardData would otherwise
