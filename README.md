@@ -304,52 +304,60 @@ A database that only ever held one shape (most do: a sync without `segments`) is
 
 Crawls, syncs and refreshes run as background jobs: the tool returns a job id at once and the work carries on while you poll `check_crawl_status`. Run normally (npx, or `node dist/index.js` from Claude Desktop), the server process is long-lived and does that work itself. Nothing below applies.
 
-The Docker MCP gateway is different. It runs the server in a worker container per client connection, and it replaces workers freely: on disconnect, on a router recreate, when it reaps idle ones. A job running inside a worker dies with it. The fix is to move the work out of the worker into one long-running **job runner** container that the gateway never touches:
+The Docker MCP gateway is different, in two ways.
+
+- **Start-up.** The gateway runs the server in a worker container. Without `longLived: true` on the catalog entry it starts a fresh worker for **every tool call**; with it, one worker per client connection. A worker started from `node:22-slim` with `npx` installs the package before it can answer, which takes 60-90 seconds and is longer than Claude Code waits for a tool call. So every call times out, even `seo_audit_help`. The fix is an image with the package preinstalled, plus `longLived: true` (step 1 below).
+- **Jobs.** The gateway replaces workers freely: on disconnect, on a router recreate, when it reaps idle ones. A job running inside a worker dies with it. The fix is to move the work out of the worker into one long-running **job runner** container that the gateway never touches (steps 2 and 3).
+
+Measured on a gateway in October 2026 (0.16.2):
+
+| Catalog entry | First call on a new connection | Later calls |
+|---|---|---|
+| `node:22-slim` + `npx`, no `longLived` | 88-108 s | 88-108 s (every call) |
+| `node:22-slim` + `npx`, `longLived: true` | 75-80 s | instant |
+| Prebuilt image, no `longLived` | 2 s | 2 s |
+| **Prebuilt image, `longLived: true`** | **2 s** | **instant** |
+
+**1. Build the image and point the catalog entry at it.** Pin the version, so the image and the runner stay on the same release:
+
+```dockerfile
+FROM node:22-slim
+RUN npm install -g @houtini/seo-audit-console@0.16.2
+ENTRYPOINT ["seo-audit-console"]
+```
+
+`docker build -t seo-audit-console:0.16.2 .` in the folder holding that file. Then, in the catalog entry, set `image: seo-audit-console:0.16.2`, delete the `command:` line (the image's entrypoint starts the server), and add `longLived: true`. The gateway runs local images with `--pull never`, so it finds the one you built. Rebuild the image for each release and change the tag in the catalog entry.
+
+The runner takes the other two steps:
 
 - the MCP server, started with `SAC_JOB_RUNNER=external`, only queues each job in `_jobs.db` in the data directory and reads its status;
 - the runner (`seo-audit-runner`, in the same npm package) claims queued jobs, runs them and writes progress back to the same database.
 
 The workers become disposable: recreate the router mid-crawl and the crawl carries on in the runner.
 
-**1. Start the runner** on the same data volume, with the same credentials as the gateway's catalog entry:
+**2. Start the runner** on the same data volume, with the same credentials as the gateway's catalog entry, from the image you built in step 1:
 
 ```bash
 docker run -d --init --name seo-audit-runner --restart unless-stopped \
   -v mcp-sac-data:/data -v mcp-sac-creds:/creds:ro \
   -e SAC_DATA_DIR=/data -e GOOGLE_APPLICATION_CREDENTIALS=/creds/gsc.json \
   -e DATAFORSEO_USERNAME -e DATAFORSEO_PASSWORD -e MAJESTIC_API_KEY -e CRUX_API_KEY \
-  node:22-slim npx -y -p @houtini/seo-audit-console seo-audit-runner
+  --entrypoint seo-audit-runner seo-audit-console:0.16.2
 ```
 
-The four `-e NAME` flags with no value pass those variables through from your shell, so the keys stay out of the command line; leave out any you don't use. On Windows in Git Bash, prefix the command with `MSYS_NO_PATHCONV=1`, otherwise MSYS rewrites `/data` and `/creds` into Windows paths (PowerShell doesn't need it). `--init` makes `docker stop` reach the runner as a clean SIGTERM. The first start takes about a minute while npx installs the package; `docker logs seo-audit-runner` shows it start and every job it claims.
+The four `-e NAME` flags with no value pass those variables through from your shell, so the keys stay out of the command line; leave out any you don't use. On Windows in Git Bash, prefix the command with `MSYS_NO_PATHCONV=1`, otherwise MSYS rewrites `/data` and `/creds` into Windows paths (PowerShell doesn't need it). `--init` makes `docker stop` reach the runner as a clean SIGTERM. `docker logs seo-audit-runner` shows it start and every job it claims. (Without the image, `node:22-slim npx -y -p @houtini/seo-audit-console@0.16.2 seo-audit-runner` works too: the runner is one long-running container, so npx installs only once, on its first start.)
 
-**2. Switch the gateway to queueing.** Add `SAC_JOB_RUNNER=external` to the env of this server's catalog entry, and remove `longLived: true` (it was only ever a stopgap for this).
+**3. Switch the gateway to queueing.** Add `SAC_JOB_RUNNER=external` to the env of this server's catalog entry. **Keep `longLived: true`.** The runner makes jobs survive a worker being replaced; `longLived` keeps the worker warm between calls. They solve different problems, and they work together (tested: a sync queued through a `longLived` worker was claimed and finished by the runner).
 
-**What you'll see.** A job reads `queued: waiting for the job runner` until the runner picks it up, then `running` as before. If a job stays queued for over a minute and no runner has checked in, the status says so and prints the `docker run` line above. After about two minutes with no runner heartbeat it reads `queued (no runner)` and no longer blocks `data_storage` prune or repair; it stays listed until the usual one-day prune. One runner runs one job at a time by default; set `SAC_RUNNER_CONCURRENCY` to run more, though two jobs for the same property never run at once. To update, recreate the runner container (`docker rm -f seo-audit-runner`, then the `docker run` line again, so npx installs the new release; a plain `docker restart` can keep running the copy npx already installed in the container). Keep the runner and the gateway on the same release: pin `@houtini/seo-audit-console@<version>` in both if you want updates to be deliberate. A job running when the runner stops is recorded as `interrupted`, so re-run it.
+**What you'll see.** A job reads `queued: waiting for the job runner` until the runner picks it up, then `running` as before. If a job stays queued for over a minute and no runner has checked in, the status says so and prints the `docker run` line above. After about two minutes with no runner heartbeat it reads `queued (no runner)` and no longer blocks `data_storage` prune or repair; it stays listed until the usual one-day prune. One runner runs one job at a time by default; set `SAC_RUNNER_CONCURRENCY` to run more, though two jobs for the same property never run at once. **To update:** build the image for the new release (step 1, new tag), change the tag in the catalog entry, restart the gateway, and recreate the runner from the new image (`docker rm -f seo-audit-runner`, then the `docker run` line again). Keep the runner and the gateway on the same release. A job running when the runner stops is recorded as `interrupted`, so re-run it.
 
-**The first call after a worker starts is slow.** Each gateway worker is a fresh container, and `npx` installs the package before the server can answer: about 60 seconds on a cold npm cache. That can outlast the client's tool-call timeout, and a client that retries can start extra workers, each installing again. Two ways round it:
-
-- **Pin the version** in the catalog entry's command (`npx -y -p @houtini/seo-audit-console@0.16.1 ...` rather than the bare name), so npx never has to look up "latest", and the runner and the server stay on the same release. If the entry mounts a named volume at `/root/.npm` (the npm cache), pre-warm it once after each upgrade, so workers start from a warm cache:
-
-  ```bash
-  docker run --rm -v sac-npm-cache:/root/.npm node:22-slim npx -y -p @houtini/seo-audit-console@0.16.1 node -e 0
-  ```
-
-- **Or build a small image with the package preinstalled** and point the catalog entry at it. Workers then start in a second or two:
-
-  ```dockerfile
-  FROM node:22-slim
-  RUN npm install -g @houtini/seo-audit-console@0.16.1
-  ENTRYPOINT ["seo-audit-console"]
-  ```
-
-  `docker build -t seo-audit-console:0.16.1 .`, then use that image (the runner runs from it too, with `--entrypoint seo-audit-runner`). Rebuild it for each release.
+**If you stay on `npx` in the gateway,** every new worker installs the package first, so expect the first call of each client connection to time out (later calls are fast with `longLived: true`). The server notices this case: started by npx inside a container, it logs a warning pointing here, visible in `docker logs` for the gateway.
 
 **After upgrading, restart the MCP client.** Clients read the tool list once, when they connect, and keep it. Until Claude Desktop or Claude Code is restarted (fully, from the tray on Windows), tools added in the new release, such as `sync_crux`, stay invisible even though the server has them.
 
 **Without the runner,** the older options still work: `longLived: true` on the catalog entry (or `--long-lived` on the gateway), or plain `docker run -i --rm` with the volumes mounted, which is one long-lived stdio process for the session. Either way, mount named volumes for the data directory and the credentials (for example `-v seo-audit-data:/data -e SAC_DATA_DIR=/data` and `-v seo-audit-creds:/creds:ro -e GOOGLE_APPLICATION_CREDENTIALS=/creds/service-account.json`) so audits and the job list survive a restart.
 
-There's no published image for the server itself: build one from this repo's `Dockerfile` (`docker build -t seo-audit-console .`). Its entrypoint is `node dist/index.js`, the stdio server.
+There's no published image for the server itself. Step 1's image installs the published npm package; to run your own build of this repo instead, use its `Dockerfile` (`docker build -t seo-audit-console .`), whose entrypoint is `node dist/index.js`, the stdio server.
 
 Every job is recorded in `_jobs.db` in the data directory. If the process running a job exits before it finishes, the job reads as `interrupted` with the reason rather than disappearing, and a finished job's result can still be read after a restart.
 
