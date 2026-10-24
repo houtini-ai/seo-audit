@@ -322,11 +322,11 @@ Measured on a gateway in October 2026 (0.16.2):
 
 ```dockerfile
 FROM node:22-slim
-RUN npm install -g @houtini/seo-audit-console@0.16.2
+RUN npm install -g @houtini/seo-audit-console@0.16.3
 ENTRYPOINT ["seo-audit-console"]
 ```
 
-`docker build -t seo-audit-console:0.16.2 .` in the folder holding that file. Then, in the catalog entry, set `image: seo-audit-console:0.16.2`, delete the `command:` line (the image's entrypoint starts the server), and add `longLived: true`. The gateway runs local images with `--pull never`, so it finds the one you built. Rebuild the image for each release and change the tag in the catalog entry.
+`docker build -t seo-audit-console:0.16.3 .` in the folder holding that file. Then, in the catalog entry, set `image: seo-audit-console:0.16.3`, delete the `command:` line (the image's entrypoint starts the server), and add `longLived: true`. The gateway runs local images with `--pull never`, so it finds the one you built. Rebuild the image for each release and change the tag in the catalog entry.
 
 The runner takes the other two steps:
 
@@ -342,10 +342,10 @@ docker run -d --init --name seo-audit-runner --restart unless-stopped \
   -v mcp-sac-data:/data -v mcp-sac-creds:/creds:ro \
   -e SAC_DATA_DIR=/data -e GOOGLE_APPLICATION_CREDENTIALS=/creds/gsc.json \
   -e DATAFORSEO_USERNAME -e DATAFORSEO_PASSWORD -e MAJESTIC_API_KEY -e CRUX_API_KEY \
-  --entrypoint seo-audit-runner seo-audit-console:0.16.2
+  --entrypoint seo-audit-runner seo-audit-console:0.16.3
 ```
 
-The four `-e NAME` flags with no value pass those variables through from your shell, so the keys stay out of the command line; leave out any you don't use. On Windows in Git Bash, prefix the command with `MSYS_NO_PATHCONV=1`, otherwise MSYS rewrites `/data` and `/creds` into Windows paths (PowerShell doesn't need it). `--init` makes `docker stop` reach the runner as a clean SIGTERM. `docker logs seo-audit-runner` shows it start and every job it claims. (Without the image, `node:22-slim npx -y -p @houtini/seo-audit-console@0.16.2 seo-audit-runner` works too: the runner is one long-running container, so npx installs only once, on its first start.)
+The four `-e NAME` flags with no value pass those variables through from your shell, so the keys stay out of the command line; leave out any you don't use. On Windows in Git Bash, prefix the command with `MSYS_NO_PATHCONV=1`, otherwise MSYS rewrites `/data` and `/creds` into Windows paths (PowerShell doesn't need it). `--init` makes `docker stop` reach the runner as a clean SIGTERM. `docker logs seo-audit-runner` shows it start and every job it claims. (Without the image, `node:22-slim npx -y -p @houtini/seo-audit-console@0.16.3 seo-audit-runner` works too: the runner is one long-running container, so npx installs only once, on its first start.)
 
 **3. Switch the gateway to queueing.** Add `SAC_JOB_RUNNER=external` to the env of this server's catalog entry. **Keep `longLived: true`.** The runner makes jobs survive a worker being replaced; `longLived` keeps the worker warm between calls. They solve different problems, and they work together (tested: a sync queued through a `longLived` worker was claimed and finished by the runner).
 

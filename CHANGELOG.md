@@ -8,12 +8,17 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
-## [Unreleased]
+## [0.16.3] — 2026-10-24
+
+The Docker MCP gateway cold-start fix (#76) and a dependency security update.
 
 ### Fixed
 - **Docker MCP gateway: every tool call took about 90 seconds (#76).** Following the README, a gateway user removed `longLived: true` once the job runner was in place and kept `npx` on `node:22-slim`. The gateway then started a fresh worker for every tool call, each one installing the package first, so even `seo_audit_help` took 88-108 s and timed out in Claude Code. The README and the getting-started manual now lead with an image that has the package preinstalled plus `longLived: true`, alongside the runner. The runner keeps jobs alive and `longLived` keeps the worker warm, so the two work together. Measured on a live gateway: 88-108 s per call before; 2 s for the first call on a connection and instant after, with a sync queued through the warm worker still claimed and finished by the runner. The doc's "a worker per client connection" was only true with `longLived`, and is corrected.
 - **The server warns when it was started by `npx` inside a container.** One line on stderr at start-up, visible in the gateway's `docker logs`, pointing at the README section. It can't see the gateway's `longLived` setting, so it warns on what it can see: an `_npx` install path plus `/.dockerenv`. Claude Desktop and Claude Code (npx, no container) and a prebuilt image (global install) don't trigger it.
 - The interrupted-job message no longer calls `longLived: true` an older stopgap; it says to keep it.
+
+### Security
+- `npm audit fix`: dependency advisories from 1 critical / 15 high / 4 moderate to 0 / 1 / 0 (lockfile only). The one remaining high is `zod` <4.6.6; the fix is the zod 3 → 4 major upgrade, which touches every tool schema and is left for a minor release.
 
 ### Tests
 - `scripts/probe-startup-hints.mjs` (7 assertions), added to `npm test`.
