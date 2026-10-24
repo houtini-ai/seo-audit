@@ -29,6 +29,9 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 - **`ranked_keywords`:** a code comment claimed `item_types` is rejected (40501). It is accepted, and the SERP-feature counts need it.
 - **Backlinks history** is monthly, not daily (comments corrected). Its new/lost fields are referring domains, not main domains.
 
+### Docs
+- New `manual/portfolio.md`. The portfolio is now covered in the README (feature paragraph, manual index, tools table), `manual/tools.md`, `manual/dashboard.md` (the Domains landing page), `manual/dataforseo.md` (endpoints and live costs per tier), `manual/competitive.md` (the every-domain workflow), `manual/composition.md` (the `_portfolio.db` tables), `seo_audit_help`, and the server.json / .mcpb descriptions.
+
 ### Tests
 - `scripts/probe-portfolio.mjs` (50 assertions, fixture-fed, no network), added to `npm test`.
 

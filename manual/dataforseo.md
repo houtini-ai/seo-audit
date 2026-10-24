@@ -96,6 +96,25 @@ The page-level content gap: keywords any of the competitor pages rank for (up to
 Endpoint: `/v3/dataforseo_labs/google/page_intersection/live`
 > Content gap between rival.com/guide and my /guide page
 
+## The portfolio - Labs + Backlinks + LLM Mentions
+
+### `refresh_portfolio`
+Fills the [portfolio](portfolio.md) for every owned and watched domain. It quotes first and spends nothing until you confirm. Prices below are measured on a live run (24 Oct 2026); cached responses cost nothing.
+
+| Tier | Endpoints | Calls | Cost |
+|---|---|---|---|
+| Weekly | Labs `bulk_traffic_estimation` (one per country); Backlinks `bulk_ranks`, `bulk_referring_domains`, `bulk_backlinks`, `bulk_new_lost_referring_domains`; Labs `ranked_keywords` metrics (per domain) | about 6 + 1 per domain | 8 domains: $0.22 |
+| Monthly | Labs `historical_rank_overview`, `domain_rank_overview` (all countries), `relevant_pages`; Backlinks `history`, `domain_pages`; LLM Mentions `historical` (AI Overviews + ChatGPT), `top_mentioned_pages`, `top_mentioned_domains` | 9 per domain | about $0.68 per domain |
+
+**Account requirements:**
+- **Three API families:** the portfolio needs **Labs**, **Backlinks** and **LLM Mentions** enabled on your DataForSEO account. LLM Mentions is the AI Optimization API: pay-as-you-go, no monthly minimum since July 2026.
+- **Failures stay contained:** a family that isn't enabled fails on its own, and the cell says "not enabled" rather than showing a zero.
+- **ChatGPT is US-only:** DataForSEO's ChatGPT mention data covers the United States only.
+- **Not covered:** AI Mode, Gemini and Perplexity aren't in the mentions data at all.
+
+### `schedule_portfolio_refresh`
+Runs the two tiers on a cadence under a monthly budget cap that you confirm. The cap is checked between endpoint families, so a run can't overshoot it.
+
 ## OnPage
 
 ### `page_lighthouse`

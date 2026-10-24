@@ -29,6 +29,16 @@ My own usage across several properties runs to a few dollars a month. Your milea
 
 ## The Semrush-replacement workflows
 
+### Every domain at once: the portfolio
+
+> Show my portfolio · Watch rival.com and rival2.com as competitors · Refresh my SEO Console portfolio
+
+`domain_visibility` answers "how is this one domain doing?". The [portfolio](portfolio.md) answers it for every domain you care about at once:
+- your owned properties, automatically, with their measured Search Console clicks;
+- the competitors you add, with DataForSEO's estimates: keywords, traffic, referring domains, Domain Rank and AI mentions.
+
+**Your sites in context:** group a set of competitors and the domain overview shows traffic share among them. The weekly tier costs cents for the whole list; the monthly history is about $0.68 a domain.
+
 ### The organic overview: `domain_visibility`
 
 Monthly ranking-keyword counts, position distribution (1-3 / 4-10 / 11-20 / 21-100) and estimated traffic value for **any domain or subdomain** - yours or a competitor's, no Search Console access needed. Comes back as a month-by-month table with a trend verdict.

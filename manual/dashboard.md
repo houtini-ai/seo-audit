@@ -8,6 +8,9 @@ Run `refresh_property` first, and `run_audit` if you want the findings populated
 
 ## In your browser
 
+With more than one property, the browser dashboard opens on the **Domains** page (`/`, or `/portfolio`): every domain you look after in one table, with Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions and a needs-attention tab. Click a domain for its overview, or "Open property dashboard" for the tabs described below. It's in chat too, as `get_portfolio`. Everything about it is in [portfolio.md](portfolio.md).
+
+
 > Open the dashboard for mysite.com
 
 `open_dashboard` (or `serve_dashboard`) starts a small webserver on `127.0.0.1` and hands you a link. It reads the live database on every load, so it's always current, and it adds a property switcher and working CSV downloads. You rarely need to ask: a finished sync, crawl, inspection or refresh starts it and puts the link in the job's result, and `run_audit` does the same. Set `SAC_AUTOSERVE=0` to stop that automatic start. Two URL options help with sharing and screenshots: `?theme=dark` or `?theme=light` opens in a theme, and `?redact=1` blurs the property name, the traffic figures and the URLs in the tables, and hides the network map's labels.

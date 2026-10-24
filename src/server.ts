@@ -292,6 +292,8 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **get_dashboard** — interactive dashboard (renders in chat). _"Show the dashboard for example.com"_
 - **serve_dashboard / open_dashboard** — the same dashboard in a local browser tab (live data, CSV downloads). _"Open the dashboard for example.com"_
 - **export_report** — self-contained shareable HTML to send a client. _"Export the report for example.com"_
+- **portfolio / get_portfolio** — every domain you look after (owned + watched competitors) in a Semrush-style table: Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions, needs-attention; plus a per-domain overview. Free to read. _"Show my portfolio"_ · _"Watch rival.com as a competitor"_
+- **refresh_portfolio / schedule_portfolio_refresh** — [paid] fetch the portfolio data (quotes first; confirm to run) · schedule it under a monthly budget cap (preview, then confirm). _"Refresh my SEO Console portfolio"_
 
 ## 7. Utilities
 - **data_location** — where DBs are stored (set with a path). · **normalize_url** — the join key for a URL. · **composition_cookbook** — the data-surface map and multi-source recipes. · **seo_audit_help** — this page.
