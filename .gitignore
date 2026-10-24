@@ -105,6 +105,7 @@ scripts/*
 !scripts/probe-fts.mjs
 !scripts/probe-review-0-15.mjs
 !scripts/probe-startup-hints.mjs
+!scripts/probe-portfolio.mjs
 !scripts/probe-external.mjs
 !scripts/probe-blocking.mjs
 !scripts/probe-redirects.mjs

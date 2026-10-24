@@ -162,19 +162,33 @@ function latestSnapshots(db: Database.Database): Map<string, MonthRow> {
 
 interface Months { L: string; P: string; Y: string; C: string; now: Date }
 
+/**
+ * The latest COMPLETE month a series actually holds, at or before the calendar's last complete month.
+ * DataForSEO Labs history lags a month or two (a live response ended at 2026-07 on 24 Oct), so
+ * comparing at the calendar month would read as "no change"; each series compares its own latest
+ * complete month with the one before, and says which months it compared.
+ */
+export function seriesEnd(series: Map<string, MonthRow> | undefined, L: string, col?: string): string {
+  if (!series) return L;
+  let best: string | null = null;
+  for (const [mo, r] of series) if (mo <= L && (!col || r[col] != null) && (!best || mo > best)) best = mo;
+  return best ?? L;
+}
+
 function metricFrom(
   series: Map<string, MonthRow> | undefined, col: string, m: Months,
   snapVal: number | null | undefined, snapAt: string | null, empty: string | undefined,
 ): Metric {
   const at = (mo: string): number | null => { const v = series?.get(mo)?.[col]; return v == null ? null : Number(v); };
-  const histL = at(m.L);
+  const end = seriesEnd(series, m.L, col), prev = addMonths(end, -1), yearAgo = addMonths(end, -12);
+  const histL = at(end);
   const value = snapVal != null ? Number(snapVal) : histL;
   const source = snapVal != null ? 'snapshot' : histL != null ? 'history' : null;
   const out: Metric = {
-    value, source, asOf: source === 'snapshot' ? snapAt : source === 'history' ? m.L : null,
-    month: change(histL, at(m.P), m.P, m.L),
-    year: change(histL, at(m.Y), m.Y, m.L),
-    spark: monthsEnding(m.L, 12).map(at),
+    value, source, asOf: source === 'snapshot' ? snapAt : source === 'history' ? end : null,
+    month: change(histL, at(prev), prev, end),
+    year: change(histL, at(yearAgo), yearAgo, end),
+    spark: monthsEnding(end, 12).map(at),
     partial: isPartialMonth(m.C, m.now) ? at(m.C) : null,
   };
   if (value == null) out.empty = empty ?? 'not fetched yet';
@@ -230,7 +244,7 @@ function buildRow(
     domainRank: metricFrom(bl, 'rank', m, snap?.rank, snapAt, blEmpty),
     aiMentions: {
       ...aiBase,
-      platforms: { google: g?.get(m.L)?.mentions ?? null, chat_gpt: cg?.get(m.L)?.mentions ?? null },
+      platforms: { google: g?.get(seriesEnd(g, m.L, 'mentions'))?.mentions ?? null, chat_gpt: cg?.get(seriesEnd(cg, m.L, 'mentions'))?.mentions ?? null },
       chatgptUsOnly: d.locationCode !== 2840,
     },
     attention: [],
@@ -298,27 +312,32 @@ export function attentionRules(
   m: Months, owned: OwnedReads | null,
 ): string[] {
   const out: string[] = [];
-  const P2 = addMonths(m.P, -1);
+  // Each rule compares the series' own latest complete month (see seriesEnd).
+  const ends = (ser: Map<string, MonthRow> | undefined, col: string) => { const e = seriesEnd(ser, m.L, col); return { e, p: addMonths(e, -1), p2: addMonths(e, -2) }; };
   if (r.clicks28 && r.clicks28.prior >= 200) {
     const down = pctDown(r.clicks28.value, r.clicks28.prior);
     if (down != null && down >= 20) out.push(`Search Console clicks down ${Math.round(down)}% (28 days: ${fmt(r.clicks28.value)} vs ${fmt(r.clicks28.prior)})`);
   }
   // Labs ETV moves when DataForSEO rebuilds its database, so one month needs ≥30%, or two running ≥20%.
   const etv = (mo: string) => s.labs?.get(mo)?.organic_etv as number | null | undefined;
-  const e1 = pctDown(etv(m.L), etv(m.P)), e2 = pctDown(etv(m.P), etv(P2));
-  if ((etv(m.P) ?? 0) >= 100 && e1 != null) {
-    if (e1 >= 30) out.push(`Organic traffic (estimated) down ${Math.round(e1)}% in ${m.L}`);
+  const te = ends(s.labs, 'organic_etv');
+  const e1 = pctDown(etv(te.e), etv(te.p)), e2 = pctDown(etv(te.p), etv(te.p2));
+  if ((etv(te.p) ?? 0) >= 100 && e1 != null) {
+    if (e1 >= 30) out.push(`Organic traffic (estimated) down ${Math.round(e1)}% in ${te.e}`);
     else if (e1 >= 20 && e2 != null && e2 >= 20) out.push(`Organic traffic (estimated) down ${Math.round(e2)}% then ${Math.round(e1)}% (two months running)`);
   }
   const rmd = (mo: string) => s.bl?.get(mo)?.referring_main_domains as number | null | undefined;
-  const rdDown = pctDown(rmd(m.L), rmd(m.P));
-  if ((rmd(m.P) ?? 0) >= 50 && rdDown != null && rdDown >= 10) out.push(`Referring domains down ${Math.round(rdDown)}% in ${m.L} (${fmt(rmd(m.L)!)} from ${fmt(rmd(m.P)!)})`);
+  const re = ends(s.bl, 'referring_main_domains');
+  const rdDown = pctDown(rmd(re.e), rmd(re.p));
+  if ((rmd(re.p) ?? 0) >= 50 && rdDown != null && rdDown >= 10) out.push(`Referring domains down ${Math.round(rdDown)}% in ${re.e} (${fmt(rmd(re.e)!)} from ${fmt(rmd(re.p)!)})`);
   const rk = (mo: string) => s.bl?.get(mo)?.rank as number | null | undefined;
-  const rkL = rk(m.L), rkP = rk(m.P);
-  if (rkL != null && rkP != null && rkP - rkL >= 5) out.push(`Domain Rank (DataForSEO) down ${Math.round(rkP - rkL)} points in ${m.L}`);
+  const ke = ends(s.bl, 'rank');
+  const rkL = rk(ke.e), rkP = rk(ke.p);
+  if (rkL != null && rkP != null && rkP - rkL >= 5) out.push(`Domain Rank (DataForSEO) down ${Math.round(rkP - rkL)} points in ${ke.e}`);
   const ai = (mo: string) => s.llm.get(mo)?.mentions as number | null | undefined;
-  const aiDown = pctDown(ai(m.L), ai(m.P));
-  if ((ai(m.P) ?? 0) >= 20 && aiDown != null && aiDown >= 30) out.push(`AI mentions down ${Math.round(aiDown)}% in ${m.L} (AI Overviews + ChatGPT)`);
+  const ae = ends(s.llm, 'mentions');
+  const aiDown = pctDown(ai(ae.e), ai(ae.p));
+  if ((ai(ae.p) ?? 0) >= 20 && aiDown != null && aiDown >= 30) out.push(`AI mentions down ${Math.round(aiDown)}% in ${ae.e} (AI Overviews + ChatGPT)`);
   if (r.audit && r.audit.prior != null && r.audit.prior - r.audit.score >= 5) out.push(`Audit health down ${r.audit.prior - r.audit.score} points to ${r.audit.score}`);
   if (owned) {
     const g = ageDays(owned.gscMax, m.now);

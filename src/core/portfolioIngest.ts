@@ -114,7 +114,8 @@ export interface BacklinksMonthRow {
   lostReferringMainDomains: number | null;
 }
 
-/** Map backlinks history items (monthly, not daily) into rows, keeping the latest date per month. */
+/** Map backlinks history items into rows. Monthly, not daily: one item per month, dated the month end
+ * ("2026-09-30 00:00:00 +00:00"); the latest item is the last COMPLETE month. */
 export function mapBacklinksHistory(tasks: any[]): BacklinksMonthRow[] {
   const byMonth = new Map<string, { row: BacklinksMonthRow; date: string }>();
   for (const item of items(tasks)) {
@@ -131,8 +132,10 @@ export function mapBacklinksHistory(tasks: any[]): BacklinksMonthRow[] {
           backlinks: n(item.backlinks),
           referringDomains: n(item.referring_domains),
           referringMainDomains: n(item.referring_main_domains),
-          newReferringMainDomains: n(item.new_referring_main_domains),
-          lostReferringMainDomains: n(item.lost_referring_main_domains),
+          // Verified live (fixtures/portfolio/backlinks_history.json): history carries new/lost
+          // REFERRING DOMAINS only (no _main_ variant), while referring_main_domains is the total.
+          newReferringMainDomains: n(item.new_referring_main_domains ?? item.new_referring_domains),
+          lostReferringMainDomains: n(item.lost_referring_main_domains ?? item.lost_referring_domains),
         },
       });
     }
