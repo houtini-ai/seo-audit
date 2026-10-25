@@ -1,10 +1,10 @@
 /**
- * The ONE property → DataForSEO target derivation (portfolio spec v1.1, blocker 3). RankTracker and
+ * The ONE property → DataForSEO target derivation. RankTracker and
  * the portfolio both use it, so the property dashboard and the portfolio query the same target and
  * share one cached historical_rank_overview response instead of paying twice.
  *
  *   sc-domain:example.com      → example.com
- *   https://www.example.com/   → example.com   (Semrush reports root domains; www is not a separate site)
+ *   https://www.example.com/   → example.com   (root domain: www is not a separate site)
  *   https://shop.example.com/  → shop.example.com (a real subdomain property stays a subdomain)
  *   http://example.com:8080/x  → example.com
  */

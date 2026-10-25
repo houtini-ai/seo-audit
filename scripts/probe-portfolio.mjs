@@ -1,4 +1,4 @@
-// Portfolio dashboard probe (design/portfolio/SPEC.md v1.1). Fixture-fed: DataForSEO responses come
+// Portfolio dashboard probe . Fixture-fed: DataForSEO responses come
 // from scripts/fixtures/portfolio/*.json (raw live responses, 24 Oct 2026) through the client's
 // fetchImpl hook, so nothing touches the network or spends money.
 // Run: npm run build:server && node scripts/probe-portfolio.mjs
@@ -79,7 +79,7 @@ const client = (dir, opts) => { const c = new DataForSeoClient('u', 'p', path.jo
 
 // ── 1. Target derivation + validation ─────────────────────────────────────────────────────────
 check('sc-domain → bare domain', targetForProperty('sc-domain:Example.com') === 'example.com', targetForProperty('sc-domain:Example.com'));
-check('URL-prefix www → root (Semrush root-domain behaviour)', targetForProperty('https://www.example.com/') === 'example.com', targetForProperty('https://www.example.com/'));
+check('URL-prefix www → root (root domain)', targetForProperty('https://www.example.com/') === 'example.com', targetForProperty('https://www.example.com/'));
 check('a real subdomain stays a subdomain', targetForProperty('https://shop.example.com/') === 'shop.example.com', targetForProperty('https://shop.example.com/'));
 check('domain validation rejects IPs, single labels, spaces', !isValidDomain('10.0.0.1') && !isValidDomain('localhost') && !isValidDomain('a b.com') && isValidDomain('ehi.com.au'), 'validation');
 

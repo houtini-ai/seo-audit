@@ -5,7 +5,7 @@ import { listLocalProperties } from './webServer.js';
 import { isValidDomain, normaliseDomain, targetForProperty } from './portfolioTarget.js';
 
 /**
- * The portfolio database (design/portfolio/SPEC.md v1.1): `_portfolio.db` in the data dir, beside
+ * The portfolio database: `_portfolio.db` in the data dir, beside
  * `_jobs.db`. Cross-property by nature (watched domains have no property), so it is NOT a property
  * DB: no `property_meta` table (property enumeration needs one), and the leading underscore keeps it
  * clear of any property stem. Every domain-scoped table is keyed on (domain, location_code): DataForSEO

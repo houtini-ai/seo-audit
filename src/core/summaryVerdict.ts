@@ -1,4 +1,4 @@
-// The Summary tab's one-line verdict (design/summary/SUMMARY-PAGE.md, panel 1). A TEMPLATE, not
+// The Summary tab's one-line verdict (panel 1). A TEMPLATE, not
 // prose: every clause is built only from a payload value, and a clause whose source is missing is
 // omitted, never rendered as zero. Pure and dependency-free, so the UI bundles it and the probe
 // tests it over every empty state.

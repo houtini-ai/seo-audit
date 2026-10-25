@@ -217,7 +217,7 @@ The page-level content gap: keywords competitor pages rank for that yours doesn'
 > Content gap between rival.com/guide and my /guide page
 
 ### `domain_visibility`
-Monthly ranking-keyword distribution and estimated traffic value for **any** domain or subdomain - no Search Console access needed. The Semrush-style organic overview, with a trend verdict. `months` sets the history (default 12, up to 24; longer windows cost more). It takes `languageName` (e.g. "English") rather than `languageCode`. Grain: month × domain.
+Monthly ranking-keyword distribution and estimated traffic value for **any** domain or subdomain - no Search Console access needed. The organic overview, with a trend verdict. `months` sets the history (default 12, up to 24; longer windows cost more). It takes `languageName` (e.g. "English") rather than `languageCode`. Grain: month × domain.
 > Show visibility over time for competitor.com
 
 ### `top_pages`

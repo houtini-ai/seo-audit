@@ -124,16 +124,6 @@ credentials.json
 service-account*.json
 gsc*.json
 
-# Local design working material (references real test-property data; not for the public repo).
-# Exception: design/stitch/ - the Stitch design brief, prompts and REDACTED screenshots only;
-# raw Stitch output (design/stitch/out/) stays local.
-design/*
-!design/stitch/
-design/stitch/out/
-# design/summary/ - the gap analysis + summary-page proposal; raw Stitch output stays local.
-!design/summary/
-design/summary/out/
-design/summary/stitch/out/
-# design/portfolio/ - the portfolio dashboard spec, plan and Stitch briefs; raw Stitch output stays local.
-!design/portfolio/
-design/portfolio/stitch/out/
+# Local design and planning material: specs, briefs, proposals, mockups. Kept locally, never published.
+design/
+proposals/

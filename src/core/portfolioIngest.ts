@@ -1,8 +1,7 @@
 /**
- * Pure DataForSEO response → row mappers for the portfolio (design/portfolio/SPEC.md v1.1). No I/O:
+ * Pure DataForSEO response → row mappers for the portfolio. No I/O:
  * each takes a response's `tasks` array and returns plain rows, so every mapping is tested against
  * the saved live fixtures in scripts/fixtures/portfolio/. A null field means "not reported", never 0.
- * (First draft delegated to deepseek-v4-pro from a written brief; reviewed and tested here.)
  */
 
 /** Coerce an unknown value to a finite number or null. */
@@ -59,7 +58,7 @@ export interface Buckets {
   pos_51_100: number;
 }
 
-/** Aggregate DataForSEO's 12 position bands into Semrush's five (1-3 / 4-10 / 11-20 / 21-50 / 51-100). */
+/** Aggregate DataForSEO's 12 position bands into five (1-3 / 4-10 / 11-20 / 21-50 / 51-100). */
 export function bucketsFrom(m: any): Buckets | null {
   if (m == null || typeof m !== 'object') return null;
   const g = (v: unknown): number => n(v) ?? 0;

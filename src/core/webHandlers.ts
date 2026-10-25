@@ -25,7 +25,7 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
     return deps.dfs;
   };
   return {
-    // Portfolio (design/portfolio/SPEC.md): free reads, and add/remove of WATCHED domains, which cost
+    // Portfolio: free reads, and add/remove of WATCHED domains, which cost
     // nothing (no API call). Paid refreshes are deliberately NOT here: they start only from chat.
     get_portfolio_data: async () => getPortfolioData(dataDir()) as unknown as Record<string, unknown>,
     get_domain_overview: async (a) => {

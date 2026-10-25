@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Site summary page, slice 1: the payload aggregations (src/core/summaryData.ts) over fixture DBs,
-// one per property state the spec names (design/summary/SUMMARY-PAGE.md, "Missing never renders as
+// one per property state the spec names ("Missing never renders as
 // zero"): full history, under 13 months of GSC, no GSC, no crawl, one crawl, a stale snapshot.
 // Run:  npm run build:server && node scripts/probe-summary.mjs
 import { tmpdir } from 'node:os';

@@ -2,7 +2,7 @@
 
 Everything in the core audit runs on your own Search Console data and your own crawl. But GSC can only describe searches where **you already appear**. The moment the question becomes "how big is this market?", "who do I compete with?" or "what do they rank for that I don't?", you need third-party data.
 
-That's what the DataForSEO integration is for. Together these tools cover most of what I used to open Semrush for - the organic overview, top pages, ranked keywords, the content gap - inside the same conversation as your audit, joined to your own data. One workflow, [link intersect](#link-intersect-link_intersect), has a second optional service behind it - **Majestic**, for Trust Flow and Topical Trust Flow - because link prospecting is the one place where DataForSEO's authority metric isn't the right one to sort on. (The same key also adds Trust Flow to your own backlinked pages in `pull_backlinks`.)
+That's what the DataForSEO integration is for. Together these tools cover most of what I used to open a paid SEO suite for - the organic overview, top pages, ranked keywords, the content gap - inside the same conversation as your audit, joined to your own data. One workflow, [link intersect](#link-intersect-link_intersect), has a second optional service behind it - **Majestic**, for Trust Flow and Topical Trust Flow - because link prospecting is the one place where DataForSEO's authority metric isn't the right one to sort on. (The same key also adds Trust Flow to your own backlinked pages in `pull_backlinks`.)
 
 ## Setting up DataForSEO
 
@@ -27,7 +27,7 @@ That's what the DataForSEO integration is for. Together these tools cover most o
 
 My own usage across several properties runs to a few dollars a month. Your mileage depends on how curious you are, but the design intent is that you can't accidentally spend real money.
 
-## The Semrush-replacement workflows
+## The competitive workflows
 
 ### Every domain at once: the portfolio
 
@@ -98,7 +98,7 @@ Where `suggest_pages` (free, GSC-only) mines demand Google has already shown you
 
 ## Market sizing: `market_sizing` and `serp_features`
 
-Two views that open an engagement. **`market_sizing`** takes your domain plus up to four named competitors, pulls one cached Labs footprint each, and unions them into a keyword universe: total monthly demand, each domain's share of voice (ETV share) overall and per topic cluster, and who leads each cluster. It's the "here's the market, here's who owns it, here's where to attack" table that used to need a Semrush subscription. **`serp_features`** measures how much of that universe carries each SERP feature - AI Overviews, snippets, PAA, video - by search volume, split by whether you already rank page 1 there. The honest answer to "how much of my market is zero-click now?"
+Two views that open an engagement. **`market_sizing`** takes your domain plus up to four named competitors, pulls one cached Labs footprint each, and unions them into a keyword universe: total monthly demand, each domain's share of voice (ETV share) overall and per topic cluster, and who leads each cluster. It's the "here's the market, here's who owns it, here's where to attack" table that used to need a paid SEO suite. **`serp_features`** measures how much of that universe carries each SERP feature - AI Overviews, snippets, PAA, video - by search volume, split by whether you already rank page 1 there. The honest answer to "how much of my market is zero-click now?"
 
 > Size the market: mysite.com vs rival1.com and rival2.com
 > What's our AI Overview exposure?

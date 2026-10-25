@@ -12,7 +12,7 @@ body {
   min-height: 100vh;
 }
 
-/* App shell (Stitch direction, design/stitch/): sticky sidebar + slim top bar + content column. */
+/* App shell: sticky sidebar + slim top bar + content column. */
 .app { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
 .sidebar {
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
@@ -591,7 +591,7 @@ select, select.sel, #cannSelect {
 .kpi-of { font-size: 13px; font-weight: 500; color: var(--text-faint); margin-left: 2px; }
 .findings-table td.q { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── Summary tab (src/ui/summary.ts; design/summary/SUMMARY-PAGE.md) ─────────────────────── */
+/* ── Summary tab (src/ui/summary.ts) ─────────────────────── */
 .g-4-4-4 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .src:empty { display: none; }
 .sum-note { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; }

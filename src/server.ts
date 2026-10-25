@@ -274,7 +274,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **page_lighthouse** — lab Core Web Vitals + opportunities for one URL (~20–120s). _"Run Lighthouse on https://example.com/slow-page"_
 - **competitors_domain** — domains competing for your organic keywords. _"Find competitors for example.com in the UK"_
 - **page_intersection** — keywords competitor pages rank for but yours doesn’t (content gap). _"Content gap: competitorUrls [\\"https://rival.com/guide\\"], excludePages [\\"https://example.com/guide\\"]"_
-- **domain_visibility** — monthly ranking-keyword distribution + ETV trend for ANY domain/subdomain (Semrush-style organic overview). _"Show visibility over time for competitor.com"_
+- **domain_visibility** — monthly ranking-keyword distribution + ETV trend for ANY domain/subdomain (organic overview). _"Show visibility over time for competitor.com"_
 - **top_pages** — a domain's top organic pages by estimated traffic. _"Top pages on competitor.com"_
 - **ranked_keywords** — keywords a domain / subdomain / URL / subfolder ranks for (+ difficulty, intent, SERP features). _"What does competitor.com/blog/ rank for?"_ · \`scope:url|folder\` · \`aioOnly:true\` = keywords where the SERP shows an AI Overview (exposure; citation needs a SERP read, e.g. recon_targets)
 - **youtube_discovery / news_discovery** — the YouTube videos and recent news ranking for a keyword (live SERPs). _"What news is there on direct drive wheelbases this month?"_
@@ -292,7 +292,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **get_dashboard** — interactive dashboard (renders in chat). _"Show the dashboard for example.com"_
 - **serve_dashboard / open_dashboard** — the same dashboard in a local browser tab (live data, CSV downloads). _"Open the dashboard for example.com"_
 - **export_report** — self-contained shareable HTML to send a client. _"Export the report for example.com"_
-- **portfolio / get_portfolio** — every domain you look after (owned + watched competitors) in a Semrush-style table: Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions, needs-attention; plus a per-domain overview. Free to read. _"Show my portfolio"_ · _"Watch rival.com as a competitor"_
+- **portfolio / get_portfolio** — every domain you look after (owned + watched competitors) in one table: Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions, needs-attention; plus a per-domain overview. Free to read. _"Show my portfolio"_ · _"Watch rival.com as a competitor"_
 - **refresh_portfolio / schedule_portfolio_refresh** — [paid] fetch the portfolio data (quotes first; confirm to run) · schedule it under a monthly budget cap (preview, then confirm). _"Refresh my SEO Console portfolio"_
 
 ## 7. Utilities
@@ -1877,7 +1877,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'domain_visibility',
     {
       title: 'Domain visibility over time (DataForSEO Labs)',
-      description: '[Paid: Labs, cheap, cached 20d | Use for: visibility-over-time trend, any domain, no GSC needed] Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic value (ETV) per month, plus a trend verdict. The Semrush-style "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market. Grain: month × domain. Joins: domain → Labs/backlinks tools; period → rank_history.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: visibility-over-time trend, any domain, no GSC needed] Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic value (ETV) per month, plus a trend verdict. The "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market. Grain: month × domain. Joins: domain → Labs/backlinks tools; period → rank_history.',
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme (e.g. example.com or blog.example.com)'),
         location: z.union([z.string(), z.number()]).optional(),
@@ -1952,7 +1952,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'top_pages',
     {
       title: 'Top ranking pages on a domain (DataForSEO Labs)',
-      description: '[Paid: Labs, cheap, cached 20d | Use for: where rival traffic actually lands] The top organic pages of ANY domain or subdomain, ranked by estimated traffic value (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The Semrush-style "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market. Grain: page × domain. Joins: domain → Labs tools; URL → pages.url_key on your own property.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: where rival traffic actually lands] The top organic pages of ANY domain or subdomain, ranked by estimated traffic value (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market. Grain: page × domain. Joins: domain → Labs tools; URL → pages.url_key on your own property.',
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme'),
         location: z.union([z.string(), z.number()]).optional(),
@@ -2005,7 +2005,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'ranked_keywords',
     {
       title: 'Ranked keywords for a domain / URL / folder (DataForSEO Labs)',
-      description: '[Paid: Labs, cheap, cached 20d - ONE call replaces any keyword loop | Use for: full keyword footprint of a domain/page/folder] Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV, the ranking URL, plus keyword difficulty, search intent and SERP features where the response carries them. Set aioOnly:true to list only keywords whose SERP shows a Google AI Overview (your AIO exposure list; per-keyword CITATION checking uses the SERP tools — see the cookbook). The Semrush-style "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market. Grain: keyword × target. Joins: keyword → GSC search_analytics.query; URL → pages.url_key.',
+      description: '[Paid: Labs, cheap, cached 20d - ONE call replaces any keyword loop | Use for: full keyword footprint of a domain/page/folder] Every keyword a target ranks for in Google organic — scope it to a whole domain, a subdomain, ONE page (scope:url with the full URL), or a subfolder (scope:folder + folder:"/blog/"). Returns keyword, position, search volume, ETV, the ranking URL, plus keyword difficulty, search intent and SERP features where the response carries them. Set aioOnly:true to list only keywords whose SERP shows a Google AI Overview (your AIO exposure list; per-keyword CITATION checking uses the SERP tools — see the cookbook). The "keywords a page or site ranks for" view — works on any site. Labs call, cached 20 days. Pass location for the right market. Grain: keyword × target. Joins: keyword → GSC search_analytics.query; URL → pages.url_key.',
       inputSchema: {
         target: z.string().describe('Domain, subdomain, or full URL (full URL required for scope:url)'),
         scope: z.enum(['domain', 'subdomain', 'url', 'folder']).optional(),
@@ -2332,7 +2332,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
   );
 
-  // ── Portfolio (design/portfolio/SPEC.md): a Semrush-style domains table on DataForSEO + GSC ──
+  // ── Portfolio: a domains table on DataForSEO + GSC ──
   // Free tools read and edit the list; the paid refresh quotes first and runs only on confirm; a
   // schedule is a two-step consent to spend up to a monthly cap. The dashboard never spends.
   const portfolioNudge = (): string => {
@@ -2360,7 +2360,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'portfolio',
     {
       title: 'Portfolio: list and edit the monitored domains (free)',
-      description: 'The domains table (owned properties + watched domains such as competitors), Semrush "Domains for monitoring" style. Free: reads and edits only, never calls DataForSEO. action "list" (default) shows every domain with organic keywords and traffic (DataForSEO estimates), referring domains, Domain Rank (DataForSEO, not Semrush Authority Score), AI mentions (AI Overviews + ChatGPT) and, for owned sites, Search Console clicks (measured) and audit health, plus "needs attention" reasons. Changes compare the last COMPLETE month with the month before. "add" watches a domain (location = DataForSEO location code or country name, default United States; group e.g. "competitors"). "remove" stops watching. "group" sets a group label. "location" changes a watched domain\'s country, or an owned property\'s saved DataForSEO location. Owned domains come from the local property databases automatically. To fetch data use refresh_portfolio (paid, quotes first).',
+      description: 'The domains table (owned properties + watched domains such as competitors). Free: reads and edits only, never calls DataForSEO. action "list" (default) shows every domain with organic keywords and traffic (DataForSEO estimates), referring domains, Domain Rank (the DataForSEO rank), AI mentions (AI Overviews + ChatGPT) and, for owned sites, Search Console clicks (measured) and audit health, plus "needs attention" reasons. Changes compare the last COMPLETE month with the month before. "add" watches a domain (location = DataForSEO location code or country name, default United States; group e.g. "competitors"). "remove" stops watching. "group" sets a group label. "location" changes a watched domain\'s country, or an owned property\'s saved DataForSEO location. Owned domains come from the local property databases automatically. To fetch data use refresh_portfolio (paid, quotes first).',
       inputSchema: {
         action: z.enum(['list', 'add', 'remove', 'group', 'location']).optional(),
         domain: z.string().optional(),

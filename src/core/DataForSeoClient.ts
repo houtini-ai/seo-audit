@@ -522,11 +522,11 @@ export class DataForSeoClient {
    * (content gap). `competitorUrls` → the `pages` map (max 20); `excludeUrls` → our own
    * page(s) to subtract (max 10). Sorted by search volume. Wildcards like `…/*` allowed.
    */
-  // ── Portfolio (design/portfolio/SPEC.md). Request bodies verified live 2026-10-24; the raw
+  // ── Portfolio. Request bodies verified live 2026-10-24; the raw
   // responses are the fixtures in scripts/fixtures/portfolio/. The bulk endpoints take up to 1,000
   // targets per call (one task), so a whole portfolio costs one task each.
 
-  /** Backlinks: DataForSEO Domain Rank per target, 0-100. NOT Semrush's Authority Score: label it as DataForSEO's. */
+  /** Backlinks: DataForSEO Domain Rank per target, 0-100. Label it as DataForSEO's rank, never as an "authority score". */
   async bulkRanks(targets: string[], opts: DfsCallOptions = {}): Promise<DfsResponse> {
     return this.call('/v3/backlinks/bulk_ranks/live', [{ targets, rank_scale: 'one_hundred' }], opts);
   }

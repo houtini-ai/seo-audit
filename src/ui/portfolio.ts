@@ -1,7 +1,5 @@
-// SEO Console - the portfolio (Domains) page: a Semrush "Domains for monitoring" style table over
-// owned properties (GSC measured) and watched domains (DataForSEO estimated). Design:
-// design/portfolio/SPEC.md + stitch/CRITIQUE.md. First draft by deepseek-v4-pro from a written
-// brief; reviewed and corrected here. The page only READS: refreshes are started from chat.
+// SEO Console - the portfolio (Domains) page: one table over owned properties (GSC, measured) and
+// watched domains (DataForSEO, estimated). The page only READS: refreshes are started from chat.
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
 import { esc, fmtNum, fmtCompact, fmtDate, fmtMonth } from './lib/h.js';
 import { renderDomainOverview } from './portfolio-domain.js';

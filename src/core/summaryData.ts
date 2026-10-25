@@ -1,5 +1,5 @@
 // Site summary page, slice 1: the aggregations the Summary tab needs that the dashboard payload
-// didn't carry (design/summary/SUMMARY-PAGE.md, panels 2-9). Pure reads over data we already
+// didn't carry (panels 2-9). Pure reads over data we already
 // collect: no new collection, no LLM, no estimate.
 //
 // The one rule every function here follows: MISSING NEVER SHOWS AS ZERO. A month with no Search

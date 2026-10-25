@@ -1,6 +1,6 @@
 # The portfolio: every domain you look after, on one page
 
-Semrush opens on a "Domains for monitoring" table. SEO Stack opens on a portfolio of Search Console sites. This is the same idea, built on data you already hold plus a few cents of DataForSEO, with one difference: **every number says whether it was measured or estimated.**
+One table for every site you look after, and the competitors you watch, built on data you already hold plus a few cents of DataForSEO. **Every number says whether it was measured or estimated.**
 
 - **Owned domains** come from your synced properties, automatically.
 - **Watched domains** are added by you: competitors, prospects, clients without Search Console access.
@@ -14,8 +14,8 @@ The browser dashboard opens on the portfolio once you have more than one propert
 | Clicks, 28 days | Google Search Console (measured) | Owned domains only, against the 28 days before |
 | Organic keywords, Organic traffic | DataForSEO Labs (estimated) | For the row's country. Traffic is DataForSEO's ETV estimate, not visits you measured |
 | Paid keywords and traffic | DataForSEO Labs (estimated) | Behind "Show paid" |
-| Referring domains | DataForSEO Backlinks | Root domains, as Semrush counts them |
-| Domain Rank | DataForSEO Backlinks, 0 to 100 | DataForSEO's rank. **Not** Semrush's Authority Score, and never labelled as one |
+| Referring domains | DataForSEO Backlinks | Root domains |
+| Domain Rank | DataForSEO Backlinks, 0 to 100 | DataForSEO's rank, labelled as DataForSEO's. It isn't an industry-standard authority score |
 | AI mentions | DataForSEO LLM Mentions | Google AI Overviews + ChatGPT, monthly. ChatGPT data is US-only |
 | Audit health | Your latest `run_audit` | Owned domains only |
 
@@ -35,7 +35,7 @@ The browser dashboard opens on the portfolio once you have more than one propert
 
 ## The domain overview
 
-Click a domain for its overview, which is Semrush's Domain Overview with the joins only we can make:
+Click a domain for its overview, including joins only your own data allows:
 - **Search (estimated) beside Search Console (measured):** the two never blend. Traffic share is shown among the domain's group, or among the portfolio.
 - **AI search:**
   - per platform (AI Overviews, ChatGPT): mentions, AI search volume and cited pages, over 15 months;
@@ -44,7 +44,7 @@ Click a domain for its overview, which is Semrush's Domain Overview with the joi
   - **Sources cited alongside**: sources, not competitors;
   - not measured by this data, and said so on the page: AI Mode, Gemini, Perplexity, and any 0 to 100 "visibility score".
 - **Traffic trend:** estimated traffic plus measured Search Console clicks on their own axis.
-- **Keyword positions** in Semrush's five bands, the search-results mix (organic, AI Overview references, featured snippets, local pack), countries, and new and lost referring domains.
+- **Keyword positions** in five bands (1-3, 4-10, 11-20, 21-50, 51-100), the search-results mix (organic, AI Overview references, featured snippets, local pack), countries, and new and lost referring domains.
 - **Top pages by traffic and by links:** for owned sites each URL carries our crawl status, so a heavily linked page that 404s is flagged.
 
 ## Refreshing, and what it costs

@@ -8,7 +8,7 @@ import { listLocalProperties } from './webServer.js';
 import { urlKey, hostFormForProperty } from './url-key.js';
 
 /**
- * The portfolio payloads (design/portfolio/SPEC.md v1.1). Pure reads: `_portfolio.db` plus, for owned
+ * The portfolio payloads. Pure reads: `_portfolio.db` plus, for owned
  * rows, a few cheap indexed reads of each property DB (never getDashboardData, about 6 s on a big DB).
  *
  * Honesty rules this file enforces (the spec's section 6):
@@ -306,7 +306,7 @@ const ageDays = (iso: string | null, now: Date): number | null => {
   return Number.isFinite(t) ? (now.getTime() - t) / 86400000 : null;
 };
 
-/** "Needs attention": deterministic, de-noised rules (spec v1.1). Each reason names its numbers and months. */
+/** "Needs attention": deterministic, de-noised rules. Each reason names its numbers and months. */
 export function attentionRules(
   r: PortfolioRow, s: { labs?: Map<string, MonthRow>; bl?: Map<string, MonthRow>; llm: Map<string, MonthRow> },
   m: Months, owned: OwnedReads | null,

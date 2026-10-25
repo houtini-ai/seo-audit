@@ -6,7 +6,7 @@
 //   npm run build
 //   npm run demo:property -- --out <dir>
 //   node scripts/demo-screenshots.mjs --data <dir> [--out assets] [--theme light|dark] [--only name,name]
-//   node scripts/demo-screenshots.mjs --data <dir> --qa design/summary/qa [--theme light|dark]
+//   node scripts/demo-screenshots.mjs --data <dir> --qa <out-dir> [--theme light|dark]
 //
 // Serves the built dashboard in-process against <dir> (which must hold ONLY the demo database),
 // drives it with Playwright at 1440px wide (the Summary also at 390, the phone layout), and writes

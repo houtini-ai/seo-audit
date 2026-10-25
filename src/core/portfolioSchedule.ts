@@ -4,7 +4,7 @@ import { liveJobTypes } from './JobManager.js';
 import type { PortfolioRefreshArgs } from './PortfolioRefresh.js';
 
 /**
- * Scheduled portfolio refreshes (design/portfolio/SPEC.md v1.1, blocker 1). Recording a schedule is
+ * Scheduled portfolio refreshes. Recording a schedule is
  * the user's consent to spend up to a monthly cap. The rules:
  *  - a due run is CLAIMED atomically in _portfolio.db (BEGIN IMMEDIATE + compare-and-set on the due
  *    dates), so two processes ticking at once (Claude Desktop + Claude Code + the runner) start it once;

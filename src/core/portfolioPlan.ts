@@ -1,7 +1,7 @@
 import type { PortfolioDomain } from './PortfolioStore.js';
 
 /**
- * What a portfolio refresh calls, and what that costs (design/portfolio/SPEC.md v1.1). ONE plan is
+ * What a portfolio refresh calls, and what that costs. ONE plan is
  * used both to quote (before anything is spent) and to execute, so the quote and the run can never
  * describe different work. Prices are the per-call costs OBSERVED on live calls (2026-10-24,
  * scripts/fixtures/portfolio/*.json `cost`), at the small row counts the portfolio requests; a run's

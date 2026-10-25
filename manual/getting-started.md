@@ -289,11 +289,11 @@ The gateway causes two problems, and each has its own fix.
 
 ```dockerfile
 FROM node:22-slim
-RUN npm install -g @houtini/seo-audit-console@0.16.3
+RUN npm install -g @houtini/seo-audit-console@0.17.0
 ENTRYPOINT ["seo-audit-console"]
 ```
 
-`docker build -t seo-audit-console:0.16.3 .`, then in the server's catalog entry set `image: seo-audit-console:0.16.3`, delete the `command:` line, and add `longLived: true`.
+`docker build -t seo-audit-console:0.17.0 .`, then in the server's catalog entry set `image: seo-audit-console:0.17.0`, delete the `command:` line, and add `longLived: true`.
 
 **2. Start the runner** once, from the same image, on the same data volume and credentials the gateway uses:
 
@@ -302,7 +302,7 @@ docker run -d --init --name seo-audit-runner --restart unless-stopped \
   -v mcp-sac-data:/data -v mcp-sac-creds:/creds:ro \
   -e SAC_DATA_DIR=/data -e GOOGLE_APPLICATION_CREDENTIALS=/creds/gsc.json \
   -e DATAFORSEO_USERNAME -e DATAFORSEO_PASSWORD -e MAJESTIC_API_KEY -e CRUX_API_KEY \
-  --entrypoint seo-audit-runner seo-audit-console:0.16.3
+  --entrypoint seo-audit-runner seo-audit-console:0.17.0
 ```
 
 - The `-e NAME` flags with no value copy those keys from your shell; drop any you don't use. The runner needs the same keys as the server, because it is the one that calls the APIs.

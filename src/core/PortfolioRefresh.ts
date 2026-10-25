@@ -11,7 +11,7 @@ import {
 import { listLocalProperties } from './webServer.js';
 
 /**
- * The `portfolio` job (design/portfolio/SPEC.md v1.1): run one plan (portfolioPlan.ts) family by
+ * The `portfolio` job: run one plan (portfolioPlan.ts) family by
  * family. Rules that bite here:
  *  - a family's failure never aborts the run (the Backlinks API off ≠ Labs off); each (domain,
  *    endpoint) records its status, so an empty cell can say WHY;

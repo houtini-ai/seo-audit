@@ -1,6 +1,4 @@
-// SEO Console - the domain overview (a Semrush Domain Overview equivalent) for one portfolio domain.
-// Layout from the Stitch round (design/portfolio/stitch/CRITIQUE.md), AI view ranked in SPEC.md v1.1.
-// First draft by deepseek-v4-pro from a written brief; reviewed and corrected here. Honesty rules:
+// SEO Console - the domain overview for one portfolio domain. Honesty rules:
 // estimated vs measured are always labelled; the partial month is hollow "to date"; unknown is never
 // "no"; no AI visibility score.
 import { esc, fmtNum, fmtCompact, fmtDate, fmtMonth } from './lib/h.js';

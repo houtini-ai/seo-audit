@@ -52,7 +52,7 @@ Endpoint: `/v3/dataforseo_labs/google/search_intent/live`
 > Classify the intent of my top 50 queries and save them for mysite.com
 
 ### `ranked_keywords`
-Every keyword a domain / subdomain / URL / subfolder ranks for, with position, volume, ETV, difficulty, intent and SERP features. The Semrush "keywords a page or site ranks for" view, on any site. `aioOnly:true` lists only keywords whose SERP shows an AI Overview.
+Every keyword a domain / subdomain / URL / subfolder ranks for, with position, volume, ETV, difficulty, intent and SERP features. The "keywords a page or site ranks for" view, on any site. `aioOnly:true` lists only keywords whose SERP shows an AI Overview.
 Endpoint: `/v3/dataforseo_labs/google/ranked_keywords/live`
 > What does competitor.com/blog/ rank for?
 

@@ -10,6 +10,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](./LICENSE)
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-server-purple?style=flat-square)](https://modelcontextprotocol.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Socket Badge](https://socket.dev/api/badge/npm/package/@houtini/seo-audit-console)](https://socket.dev/npm/package/@houtini/seo-audit-console)
 
 Almost every technical SEO audit I've been handed in twenty years is a crawler's opinion, and a crawler only ever sees half the picture. It tells you what your site *says*. It has nothing to say about what Google *did* about it: which queries you rank for, which pages earn the impressions, where the clicks land.
 
@@ -105,7 +106,7 @@ This README is the story and the quick start. The detail lives in the manual:
 | [Tool reference](manual/tools.md) | Every tool: what it does, inputs, joins, an example prompt |
 | [The check registry](manual/checks.md) | All 143 checks with what each catches, its D/N label, and the fix |
 | [Composition](manual/composition.md) | The join keys, the grains, and fourteen recipes for asking your own questions across the data |
-| [Competitive analysis](manual/competitive.md) | The Semrush-replacement workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
+| [Competitive analysis](manual/competitive.md) | The competitive workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
 | [SEO Recon](manual/recon.md) | Why a page is losing: the live SERP + AI-Overview citation verdict, the competitor diff, and the trackable to-do ledger |
 | [DataForSEO functions](manual/dataforseo.md) | Every DataForSEO-backed tool grouped by API module - Keywords, SERP, Labs, Backlinks, OnPage - each with its endpoint and cost |
 | [Majestic functions](manual/majestic.md) | The optional Trust Flow tier - what it adds, and how `link_intersect` and `pull_backlinks` use it |
@@ -199,7 +200,7 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 8. **Your own questions.** The four datasets share three join keys, and the most valuable analyses are the ones you compose yourself - *"which pages lost clicks after being cited in AI Overviews?"* is one prompt here and a feature nowhere else. → [composition.md](manual/composition.md)
 9. **Reporting.** *"Show me the dashboard"* in the chat, *"serve the dashboard"* for the live version in your browser, or *"export the report"* as one self-contained HTML file you can send a client. → [dashboard.md](manual/dashboard.md)
 10. **The content opportunity report.** If you write for a living, this is your page one: *"Content opportunities for mysite.com"* returns what to WRITE next (demand you already earn impressions for with no winning page), what to REFRESH (pages bleeding clicks), which SNIPPETS to rewrite (ranking well, under-clicked), and which clusters to STRENGTHEN (position 4-20, one push from the money). Every row traces to your own Search Console data - no invented keyword ideas - and *"draft the brief for row 1"* turns any of them into a grounded outline. → [competitive.md](manual/competitive.md)
-11. **Market Sizing and Prioritisation.** *"Size the market: mysite.com vs rival1.com and rival2.com"* - the keyword universe, total monthly demand, and share of voice per topic cluster, from one cached call per domain. The engagement-opening read that used to need a Semrush subscription. → [competitive.md](manual/competitive.md)
+11. **Market Sizing and Prioritisation.** *"Size the market: mysite.com vs rival1.com and rival2.com"* - the keyword universe, total monthly demand, and share of voice per topic cluster, from one cached call per domain. The engagement-opening read that used to need a paid SEO suite. → [competitive.md](manual/competitive.md)
 12. **Content recon - why is this page losing?** *"Run content recon on mysite.com"* takes your highest-impression pages sitting at positions 3-15 (the ones a push could move), pulls the live Google SERP for each, and reads whether the **AI Overview** cites you. The verdict is the honest bit: *rank but not cited* is a data-accuracy or freshness problem, not a rewrite. It reads the reachable competitors with a free browser-profile fetch (Reddit through its own JSON), lists the ranking videos for you to watch, and writes the gaps into a tracked to-do board you can annotate and re-measure. → [recon.md](manual/recon.md)
 13. **Link prospecting, sorted by authority that's real.** *"Link intersect for mysite.com vs rival1.com, rival2.com"* returns the domains linking to your rivals and not to you - the outreach list, followed-first and spam-filtered. Add a **Majestic** key and it re-sorts on **Trust Flow** and shows each prospect's **Topical Trust Flow**, so the directories drop out and what's left is authority that's on your topic. → [Majestic, below](#link-intersect-and-the-majestic-trust-flow-tier)
 
@@ -213,9 +214,9 @@ Each of these is a real procedure I use, and each is one prompt. The expanded ve
 
 Everything above works with just your Search Console data. But GSC can only describe searches where you already appear. The moment your question is "how big is this market?" or "what do competitors rank for that I don't?", you need third-party data - and that's [DataForSEO](https://dataforseo.com/?aff=213701): a pay-as-you-go API for volumes, live rankings, competitor data and Lighthouse runs. No subscription; calls cost fractions of a cent to a few cents, cached for 20 days, and only ever run when you ask. My own usage runs to a few dollars a month.
 
-It unlocks the Semrush-replacement layer: the organic visibility overview for any domain, any site's top pages and ranked keywords (including which of them show an **AI Overview**), the content gap, topic gaps, search intent, lab Core Web Vitals and backlinks. It also drives **content recon** - `recon_targets` pulls the live Google SERP for a losing page, reads whether the AI Overview cites you, and tells you *why* you're behind. The full workflows and setup: [competitive.md](manual/competitive.md).
+It unlocks the competitive layer: the organic visibility overview for any domain, any site's top pages and ranked keywords (including which of them show an **AI Overview**), the content gap, topic gaps, search intent, lab Core Web Vitals and backlinks. It also drives **content recon** - `recon_targets` pulls the live Google SERP for a losing page, reads whether the AI Overview cites you, and tells you *why* you're behind. The full workflows and setup: [competitive.md](manual/competitive.md).
 
-It also powers the **portfolio**: a Semrush-style "Domains for monitoring" table across your owned properties and any domains you watch. Organic keywords and traffic, referring domains, Domain Rank and AI mentions (Google AI Overviews + ChatGPT) sit next to your measured Search Console clicks and audit health, with a "needs attention" tab and a per-domain overview. Every figure says whether it was measured or estimated, and refreshes quote their cost before anything is spent (8 domains on the weekly tier cost $0.22 on a live run). The detail: [portfolio.md](manual/portfolio.md).
+It also powers the **portfolio**: one table across your owned properties and any domains you watch. Organic keywords and traffic, referring domains, Domain Rank and AI mentions (Google AI Overviews + ChatGPT) sit next to your measured Search Console clicks and audit health, with a "needs attention" tab and a per-domain overview. Every figure says whether it was measured or estimated, and refreshes quote their cost before anything is spent (8 domains on the weekly tier cost $0.22 on a live run). The detail: [portfolio.md](manual/portfolio.md).
 
 One more thing DataForSEO unlocks gets a section of its own, because the link work has a second, optional service behind it.
 
@@ -325,11 +326,11 @@ Measured on a gateway in October 2026 (0.16.2):
 
 ```dockerfile
 FROM node:22-slim
-RUN npm install -g @houtini/seo-audit-console@0.16.3
+RUN npm install -g @houtini/seo-audit-console@0.17.0
 ENTRYPOINT ["seo-audit-console"]
 ```
 
-`docker build -t seo-audit-console:0.16.3 .` in the folder holding that file. Then, in the catalog entry, set `image: seo-audit-console:0.16.3`, delete the `command:` line (the image's entrypoint starts the server), and add `longLived: true`. The gateway runs local images with `--pull never`, so it finds the one you built. Rebuild the image for each release and change the tag in the catalog entry.
+`docker build -t seo-audit-console:0.17.0 .` in the folder holding that file. Then, in the catalog entry, set `image: seo-audit-console:0.17.0`, delete the `command:` line (the image's entrypoint starts the server), and add `longLived: true`. The gateway runs local images with `--pull never`, so it finds the one you built. Rebuild the image for each release and change the tag in the catalog entry.
 
 The runner takes the other two steps:
 
@@ -345,10 +346,10 @@ docker run -d --init --name seo-audit-runner --restart unless-stopped \
   -v mcp-sac-data:/data -v mcp-sac-creds:/creds:ro \
   -e SAC_DATA_DIR=/data -e GOOGLE_APPLICATION_CREDENTIALS=/creds/gsc.json \
   -e DATAFORSEO_USERNAME -e DATAFORSEO_PASSWORD -e MAJESTIC_API_KEY -e CRUX_API_KEY \
-  --entrypoint seo-audit-runner seo-audit-console:0.16.3
+  --entrypoint seo-audit-runner seo-audit-console:0.17.0
 ```
 
-The four `-e NAME` flags with no value pass those variables through from your shell, so the keys stay out of the command line; leave out any you don't use. On Windows in Git Bash, prefix the command with `MSYS_NO_PATHCONV=1`, otherwise MSYS rewrites `/data` and `/creds` into Windows paths (PowerShell doesn't need it). `--init` makes `docker stop` reach the runner as a clean SIGTERM. `docker logs seo-audit-runner` shows it start and every job it claims. (Without the image, `node:22-slim npx -y -p @houtini/seo-audit-console@0.16.3 seo-audit-runner` works too: the runner is one long-running container, so npx installs only once, on its first start.)
+The four `-e NAME` flags with no value pass those variables through from your shell, so the keys stay out of the command line; leave out any you don't use. On Windows in Git Bash, prefix the command with `MSYS_NO_PATHCONV=1`, otherwise MSYS rewrites `/data` and `/creds` into Windows paths (PowerShell doesn't need it). `--init` makes `docker stop` reach the runner as a clean SIGTERM. `docker logs seo-audit-runner` shows it start and every job it claims. (Without the image, `node:22-slim npx -y -p @houtini/seo-audit-console@0.17.0 seo-audit-runner` works too: the runner is one long-running container, so npx installs only once, on its first start.)
 
 **3. Switch the gateway to queueing.** Add `SAC_JOB_RUNNER=external` to the env of this server's catalog entry. **Keep `longLived: true`.** The runner makes jobs survive a worker being replaced; `longLived` keeps the worker warm between calls. They solve different problems, and they work together (tested: a sync queued through a `longLived` worker was claimed and finished by the runner).
 
@@ -391,13 +392,13 @@ The one-line version - full descriptions, inputs and example prompts for every t
 | `keyword_volume` · `related_terms` · `search_intent` | DataForSEO keyword data |
 | `youtube_discovery` · `news_discovery` · `topic_trend` · `trend_categories` | Content research: the videos ranking for a topic (pair with a transcript tool) · recent news coverage / freshness · Google Trends interest-over-time for keywords, a whole category, or a term inside one (rising / falling / seasonal, plus breakout topics and queries) · free lookup of the Trends category codes |
 | `competitors_domain` · `page_intersection` · `topic_gaps` | Competitors · content gap · topic gaps |
-| `domain_visibility` · `top_pages` · `ranked_keywords` | The Semrush-style views, any domain (+ `aioOnly` for the keywords that show an AI Overview) |
+| `domain_visibility` · `top_pages` · `ranked_keywords` | Organic overview, top pages and ranked keywords for any domain (+ `aioOnly` for the keywords that show an AI Overview) |
 | `page_lighthouse` · `pull_backlinks` | Lab CWV · backlink profile with live status |
 | `link_intersect` | The links your competitors have that you don't - a prioritised outreach list (followed-first, sorted by domain trust; optional Majestic Trust Flow re-sort kills directory noise) |
 | `market_sizing` · `serp_features` | Share of voice vs named competitors · AI-Overview / snippet / video exposure by volume |
 | `keyword_list` · `content_opportunities` | Cluster a keyword list (own / weak / absent) · the content marketer's report |
 | `recon_targets` · `save_recon_todo` · `recon_todos` | **Content recon:** why a page is losing (live SERP + AI Overview) → a tracked, annotatable to-do board |
-| `portfolio` · `refresh_portfolio` · `schedule_portfolio_refresh` · `get_portfolio` | **The portfolio:** every domain you look after (owned + watched) in a Semrush-style table, measured vs estimated · refresh it (quotes first) · schedule it under a monthly budget cap · see it in chat |
+| `portfolio` · `refresh_portfolio` · `schedule_portfolio_refresh` · `get_portfolio` | **The portfolio:** every domain you look after (owned + watched) in one table, measured vs estimated · refresh it (quotes first) · schedule it under a monthly budget cap · see it in chat |
 | `get_dashboard` · `serve_dashboard` · `export_report` | In-chat dashboard · the same in a local browser tab · shareable HTML |
 | `get_dashboard_data` · `get_portfolio_data` · `get_domain_overview` | Internal: the dashboard widgets fetch their data through these; not for direct use |
 | `composition_cookbook` | The data-surface map and recipes for bespoke analyses |

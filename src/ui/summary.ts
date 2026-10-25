@@ -1,4 +1,4 @@
-// The Summary tab (design/summary/SUMMARY-PAGE.md, slice 3): the landing view that answers, top
+// The Summary tab: the landing view that answers, top
 // to bottom, how fresh is this · how is the site doing · better or worse · what's broken · what
 // to do first · what changed · AI search · what we don't measure.
 //

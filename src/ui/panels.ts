@@ -1,4 +1,4 @@
-// Shared panel renderers for the Stitch-direction dashboard (design/stitch/): the sidebar
+// Shared panel renderers for the dashboard: the sidebar
 // freshness block, the crawl-health header and status mix, the Search performance trend and top
 // keyword / page tables, and the network graph. Several of these were the Overview tab's panels;
 // the Summary tab (summary.ts) replaced the Overview as the landing view and they moved to the tabs
