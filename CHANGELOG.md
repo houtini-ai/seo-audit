@@ -8,16 +8,18 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
-## [Unreleased]
+## [0.17.0] — 2026-10-25
+
+The portfolio: a domains table and domain overview on DataForSEO + Search Console. Also ships everything in 0.16.3, which was tagged but not published to npm.
 
 ### Added
-- **The portfolio** (`design/portfolio/SPEC.md`, `manual/portfolio.md`): a Semrush "Domains for monitoring" style table across owned properties (auto) and watched domains (competitors, prospects), plus a per-domain overview. It is the browser dashboard's landing page once there is more than one property (`/`, `/portfolio`), and `get_portfolio` in chat.
+- **The portfolio** (`manual/portfolio.md`): one table across owned properties (auto) and watched domains (competitors, prospects), plus a per-domain overview. It is the browser dashboard's landing page once there is more than one property (`/`, `/portfolio`), and `get_portfolio` in chat.
   - **Measured vs estimated is always labelled:** Search Console clicks (measured) sit beside DataForSEO estimates (organic and paid keywords and traffic for the row's country), referring domains (root), **DataForSEO Domain Rank** (0-100, never called Authority Score), **AI mentions** (Google AI Overviews + ChatGPT, monthly; ChatGPT US-only) and audit health.
   - **Change maths:** changes compare the last COMPLETE month (each series its own latest, since Labs history lags); the month in progress is hollow "to date". Empty cells name the reason. A de-noised "needs attention" rule list names its numbers.
   - **Domain overview:**
     - estimated and measured KPI blocks, and traffic share;
     - AI search per platform, with a rank x citation table and quadrant from content recon (unknown is never "no"), cited pages joined to crawl status and GSC clicks, and co-cited sources;
-    - a traffic trend (estimated vs measured), Semrush's five position bands, the search-results mix incl. AI Overview references, countries, backlinks new/lost;
+    - a traffic trend (estimated vs measured), five position bands, the search-results mix incl. AI Overview references, countries, backlinks new/lost;
     - top pages by traffic and by links, with our crawl status.
   - **Tools:** `portfolio` (list / add / remove / group / location, free), `refresh_portfolio` (quotes first; `confirm` runs a job and records actual spend), `schedule_portfolio_refresh` (two-step consent to a monthly budget cap; the atomic claim means two processes never run it twice; it skips with re-confirm if the cost grows 25%+), `get_portfolio` (App).
   - **DataForSEO:** new client methods for the bulk Backlinks endpoints, Labs bulk traffic / all-locations rank overview / ranked_keywords metrics, Backlinks domain_pages, and the LLM Mentions API. Request bodies were verified live and the raw responses are saved as test fixtures. Prices in the quote are the costs observed on live runs.
@@ -140,7 +142,7 @@ Reliability fixes from the live 0.16.0 test.
 ## [0.14.1] — 2026-10-17
 
 ### Changed
-- **Dashboard redesign: crawl and network intelligence (#38 part 1).** Direction from a Google Stitch round (`design/stitch/`), built on the existing data contracts:
+- **Dashboard redesign: crawl and network intelligence (#38 part 1).** Built on the existing data contracts:
   - A sticky sidebar (property, navigation, data freshness) replaces the pill tabs, under a slim top bar. The graphite dark and cool-paper light themes share one signal-green accent.
   - The Overview is rebuilt: KPI strip, clicks / impressions / position as small multiples, findings by priority, crawl-health status mix, a site-network preview, top keywords and pages, and a jobs and data-freshness panel.
   - Crawl health gets a KPI strip and a canonical / redirect / 404 breakdown. The Network tab (formerly Architecture) leads with the full crawl graph, and Issues gets a by-area filter.
