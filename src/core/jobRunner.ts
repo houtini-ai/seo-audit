@@ -3,7 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { JobManager, jobsDbPath, RUNNER_STOPPED_ERROR, type ClaimedJob } from './JobManager.js';
-import { runJobKind, type JobDeps } from './jobKinds.js';
+import { runJobKind, submitJob, type JobDeps } from './jobKinds.js';
+import { startPortfolioScheduler } from './portfolioSchedule.js';
+import { PORTFOLIO_JOB_SCOPE } from './PortfolioStore.js';
 import { GscClient } from './GscClient.js';
 import { GscSync } from './GscSync.js';
 import { UrlInspector } from './UrlInspector.js';
@@ -114,6 +116,7 @@ export class JobRunner {
   private timers: ReturnType<typeof setInterval>[] = [];
   private stopping: Promise<void> | null = null;
   private ticking = false;
+  private stopScheduler: (() => void) | null = null;
 
   constructor(opts: JobRunnerOptions) {
     this.concurrency = Math.max(1, opts.concurrency ?? 1);
@@ -135,6 +138,16 @@ export class JobRunner {
     this.timers.push(setInterval(() => this.pollCancels(), this.cancelPollMs));
     this.timers.push(setInterval(() => this.tick(), this.pollMs));
     this.log(`started (pid ${process.pid}, v${this.version}, concurrency ${this.concurrency}, instance ${this.jobs.instanceId.slice(0, 8)})`);
+    // Scheduled portfolio refreshes: the runner is the one long-running process under the gateway.
+    // A due run is QUEUED (not run inline) so it goes through the normal claim loop and its limits.
+    if (this.deps.dfs) {
+      const queue = new JobManager({ dbPath: jobsDbPath(this.deps.dataDir()), runner: 'external' });
+      this.stopScheduler = startPortfolioScheduler({
+        dataDir: this.deps.dataDir,
+        submit: args => submitJob(queue, 'portfolio', args, this.deps, PORTFOLIO_JOB_SCOPE),
+        log: m => this.log(`portfolio: ${m}`),
+      });
+    }
     this.tick();
   }
 
@@ -202,6 +215,8 @@ export class JobRunner {
     void (async () => {
       for (const t of this.timers) clearInterval(t);
       this.timers = [];
+      this.stopScheduler?.();
+      this.stopScheduler = null;
       const ids = [...this.running.keys()];
       if (ids.length) this.log(`stopping: interrupting ${ids.join(', ')}`);
       for (const id of ids) this.jobs.interrupt(id, reason);

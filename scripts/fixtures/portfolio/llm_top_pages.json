@@ -1,0 +1,286 @@
+{
+  "endpoint": "/v3/ai_optimization/llm_mentions/top_mentioned_pages/live",
+  "request": [
+    {
+      "location_code": 2840,
+      "language_code": "en",
+      "platform": "google",
+      "target": [
+        {
+          "domain": "simracingcockpit.gg"
+        }
+      ],
+      "limit": 3
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242023-1165-0654-0000-586f7b460dd2",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.4116 sec.",
+      "cost": 0.103,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "ai_optimization",
+        "llm_mentions",
+        "top_mentioned_pages",
+        "live"
+      ],
+      "data": {
+        "api": "ai_optimization",
+        "function": "top_mentioned_pages",
+        "location_code": 2840,
+        "language_code": "en",
+        "platform": "google",
+        "target": [
+          {
+            "domain": "simracingcockpit.gg"
+          }
+        ],
+        "limit": 3
+      },
+      "result": [
+        {
+          "total_count": 6367,
+          "offset": 0,
+          "items_count": 3,
+          "aggregated_metrics": {
+            "location": [
+              {
+                "key": 2840,
+                "mentions": 14368,
+                "ai_search_volume": 3352550
+              }
+            ],
+            "language": [
+              {
+                "key": "en",
+                "mentions": 14368,
+                "ai_search_volume": 3352550
+              }
+            ],
+            "platform": [
+              {
+                "key": "google",
+                "mentions": 14368,
+                "ai_search_volume": 3352550
+              }
+            ],
+            "sources_domain": [
+              {
+                "key": "www.youtube.com",
+                "mentions": 12682,
+                "ai_search_volume": 3083410
+              },
+              {
+                "key": "simracingcockpit.gg",
+                "mentions": 11986,
+                "ai_search_volume": 2556560
+              },
+              {
+                "key": "www.reddit.com",
+                "mentions": 7702,
+                "ai_search_volume": 1777660
+              },
+              {
+                "key": "www.google.com",
+                "mentions": 6497,
+                "ai_search_volume": 993690
+              },
+              {
+                "key": "simracingsetup.com",
+                "mentions": 1642,
+                "ai_search_volume": 285770
+              }
+            ],
+            "search_results_domain": [],
+            "brand_entities_title": [],
+            "brand_entities_category": [],
+            "total": {
+              "mentions": 14368,
+              "ai_search_volume": 3352550
+            }
+          },
+          "items": [
+            {
+              "page": "https://simracingcockpit.gg/sim-racing-games/",
+              "location": [
+                {
+                  "key": 2840,
+                  "mentions": 172,
+                  "ai_search_volume": 95950
+                }
+              ],
+              "language": [
+                {
+                  "key": "en",
+                  "mentions": 172,
+                  "ai_search_volume": 95950
+                }
+              ],
+              "platform": [
+                {
+                  "key": "google",
+                  "mentions": 172,
+                  "ai_search_volume": 95950
+                }
+              ],
+              "sources_domain": [
+                {
+                  "key": "simracingcockpit.gg",
+                  "mentions": 172,
+                  "ai_search_volume": 95950
+                },
+                {
+                  "key": "www.youtube.com",
+                  "mentions": 161,
+                  "ai_search_volume": 92760
+                },
+                {
+                  "key": "www.reddit.com",
+                  "mentions": 121,
+                  "ai_search_volume": 60050
+                },
+                {
+                  "key": "www.google.com",
+                  "mentions": 66,
+                  "ai_search_volume": 19560
+                },
+                {
+                  "key": "www.asetek.com",
+                  "mentions": 48,
+                  "ai_search_volume": 33900
+                }
+              ],
+              "search_results_domain": [],
+              "brand_entities_title": [],
+              "brand_entities_category": [],
+              "total": {
+                "mentions": 172,
+                "ai_search_volume": 95950
+              }
+            },
+            {
+              "page": "https://simracingcockpit.gg/vr-headset-comparison-2026/",
+              "location": [
+                {
+                  "key": 2840,
+                  "mentions": 102,
+                  "ai_search_volume": 17900
+                }
+              ],
+              "language": [
+                {
+                  "key": "en",
+                  "mentions": 102,
+                  "ai_search_volume": 17900
+                }
+              ],
+              "platform": [
+                {
+                  "key": "google",
+                  "mentions": 102,
+                  "ai_search_volume": 17900
+                }
+              ],
+              "sources_domain": [
+                {
+                  "key": "simracingcockpit.gg",
+                  "mentions": 102,
+                  "ai_search_volume": 17900
+                },
+                {
+                  "key": "www.youtube.com",
+                  "mentions": 86,
+                  "ai_search_volume": 16390
+                },
+                {
+                  "key": "www.google.com",
+                  "mentions": 79,
+                  "ai_search_volume": 15620
+                },
+                {
+                  "key": "vr.org",
+                  "mentions": 57,
+                  "ai_search_volume": 4740
+                },
+                {
+                  "key": "www.pcmag.com",
+                  "mentions": 55,
+                  "ai_search_volume": 6640
+                }
+              ],
+              "search_results_domain": [],
+              "brand_entities_title": [],
+              "brand_entities_category": [],
+              "total": {
+                "mentions": 102,
+                "ai_search_volume": 17900
+              }
+            },
+            {
+              "page": "https://simracingcockpit.gg/buyers-guide-what-are-the-best-ps5-steering-wheels/",
+              "location": [
+                {
+                  "key": 2840,
+                  "mentions": 94,
+                  "ai_search_volume": 12800
+                }
+              ],
+              "language": [
+                {
+                  "key": "en",
+                  "mentions": 94,
+                  "ai_search_volume": 12800
+                }
+              ],
+              "platform": [
+                {
+                  "key": "google",
+                  "mentions": 94,
+                  "ai_search_volume": 12800
+                }
+              ],
+              "sources_domain": [
+                {
+                  "key": "simracingcockpit.gg",
+                  "mentions": 94,
+                  "ai_search_volume": 12800
+                },
+                {
+                  "key": "www.google.com",
+                  "mentions": 85,
+                  "ai_search_volume": 10950
+                },
+                {
+                  "key": "www.youtube.com",
+                  "mentions": 79,
+                  "ai_search_volume": 11120
+                },
+                {
+                  "key": "www.playstation.com",
+                  "mentions": 60,
+                  "ai_search_volume": 7300
+                },
+                {
+                  "key": "www.reddit.com",
+                  "mentions": 50,
+                  "ai_search_volume": 5950
+                }
+              ],
+              "search_results_domain": [],
+              "brand_entities_title": [],
+              "brand_entities_category": [],
+              "total": {
+                "mentions": 94,
+                "ai_search_volume": 12800
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

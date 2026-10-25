@@ -24,6 +24,9 @@ export interface WebServerOptions {
   dataDir: () => string;
   /** Returns the built dashboard.html template (read per-request so rebuilds show without restart). */
   uiHtml: () => string;
+  /** The built portfolio.html (the domains table + domain overview). Optional: without it the
+   * portfolio routes 404 and "/" keeps the plain property picker. */
+  portfolioHtml?: () => string;
   call: WebCallHandlers;
   port?: number;
 }
@@ -82,7 +85,7 @@ export function containerDashboardNote(siteUrl?: string, containerUrl?: string |
   return `Running in a container: this link only works inside it${inner}. Run the dashboard sidecar on the same data volume (use your volume's name), then open ${open}:\n${DASHBOARD_SIDECAR_CMD}\nOr run get_dashboard${target} to see the dashboard in chat.`;
 }
 
-const CACHE_DBS = new Set(['dataforseo-cache.db']);
+const CACHE_DBS = new Set(['dataforseo-cache.db', '_portfolio.db', '_jobs.db']);
 
 /** Enumerate properties that have a local DB (property_meta.site_url is the source of truth). */
 export function listLocalProperties(dataDir: string): { siteUrl: string; file: string }[] {
@@ -140,10 +143,25 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
       const u = new URL(req.url ?? '/', 'http://localhost');
       const route = u.pathname;
 
+      // The portfolio (domains table) is the landing page once there's more than one property; it
+      // links each owned row to its property dashboard, so it replaces the plain picker.
+      const servePortfolio = (domain: string | null): void => {
+        const props = listLocalProperties(opts.dataDir());
+        const boot = { portfolio: true, domain, properties: props.map(p => p.siteUrl) };
+        const inject = `<script>window.__SAC_WEB__=${JSON.stringify(boot).replace(/</g, '\u003c')};</script>`;
+        const html = opts.portfolioHtml!().replace(/<head([^>]*)>/i, (_m, attrs: string) => `<head${attrs}>${inject}`);
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(html);
+      };
+      if (req.method === 'GET' && opts.portfolioHtml && (route === '/portfolio' || route === '/portfolio/domain')) {
+        return servePortfolio(route === '/portfolio/domain' ? u.searchParams.get('d') : null);
+      }
+
       if (req.method === 'GET' && (route === '/' || route === '/dashboard')) {
         const props = listLocalProperties(opts.dataDir());
         const siteUrl = u.searchParams.get('siteUrl');
         if (!siteUrl) {
+          if (route === '/' && props.length > 1 && opts.portfolioHtml) return servePortfolio(null);
           if (route === '/' && props.length === 1) {
             res.writeHead(302, { location: `/dashboard?siteUrl=${encodeURIComponent(props[0].siteUrl)}` });
             return res.end();

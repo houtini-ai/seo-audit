@@ -1,0 +1,21 @@
+Revise the "Domains" portfolio screen you just made (same project and design system, 1440 desktop, light). Keep: the sidebar, header, refresh status strip with "Copy refresh prompt", the tabs with the counted "Needs attention", the group filter, the honest empty-state cells ("not fetched yet", "no data at this location"), the red-dot reason line under a domain, and the footnote. Every number stays a literal "[figure]". No em dashes. Spell headers out in words.
+
+Fix these problems:
+
+1. The table overflows: ten columns do not fit at 1440 and the right half is cut off. Make ALL columns visible without horizontal scrolling:
+   - Use two grouped header bands above the column headers: "Search Console (measured)" over the Clicks column, and "DataForSEO (estimated)" over Organic keywords, Organic traffic, Paid, Referring domains, Domain Rank and AI mentions. Then "Audit" over Audit health.
+   - Merge paid into ONE column "Paid keywords and traffic": two stacked small values ("[figure] keywords", "[figure] visits").
+   - Column headers in sentence case, regular letter spacing (not wide uppercase mono), so they take less width. Keep numbers in mono, right-aligned.
+   - Narrower domain column (about 220px). Long domain names truncate with an ellipsis.
+
+2. Move the red-dot "needs attention" reason OUT of the domain cell into a thin full-width sub-row directly under that domain's row, spanning all columns, so rows stay one consistent height (about 56px).
+
+3. Sparklines: one neutral grey line colour for every sparkline (direction is already shown by the change chip), no red or green lines.
+
+4. Owned rows: show the "GSC" badge only; watched rows: the "Watched" badge plus group label in muted text. Country as a two-letter chip.
+
+5. Show a selected Month toggle and, under the page subline, a small caption "Comparing September 2026 with August 2026 (last complete months)" written with [figure] placeholders for the month names.
+
+6. Domain Rank and Audit health cells: value as "[figure] / 100" plus change chip. No gauges.
+
+Keep the overall calm, analyst-grade density.

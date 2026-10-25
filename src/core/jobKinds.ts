@@ -17,6 +17,7 @@ import { backfillInWorker } from './fts.js';
 import { auditRender } from './renderAudit.js';
 import { findNearDuplicates } from './nearDuplicate.js';
 import { runReconJob, type ReconJobArgs } from './reconJob.js';
+import { runPortfolioRefresh, type PortfolioRefreshArgs } from './PortfolioRefresh.js';
 
 /**
  * The named job kinds (#56). Every async job the MCP starts is one of these, run from its
@@ -62,7 +63,8 @@ const need = <T>(v: T | null, msg: string): T => {
 };
 const dataJob = (deps: JobDeps, siteUrl: string, fn: Body): Body => (deps.withDashboard ? deps.withDashboard(siteUrl, fn) : fn);
 
-/** Arguments per kind. siteUrl is always present: it is what the job's scope is derived from. */
+/** Arguments per kind. Property kinds carry siteUrl (their scope is derived from it); the portfolio
+ * kind is cross-property and is scoped to '_portfolio.db' instead. */
 export interface JobArgsByKind {
   sync: { siteUrl: string; options: FetchOptions };
   crawl: { siteUrl: string } & Parameters<Crawler['run']>[1];
@@ -80,6 +82,7 @@ export interface JobArgsByKind {
   'fts-index': { siteUrl: string; dbName: string; indexes: FtsIndex[] };
   recon: ReconJobArgs;
   crux: { siteUrl: string } & Parameters<CruxSync['run']>[1];
+  portfolio: PortfolioRefreshArgs;
 }
 export type JobKindName = keyof JobArgsByKind;
 
@@ -114,6 +117,8 @@ export const JOB_KINDS: { [K in JobKindName]: KindFn<K> } = {
   recon: (args, deps, update, signal) => runReconJob(deps.dataDir(), need(deps.dfs, NO_DFS), args, update, signal),
   crux: ({ siteUrl, ...opts }, deps, update, signal) =>
     dataJob(deps, siteUrl, (u, s) => need(deps.cruxSync, NO_CRUX).run(siteUrl, opts, u, s))(update, signal),
+  portfolio: (args, deps, update, signal) =>
+    runPortfolioRefresh(deps.dataDir(), need(deps.dfs, NO_DFS), deps.rankTracker, args, update, signal),
 };
 
 /** The fts-index job's database, resolved in THIS process's data dir from the stored bare file name. */

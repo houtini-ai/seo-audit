@@ -1,0 +1,50 @@
+{
+  "endpoint": "/v3/backlinks/bulk_backlinks/live",
+  "request": [
+    {
+      "targets": [
+        "simracingcockpit.gg",
+        "ehi.com.au"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242023-1165-0348-0000-20e506b22c29",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.0057 sec.",
+      "cost": 0.024072,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "backlinks",
+        "bulk_backlinks",
+        "live"
+      ],
+      "data": {
+        "api": "backlinks",
+        "function": "bulk_backlinks",
+        "targets": [
+          "simracingcockpit.gg",
+          "ehi.com.au"
+        ]
+      },
+      "result": [
+        {
+          "items_count": 2,
+          "items": [
+            {
+              "target": "simracingcockpit.gg",
+              "backlinks": 2949
+            },
+            {
+              "target": "ehi.com.au",
+              "backlinks": 75029
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

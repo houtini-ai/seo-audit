@@ -1,0 +1,252 @@
+{
+  "endpoint": "/v3/ai_optimization/llm_mentions/multi_target_metrics/live",
+  "request": [
+    {
+      "location_code": 2840,
+      "language_code": "en",
+      "platform": "google",
+      "targets": [
+        {
+          "key": "simracingcockpit.gg",
+          "target": [
+            {
+              "domain": "simracingcockpit.gg"
+            }
+          ]
+        },
+        {
+          "key": "ehi.com.au",
+          "target": [
+            {
+              "domain": "ehi.com.au"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242023-1165-0652-0000-3ef2e97d1269",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.7456 sec.",
+      "cost": 0.102,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "ai_optimization",
+        "llm_mentions",
+        "multi_target_metrics",
+        "live"
+      ],
+      "data": {
+        "api": "ai_optimization",
+        "function": "multi_target_metrics",
+        "location_code": 2840,
+        "language_code": "en",
+        "platform": "google",
+        "targets": [
+          {
+            "key": "simracingcockpit.gg",
+            "target": [
+              {
+                "domain": "simracingcockpit.gg"
+              }
+            ]
+          },
+          {
+            "key": "ehi.com.au",
+            "target": [
+              {
+                "domain": "ehi.com.au"
+              }
+            ]
+          }
+        ]
+      },
+      "result": [
+        {
+          "total_count": 2,
+          "offset": 0,
+          "items_count": 2,
+          "aggregated_metrics": {
+            "location": [
+              {
+                "key": 2840,
+                "mentions": 1716,
+                "ai_search_volume": 359670
+              }
+            ],
+            "language": [
+              {
+                "key": "en",
+                "mentions": 1716,
+                "ai_search_volume": 359670
+              }
+            ],
+            "platform": [
+              {
+                "key": "google",
+                "mentions": 1716,
+                "ai_search_volume": 359670
+              }
+            ],
+            "sources_domain": [
+              {
+                "key": "www.youtube.com",
+                "mentions": 1465,
+                "ai_search_volume": 315090
+              },
+              {
+                "key": "www.reddit.com",
+                "mentions": 958,
+                "ai_search_volume": 206930
+              },
+              {
+                "key": "www.google.com",
+                "mentions": 807,
+                "ai_search_volume": 132590
+              },
+              {
+                "key": "www.amazon.com",
+                "mentions": 92,
+                "ai_search_volume": 13250
+              },
+              {
+                "key": "en.wikipedia.org",
+                "mentions": 46,
+                "ai_search_volume": 32630
+              }
+            ],
+            "search_results_domain": [],
+            "brand_entities_title": [],
+            "brand_entities_category": [],
+            "total": {
+              "mentions": 1716,
+              "ai_search_volume": 359670
+            }
+          },
+          "items": [
+            {
+              "key": "simracingcockpit.gg",
+              "location": [
+                {
+                  "key": 2840,
+                  "mentions": 1698,
+                  "ai_search_volume": 357060
+                }
+              ],
+              "language": [
+                {
+                  "key": "en",
+                  "mentions": 1698,
+                  "ai_search_volume": 357060
+                }
+              ],
+              "platform": [
+                {
+                  "key": "google",
+                  "mentions": 1698,
+                  "ai_search_volume": 357060
+                }
+              ],
+              "sources_domain": [
+                {
+                  "key": "www.youtube.com",
+                  "mentions": 1451,
+                  "ai_search_volume": 312900
+                },
+                {
+                  "key": "www.reddit.com",
+                  "mentions": 949,
+                  "ai_search_volume": 205250
+                },
+                {
+                  "key": "www.google.com",
+                  "mentions": 804,
+                  "ai_search_volume": 132320
+                },
+                {
+                  "key": "www.amazon.com",
+                  "mentions": 88,
+                  "ai_search_volume": 13060
+                },
+                {
+                  "key": "en.wikipedia.org",
+                  "mentions": 45,
+                  "ai_search_volume": 32600
+                }
+              ],
+              "search_results_domain": [],
+              "brand_entities_title": [],
+              "brand_entities_category": [],
+              "total": {
+                "mentions": 1698,
+                "ai_search_volume": 357060
+              }
+            },
+            {
+              "key": "ehi.com.au",
+              "location": [
+                {
+                  "key": 2840,
+                  "mentions": 18,
+                  "ai_search_volume": 2610
+                }
+              ],
+              "language": [
+                {
+                  "key": "en",
+                  "mentions": 18,
+                  "ai_search_volume": 2610
+                }
+              ],
+              "platform": [
+                {
+                  "key": "google",
+                  "mentions": 18,
+                  "ai_search_volume": 2610
+                }
+              ],
+              "sources_domain": [
+                {
+                  "key": "www.youtube.com",
+                  "mentions": 14,
+                  "ai_search_volume": 2190
+                },
+                {
+                  "key": "www.reddit.com",
+                  "mentions": 9,
+                  "ai_search_volume": 1680
+                },
+                {
+                  "key": "www.google.com",
+                  "mentions": 3,
+                  "ai_search_volume": 270
+                },
+                {
+                  "key": "www.amazon.com",
+                  "mentions": 4,
+                  "ai_search_volume": 190
+                },
+                {
+                  "key": "en.wikipedia.org",
+                  "mentions": 1,
+                  "ai_search_volume": 30
+                }
+              ],
+              "search_results_domain": [],
+              "brand_entities_title": [],
+              "brand_entities_category": [],
+              "total": {
+                "mentions": 18,
+                "ai_search_volume": 2610
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

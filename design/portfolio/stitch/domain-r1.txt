@@ -1,0 +1,33 @@
+Design ONE desktop screen (1440 wide, light theme, a long scrolling page) for a local SEO console: the "Domain overview" page for one website, opened from a portfolio table. Keep the existing design system: warm monochrome, crisp 1px borders, mono numerals, pale pastel badges, one green accent, no gradients, no heavy shadows, no emoji. Every number must be a literal "[figure]" placeholder. Do not invent brands, logos or marketing copy. Spell out table headers in full words. No em dashes anywhere.
+
+The site in view is an OWNED site, so the page shows measured Google Search Console data next to third-party estimates, and must always label which is which ("measured" vs "estimated").
+
+Layout, top to bottom:
+
+1. Breadcrumb "Domains / [domain]". Title "[domain]" with a country flag + code, a "GSC" badge, and a link "Open full property dashboard". Right side: "Data captured [figure]" and a Month | Year toggle.
+
+2. Two side-by-side blocks:
+   a) "Search (estimated)": a grid of 6 KPI tiles: Domain Rank (out of 100, third-party), Organic traffic (estimated), Organic keywords, Paid traffic (estimated), Referring domains, Backlinks. Each tile: label, big mono value, small change chip, and "vs [month]".
+   b) "Search Console (measured)": a narrower strip with Clicks 28 days, Impressions 28 days, Pages with clicks. Each with change. A tiny caption "Measured by Google, all countries".
+   Under both, a slim bar "Traffic share among [figure] chosen domains: [figure]%" with a small stacked horizontal bar of the domains in the group.
+
+3. "AI search" section (the most important new section). Header with a platform segmented control "AI Overviews | ChatGPT (US)". Contents:
+   - Three KPI tiles: Mentions, AI search volume, Cited pages, each with change vs last complete month.
+   - A combo chart: monthly bars for Mentions with a line for AI search volume on a second axis, 15 months. The current month bar is drawn hollow (outlined only) with a label "to date".
+   - A muted footnote slot: "AI Mode, Gemini and Perplexity are not measured by this data source." Do NOT show any 0-100 visibility score, gauge or grade word.
+   - Below, a two-column area:
+     Left: "Keywords: rank and citation" table. Columns: Keyword, AI Overview shown (yes / no), Our page cited (yes / no / unknown, where unknown is a grey pill), Organic rank, Impressions 28 days, Clicks 28 days. About 8 rows.
+     Right: a quadrant scatter "Rank and citation" with four labelled quadrants: "Ranks and cited", "Ranks, not cited", "Cited, not ranking", "Neither". Bubbles sized by impressions.
+   - Then two tables side by side: "Top cited pages" (Page, Mentions, Clicks 28 days, Crawl status as a small pill e.g. "200 indexable", "noindex", "301") and "Sources cited alongside" (Domain, Mentions, as horizontal bars). Caption under the second: "Sources, not competitors".
+
+4. "Traffic trend": a wide line chart, 24 months. Organic traffic (estimated) as a solid line, Paid traffic (estimated) as a thin line, and Search Console clicks (measured) as a dashed line on its own right-hand axis. Legend states "estimated" and "measured" explicitly. Hollow last point for the partial month.
+
+5. Two charts side by side: "Keyword positions" (stacked area over 24 months, bands: positions 1-3, 4-10, 11-20, 21-50, 51-100) and "Search results mix" (a donut: Organic, AI Overview references, Featured snippets, Local pack, with a legend showing counts and %).
+
+6. "Countries": a compact table (Country, Organic traffic estimated, Keywords, Share) with inline share bars, top 8.
+
+7. "Backlinks": a bar chart of new vs lost referring domains per month (paired bars, 12 months) with a line for total referring domains.
+
+8. "Top pages" with tabs "By traffic (estimated)" and "By links". Show the By links tab: columns Page, Referring domains, Backlinks, Broken backlinks, Our crawl status (pill), Clicks 28 days. One row highlighted with a red-dot note "Linked page returns 404 in our crawl".
+
+Calm, analyst-grade, dense but well spaced; cards with 1px borders and small uppercase section labels; right-aligned mono numerals.

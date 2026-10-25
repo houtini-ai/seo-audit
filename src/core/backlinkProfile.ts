@@ -1,6 +1,6 @@
 /**
  * Backlink-profile helpers (#47): anchor classification and the monthly trend derived from
- * DataForSEO's daily backlink history. Pure functions, so the panel's numbers are testable.
+ * DataForSEO's monthly backlink history (one item per month, despite older notes saying daily). Pure functions, so the panel's numbers are testable.
  */
 export type AnchorKind = 'branded' | 'keyword' | 'url' | 'generic' | 'empty';
 

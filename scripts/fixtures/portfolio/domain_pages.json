@@ -1,0 +1,544 @@
+{
+  "endpoint": "/v3/backlinks/domain_pages/live",
+  "request": [
+    {
+      "target": "simracingcockpit.gg",
+      "limit": 3,
+      "order_by": [
+        "page_summary.referring_main_domains,desc"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "10242023-1165-0270-0000-c652d7111b68",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.1214 sec.",
+      "cost": 0.024108,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "backlinks",
+        "domain_pages",
+        "live"
+      ],
+      "data": {
+        "api": "backlinks",
+        "function": "domain_pages",
+        "target": "simracingcockpit.gg",
+        "limit": 3,
+        "order_by": [
+          "page_summary.referring_main_domains,desc"
+        ]
+      },
+      "result": [
+        {
+          "target": "simracingcockpit.gg",
+          "total_count": 1157,
+          "items_count": 3,
+          "items": [
+            {
+              "type": "backlinks_domain_page",
+              "main_domain": "simracingcockpit.gg",
+              "domain": "simracingcockpit.gg",
+              "tld": "gg",
+              "page": "https://simracingcockpit.gg/",
+              "ip": "172.67.74.76",
+              "first_visited": "2024-03-29 20:58:31 +00:00",
+              "prev_visited": "2026-07-27 10:46:47 +00:00",
+              "fetch_time": "2026-10-11 23:47:11 +00:00",
+              "status_code": 200,
+              "location": null,
+              "size": 205054,
+              "encoded_size": 0,
+              "content_encoding": "br",
+              "media_type": "text/html",
+              "server": "cloudflare",
+              "meta": {
+                "title": "Made for Sim Racers by Sim Racers: SIMRACINGCOCKPIT.gg",
+                "canonical": null,
+                "internal_links_count": 98,
+                "external_links_count": 6,
+                "images_count": 62,
+                "words_count": 560,
+                "page_spam_score": 0,
+                "social_media_tags": {
+                  "og:locale": "en_US",
+                  "og:type": "website",
+                  "og:title": "Made for Sim Racers by Sim Racers: SIMRACINGCOCKPIT.gg",
+                  "og:description": "Welcome to SIMRACINGCOCKPIT.GG: a sim racer's guide to every aspect of sim racing from building your first sim rig to finessing your driving technique.",
+                  "og:url": "https://simracingcockpit.gg/",
+                  "og:site_name": "SIMRACINGCOCKPIT.GG",
+                  "og:image": "https://simracingcockpit.gg/wp-content/uploads/2021/05/cropped-Logo-02-scaled-1.jpg",
+                  "og:image:width": "2560",
+                  "og:image:height": "2241",
+                  "og:image:type": "image/jpeg",
+                  "twitter:card": "summary_large_image",
+                  "twitter:image": "https://simracingcockpit.gg/wp-content/uploads/2021/05/cropped-Logo-02-scaled-1.jpg",
+                  "twitter:site": "@simracingrig"
+                },
+                "h1": [
+                  "Made by sim racers for sim racers"
+                ],
+                "h2": [
+                  "Read our Buyer’s Guides"
+                ],
+                "h3": [
+                  "Sim Racing Wheels",
+                  "Sim Racing Cockpits",
+                  "Sim Racing Pedals",
+                  "Direct Drive Wheels",
+                  "VR Headsets",
+                  "Gaming Monitors",
+                  "Shifters",
+                  "F1 Wheels",
+                  "Sim Racing PCs",
+                  "Handbrakes",
+                  "Sim Racing Seats",
+                  "Button Boxes",
+                  "Gaming Speakers",
+                  "F1 Sim Racing Cockpits",
+                  "Sim Racing Games",
+                  "GPUs",
+                  "PlayStation PS5 Sim Racing",
+                  "Xbox Sim Racing",
+                  "Logitech G29/G923 Wheel Mods",
+                  "Sim Racing Gloves",
+                  "Sim Racing Boots & Socks",
+                  "QR Hubs",
+                  "Fanatec Wheels",
+                  "Monitor Mounts",
+                  "Sim Racing Wheel Stands and Folding Cockpits: Why I’d Skip One, and What to Buy Instead",
+                  "The Best Direct Drive Sim Racing Bundles (2026)",
+                  "Pimax Crystal Pro: Everything We Know So Far",
+                  "Bigscreen Beyond 2 for Sim Racing: What to Know in 2026",
+                  "How to Set Up Triple Screens in Le Mans Ultimate (LMU)",
+                  "Pimax Dream Air vs Dream Air SE: Which Should a Sim Racer Buy?",
+                  "SteamVR Base Stations for Sim Racing: Lighthouse vs SLAM on the Pimax Dream Air",
+                  "How to Install the SBoys3 Driver on the Pimax Dream Air Lighthouse",
+                  "CONSPIT CHS Review: H-Pattern and Sequential in One Shifter",
+                  "CONSPIT 290 GP vs 300 GT vs Max 01: Which GT or Formula Wheel Wins?",
+                  "Steam Frame vs Dream Air: What We Know",
+                  "Pimax Dream Air SE (SLAM) Review: My Verdict",
+                  "CONSPIT 310 APEX Review: Getting Back to a 310mm Wheel",
+                  "What’s Going On With Pimax?",
+                  "Should You Upgrade From a Quest 3 to the Pimax Dream Air?",
+                  "Ascher Racing 8-inch Dashboard Review: Recommended DDU",
+                  "MOZA FCS Farming Control System Review",
+                  "The Best Rally Games in 2026",
+                  "The Best Xbox Racing Games in 2026",
+                  "Assetto Corsa EVO Car List and Track List (2026)",
+                  "Our Partners",
+                  "Useful Links",
+                  "Article Categories",
+                  "Latest Articles",
+                  "Socials"
+                ],
+                "images_alt": null,
+                "powered_by": null,
+                "language": "en",
+                "charset": "utf-8",
+                "platform_type": [
+                  "organization"
+                ],
+                "technologies": {
+                  "cdn": "cloudflare"
+                }
+              },
+              "page_summary": {
+                "first_seen": "2024-03-29 20:58:31 +00:00",
+                "lost_date": null,
+                "rank": 169,
+                "backlinks": 370,
+                "backlinks_spam_score": 36,
+                "broken_backlinks": 0,
+                "broken_pages": 0,
+                "referring_domains": 253,
+                "referring_domains_nofollow": 118,
+                "referring_main_domains": 244,
+                "referring_main_domains_nofollow": 118,
+                "referring_ips": 131,
+                "referring_subnets": 105,
+                "referring_pages": 354,
+                "referring_pages_nofollow": 138,
+                "referring_links_tld": {
+                  "com": 156,
+                  "pages.dev": 37,
+                  "eu": 31,
+                  "in": 23,
+                  "org": 16,
+                  "co.in": 15,
+                  "shop": 10,
+                  "net": 8,
+                  "info": 6,
+                  "nl": 5
+                },
+                "referring_links_types": {
+                  "anchor": 311,
+                  "image": 40,
+                  "redirect": 3
+                },
+                "referring_links_attributes": {
+                  "nofollow": 138,
+                  "noopener": 79,
+                  "noreferrer": 25,
+                  "external": 3
+                },
+                "referring_links_platform_types": {
+                  "unknown": 205,
+                  "blogs": 123,
+                  "cms": 119,
+                  "organization": 76,
+                  "ecommerce": 6,
+                  "news": 4
+                },
+                "referring_links_semantic_locations": {
+                  "": 188,
+                  "article": 54,
+                  "main": 52,
+                  "aside": 30,
+                  "section": 17,
+                  "details": 12,
+                  "header": 1
+                },
+                "referring_links_countries": {
+                  "": 224,
+                  "IN": 46,
+                  "DE": 28,
+                  "US": 20,
+                  "WW": 18,
+                  "NL": 5,
+                  "GB": 3,
+                  "AI": 2,
+                  "CO": 1,
+                  "CV": 1
+                }
+              }
+            },
+            {
+              "type": "backlinks_domain_page",
+              "main_domain": "simracingcockpit.gg",
+              "domain": "simracingcockpit.gg",
+              "tld": "gg",
+              "page": "https://simracingcockpit.gg/sim-racing-games/",
+              "ip": "172.67.74.76",
+              "first_visited": "2024-04-20 13:19:47 +00:00",
+              "prev_visited": "2026-08-21 11:21:40 +00:00",
+              "fetch_time": "2026-10-14 16:55:41 +00:00",
+              "status_code": 200,
+              "location": null,
+              "size": 267727,
+              "encoded_size": 0,
+              "content_encoding": "br",
+              "media_type": "text/html",
+              "server": "cloudflare",
+              "meta": {
+                "title": "The Best Sim Racing PC Games of 2026",
+                "canonical": null,
+                "internal_links_count": 106,
+                "external_links_count": 12,
+                "images_count": 61,
+                "words_count": 3774,
+                "page_spam_score": 0,
+                "social_media_tags": {
+                  "og:locale": "en_US",
+                  "og:type": "article",
+                  "og:title": "The Best Sim Racing PC Games of 2026",
+                  "og:description": "Richard BaxterI’m a sim racer and amateur racer with a passion for Motorsport, good racecraft and the technical and setup aspect of sim racing. Here’s where the major PC sims…",
+                  "og:url": "https://simracingcockpit.gg/sim-racing-games/",
+                  "og:site_name": "SIMRACINGCOCKPIT.GG",
+                  "og:image": "https://simracingcockpit.gg/wp-content/uploads/2020/10/season-2020-1-43.jpg",
+                  "og:image:width": "1920",
+                  "og:image:height": "1080",
+                  "og:image:type": "image/jpeg",
+                  "twitter:card": "summary_large_image",
+                  "twitter:creator": "@simracingrig",
+                  "twitter:site": "@simracingrig",
+                  "twitter:label1": "Written by",
+                  "twitter:data1": "Richard Baxter",
+                  "twitter:label2": "Est. reading time",
+                  "twitter:data2": "18 minutes"
+                },
+                "h1": [
+                  "The Best Sim Racing PC Games of 2026"
+                ],
+                "h2": [
+                  "Which sim should I play? A quick comparison",
+                  "Assetto Corsa EVO",
+                  "Assetto Corsa",
+                  "Assetto Corsa Competizione",
+                  "Automobilista 2",
+                  "Assetto Corsa Rally",
+                  "NASCAR 25",
+                  "iRacing",
+                  "Le Mans Ultimate",
+                  "BeamNG.drive",
+                  "rFactor 2",
+                  "RaceRoom Racing Experience",
+                  "Richard Burns Rally",
+                  "Two more worth knowing",
+                  "Post navigation"
+                ],
+                "h3": [
+                  "Visit Our Sponsors",
+                  "Kart Racing Pro",
+                  "Live For Speed",
+                  "Build the rest of the rig",
+                  "The Best Rally Games in 2026",
+                  "The Best PS5 Racing Games in 2026",
+                  "The Best VR Flight Games and Sims",
+                  "Best Pimax VR Settings for F1 25 in 2026: A Damage-Control Guide",
+                  "Best Pimax VR Settings for Le Mans Ultimate in 2026",
+                  "Best Pimax VR Settings for Automobilista 2 in 2026",
+                  "Useful Links",
+                  "Article Categories",
+                  "Latest Articles",
+                  "Socials"
+                ],
+                "images_alt": null,
+                "powered_by": null,
+                "language": "en",
+                "charset": "utf-8",
+                "platform_type": [
+                  "organization"
+                ],
+                "technologies": {
+                  "cdn": "cloudflare"
+                }
+              },
+              "page_summary": {
+                "first_seen": "2024-04-20 13:19:47 +00:00",
+                "lost_date": null,
+                "rank": 37,
+                "backlinks": 259,
+                "backlinks_spam_score": 25,
+                "broken_backlinks": 0,
+                "broken_pages": 0,
+                "referring_domains": 200,
+                "referring_domains_nofollow": 193,
+                "referring_main_domains": 197,
+                "referring_main_domains_nofollow": 191,
+                "referring_ips": 194,
+                "referring_subnets": 188,
+                "referring_pages": 257,
+                "referring_pages_nofollow": 249,
+                "referring_links_tld": {
+                  "com": 145,
+                  "de": 10,
+                  "net": 10,
+                  "org": 9,
+                  "co.uk": 7,
+                  "es": 7,
+                  "com.br": 5,
+                  "pl": 4,
+                  "co.za": 4,
+                  "in": 3
+                },
+                "referring_links_types": {
+                  "anchor": 255,
+                  "image": 1,
+                  "redirect": 1
+                },
+                "referring_links_attributes": {
+                  "nofollow": 249,
+                  "noopener": 18,
+                  "noreferrer": 2
+                },
+                "referring_links_platform_types": {
+                  "cms": 229,
+                  "blogs": 222,
+                  "organization": 68,
+                  "unknown": 16,
+                  "ecommerce": 3,
+                  "news": 2
+                },
+                "referring_links_semantic_locations": {
+                  "article": 169,
+                  "main": 34,
+                  "": 31,
+                  "section": 22,
+                  "details": 1
+                },
+                "referring_links_countries": {
+                  "": 139,
+                  "US": 21,
+                  "DE": 10,
+                  "GB": 9,
+                  "IN": 8,
+                  "ES": 7,
+                  "BR": 7,
+                  "WW": 7,
+                  "CO": 4,
+                  "PL": 4
+                }
+              }
+            },
+            {
+              "type": "backlinks_domain_page",
+              "main_domain": "simracingcockpit.gg",
+              "domain": "simracingcockpit.gg",
+              "tld": "gg",
+              "page": "https://simracingcockpit.gg/direct-drive-wheels/",
+              "ip": "172.67.74.76",
+              "first_visited": "2024-04-20 13:15:43 +00:00",
+              "prev_visited": "2026-10-07 05:53:30 +00:00",
+              "fetch_time": "2026-10-14 16:55:26 +00:00",
+              "status_code": 200,
+              "location": null,
+              "size": 643007,
+              "encoded_size": 0,
+              "content_encoding": "br",
+              "media_type": "text/html",
+              "server": "cloudflare",
+              "meta": {
+                "title": "The Best Direct Drive Wheels for Sim Racing",
+                "canonical": null,
+                "internal_links_count": 100,
+                "external_links_count": 22,
+                "images_count": 69,
+                "words_count": 4741,
+                "page_spam_score": 0,
+                "social_media_tags": {
+                  "og:locale": "en_US",
+                  "og:type": "article",
+                  "og:title": "The Best Direct Drive Wheels for Sim Racing",
+                  "og:description": "Direct drive sim racing wheelbases compared - Fanatec, Moza, Simucube, Asetek, Logitech RS50 and more, tested and ranked by torque, feel and real-world value.",
+                  "og:url": "https://simracingcockpit.gg/direct-drive-wheels/",
+                  "og:site_name": "SIMRACINGCOCKPIT.GG",
+                  "og:image": "https://simracingcockpit.gg/wp-content/uploads/2024/09/moza-wheel-adapter-fitted.jpg",
+                  "og:image:width": "2089",
+                  "og:image:height": "1175",
+                  "og:image:type": "image/jpeg",
+                  "twitter:card": "summary_large_image",
+                  "twitter:creator": "@simracingrig",
+                  "twitter:site": "@simracingrig",
+                  "twitter:label1": "Written by",
+                  "twitter:data1": "Richard Baxter",
+                  "twitter:label2": "Est. reading time",
+                  "twitter:data2": "24 minutes"
+                },
+                "h1": [
+                  "The Best Direct Drive Wheels for Sim Racing"
+                ],
+                "h2": [
+                  "What’s changed since I last wrote this (September 2026)",
+                  "My picks for 2026",
+                  "The right Direct Drive for you",
+                  "It’s the firmware and tuning, not the motor",
+                  "Direct Drive Bundles",
+                  "How to Choose a Direct Drive Wheel",
+                  "What are the main differences between Direct Drive wheels?",
+                  "Factors that are Important to the Typical Sim Racer",
+                  "Why is Direct Drive better for Sim Racing?",
+                  "What does torque mean?",
+                  "What’s inside a Direct Drive Wheelbase?",
+                  "Fanatec CSL DD",
+                  "Fanatec ClubSport DD and DD+",
+                  "Fanatec Podium DD (and the DD2 it replaced)",
+                  "Simucube 2 Pro",
+                  "Simucube 3",
+                  "Moza R21 Ultra and R25 Ultra",
+                  "Moza R12 (now the R12 V2)",
+                  "Moza R5 and R5 Pro",
+                  "Simagic Alpha Evo",
+                  "Logitech G RS50",
+                  "Sim-Lab DDS TorqueSync",
+                  "Direct drive wheelbases compared",
+                  "Time to choose",
+                  "Post navigation"
+                ],
+                "h3": [
+                  "Find your direct drive wheelbase",
+                  "Types of motor",
+                  "ClubSport DD",
+                  "ClubSport DD+",
+                  "Related Articles",
+                  "Sim Racing Wheel Stands and Folding Cockpits: Why I’d Skip One, and What to Buy Instead",
+                  "The Best Direct Drive Sim Racing Bundles (2026)",
+                  "Best Thrustmaster Wheel and Pedal Mods (2026)",
+                  "ButtKicker and Tactile Feedback for Sim Racing: The Highest-ROI Upgrade You Shouldn’t Skip (2026 Beginner’s Guide)",
+                  "Sim Racing Motion Platforms: A Beginner’s Guide to Adding Motion to Your Rig (2026)",
+                  "D-Box Sim Racing: The FIA-Supplier Haptic System Explained (2026 Buyer’s Guide)",
+                  "Useful Links",
+                  "Article Categories",
+                  "Latest Articles",
+                  "Socials"
+                ],
+                "images_alt": null,
+                "powered_by": null,
+                "language": "en",
+                "charset": "utf-8",
+                "platform_type": [
+                  "organization"
+                ],
+                "technologies": {
+                  "cdn": "cloudflare"
+                }
+              },
+              "page_summary": {
+                "first_seen": "2024-04-20 13:15:43 +00:00",
+                "lost_date": null,
+                "rank": 73,
+                "backlinks": 40,
+                "backlinks_spam_score": 3,
+                "broken_backlinks": 0,
+                "broken_pages": 0,
+                "referring_domains": 19,
+                "referring_domains_nofollow": 7,
+                "referring_main_domains": 15,
+                "referring_main_domains_nofollow": 6,
+                "referring_ips": 15,
+                "referring_subnets": 14,
+                "referring_pages": 25,
+                "referring_pages_nofollow": 7,
+                "referring_links_tld": {
+                  "com": 16,
+                  "org": 3,
+                  "io": 2,
+                  "wiki": 2,
+                  "fr": 1,
+                  "gg": 1
+                },
+                "referring_links_types": {
+                  "anchor": 24,
+                  "redirect": 1
+                },
+                "referring_links_attributes": {
+                  "nofollow": 7,
+                  "noopener": 7,
+                  "noreferrer": 2,
+                  "ugc": 1
+                },
+                "referring_links_platform_types": {
+                  "organization": 18,
+                  "unknown": 5,
+                  "cms": 4,
+                  "blogs": 3,
+                  "wikis": 1
+                },
+                "referring_links_semantic_locations": {
+                  "article": 19,
+                  "": 5,
+                  "section": 1
+                },
+                "referring_links_countries": {
+                  "US": 8,
+                  "DE": 5,
+                  "": 3,
+                  "IO": 2,
+                  "WW": 2,
+                  "FR": 1,
+                  "GB": 1,
+                  "GG": 1,
+                  "KR": 1,
+                  "UA": 1
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -51,6 +51,7 @@ async function main(): Promise<void> {
   const { url } = await startDashboardServer({
     dataDir,
     uiHtml,
+    portfolioHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'portfolio.html'), 'utf8'),
     call: buildWebCallHandlers({ dataDir, dfs, apiKeys }),
     ...(process.env.SAC_DASHBOARD_PORT ? { port: Number(process.env.SAC_DASHBOARD_PORT) } : {}),
   });

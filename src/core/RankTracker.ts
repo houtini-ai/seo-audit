@@ -2,6 +2,7 @@ import { AuditDatabase } from './AuditDatabase.js';
 import { DataForSeoClient } from './DataForSeoClient.js';
 import { dbPathFor } from './paths.js';
 import { hostFormForProperty } from './url-key.js';
+import { targetForProperty } from './portfolioTarget.js';
 
 export interface RankTrackResult {
   siteUrl: string;
@@ -12,9 +13,6 @@ export interface RankTrackResult {
   cost: number;
 }
 
-function domainFromProperty(siteUrl: string): string {
-  return siteUrl.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-}
 
 const n = (v: unknown): number => Number(v) || 0;
 
@@ -31,7 +29,9 @@ export class RankTracker {
     update: (p: Record<string, unknown>) => void,
     _signal: AbortSignal,
   ): Promise<RankTrackResult> {
-    const target = domainFromProperty(siteUrl);
+    // One derivation shared with the portfolio, so both send the same body and share the cache.
+    // It strips www. (the old local helper didn't), so a www URL-prefix property re-fetches once.
+    const target = targetForProperty(siteUrl);
     const db = new AuditDatabase(dbPathFor(this.dataDir, siteUrl));
     try {
       db.upsertProperty(siteUrl, hostFormForProperty(siteUrl) ?? 'asis');

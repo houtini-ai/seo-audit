@@ -78,6 +78,7 @@ scripts/*
 !scripts/fixtures/
 !scripts/fixtures/charset-utf8.html
 !scripts/fixtures/a11y.html
+!scripts/fixtures/portfolio/
 !scripts/probe-backlinks.mjs
 !scripts/probe-dfs-labs.mjs
 !scripts/probe-6a.mjs
@@ -104,6 +105,7 @@ scripts/*
 !scripts/probe-fts.mjs
 !scripts/probe-review-0-15.mjs
 !scripts/probe-startup-hints.mjs
+!scripts/probe-portfolio.mjs
 !scripts/probe-external.mjs
 !scripts/probe-blocking.mjs
 !scripts/probe-redirects.mjs
@@ -132,3 +134,6 @@ design/stitch/out/
 !design/summary/
 design/summary/out/
 design/summary/stitch/out/
+# design/portfolio/ - the portfolio dashboard spec, plan and Stitch briefs; raw Stitch output stays local.
+!design/portfolio/
+design/portfolio/stitch/out/
