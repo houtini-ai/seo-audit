@@ -8,6 +8,11 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [Unreleased]
+
+### Fixed
+- **Docs and labels match the code:** the README intro says 143 checks (it still said 111); ETV is "estimated traffic volume", DataForSEO's own term, in the tool descriptions, manual and dashboard labels; backlink history is described as monthly everywhere (tool description, manual, dashboard hint, comments); the dashboard URL options are `&theme=` and `&redact=1` (the link already carries `?siteUrl=`); the portfolio page notes that its 0-100 Domain Rank and the Links tab's 0-1000 rank aren't comparable; `fix_finding`'s internal-link suggestions are described as they work (the five closest pages by URL tokens from the 80 with the most internal PageRank, PageRank breaking ties).
+
 ## [0.17.0] — 2026-10-25
 
 The portfolio: a domains table and domain overview on DataForSEO + Search Console. Also ships everything in 0.16.3, which was tagged but not published to npm.

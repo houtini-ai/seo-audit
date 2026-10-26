@@ -15,7 +15,7 @@ The browser dashboard opens on the portfolio once you have more than one propert
 | Organic keywords, Organic traffic | DataForSEO Labs (estimated) | For the row's country. Traffic is DataForSEO's ETV estimate, not visits you measured |
 | Paid keywords and traffic | DataForSEO Labs (estimated) | Behind "Show paid" |
 | Referring domains | DataForSEO Backlinks | Root domains |
-| Domain Rank | DataForSEO Backlinks, 0 to 100 | DataForSEO's rank, labelled as DataForSEO's. It isn't an industry-standard authority score |
+| Domain Rank | DataForSEO Backlinks, 0 to 100 | DataForSEO's rank, labelled as DataForSEO's. It isn't an industry-standard authority score. The Links tab and `link_intersect` show the same rank on DataForSEO's 0 to 1000 scale, so the two numbers aren't comparable |
 | AI mentions | DataForSEO LLM Mentions | Google AI Overviews + ChatGPT, monthly. ChatGPT data is US-only |
 | Audit health | Your latest `run_audit` | Owned domains only |
 

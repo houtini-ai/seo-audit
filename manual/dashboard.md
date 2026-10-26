@@ -13,7 +13,7 @@ With more than one property, the browser dashboard opens on the **Domains** page
 
 > Open the dashboard for mysite.com
 
-`open_dashboard` (or `serve_dashboard`) starts a small webserver on `127.0.0.1` and hands you a link. It reads the live database on every load, so it's always current, and it adds a property switcher and working CSV downloads. You rarely need to ask: a finished sync, crawl, inspection or refresh starts it and puts the link in the job's result, and `run_audit` does the same. Set `SAC_AUTOSERVE=0` to stop that automatic start. Two URL options help with sharing and screenshots: `?theme=dark` or `?theme=light` opens in a theme, and `?redact=1` blurs the property name, the traffic figures and the URLs in the tables, and hides the network map's labels.
+`open_dashboard` (or `serve_dashboard`) starts a small webserver on `127.0.0.1` and hands you a link. It reads the live database on every load, so it's always current, and it adds a property switcher and working CSV downloads. You rarely need to ask: a finished sync, crawl, inspection or refresh starts it and puts the link in the job's result, and `run_audit` does the same. Set `SAC_AUTOSERVE=0` to stop that automatic start. Two URL options help with sharing and screenshots, appended to the link (it already carries `?siteUrl=`): `&theme=dark` or `&theme=light` opens in a theme, and `&redact=1` blurs the property name, the traffic figures and the URLs in the tables, and hides the network map's labels.
 
 **Behind the Docker MCP gateway** the MCP server's container publishes no ports, so a link it serves can't be reached from your machine. For that setup there's a standalone dashboard, `seo-audit-dashboard` (`dist/dashboard.js` in the package), which you run as its own container on the same data volume and a fixed, published port:
 
@@ -95,7 +95,7 @@ The Search Console view you wish Google shipped - and because the history lives 
 - **Top keywords and top pages** - 28 days against the prior 28, by clicks.
 - **Branded vs non-branded** clicks split. The brand is your domain name without its ending; a query counts as branded when its whole words spell it, spaced or not (for simracingcockpit.gg: "simracingcockpit", "sim racing cockpit", "simracingcockpit.gg", but not "sim racing cockpits"). The spellings it matched are listed above the bar. On a descriptive domain the spaced name is also the generic search, so read the split with that in mind.
 - **Ranking distribution over time** - impressions by position bucket, the honest "are we improving" chart.
-- **Search visibility over time** - the DataForSEO monthly rank distribution, with the keyword count and estimated traffic value as separate small charts rather than a dual axis, reconciled with your GSC dates (needs `track_ranks`).
+- **Search visibility over time** - the DataForSEO monthly rank distribution, with the keyword count and estimated traffic volume as separate small charts rather than a dual axis, reconciled with your GSC dates (needs `track_ranks`).
 - **Rank & clicks over time** - average position and clicks as two small charts on one shared timeline.
 - **Top keyword and page performance**, 28 days against the prior 28.
 - **Keyword ranking movement** over 90 days - risers and fallers.
@@ -124,7 +124,7 @@ The structural story - where your internal link equity goes versus where your tr
 
 ![The Links tab - the backlink profile: KPI strip, new vs lost referring domains per month, top referring domains](../assets/links.png)
 
-**Backlink profile** (top of the tab): your own links, from `pull_backlinks`. A KPI strip (backlinks, referring domains, DataForSEO Domain Rank, broken backlinks, nofollow share), a new-vs-lost referring-domains chart per month from DataForSEO's daily history, the top referring domains by rank, the anchor mix (branded, keyword, URL, generic, empty, by share of backlinks), your most-linked pages with the live HTTP status the pull resolved, and the backlinked pages that answer 4xx/5xx. Every number is a stored row; a section whose table was never filled says **not collected** rather than showing zero, and a pull made before 0.16 shows the summary and pages only until you re-run it.
+**Backlink profile** (top of the tab): your own links, from `pull_backlinks`. A KPI strip (backlinks, referring domains, DataForSEO Domain Rank, broken backlinks, nofollow share), a new-vs-lost referring-domains chart per month from DataForSEO's monthly history, the top referring domains by rank, the anchor mix (branded, keyword, URL, generic, empty, by share of backlinks), your most-linked pages with the live HTTP status the pull resolved, and the backlinked pages that answer 4xx/5xx. Every number is a stored row; a section whose table was never filled says **not collected** rather than showing zero, and a pull made before 0.16 shows the summary and pages only until you re-run it.
 
 Link intersect: the domains linking to your competitors but not to you - a ready-made outreach list. Run `link_intersect` for a property (a DataForSEO Backlinks call) and this fills with the prospects, sorted followed-first then by domain trust. With a **Majestic** key set, each prospect is re-sorted by **Trust Flow** and shows its top topic, so directory noise sinks and genuinely on-topic authority rises. No DataForSEO key? The tab shows a one-click prompt to connect one.
 

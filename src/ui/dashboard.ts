@@ -1023,7 +1023,7 @@ function render(data: DashboardData): void {
       ],
       yAxis: [
         { type: 'value', gridIndex: 0, name: 'ranking keywords', ...axisNum },
-        { type: 'value', gridIndex: 1, name: 'est. traffic value', ...axisNum, splitNumber: 2 },
+        { type: 'value', gridIndex: 1, name: 'est. traffic volume', ...axisNum, splitNumber: 2 },
       ],
       series: [
         ...rhBuckets.map(b => ({
@@ -1033,7 +1033,7 @@ function render(data: DashboardData): void {
         { name: 'ETV', type: 'line', xAxisIndex: 1, yAxisIndex: 1, smooth: true, showSymbol: false, data: rh.map(p => Math.round(p.etv)), lineStyle: { color: col.text, width: 1.75 }, itemStyle: { color: col.text } },
       ],
     });
-    $('rankHistSummary').textContent = `DataForSEO ranking keywords by position bucket across ${rh.length} months, with estimated traffic value.`;
+    $('rankHistSummary').textContent = `DataForSEO ranking keywords by position bucket across ${rh.length} months, with estimated traffic volume.`;
   } else {
     wrap('rankHistChart').setEmpty('No rank history yet - run track_ranks', col);
     $('rankHistSummary').textContent = 'No DataForSEO rank history yet.';
@@ -1452,12 +1452,12 @@ function renderBacklinkProfile(data: DashboardData): void {
     <div class="hint">From <code>pull_backlinks</code>${s ? `, summary pulled ${when(s.fetchedAt)}` : ''}: ${fmtNum(bp.pagesTotal)} backlinked pages stored${bp.pagesUnchecked ? `, ${fmtNum(bp.pagesUnchecked)} without a live status check` : ''}. Domain Rank is DataForSEO’s 0–1000 authority score.</div>
     ${kpis}</div>`;
 
-  // Trend: new vs lost referring domains per month (DataForSEO daily history, summed per month).
+  // Trend: new vs lost referring domains per month (DataForSEO monthly history).
   const months = bp.history?.months ?? [];
   if (months.length) {
     trendCard.hidden = false;
     const col = palette(), axis = axisDefaults(col);
-    (document.getElementById('backlinkTrendHint') as HTMLElement).textContent = `${months.length} months of daily history (pulled ${bp.history?.fetchedAt ? String(bp.history.fetchedAt).slice(0, 10) : 'unknown date'}); a partial first or last month covers only the days DataForSEO reported.`;
+    (document.getElementById('backlinkTrendHint') as HTMLElement).textContent = `${months.length} months of history (pulled ${bp.history?.fetchedAt ? String(bp.history.fetchedAt).slice(0, 10) : 'unknown date'}); a partial first or last month covers only the days DataForSEO reported.`;
     wrap('backlinkTrendChart').setOption({
       ...ARIA,
       grid: { left: 48, right: 16, top: 28, bottom: 28 },

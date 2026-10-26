@@ -1877,7 +1877,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'domain_visibility',
     {
       title: 'Domain visibility over time (DataForSEO Labs)',
-      description: '[Paid: Labs, cheap, cached 20d | Use for: visibility-over-time trend, any domain, no GSC needed] Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic value (ETV) per month, plus a trend verdict. The "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market. Grain: month × domain. Joins: domain → Labs/backlinks tools; period → rank_history.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: visibility-over-time trend, any domain, no GSC needed] Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic volume (ETV) per month, plus a trend verdict. The "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market. Grain: month × domain. Joins: domain → Labs/backlinks tools; period → rank_history.',
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme (e.g. example.com or blog.example.com)'),
         location: z.union([z.string(), z.number()]).optional(),
@@ -1952,7 +1952,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'top_pages',
     {
       title: 'Top ranking pages on a domain (DataForSEO Labs)',
-      description: '[Paid: Labs, cheap, cached 20d | Use for: where rival traffic actually lands] The top organic pages of ANY domain or subdomain, ranked by estimated traffic value (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market. Grain: page × domain. Joins: domain → Labs tools; URL → pages.url_key on your own property.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: where rival traffic actually lands] The top organic pages of ANY domain or subdomain, ranked by estimated traffic volume (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market. Grain: page × domain. Joins: domain → Labs tools; URL → pages.url_key on your own property.',
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme'),
         location: z.union([z.string(), z.number()]).optional(),
@@ -2667,7 +2667,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'pull_backlinks',
     {
       title: 'Pull backlink profile (DataForSEO)',
-      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), cached 20d | Use for: authority + dead-backlink recovery] Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Also collects the profile behind the dashboard\'s Links tab (#47): referring domains (live and lost, with rank, spam score, first seen) into referring_domains, anchor texts classified branded / keyword / url / generic / empty into backlink_anchors, and 12 months of daily new/lost history into backlink_history — three more cheap Backlinks calls, each reported separately if it fails (profile:false skips them). Paid DataForSEO calls, 20-day cached, on-demand only. Async job — poll check_sync_status. Grain: one row per backlinked URL (page_backlinks), per domain / anchor per pull (snapshot_at), per day (history). Joins: url_key → pages/GSC; domain → Labs tools.',
+      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), cached 20d | Use for: authority + dead-backlink recovery] Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Also collects the profile behind the dashboard\'s Links tab (#47): referring domains (live and lost, with rank, spam score, first seen) into referring_domains, anchor texts classified branded / keyword / url / generic / empty into backlink_anchors, and 12 months of monthly new/lost history into backlink_history — three more cheap Backlinks calls, each reported separately if it fails (profile:false skips them). Paid DataForSEO calls, 20-day cached, on-demand only. Async job — poll check_sync_status. Grain: one row per backlinked URL (page_backlinks), per domain / anchor per pull (snapshot_at), per month (history). Joins: url_key → pages/GSC; domain → Labs tools.',
       inputSchema: {
         siteUrl: z.string(),
         limit: z.number().int().min(1).max(1000).optional().describe('Backlinked pages to store (default 1000)'),
@@ -2675,7 +2675,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         profile: z.boolean().optional().describe('Also collect referring domains, anchors and history (default true)'),
         domainLimit: z.number().int().min(10).max(1000).optional().describe('Referring domains to store per pull (default 1000, best rank first)'),
         anchorLimit: z.number().int().min(10).max(1000).optional().describe('Anchors to store per pull (default 500, most backlinks first)'),
-        historyMonths: z.number().int().min(1).max(36).optional().describe('Months of daily history to pull (default 12)'),
+        historyMonths: z.number().int().min(1).max(36).optional().describe('Months of history to pull (default 12)'),
       },
     },
     async ({ siteUrl, limit, statusLimit, profile, domainLimit, anchorLimit, historyMonths }) => {

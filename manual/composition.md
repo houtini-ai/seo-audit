@@ -32,7 +32,7 @@ Grain is the thing that trips people up when composing - what one row means, per
 | `probes` | one URL fetched by `probe_urls` with `persist:true`, or by the crawl's own site probes (`source = 'site-probe'`, the latest crawl's only) | Status, redirect chain, canonical, robots, content hash and cache headers. Site probes also carry `crawl_id`, `variant_type` (`soft404-root`, `soft404-section`, `host-home-scheme`, `host-home-host`, `host-deep`) and a `verdict`. |
 | `url_inspection` | one inspected URL | Google's own view: coverage state, Google's canonical versus yours, last crawl time, rich results. Sampled from your top pages by clicks. |
 | `sitemap_urls` | one sitemap URL | With its declared lastmod, captured at crawl time. |
-| `rank_history` | one month, for the property's own domain | DataForSEO rank distribution plus estimated traffic value (from `track_ranks`). |
+| `rank_history` | one month, for the property's own domain | DataForSEO rank distribution plus estimated traffic volume (from `track_ranks`). |
 | `page_backlinks` | one backlinked URL | Counts plus a live HTTP status. |
 | `referring_domains` | one referring domain per pull (`snapshot_at`) | Rank, backlinks, pages, nofollow pages, spam score, first seen, lost date. |
 | `backlink_anchors` | one anchor text per pull (`snapshot_at`) | `kind` (branded / keyword / url / generic / empty), backlinks, referring domains. |

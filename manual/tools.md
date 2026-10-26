@@ -44,7 +44,7 @@ Just the GSC URL Inspection data: Google's own view of coverage, indexing, its c
 > Inspect the top 100 URLs on mysite.com
 
 ### `track_ranks` [paid]
-Ingests the DataForSEO monthly rank distribution and estimated traffic value into `rank_history`, so rank charts get a real time axis reconciled with your GSC dates. One call per refresh, cached 20 days, run as a background job. Pass `location` once ("United Kingdom", "Australia", or a code) - it's saved per property.
+Ingests the DataForSEO monthly rank distribution and estimated traffic volume into `rank_history`, so rank charts get a real time axis reconciled with your GSC dates. One call per refresh, cached 20 days, run as a background job. Pass `location` once ("United Kingdom", "Australia", or a code) - it's saved per property.
 > Track ranks for mysite.com in the UK
 
 ### `sync_crux`
@@ -104,7 +104,7 @@ Direct, read-only access to the property database, built around one principle: *
 ## Fixes
 
 ### `fix_finding`
-The finding-to-fix step. Give it a finding id from `run_audit` (`findingId`, or `check` + `url`) and it returns a paste-ready artefact built from your own data: a complete JSON-LD block for missing or invalid schema, an exact-match 301 rule (`redirectFormat`: `htaccess`, the default, `nginx` or `nextjs`) - to the destination the crawler recorded for a redirect chain or a link to a redirect, and to the closest live page by URL tokens for a broken internal link, so check that one before shipping it - or internal-link suggestions ranked by the donor page's internal PageRank. Redirect chains get collapsed to single hops. Everything is dry-run: it returns artefacts, it never writes to your site.
+The finding-to-fix step. Give it a finding id from `run_audit` (`findingId`, or `check` + `url`) and it returns a paste-ready artefact built from your own data: a complete JSON-LD block for missing or invalid schema, an exact-match 301 rule (`redirectFormat`: `htaccess`, the default, `nginx` or `nextjs`) - to the destination the crawler recorded for a redirect chain or a link to a redirect, and to the closest live page by URL tokens for a broken internal link, so check that one before shipping it - or internal-link suggestions: from the 80 indexable pages with the most internal PageRank, the five closest to the receiver by URL tokens, PageRank breaking ties. Redirect chains get collapsed to single hops. Everything is dry-run: it returns artefacts, it never writes to your site.
 > Generate the fix for finding 12
 > Write the redirect rule for /old-page in nginx format
 
@@ -217,7 +217,7 @@ The page-level content gap: keywords competitor pages rank for that yours doesn'
 > Content gap between rival.com/guide and my /guide page
 
 ### `domain_visibility`
-Monthly ranking-keyword distribution and estimated traffic value for **any** domain or subdomain - no Search Console access needed. The organic overview, with a trend verdict. `months` sets the history (default 12, up to 24; longer windows cost more). It takes `languageName` (e.g. "English") rather than `languageCode`. Grain: month × domain.
+Monthly ranking-keyword distribution and estimated traffic volume for **any** domain or subdomain - no Search Console access needed. The organic overview, with a trend verdict. `months` sets the history (default 12, up to 24; longer windows cost more). It takes `languageName` (e.g. "English") rather than `languageCode`. Grain: month × domain.
 > Show visibility over time for competitor.com
 
 ### `top_pages`
@@ -234,7 +234,7 @@ The bigger question: what should this site cover to be seen as expert in its spa
 > What topics should mysite.com cover? Compare against rival.com
 
 ### `pull_backlinks`
-Your backlink profile - summary metrics plus per-page backlink and referring-domain counts - with a live HTTP status check on each linked page, so backlinks pointing at 404s get caught (`backlinks-to-404` in the next audit). It also fills the dashboard's Links tab: the referring domains (live and lost, with DataForSEO rank, spam score and first-seen date) go to `referring_domains`, every anchor text goes to `backlink_anchors` classified as branded, keyword, URL, generic or empty, and twelve months of daily new/lost history go to `backlink_history`. Those are three more cheap Backlinks calls, each cached 20 days and each reported on its own if it fails, so one missing endpoint never zeroes the others; `profile:false` skips them, and `domainLimit`, `anchorLimit` and `historyMonths` size them. Each pull is a dated snapshot, so re-pulling builds a trend. One gotcha: Backlinks is a **separate DataForSEO subscription** from SERP/Keywords/Labs; if it isn't activated the tool says so plainly. With `MAJESTIC_API_KEY` set, the most-backlinked URLs (up to 500) also get Majestic Trust Flow, Citation Flow and Topical Trust Flow, which the dashboard's Trapped authority report uses. Runs as a background job (poll `check_sync_status`).
+Your backlink profile - summary metrics plus per-page backlink and referring-domain counts - with a live HTTP status check on each linked page, so backlinks pointing at 404s get caught (`backlinks-to-404` in the next audit). It also fills the dashboard's Links tab: the referring domains (live and lost, with DataForSEO rank, spam score and first-seen date) go to `referring_domains`, every anchor text goes to `backlink_anchors` classified as branded, keyword, URL, generic or empty, and twelve months of monthly new/lost history go to `backlink_history`. Those are three more cheap Backlinks calls, each cached 20 days and each reported on its own if it fails, so one missing endpoint never zeroes the others; `profile:false` skips them, and `domainLimit`, `anchorLimit` and `historyMonths` size them. Each pull is a dated snapshot, so re-pulling builds a trend. One gotcha: Backlinks is a **separate DataForSEO subscription** from SERP/Keywords/Labs; if it isn't activated the tool says so plainly. With `MAJESTIC_API_KEY` set, the most-backlinked URLs (up to 500) also get Majestic Trust Flow, Citation Flow and Topical Trust Flow, which the dashboard's Trapped authority report uses. Runs as a background job (poll `check_sync_status`).
 > Pull the backlinks for mysite.com
 
 ### `link_intersect`
