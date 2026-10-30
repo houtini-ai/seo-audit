@@ -18,6 +18,7 @@ import { auditRender } from './renderAudit.js';
 import { findNearDuplicates } from './nearDuplicate.js';
 import { runReconJob, type ReconJobArgs } from './reconJob.js';
 import { runPortfolioRefresh, type PortfolioRefreshArgs } from './PortfolioRefresh.js';
+import { getDashboardDataAsync } from './dashboardAsync.js';
 
 /**
  * The named job kinds (#56). Every async job the MCP starts is one of these, run from its
@@ -61,7 +62,20 @@ const need = <T>(v: T | null, msg: string): T => {
   if (!v) throw new Error(msg);
   return v;
 };
-const dataJob = (deps: JobDeps, siteUrl: string, fn: Body): Body => (deps.withDashboard ? deps.withDashboard(siteUrl, fn) : fn);
+/**
+ * A data job (sync, crawl, inspect, refresh, CrUX) changes what the dashboard shows, so its cached
+ * payload is stale the moment the job finishes. Rebuild it in the background (a worker thread), so
+ * the next dashboard load is instant instead of a cold build. Best-effort: a failure costs nothing.
+ */
+const warmDashboard = (fn: Body, deps: JobDeps, siteUrl: string): Body => async (update, signal) => {
+  const result = await fn(update, signal);
+  if (!signal.aborted) void getDashboardDataAsync(deps.dataDir(), siteUrl).catch(() => { /* warm-up only */ });
+  return result;
+};
+const dataJob = (deps: JobDeps, siteUrl: string, fn: Body): Body => {
+  const warm = warmDashboard(fn, deps, siteUrl);
+  return deps.withDashboard ? deps.withDashboard(siteUrl, warm) : warm;
+};
 
 /** Arguments per kind. Property kinds carry siteUrl (their scope is derived from it); the portfolio
  * kind is cross-property and is scoped to '_portfolio.db' instead. */

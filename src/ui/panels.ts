@@ -218,7 +218,7 @@ export function drawNetwork(d: Dash, ctx: OverviewCtx, id: string, opts: { compa
 // ── Top keywords / pages ──
 function kwTable(d: Dash): string {
   const kw = (d.topKeywords ?? []).slice().sort((a: any, b: any) => b.clicks - a.clicks).slice(0, 8);
-  if (!kw.length) return `<div class="empty-state">${d.summary ? 'No query appears in Search Console in the last 28 days.' : 'No keyword data yet - run <code>sync_gsc</code>.'}</div>`;
+  if (!kw.length) return `<div class="empty-state">${d.summary ? `No query appears in Search Console in the last ${d.dateRange?.days ?? 28} days.` : 'No keyword data yet - run <code>sync_gsc</code>.'}</div>`;
   const rows = kw.map((k: any) => {
     return `<tr><td class="q" title="${esc(k.query)}">${esc(k.query)}</td><td class="num">${fmt(k.clicks)}</td><td class="num">${countDelta(k.clicks, k.prevClicks)}</td><td class="num">${Number(k.position).toFixed(1)}</td></tr>`;
   }).join('');
@@ -226,7 +226,7 @@ function kwTable(d: Dash): string {
 }
 function pageTable(d: Dash, ctx: OverviewCtx): string {
   const pp = (d.pagePerformance ?? []).slice().sort((a: any, b: any) => b.clicks - a.clicks).slice(0, 8);
-  if (!pp.length) return `<div class="empty-state">${d.summary ? 'No page appears in Search Console in the last 28 days.' : 'No page data yet - run <code>sync_gsc</code>.'}</div>`;
+  if (!pp.length) return `<div class="empty-state">${d.summary ? `No page appears in Search Console in the last ${d.dateRange?.days ?? 28} days.` : 'No page data yet - run <code>sync_gsc</code>.'}</div>`;
   const rows = pp.map((p: any) =>
     `<tr><td class="url" title="${esc(p.urlKey)}">${esc(ctx.shortPath(p.urlKey, 40))}</td><td class="num">${fmt(p.clicks)}</td><td class="num">${countDelta(p.clicks, p.prevClicks)}</td><td class="num">${Number(p.position).toFixed(1)}</td></tr>`).join('');
   return `<table><thead><tr><th>Page</th><th class="num">Clicks</th><th class="num">Change</th><th class="num">Pos</th></tr></thead><tbody>${rows}</tbody></table>`;

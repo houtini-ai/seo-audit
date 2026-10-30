@@ -923,3 +923,7 @@ select, select.sel, #cannSelect {
 .metrics.metrics-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 1100px) { .metrics.metrics-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .metrics.metrics-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .metrics.metrics-5 > :last-child { grid-column: 1 / -1; } }
+/* The Search Console window control (top bar). */
+.range-select { font: inherit; font-size: 12.5px; font-weight: 500; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border-standard); border-radius: var(--radius-pill); padding: 5px 10px; cursor: pointer; }
+.range-select:disabled { opacity: .6; cursor: progress; }
+.fi-count { margin-top: 10px; font-size: 12.5px; }

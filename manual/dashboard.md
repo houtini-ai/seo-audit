@@ -64,7 +64,7 @@ The same tab in the dark theme:
 
 ![The Issues & fixes tab - prioritised findings with impact and size, filterable by area](../assets/tab-issues.png)
 
-The audit findings, two ways: a **prioritised list** (the same order `run_audit` returns - expected clicks per developer-hour) and a **by-category view with fixes**, where each check groups its affected pages with the remediation attached. Severity chips and a by-area filter narrow either view.
+The audit findings, two ways: a **prioritised list** (the same order `run_audit` returns - expected clicks per developer-hour) and a **by-category view with fixes**, where each check groups its affected pages with the remediation attached. Severity chips and a by-area filter narrow either view. The list starts with the 50 highest-impact findings; a filter, or **Show more**, pages through every finding that matches, so a chip that counts 386 lists all 386 (an exported report, which has no server behind it, filters the top 50 and says so).
 
 Each finding shows an **impact score (0-100, normalised to the run's biggest finding)** and a **size badge (S / M / L / XL)** rather than a raw clicks forecast. That's deliberate: the underlying model estimates recoverable clicks, but presenting a precise number would read as a promise, and it isn't one. Real measured traffic stays real; estimates stay relative.
 
@@ -97,15 +97,18 @@ Where the growth work lives:
 
 ![The Search performance tab - ranking distribution over time](../assets/search-performance.png)
 
-The Search Console view you wish Google shipped - and because the history lives in your own database, it isn't capped at 16 months:
+The Search Console view you wish Google shipped - and because the history lives in your own database, it isn't capped at 16 months.
+
+**The window** (browser only): the control in the top bar sets the comparison window - the last 7, 28, 90 or 180 days against the same length before - for the tiles, the keyword and page tables, the branded split, the breakdowns and content decay, on every tab except the Summary. The Summary keeps its fixed 28 days, and says so in the top bar. The window is in the URL (`?days=90`), so a link opens on it. 28 days is cached; another window is built when you pick it.
+
 
 - **Search performance over time** - daily clicks, impressions and average position as three small charts on one timeline.
-- **Top keywords and top pages** - 28 days against the prior 28, by clicks.
+- **Top keywords and top pages** - the window against the one before, by clicks.
 - **Branded vs non-branded** clicks split. The brand is your domain name without its ending; a query counts as branded when its whole words spell it, spaced or not (for simracingcockpit.gg: "simracingcockpit", "sim racing cockpit", "simracingcockpit.gg", but not "sim racing cockpits"). The spellings it matched are listed above the bar. On a descriptive domain the spaced name is also the generic search, so read the split with that in mind.
 - **Ranking distribution over time** - impressions by position bucket, the honest "are we improving" chart.
 - **Search visibility over time** - the DataForSEO monthly rank distribution, with the keyword count and estimated traffic value as separate small charts rather than a dual axis, reconciled with your GSC dates (needs `track_ranks`).
 - **Rank & clicks over time** - average position and clicks as two small charts on one shared timeline.
-- **Top keyword and page performance**, 28 days against the prior 28.
+- **Top keyword and page performance**, the window against the one before.
 - **Keyword ranking movement** over 90 days - risers and fallers.
 - **Breakdowns by device and country** - these appear when you've synced with `segments:true` ([tools.md](tools.md#sync_gsc)).
 - **GSC index coverage** - Google's own per-URL index status from URL Inspection (run `inspect_urls`): the coverage-state distribution and any Google-vs-declared canonical conflicts.

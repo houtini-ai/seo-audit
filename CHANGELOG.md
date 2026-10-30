@@ -16,9 +16,12 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 ### Added
 - **Dashboard actions** (browser, free only): crawl, Search Console sync, URL inspection, run audit and agent readiness, with live job progress and Cancel. One job of a kind per property; unknown properties and paid job kinds are refused. The standalone dashboard queues jobs for the job runner when one is alive (it holds the credentials under the Docker gateway) and runs them itself otherwise. DataForSEO spending still starts only from chat, after a quote.
 - **Watch a domain from the dashboard:** a form above the All domains table adds one (domain, group, country), and a row's Remove link stops watching it. Both are free.
-- `scripts/probe-web-unified.mjs` (22 assertions): routes, the owned split, and the action guards.
+- `scripts/probe-web-unified.mjs` (29 assertions): routes, the owned split, the action guards, findings paging and the worker build.
+- **A working date range.** The top bar's window control (7, 28, 90 or 180 days against the same length before) drives the tiles, keyword and page tables, branded split, breakdowns and decay on every tab but the Summary, which keeps its fixed 28 days and says so. It's in the URL (`?days=90`). Only 28 days is cached.
+- **Issues & fixes filters cover every finding.** The payload holds the top 50; a severity, area or check filter (and **Show more**) now pages through all matches via `list_findings` (an app-only tool for the in-chat widget, a web handler in the browser). Before, "High 386" listed nothing.
 
 ### Fixed
+- **The first dashboard load after a sync stalled the whole server.** The payload build (about 20 GROUP BY scans; 18 s cold on a 1.8 GB property) ran on the server's main thread, so every other request, the job-status poll included, queued behind it. It now runs on a worker thread (identical concurrent requests share one build), and while it runs `list_domains` answered in 34 ms. A data job, a dashboard-run audit or an agent-readiness check also rebuilds the cache in the background when it finishes, so the next load is instant, and a slow cold load now says what it's doing.
 - **Sites you don't own counted as owned.** `pull_backlinks`, `link_intersect` and `track_ranks` create a database named by a bare domain (`rival.net`), and the portfolio counted every database as an owned domain, at the US location. Only Search Console property names (`sc-domain:` or a URL prefix) are owned now; the rest are listed as backlink data only.
 
 ## [0.17.0] — 2026-10-25

@@ -29,7 +29,7 @@ export interface DashboardData {
     anchors: { snapshotAt: string; mix: { kind: string; anchors: number; backlinks: number; referringDomains: number }[]; top: { anchor: string; kind: string; backlinks: number; referringDomains: number }[] } | null;
     history: { fetchedAt: string | null; months: { month: string; newDomains: number; lostDomains: number; referringDomains: number | null; backlinks: number | null; days: number }[] } | null;
   } | null;
-  dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number };
+  dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number; days?: number; minDate?: string | null };
   summary?: { current: Totals; prior: Totals };
   rankTrend?: { date: string; clicks: number; impressions: number; position: number }[];
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
@@ -227,17 +227,29 @@ app.onhostcontextchanged = (ctx) => {
 // The widget fetches the full dataset itself via the app-only get_dashboard_data tool -
 // results route to the iframe, bypassing the model token cap.
 let dataLoaded = false;
+/** The Search Console window (days) the non-Summary tabs compare: current N days vs the N before. */
+const WINDOWS = [7, 28, 90, 180];
+let winDays = ((): number => { const d = Number(new URLSearchParams(location.search).get('days')); return WINDOWS.includes(d) ? d : 28; })();
+let loadedSite = '';
 async function loadDashboard(siteUrl: string): Promise<void> {
   if (dataLoaded || !siteUrl) return;
   dataLoaded = true;
-  setupMarketTab(siteUrl, callServer);
+  if (!loadedSite) setupMarketTab(siteUrl, callServer);
+  loadedSite = siteUrl;
+  // A cold build after a sync can take a minute on a big property: say so instead of a bare spinner.
+  const slow = setTimeout(() => {
+    const l = document.getElementById('loading');
+    if (l && l.style.display !== 'none') l.textContent = 'Building the dashboard from the latest data. The first load after a sync, crawl or audit can take a minute on a large property; later loads are instant.';
+  }, 4000);
   try {
-    const res = await callServer('get_dashboard_data', { siteUrl });
+    const res = await callServer('get_dashboard_data', { siteUrl, ...(winDays !== 28 ? { days: winDays } : {}) });
     const data = res?.structuredContent as DashboardData | undefined;
     if (!data) throw new Error('no data');
+    clearTimeout(slow);
     currentData = data;
     render(data);
   } catch (e) {
+    clearTimeout(slow);
     dataLoaded = false; // allow a retry on a later tool result
     $('loading').style.display = 'none';
     const empty = $('empty');
@@ -328,7 +340,7 @@ function renderBrandedSplit(data: DashboardData): void {
   if (!b) { el.innerHTML = '<p class="muted">Brand could not be auto-detected from this property.</p>'; return; }
   const hint = $('brandedHint');
   const un = b.uncertain;
-  if (hint) hint.innerHTML = `Branded = queries that spell <strong>“${esc(b.brand)}”</strong> in whole words (auto-detected from the domain${b.variants?.length ? `; counted: ${b.variants.map(v => `“${esc(v)}”`).join(', ')}` : ''}). How much of your demand is people looking for you vs discovering you - last 28 days.` +
+  if (hint) hint.innerHTML = `Branded = queries that spell <strong>“${esc(b.brand)}”</strong> in whole words (auto-detected from the domain${b.variants?.length ? `; counted: ${b.variants.map(v => `“${esc(v)}”`).join(', ')}` : ''}). How much of your demand is people looking for you vs discovering you - last ${winDays} days.` +
     (un ? ` <span class="brand-uncertain" title="${esc(`On an exact-match domain the spaced spelling is also the generic search, so it counts as brand only when people also search the brand as one word: spaced spellings are set aside when they draw more impressions than the one-word brand and the one-word brand has earned no click. Here: ${fmt(un.impressions)} impressions on the spaced spelling, ${fmt(un.joinedImpressions)} and ${fmt(un.joinedClicks)} clicks on the one-word brand, over the held history.`)}"><strong>Uncertain (exact-match domain):</strong> ${un.spellings.map(v => `“${esc(v)}”`).join(', ')} (${fmt(un.queries)} quer${un.queries === 1 ? 'y' : 'ies'}) counted as non-brand - it is also the generic search, and nobody has clicked the brand typed as one word.</span>` : '');
   const bc = b.branded.clicks, nc = b.nonBranded.clicks, tc = bc + nc;
   const bpct = tc ? (bc / tc) * 100 : 0, npct = tc ? 100 - bpct : 0;
@@ -443,18 +455,56 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
       `<span class="${HB_CLASS[s]}" style="width:${((sevCounts[s] / hbTotal) * 100).toFixed(1)}%" title="${SEV_LABEL[s]}: ${sevCounts[s]}"></span>`).join('') +
     `</div>`;
 
+  // The payload holds the top 50 findings. A filter, or "Show more", asks the server for every
+  // matching finding a page at a time (list_findings), so a chip that counts 386 lists 386. With no
+  // server (a fixture or an exported report) it filters what it has and says so.
+  type Row = typeof fc.top[number];
+  const canQuery = !(window as any).__DASH_FIXTURE__ && !!currentData?.siteUrl;
+  const PAGE = 100;
+  let rows: Row[] = fc.top;
+  let rowsTotal = fc.total;
+  let loadingRows = false;
+  let token = 0;
+  const filtered = (): boolean => active !== 'all' || area !== 'all' || !!check;
+  const fetchRows = async (offset: number): Promise<void> => {
+    const my = ++token;
+    loadingRows = true; drawTable();
+    try {
+      const res = await callServer('list_findings', {
+        siteUrl: currentData!.siteUrl, offset, limit: PAGE,
+        ...(active !== 'all' ? { severity: active } : {}), ...(area !== 'all' ? { category: area } : {}), ...(check ? { checkId: check } : {}),
+      });
+      if (my !== token) return; // a newer filter won
+      const page = (res?.structuredContent ?? res) as { total: number; rows: Row[] };
+      rows = offset ? rows.concat(page.rows) : page.rows;
+      rowsTotal = page.total;
+    } catch {
+      if (my !== token) return;
+      rows = fc.top.filter(f => (active === 'all' || f.severity === active) && (area === 'all' || f.category === area) && (!check || f.check_id === check));
+      rowsTotal = -1; // unknown: we only have the top 50
+    } finally {
+      if (my === token) { loadingRows = false; drawTable(); }
+    }
+  };
+  /** Re-read the list for the current filter: from the payload when unfiltered, else the server. */
+  const refilter = (): void => {
+    if (!filtered()) { token++; rows = fc.top; rowsTotal = fc.total; loadingRows = false; drawTable(); return; }
+    if (canQuery) { rows = []; void fetchRows(0); return; }
+    rows = fc.top.filter(f => (active === 'all' || f.severity === active) && (area === 'all' || f.category === area) && (!check || f.check_id === check));
+    rowsTotal = -1; drawTable();
+  };
+
   const drawTable = (): void => {
-    // Full list, no pagination - the .grid-virtual class (content-visibility:auto)
-    // keeps long lists cheap to render.
-    const list = fc.top.filter(f => (active === 'all' || f.severity === active) && (area === 'all' || f.category === area) && (!check || f.check_id === check));
+    // The .grid-virtual class (content-visibility:auto) keeps long lists cheap to render.
+    const list = rows;
     const focus = document.getElementById('issuesFocus');
     if (focus) {
-      const title = check ? (safeJson(fc.top.find(f => f.check_id === check)?.recommendation ?? '').title || check) : '';
+      const title = check ? (safeJson((list.find(f => f.check_id === check) ?? fc.top.find(f => f.check_id === check))?.recommendation ?? '').title || check) : '';
       focus.innerHTML = check ? `<span class="focus-chip">Showing one check: ${esc(title)} <button type="button" aria-label="Show all checks">×</button></span>` : '';
       const btn = focus.querySelector('button');
-      if (btn) btn.onclick = (): void => { check = null; drawTable(); };
+      if (btn) btn.onclick = (): void => { check = null; refilter(); };
     }
-    const rows = list.map((f, i) => {
+    const rowHtml = list.map((f, i) => {
       const rec = safeJson(f.recommendation), traf = safeJson(f.traffic_at_risk), ev = safeJson(f.evidence);
       const path = f.url_key ? shortPath(f.url_key) : '-';
       const pct = Math.max(3, Math.round((f.priority / maxPrio) * 100));
@@ -470,9 +520,15 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
         `<td class="prio"><span class="impact ${szClass}">${esc(sz || '–')} ${f.impact ?? pct}</span></td></tr>` +
         `<tr class="fi-detail-row" hidden><td colspan="6">${findingDetailHtml(f)}</td></tr>`;
     });
-    tableEl.innerHTML = rows.length
-      ? healthBar + `<table class="grid-virtual"><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
-      : healthBar + `<p class="muted">${check ? 'None of this check’s findings are among the 50 highest-priority findings listed here - switch to <strong>By category</strong> for every check.' : 'No findings at this severity in the top results.'}</p>`;
+    const shown = list.length;
+    const more = rowsTotal > shown && canQuery && !loadingRows;
+    const countLine = loadingRows && !shown ? '<p class="muted">Loading findings...</p>'
+      : rowsTotal < 0 ? `<p class="muted fi-count">Showing ${fmt(shown)} from the 50 highest-priority findings. Open the live dashboard for every finding.</p>`
+        : `<p class="muted fi-count">Showing ${fmt(shown)} of ${fmt(rowsTotal)} finding${rowsTotal === 1 ? '' : 's'}${filtered() ? ' matching the filter' : ''}, highest impact first.${more ? ` <button type="button" class="link-btn" data-more>Show ${fmt(Math.min(PAGE, rowsTotal - shown))} more</button>` : ''}${loadingRows && shown ? ' Loading...' : ''}</p>`;
+    tableEl.innerHTML = rowHtml.length
+      ? healthBar + `<table class="grid-virtual"><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th></tr></thead><tbody>${rowHtml.join('')}</tbody></table>` + countLine
+      : healthBar + (loadingRows ? countLine : `<p class="muted">No findings match this filter.</p>`);
+    tableEl.querySelector<HTMLButtonElement>('[data-more]')?.addEventListener('click', () => { void fetchRows(shown); });
     tableEl.querySelectorAll<HTMLElement>('.fi-row').forEach(row => {
       const toggle = (): void => {
         const det = row.nextElementSibling as HTMLElement | null;
@@ -498,11 +554,11 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
         `<button type="button" class="area-row${area === k ? ' active' : ''}" data-area="${esc(k)}" aria-pressed="${area === k}"><div class="ar-top"><span>${esc(categoryLabel(k))}</span><b>${fmt(n)}</b></div>` +
         `<div class="stat-track"><span style="width:${Math.max(2, (n / maxC) * 100).toFixed(1)}%;background:${area === k ? 'var(--accent)' : 'var(--chart-categorical-1)'}"></span></div></button>`).join('');
       areaEl.querySelectorAll<HTMLButtonElement>('[data-area]').forEach(b => {
-        b.onclick = (): void => { area = area === b.dataset.area ? 'all' : b.dataset.area!; drawArea(); drawTable(); };
+        b.onclick = (): void => { area = area === b.dataset.area ? 'all' : b.dataset.area!; drawArea(); refilter(); };
       });
     };
     drawArea();
-    issuesFilter = (f): void => { area = f.area ?? 'all'; check = f.check ?? null; active = 'all'; drawArea(); drawTable(); };
+    issuesFilter = (f): void => { area = f.area ?? 'all'; check = f.check ?? null; active = 'all'; drawArea(); refilter(); };
   }
   filterGroup(
     chipsEl,
@@ -510,7 +566,7 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
       { key: 'all', label: 'All', count: fc.total },
       ...SEV_ORDER.filter(s => sevCounts[s]).map(s => ({ key: s, label: SEV_LABEL[s], count: sevCounts[s], variant: s })),
     ],
-    key => { active = key; drawTable(); },
+    key => { active = key; refilter(); },
     'all',
   );
   drawTable();
@@ -536,7 +592,8 @@ function render(data: DashboardData): void {
   $('site').textContent = data.siteUrl;
   $('site').title = data.siteUrl;
   const dr = data.dateRange;
-  $('range').textContent = dr?.maxDate ? `last 28 days to ${fmtDate(dr.maxDate)}` : '';
+  $('range').textContent = dr?.maxDate ? `to ${fmtDate(dr.maxDate)}` : '';
+  applyWindowLabels();
   // Trailing unfinalised GSC days are excluded upstream (gscFreshness); the range already
   // states the end date - no visible caveat (hover-only explanation for the curious).
   if (dr && dr.trimmedDays && dr.trimmedDays > 0 && dr.rawMaxDate) {
@@ -544,8 +601,8 @@ function render(data: DashboardData): void {
   }
 
   const c = data.summary.current, p = data.summary.prior;
-  // 28-day daily series for the KPI sparklines (tail of the 90-day rankTrend).
-  const spark = (data.rankTrend ?? []).slice(-28);
+  // The window's daily series for the KPI sparklines (tail of the 90-day rankTrend).
+  const spark = (data.rankTrend ?? []).slice(-Math.min(winDays, 90));
   const sClicks = spark.map(d => d.clicks);
   const sImpr = spark.map(d => d.impressions);
   const sCtr = spark.map(d => d.impressions ? d.clicks / d.impressions : 0);
@@ -652,7 +709,7 @@ function render(data: DashboardData): void {
     wrap('scatterChart').on('click', (p: any) => { if (p?.data?.id) window.open(p.data.id, '_blank', 'noopener'); });
     $('scatterSummary').textContent = `${sc.length} URLs by internal PageRank and impressions; bottom-right = high-authority pages earning no traffic. Scroll to zoom, click a point to open the page.`;
   } else {
-    wrap('scatterChart').setEmpty(crawled ? 'No page has iPR 15+ or 5+ impressions in the last 28 days to plot' : 'Run a crawl to map equity vs traffic', col);
+    wrap('scatterChart').setEmpty(crawled ? `No page has iPR 15+ or 5+ impressions in the last ${winDays} days to plot` : 'Run a crawl to map equity vs traffic', col);
     $('scatterSummary').textContent = 'Run a crawl (refresh_property) to see the equity map.';
   }
 
@@ -1132,7 +1189,7 @@ function render(data: DashboardData): void {
   }).join('');
   $('contentDecayTable').innerHTML = decay.length
     ? `<table><thead><tr><th>Page</th><th class="num">Was</th><th class="num">Now</th><th class="num">Drop</th><th class="num">Clicks lost</th><th class="num">Impressions</th><th class="num">Position</th></tr></thead><tbody>${decayRows}</tbody></table>`
-    : '<p class="muted">No significant content decay - no page lost 20%+ of its clicks vs the prior 28 days.</p>';
+    : `<p class="muted">No significant content decay - no page lost 20%+ of its clicks vs the prior ${winDays} days.</p>`;
 
   // Market Sizing and Prioritisation (market_sizing tool) - 100% stacked SoV per topic cluster.
   const ms = data.marketSizing;
@@ -1234,8 +1291,8 @@ function render(data: DashboardData): void {
   const pp = data.pagePerformance ?? [];
   $('pagePerfTable').innerHTML = pp.length
     ? tableHtml(['Trend', 'Page', 'Clicks', 'Clicks change', 'Impressions', 'Position'], pp.map(p => `<tr><td><span class="cat ${catClass(p.category)}">${p.category}</span></td><td class="url" title="${esc(p.urlKey)}">${esc(shortPath(p.urlKey))}</td><td class="num" data-sort="${p.clicks}">${fmt(p.clicks)}</td><td class="num" data-sort="${p.clicks - p.prevClicks}">${countDelta(p.clicks, p.prevClicks)}</td><td class="num" data-sort="${p.impressions}">${fmt(p.impressions)}</td><td class="num">${Number(p.position).toFixed(1)}</td></tr>`))
-    : '<div class="hint">No page appears in Search Console in the last 28 days.</div>';
-  $('pagePerfSummary').textContent = `${pp.length} pages categorised by 28-day trend.`;
+    : `<div class="hint">No page appears in Search Console in the last ${winDays} days.</div>`;
+  $('pagePerfSummary').textContent = `${pp.length} pages categorised by ${winDays}-day trend.`;
 
   const mv = data.keywordMovement ?? [];
   $('movementTable').innerHTML = mv.length
@@ -1332,6 +1389,45 @@ function renderCrawlOnly(data: DashboardData): void {
 
 // Tabbed nav: switch panels, and resize the ECharts in the newly-shown panel - charts created in a
 // display:none panel lay out at 0×0, so they must be resized once their container is visible.
+/** Every window-dependent label reads the current window; the Summary keeps its fixed 28 days. */
+function applyWindowLabels(): void {
+  document.querySelectorAll<HTMLElement>('[data-win]').forEach(el => { el.textContent = String(winDays); });
+  const sel = document.getElementById('rangeDays') as HTMLSelectElement | null;
+  if (sel) sel.value = String(winDays);
+  syncRangeControl();
+}
+
+/** The window control shows on the tabs it drives; on the Summary a fixed label says what it uses. */
+function syncRangeControl(): void {
+  const ctl = document.getElementById('rangeCtl');
+  const onSummary = document.querySelector('.tab-btn.active')?.getAttribute('data-panel') === 'summary';
+  const hasGsc = !!currentData?.summary;
+  if (ctl) ctl.hidden = !__sacWeb || !hasGsc || onSummary;
+  const r = document.getElementById('range');
+  const dr = currentData?.dateRange;
+  if (r && dr?.maxDate) r.textContent = onSummary || !__sacWeb ? `last ${onSummary ? 28 : winDays} days to ${fmtDate(dr.maxDate)}` : `to ${fmtDate(dr.maxDate)}`;
+}
+
+/** Change the window: refetch the payload for it and re-render, keeping the open tab. */
+function setupRangeControl(): void {
+  const sel = document.getElementById('rangeDays') as HTMLSelectElement | null;
+  if (!sel) return;
+  sel.value = String(winDays);
+  sel.addEventListener('change', () => {
+    const d = Number(sel.value);
+    if (!WINDOWS.includes(d) || d === winDays) return;
+    winDays = d;
+    const u = new URL(location.href);
+    if (d === 28) u.searchParams.delete('days'); else u.searchParams.set('days', String(d));
+    const tab = document.querySelector('.tab-btn.active')?.getAttribute('data-panel');
+    if (tab && tab !== 'summary') u.searchParams.set('tab', tab);
+    history.replaceState(null, '', u);
+    sel.disabled = true;
+    dataLoaded = false;
+    void loadDashboard(loadedSite).finally(() => { sel.disabled = false; });
+  });
+}
+
 function setupTabs(): void {
   const resizeVisible = (): void => { for (const w of chartsReg.values()) w.resizeIfVisible(); };
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
@@ -1341,6 +1437,7 @@ function setupTabs(): void {
       document.querySelectorAll<HTMLElement>('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === panel));
       const title = document.getElementById('pageTitle');
       if (title) title.textContent = btn.textContent?.trim() || 'Summary';
+      syncRangeControl();
       // Scroll to the top only for a real click: programmatic .click() (deep-link restore on every
       // re-render, [data-goto] cross-links) must not lose the reader's place.
       if (ev.isTrusted) window.scrollTo({ top: 0 });
@@ -1674,6 +1771,7 @@ if (__fixture) {
   else if (__sacWeb.domain) void showWatchedDomain(__sacWeb.domain, callServer);
   else {
     setupActions(__sacWeb.siteUrl, callServer);
+    setupRangeControl();
     loadDashboard(__sacWeb.siteUrl);
   }
 } else {
