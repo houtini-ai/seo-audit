@@ -2,18 +2,26 @@
 
 Three ways to look at everything at once: the interactive dashboard rendered right in the chat (*"show me the dashboard for mysite.com"*), the same dashboard in a browser tab (*"open the dashboard"*), and a single shareable HTML file (*"export the report"*). All three are built from your synced data, all are organised into eight tabs - Overview, Issues & fixes, Crawl health, Network, Search performance, Opportunities, Links and Content research - and every number in them traces back to a datapoint in your database.
 
-A sticky sidebar holds the property, the tab navigation and a data-freshness summary, under a slim top bar. There are two themes, a graphite dark and a cool-paper light, sharing one green accent: the dashboard follows the host's theme in chat, your saved choice or system preference in the browser, and opens light in an export unless you ask for dark. The light/dark toggle in the top bar overrides any of them. Numbers are tabular and right-aligned throughout, missing values render as a dash rather than a zero, and detail lives in the tooltips rather than on the canvas.
+A sticky sidebar holds the Houtini mark, the domain dropdown, the tab navigation, the actions (in the browser) and a data-freshness summary, under a slim top bar. There are two themes, a graphite dark and a cool-paper light, sharing one green accent: the dashboard follows the host's theme in chat, your saved choice or system preference in the browser, and opens light in an export unless you ask for dark. The light/dark toggle in the top bar overrides any of them. Numbers are tabular and right-aligned throughout, missing values render as a dash rather than a zero, and detail lives in the tooltips rather than on the canvas.
 
 Run `refresh_property` first, and `run_audit` if you want the findings populated. Panels that depend on an on-demand tool (search visibility over time from `track_ranks`, agent readiness from `check_agent_readiness`, market sizing, the SERP-feature footprint and so on) fill in once you've run it; everything else works from GSC and the crawl alone.
 
 ## In your browser
 
-With more than one property, the browser dashboard opens on the **Domains** page (`/`, or `/portfolio`): every domain you look after in one table, with Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions and a needs-attention tab. Click a domain for its overview, or "Open property dashboard" for the tabs described below. It's in chat too, as `get_portfolio`. Everything about it is in [portfolio.md](portfolio.md).
+One dashboard covers every domain. The **domain dropdown** at the top of the sidebar lists:
+- **All domains**: every domain you look after in one table, with Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions and a needs-attention tab. With more than one property, the browser opens here. Add a domain to watch with the form above the table, or remove one from its row: both are free. It's in chat too, as `get_portfolio`. Everything about it is in [portfolio.md](portfolio.md).
+- **Your properties**: each opens the tabs described below. The **Market & AI** tab holds that domain's DataForSEO overview: estimated traffic and keywords, backlinks, AI mentions and cited pages.
+- **Watched** domains: each opens its overview.
+- **Backlink data only**: a database `pull_backlinks` or `link_intersect` made for a site that isn't yours. It is not counted as one of your domains.
+
+**Actions** (browser only, free): the sidebar starts a crawl, a Search Console sync, URL inspection, an audit or an agent-readiness check for the property, and shows each job's progress with a Cancel link. One job of a kind runs per property at a time. Behind the Docker gateway the dashboard queues Search Console jobs for the job runner, which holds the credentials. Anything that costs money (DataForSEO refreshes, backlinks, rank history) still starts from chat, where it's quoted first.
+
+The old `/portfolio` links redirect.
 
 
 > Open the dashboard for mysite.com
 
-`open_dashboard` (or `serve_dashboard`) starts a small webserver on `127.0.0.1` and hands you a link. It reads the live database on every load, so it's always current, and it adds a property switcher and working CSV downloads. You rarely need to ask: a finished sync, crawl, inspection or refresh starts it and puts the link in the job's result, and `run_audit` does the same. Set `SAC_AUTOSERVE=0` to stop that automatic start. Two URL options help with sharing and screenshots: `?theme=dark` or `?theme=light` opens in a theme, and `?redact=1` blurs the property name, the traffic figures and the URLs in the tables, and hides the network map's labels.
+`open_dashboard` (or `serve_dashboard`) starts a small webserver on `127.0.0.1` and hands you a link. It reads the live database on every load, so it's always current, and it adds the domain dropdown, the actions and working CSV downloads. You rarely need to ask: a finished sync, crawl, inspection or refresh starts it and puts the link in the job's result, and `run_audit` does the same. Set `SAC_AUTOSERVE=0` to stop that automatic start. Two URL options help with sharing and screenshots: `?theme=dark` or `?theme=light` opens in a theme, and `?redact=1` blurs the property name, the traffic figures and the URLs in the tables, and hides the network map's labels.
 
 **Behind the Docker MCP gateway** the MCP server's container publishes no ports, so a link it serves can't be reached from your machine. For that setup there's a standalone dashboard, `seo-audit-dashboard` (`dist/dashboard.js` in the package), which you run as its own container on the same data volume and a fixed, published port:
 
@@ -21,11 +29,11 @@ With more than one property, the browser dashboard opens on the **Domains** page
 docker run -d --name seo-audit-dashboard \
   -p 127.0.0.1:8788:8788 \
   -e SAC_DASHBOARD_BIND=0.0.0.0 -e SAC_DASHBOARD_PORT=8788 -e SAC_DATA_DIR=/data \
-  -v seo-audit-data:/data:ro \
+  -v seo-audit-data:/data \
   --entrypoint node <your-image> dist/dashboard.js
 ```
 
-Then open `http://127.0.0.1:8788/`. It serves the identical dashboard from the database the MCP writes, including the job and data-freshness status. Add `-e DATAFORSEO_USERNAME=… -e DATAFORSEO_PASSWORD=…` to light up the Content research tab. Use the volume name you gave the MCP server (see the README's [Docker section](../README.md#docker-and-the-docker-mcp-gateway)); on Git Bash for Windows, prefix the command with `MSYS_NO_PATHCONV=1` so `/data` isn't rewritten into a Windows path. Even bound to `0.0.0.0` inside the container, the server only answers requests addressed to localhost.
+Then open `http://127.0.0.1:8788/`. It serves the identical dashboard from the database the MCP writes, including the job and data-freshness status. Mount the volume writable: the actions start jobs. Its Search Console jobs are queued for the job runner, which holds the credentials; a crawl, audit or agent-readiness check runs in the dashboard container itself when no runner is up. Add `-e DATAFORSEO_USERNAME=… -e DATAFORSEO_PASSWORD=…` to light up the Content research tab. Use the volume name you gave the MCP server (see the README's [Docker section](../README.md#docker-and-the-docker-mcp-gateway)); on Git Bash for Windows, prefix the command with `MSYS_NO_PATHCONV=1` so `/data` isn't rewritten into a Windows path. Even bound to `0.0.0.0` inside the container, the server only answers requests addressed to localhost.
 
 ## Summary
 

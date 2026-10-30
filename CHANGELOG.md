@@ -8,6 +8,19 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [Unreleased]
+
+### Changed
+- **One dashboard for every domain.** The browser dashboard and the portfolio were two separate apps; they are now one. A domain dropdown at the top of the sidebar lists All domains (the domains table, and the landing page once there is more than one property), your Search Console properties, watched domains, and databases held for sites that aren't yours. A property's dashboard gains a **Market & AI** tab with its DataForSEO overview. `/portfolio` and `/portfolio/domain?d=` redirect. The sidebar carries the Houtini mark.
+
+### Added
+- **Dashboard actions** (browser, free only): crawl, Search Console sync, URL inspection, run audit and agent readiness, with live job progress and Cancel. One job of a kind per property; unknown properties and paid job kinds are refused. The standalone dashboard queues jobs for the job runner when one is alive (it holds the credentials under the Docker gateway) and runs them itself otherwise. DataForSEO spending still starts only from chat, after a quote.
+- **Watch a domain from the dashboard:** a form above the All domains table adds one (domain, group, country), and a row's Remove link stops watching it. Both are free.
+- `scripts/probe-web-unified.mjs` (22 assertions): routes, the owned split, and the action guards.
+
+### Fixed
+- **Sites you don't own counted as owned.** `pull_backlinks`, `link_intersect` and `track_ranks` create a database named by a bare domain (`rival.net`), and the portfolio counted every database as an owned domain, at the US location. Only Search Console property names (`sc-domain:` or a URL prefix) are owned now; the rest are listed as backlink data only.
+
 ## [0.17.0] — 2026-10-25
 
 The portfolio: a domains table and domain overview on DataForSEO + Search Console. Also ships everything in 0.16.3, which was tagged but not published to npm.

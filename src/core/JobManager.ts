@@ -743,6 +743,27 @@ export interface LiveJobs extends Set<string> {
  * dashboard can say "queued" instead of showing the last finished run as current. Queued rows past
  * that with no live runner go in `.queuedNoRunner` instead: shown as "queued: no job runner", not live.
  */
+/**
+ * Is a job runner alive on this data dir: a runner heartbeat within RUNNER_STALE_MS that has not
+ * recorded a clean stop. The dashboard uses it to decide whether a job it starts should be queued
+ * for the runner (it holds the credentials under the Docker gateway) or run in its own process.
+ */
+export function runnerAlive(dataDir: string): boolean {
+  let db: Database.Database | null = null;
+  try {
+    db = new Database(jobsDbPath(dataDir), { readonly: true, fileMustExist: true });
+    if (!db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'runners'`).get()) return false;
+    const hasStopped = (db.prepare(`PRAGMA table_info(runners)`).all() as { name: string }[]).some(c => c.name === 'stopped_at');
+    const beat = (db.prepare(`SELECT MAX(heartbeat_at) at FROM runners${hasStopped ? ' WHERE stopped_at IS NULL' : ''}`).get() as { at: string | null } | undefined)?.at ?? null;
+    const ms = beat ? Date.parse(beat) : NaN;
+    return Number.isFinite(ms) && Date.now() - ms <= RUNNER_STALE_MS;
+  } catch {
+    return false;
+  } finally {
+    db?.close();
+  }
+}
+
 export function liveJobTypes(dataDir: string, scope?: string | null, staleMs = STALE_MS): LiveJobs | null {
   let db: Database.Database | null = null;
   try {

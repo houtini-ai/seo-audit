@@ -171,6 +171,9 @@ export class PortfolioStore {
        ON CONFLICT(site_url) DO UPDATE SET domain=excluded.domain, location_code=excluded.location_code`);
     const tx = this.db.transaction(() => {
       for (const p of props) {
+        // A database named by a bare domain was created by a DataForSEO call on someone else's site
+        // (pull_backlinks, link_intersect): data we hold, not a property we own.
+        if (!p.gsc) continue;
         const domain = targetForProperty(p.siteUrl);
         if (!isValidDomain(domain)) continue;
         let loc: string | number | undefined;

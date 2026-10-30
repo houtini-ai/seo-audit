@@ -9,6 +9,7 @@ import { TITLE_MAX_CHARS, META_DESC_MAX_CHARS } from '../core/onPageLimits.js';
 import { renderSearchTop, renderHealthTop, renderSideFreshness, drawNetwork, isolatedText, pctChg, SEV_ORDER, SEV_LABEL, type OverviewCtx } from './panels.js';
 import { renderSummary, type SummaryCtx } from './summary.js';
 import { renderFieldCwv } from './cwv.js';
+import { buildDomainPicker, showDomainsView, showWatchedDomain, setupMarketTab, setupActions, repaintDomainViews, type WebBoot } from './shell.js';
 
 // Local view types (avoid importing core, which pulls node-only deps into the bundle).
 interface Totals { clicks: number; impressions: number; ctr: number; position: number }
@@ -188,7 +189,7 @@ const app = new App({ name: 'SEO Audit Console', version: '0.1.0' });
 
 // Web mode: served by the local serve_dashboard webserver - data comes over plain HTTP
 // from the same origin instead of the MCP-App host bridge. No host, no sandbox, no cache.
-const __sacWeb = (window as any).__SAC_WEB__ as { siteUrl: string; properties?: string[] } | undefined;
+const __sacWeb = (window as any).__SAC_WEB__ as WebBoot | undefined;
 
 /** One data path for both worlds: /api/call in web mode, app.callServerTool under an MCP host. */
 async function callServer(name: string, args: Record<string, unknown>): Promise<any> {
@@ -219,6 +220,7 @@ function applyHostContext(ctx: { theme?: 'light' | 'dark'; styles?: { variables?
 app.onhostcontextchanged = (ctx) => {
   applyHostContext(ctx as any);
   if (currentData) render(currentData); // re-tint charts for the new theme
+  repaintDomainViews();
 };
 
 // get_dashboard returns only { siteUrl } (keeps the big payload out of the model context).
@@ -228,6 +230,7 @@ let dataLoaded = false;
 async function loadDashboard(siteUrl: string): Promise<void> {
   if (dataLoaded || !siteUrl) return;
   dataLoaded = true;
+  setupMarketTab(siteUrl, callServer);
   try {
     const res = await callServer('get_dashboard_data', { siteUrl });
     const data = res?.structuredContent as DashboardData | undefined;
@@ -1315,7 +1318,7 @@ function renderCrawlOnly(data: DashboardData): void {
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);
   buildExportBar(data);
-  const usable = new Set(['summary', 'issues']);
+  const usable = new Set(['summary', 'issues', 'market']);
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(b => {
     const on = usable.has(b.dataset.panel ?? '');
     b.disabled = !on;
@@ -1646,6 +1649,7 @@ function setupThemeToggle(): void {
     try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode */ }
     paintThemeToggle();
     if (currentData) render(currentData); // re-tint charts for the new theme
+    repaintDomainViews();
   };
 }
 
@@ -1663,23 +1667,15 @@ if (__fixture) {
     ? urlTheme
     : (savedTheme() ?? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   applyHostContext({ theme: bootTheme });
-  if ((__sacWeb.properties?.length ?? 0) > 1) {
-    const header = document.getElementById('sideProperty');
-    if (header) {
-      const sel = document.createElement('select');
-      sel.setAttribute('aria-label', 'Switch property');
-      sel.className = 'property-switcher';
-      for (const p of __sacWeb.properties!) {
-        const o = document.createElement('option');
-        o.value = p; o.textContent = p; o.selected = p === __sacWeb.siteUrl;
-        sel.appendChild(o);
-      }
-      sel.addEventListener('change', () => { location.href = `/dashboard?siteUrl=${encodeURIComponent(sel.value)}`; });
-      header.appendChild(sel);
-      document.getElementById('site')?.setAttribute('hidden', ''); // the switcher names the property
-    }
+  // One dashboard for every domain: the dropdown moves between All domains, a property and a
+  // watched domain; a property also gets the sidebar actions (free jobs).
+  void buildDomainPicker(__sacWeb, callServer);
+  if (__sacWeb.view === 'domains') showDomainsView(__sacWeb, callServer);
+  else if (__sacWeb.domain) void showWatchedDomain(__sacWeb.domain, callServer);
+  else {
+    setupActions(__sacWeb.siteUrl, callServer);
+    loadDashboard(__sacWeb.siteUrl);
   }
-  loadDashboard(__sacWeb.siteUrl);
 } else {
   app.connect().then(() => applyHostContext(app.getHostContext() as any));
 }

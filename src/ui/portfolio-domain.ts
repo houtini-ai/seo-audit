@@ -166,7 +166,9 @@ function crawlPillHtml(crawl: CrawlState | null, isOwned: boolean): string {
   return `<span class="pf-pill ${cls}">${esc(crawl.label || String(s))}</span>`;
 }
 
-export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: () => void }): void {
+/** `embedded`: shown as a tab inside the domain's own property dashboard, so no back link and no
+ * link to the dashboard it is already in. `backLabel` names where Back goes. */
+export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: () => void; embedded?: boolean; backLabel?: string }): void {
   charts.forEach(c => c.dispose()); charts = [];
   aiCharts.forEach(c => c.dispose()); aiCharts = [];
   ensureStyles();
@@ -197,7 +199,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
 
   const attentionHtml = data.row.attention.length
     ? `<div class="pf-attention"><ul>${data.row.attention.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>` : '';
-  const dashLink = isOwned && isWeb && data.row.siteUrls.length
+  const dashLink = isOwned && isWeb && !opts.embedded && data.row.siteUrls.length
     ? `<a href="/dashboard?siteUrl=${encodeURIComponent(data.row.siteUrls[0])}">Open property dashboard</a>` : '';
 
   const searchKpis = [
@@ -238,7 +240,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
   root.innerHTML = `
     <div class="pf-domain"><div class="pf-wrap">
       <header class="pf-card">
-        <div class="pf-topline"><button class="pf-back" type="button" id="pf-back">Back to domains</button><span class="pf-breadcrumb">Domains / ${esc(data.row.domain)}</span></div>
+        ${opts.embedded ? '' : `<div class="pf-topline"><button class="pf-back" type="button" id="pf-back">${esc(opts.backLabel ?? 'Back to domains')}</button><span class="pf-breadcrumb">Domains / ${esc(data.row.domain)}</span></div>`}
         <div class="pf-title-row">
           <h1 class="pf-title">${esc(data.row.domain)}</h1>
           <span class="pf-country" title="${esc(data.row.countryName)}">${esc(data.row.country)}</span>

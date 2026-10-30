@@ -24,9 +24,6 @@ export interface WebServerOptions {
   dataDir: () => string;
   /** Returns the built dashboard.html template (read per-request so rebuilds show without restart). */
   uiHtml: () => string;
-  /** The built portfolio.html (the domains table + domain overview). Optional: without it the
-   * portfolio routes 404 and "/" keeps the plain property picker. */
-  portfolioHtml?: () => string;
   call: WebCallHandlers;
   port?: number;
 }
@@ -87,11 +84,20 @@ export function containerDashboardNote(siteUrl?: string, containerUrl?: string |
 
 const CACHE_DBS = new Set(['dataforseo-cache.db', '_portfolio.db', '_jobs.db']);
 
-/** Enumerate properties that have a local DB (property_meta.site_url is the source of truth). */
-export function listLocalProperties(dataDir: string): { siteUrl: string; file: string }[] {
+/**
+ * Is this a Search Console property name? GSC names a property `sc-domain:x.com` or a URL prefix
+ * (`https://x.com/`). A bare domain (`autosimsport.net`) is a database that a DataForSEO call
+ * (pull_backlinks, link_intersect, track_ranks) created for a site we don't own: it has data, but
+ * it is not one of the user's properties.
+ */
+export const isGscProperty = (siteUrl: string): boolean => /^(sc-domain:|https?:\/\/)/i.test(siteUrl.trim());
+
+/** Enumerate properties that have a local DB (property_meta.site_url is the source of truth).
+ * `gsc` is false for a database named by a bare domain (see isGscProperty). */
+export function listLocalProperties(dataDir: string): { siteUrl: string; file: string; gsc: boolean }[] {
   let files: string[] = [];
   try { files = readdirSync(dataDir).filter(f => f.endsWith('.db') && !CACHE_DBS.has(f)); } catch { return []; }
-  const out: { siteUrl: string; file: string }[] = [];
+  const out: { siteUrl: string; file: string; gsc: boolean }[] = [];
   for (const file of files.sort()) {
     let db: Database.Database | null = null;
     try {
@@ -101,7 +107,7 @@ export function listLocalProperties(dataDir: string): { siteUrl: string; file: s
       const meta = db.prepare(
         `SELECT site_url FROM property_meta ORDER BY COALESCE(last_synced_at,'') DESC, id ASC LIMIT 1`,
       ).get() as { site_url: string } | undefined;
-      if (meta?.site_url) out.push({ siteUrl: meta.site_url, file });
+      if (meta?.site_url) out.push({ siteUrl: meta.site_url, file, gsc: isGscProperty(meta.site_url) });
     } catch { /* not a property DB */ } finally { db?.close(); }
   }
   return out;
@@ -121,18 +127,6 @@ const readBody = (req: http.IncomingMessage, limit = 256 * 1024): Promise<string
     req.on('error', reject);
   });
 
-const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-
-function pickerPage(props: { siteUrl: string }[]): string {
-  const items = props.length
-    ? props.map(p => `<li><a href="/dashboard?siteUrl=${encodeURIComponent(p.siteUrl)}">${esc(p.siteUrl)}</a></li>`).join('')
-    : '<li>No properties yet — run refresh_property first.</li>';
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>SEO Audit Console</title>
-<style>body{font-family:system-ui,sans-serif;max-width:640px;margin:4rem auto;padding:0 1rem;color:#1a1a1a}
-h1{font-size:1.3rem}ul{line-height:2}a{color:#cd2026}</style></head>
-<body><h1>SEO Audit Console — choose a property</h1><ul>${items}</ul></body></html>`;
-}
-
 export async function startDashboardServer(opts: WebServerOptions): Promise<{ url: string; port: number }> {
   if (running) return { url: running.url, port: running.port };
   if (starting) return starting; // concurrent callers share one startup — never bind twice
@@ -143,38 +137,33 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
       const u = new URL(req.url ?? '/', 'http://localhost');
       const route = u.pathname;
 
-      // The portfolio (domains table) is the landing page once there's more than one property; it
-      // links each owned row to its property dashboard, so it replaces the plain picker.
-      const servePortfolio = (domain: string | null): void => {
+      // One dashboard. "/" is the domains view (every owned property and watched domain) once
+      // there's more than one property; /dashboard?siteUrl= is a property, /dashboard?domain= a
+      // watched domain. The domain dropdown moves between them. The old /portfolio routes redirect.
+      const serve = (boot: Record<string, unknown>): void => {
         const props = listLocalProperties(opts.dataDir());
-        const boot = { portfolio: true, domain, properties: props.map(p => p.siteUrl) };
-        const inject = `<script>window.__SAC_WEB__=${JSON.stringify(boot).replace(/</g, '\u003c')};</script>`;
-        const html = opts.portfolioHtml!().replace(/<head([^>]*)>/i, (_m, attrs: string) => `<head${attrs}>${inject}`);
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-        res.end(html);
-      };
-      if (req.method === 'GET' && opts.portfolioHtml && (route === '/portfolio' || route === '/portfolio/domain')) {
-        return servePortfolio(route === '/portfolio/domain' ? u.searchParams.get('d') : null);
-      }
-
-      if (req.method === 'GET' && (route === '/' || route === '/dashboard')) {
-        const props = listLocalProperties(opts.dataDir());
-        const siteUrl = u.searchParams.get('siteUrl');
-        if (!siteUrl) {
-          if (route === '/' && props.length > 1 && opts.portfolioHtml) return servePortfolio(null);
-          if (route === '/' && props.length === 1) {
-            res.writeHead(302, { location: `/dashboard?siteUrl=${encodeURIComponent(props[0].siteUrl)}` });
-            return res.end();
-          }
-          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-          return res.end(pickerPage(props));
-        }
-        const boot = { siteUrl, properties: props.map(p => p.siteUrl) };
-        const inject = `<script>window.__SAC_WEB__=${JSON.stringify(boot).replace(/</g, '\\u003c')};</script>`;
+        const full = { ...boot, properties: props.filter(p => p.gsc).map(p => p.siteUrl), others: props.filter(p => !p.gsc).map(p => p.siteUrl) };
+        const inject = `<script>window.__SAC_WEB__=${JSON.stringify(full).replace(/</g, '\\u003c')};</script>`;
         // Replacement FUNCTION, not string — $-sequences in the payload must stay literal.
         const html = opts.uiHtml().replace(/<head([^>]*)>/i, (_m, attrs: string) => `<head${attrs}>${inject}`);
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-        return res.end(html);
+        res.end(html);
+      };
+      const redirect = (to: string): void => { res.writeHead(302, { location: to }); res.end(); };
+
+      if (req.method === 'GET' && route === '/portfolio') return redirect('/');
+      if (req.method === 'GET' && route === '/portfolio/domain') {
+        const d = u.searchParams.get('d');
+        return redirect(d ? `/dashboard?domain=${encodeURIComponent(d)}` : '/');
+      }
+      if (req.method === 'GET' && (route === '/' || route === '/dashboard')) {
+        const siteUrl = u.searchParams.get('siteUrl');
+        const domain = u.searchParams.get('domain');
+        if (siteUrl) return serve({ siteUrl });
+        if (domain) return serve({ siteUrl: '', domain });
+        const owned = listLocalProperties(opts.dataDir()).filter(p => p.gsc);
+        if (route === '/' && owned.length === 1 && !u.searchParams.has('all')) return redirect(`/dashboard?siteUrl=${encodeURIComponent(owned[0].siteUrl)}`);
+        return serve({ siteUrl: '', view: 'domains' });
       }
 
       if (req.method === 'GET' && route === '/api/properties') {
