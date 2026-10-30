@@ -127,6 +127,11 @@ function ensureStyles(): void {
     .pf-domain .pf-url:hover{text-decoration:underline;}
     .pf-domain .pf-inline-bar{height:6px;background:var(--bg-inset);border-radius:var(--radius-pill);overflow:hidden;min-width:70px;}
     .pf-domain .pf-inline-fill{height:100%;background:var(--accent);}
+    .pf-domain .pf-sources{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}
+    .pf-domain .pf-sources li{display:flex;flex-direction:column;gap:4px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:7px 10px;}
+    .pf-domain .pf-src-top{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;}
+    .pf-domain .pf-src-d{font-family:var(--font-mono);color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+    .pf-domain .pf-src-n{font-family:var(--font-mono);color:var(--text-secondary);white-space:nowrap;}
     .pf-domain .pf-caption{color:var(--text-muted);font-size:12px;margin-top:8px;}
     .pf-domain .pf-tabs{display:flex;gap:6px;border-bottom:1px solid var(--border-subtle);width:100%;flex-wrap:wrap;margin-bottom:12px;}
     .pf-domain .pf-tab{appearance:none;background:transparent;border:0;color:var(--text-secondary);padding:8px 10px;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;}
@@ -367,9 +372,9 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
           <td class="n">${r.organicRank === null ? '<span class="pf-null">not in top results</span>' : fmtNum(r.organicRank)}</td><td class="n">${n(r.impressions)}</td></tr>`).join('')}</tbody></table>`;
     const maxSrc = Math.max(...data.citedSources.map(s => s.mentions ?? 0), 1);
     const sourcesHtml = !data.citedSources.length ? '<div class="pf-muted">No co-cited sources yet.</div>'
-      : `<table class="pf-table"><thead><tr><th>Domain</th><th class="n">Mentions</th><th>Relative</th></tr></thead>
-        <tbody>${data.citedSources.slice(0, 10).map(s => `<tr><td>${esc(s.domain)}</td><td class="n">${n(s.mentions)}</td>
-          <td><div class="pf-inline-bar"><div class="pf-inline-fill" style="width:${Math.max(0, Math.min(100, ((s.mentions ?? 0) / maxSrc) * 100))}%"></div></div></td></tr>`).join('')}</tbody></table>`;
+      : `<ul class="pf-sources">${data.citedSources.slice(0, 10).map(s => `<li>
+          <div class="pf-src-top"><span class="pf-src-d">${esc(s.domain)}</span><span class="pf-src-n">${n(s.mentions)} mentions</span></div>
+          <div class="pf-inline-bar"><div class="pf-inline-fill" style="width:${Math.max(0, Math.min(100, ((s.mentions ?? 0) / maxSrc) * 100))}%"></div></div></li>`).join('')}</ul>`;
     const citedHtml = !data.topPages.cited.length ? '<div class="pf-muted">No pages cited in AI Overviews yet.</div>'
       : `<table class="pf-table"><thead><tr><th>Page</th><th class="n">Mentions</th><th class="n">Clicks, 28 days</th><th>Our crawl status</th></tr></thead>
         <tbody>${data.topPages.cited.slice(0, 10).map(r => `<tr><td>${pageCell(r.url)}</td><td class="n">${n(r.mentions)}</td>${clicksCell(r.clicks28)}<td>${crawlPillHtml(r.crawl, isOwned)}</td></tr>`).join('')}</tbody></table>`;

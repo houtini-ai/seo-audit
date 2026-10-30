@@ -176,7 +176,7 @@ export function setupOverviewTabs(siteUrl: string, callServer: CallServer, signa
 
 // ---------- Sidebar actions ----------
 
-interface JobRow { id: string; type: string; state: string; startedAt: string; progress: string; error: string | null; note: string | null }
+interface JobRow { id: string; type: string; state: string; startedAt: string; progress: string; pct: number | null; error: string | null; note: string | null }
 interface ActionStatus { enabled: boolean; gsc: boolean; runner: boolean; jobs: JobRow[] }
 
 const JOB_LABEL: Record<string, string> = {
@@ -212,24 +212,32 @@ export function setupActions(siteUrl: string, callServer: CallServer): void {
     box.hidden = false;
     const live = new Set(status.jobs.filter(j => LIVE.has(j.state)).map(j => j.type));
     const noGsc = !status.gsc && !status.runner;
-    const button = (id: string, label: string, title: string, disabled: boolean): string =>
-      `<button class="sa-btn" type="button" data-act="${id}" title="${esc(title)}" ${disabled || busy ? 'disabled' : ''}>${busy === id ? 'Working...' : esc(label)}</button>`;
-    const jobs = status.jobs.slice(0, 4).map(j => `<div class="sa-job ${esc(j.state)}" title="${esc(j.error ?? j.note ?? '')}">
-        <span class="sa-dot" aria-hidden="true"></span>
-        <span>${esc(JOB_LABEL[j.type] ?? j.type)}: ${esc(STATE_LABEL[j.state] ?? j.state)}${j.progress && LIVE.has(j.state) ? `, ${esc(j.progress)}` : ''}<br><span class="sa-msg">${esc(ago(j.startedAt))}</span></span>
-        ${LIVE.has(j.state) ? `<button class="sa-cancel" type="button" data-cancel="${esc(j.id)}">Cancel</button>` : ''}
-      </div>`).join('');
+    // One primary action (the audit, which turns data into findings) and a row of compact
+    // secondary ones that fetch data. Live jobs get a card with a progress bar; finished ones are a
+    // quiet one-line history.
+    const button = (id: string, label: string, title: string, disabled: boolean, cls = 'sa-btn'): string =>
+      `<button class="${cls}" type="button" data-act="${id}" title="${esc(title)}" ${disabled || busy ? 'disabled' : ''}>${busy === id ? 'Working...' : esc(label)}</button>`;
+    const liveJobs = status.jobs.filter(j => LIVE.has(j.state));
+    const pastJobs = status.jobs.filter(j => !LIVE.has(j.state)).slice(0, 3);
+    const jobCard = (j: JobRow): string => `<div class="sa-card ${esc(j.state)}">
+        <div class="sa-card-top"><span class="sa-dot" aria-hidden="true"></span><b>${esc(JOB_LABEL[j.type] ?? j.type)}</b>: ${esc(STATE_LABEL[j.state] ?? j.state)}
+          <button class="sa-cancel" type="button" data-cancel="${esc(j.id)}">Cancel</button></div>
+        ${j.progress ? `<div class="sa-card-sub">${esc(j.progress)}${j.pct != null ? ` <span class="sa-pct">${j.pct}%</span>` : ''}</div>` : ''}
+        <div class="sa-bar${j.pct == null ? ' indeterminate' : ''}" role="progressbar" ${j.pct != null ? `aria-valuenow="${j.pct}" aria-valuemin="0" aria-valuemax="100"` : ''} aria-label="${esc(JOB_LABEL[j.type] ?? j.type)} progress"><span style="width:${j.pct ?? 30}%"></span></div>
+      </div>`;
+    const pastLine = (j: JobRow): string => `<div class="sa-job ${esc(j.state)}" title="${esc(j.error ?? j.note ?? '')}"><span class="sa-dot" aria-hidden="true"></span><span>${esc(JOB_LABEL[j.type] ?? j.type)} ${esc(STATE_LABEL[j.state] ?? j.state)} <span class="sa-when">${esc(ago(j.startedAt))}</span></span></div>`;
     const gscTitle = 'Search Console credentials are not available where this dashboard runs';
     box.innerHTML = `<div class="sa-title">Actions</div>
-      <div class="sa-buttons">
-        ${button('crawl', 'Crawl site', 'Fetch the site into the local database (free)', live.has('crawl'))}
-        ${button('sync', 'Sync Search Console', noGsc ? gscTitle : 'Pull the latest Search Console data (free)', live.has('sync') || noGsc)}
-        ${button('inspect', 'Inspect URLs', noGsc ? gscTitle : 'URL Inspection: index coverage and canonicals (free, Google quota applies)', live.has('inspect') || noGsc)}
-        ${button('audit', 'Run audit', 'Run the checks against the stored data (free)', live.has('crawl'))}
-        ${button('readiness', 'Agent readiness', 'Probe the site for AI-agent signals (free)', false)}
+      ${button('audit', 'Run audit', live.has('crawl') ? 'Wait for the crawl to finish' : 'Run the checks against the stored data (free)', live.has('crawl'), 'sa-primary')}
+      <div class="sa-row">
+        ${button('crawl', 'Crawl', 'Crawl the site into the local database (free)', live.has('crawl'))}
+        ${button('sync', 'Sync GSC', noGsc ? gscTitle : 'Pull the latest Search Console data (free)', live.has('sync') || noGsc)}
+        ${button('inspect', 'Inspect', noGsc ? gscTitle : 'URL Inspection: index coverage and canonicals (free, Google quota applies)', live.has('inspect') || noGsc)}
+        ${button('readiness', 'Agent', 'Agent readiness: probe the site for AI-agent signals (free)', false)}
       </div>
+      ${liveJobs.map(jobCard).join('')}
       ${msg ? `<div class="sa-msg ${msg.err ? 'err' : ''}">${esc(msg.text)}${msg.reload ? ' <button class="link-btn" type="button" data-reload>Reload</button>' : ''}</div>` : ''}
-      ${status.jobs.length ? `<div class="sa-jobs">${jobs}</div>` : ''}
+      ${pastJobs.length ? `<div class="sa-jobs">${pastJobs.map(pastLine).join('')}</div>` : ''}
       ${noGsc ? '<div class="sa-msg">Search Console jobs need its credentials, or the job runner.</div>' : ''}
       <button type="button" class="sa-hide" data-hide title="Leave this property out of the domain list and the portfolio. Its data is kept, and All domains can show it again.">Hide this property</button>`;
   };

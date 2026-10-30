@@ -12,6 +12,7 @@ import { jobScopeFor } from './paths.js';
 import { runAudit } from '../audit/engine.js';
 import { checkAndSaveAgentReadiness } from './agentReadinessStore.js';
 import { setPropertyHidden } from './hiddenProperties.js';
+import { probeUrls } from './probeUrls.js';
 import type { DataForSeoClient } from './DataForSeoClient.js';
 
 /**
@@ -47,8 +48,11 @@ function jobView(j: Job): Record<string, unknown> {
   if (typeof p.crawled === 'number') bits.push(`${p.crawled}${p.stage === 'fetching' && typeof p.maxPages === 'number' ? ` of ${p.maxPages}` : ''} pages`);
   if (typeof p.rowsFetched === 'number') bits.push(`${p.rowsFetched} rows`);
   if (typeof p.inspected === 'number') bits.push(`${p.inspected} inspected`);
+  // A share for the progress bar, only where it's a true fraction: crawl pages while fetching.
+  const pct = p.stage === 'fetching' && typeof p.crawled === 'number' && typeof p.maxPages === 'number' && p.maxPages > 0
+    ? Math.min(100, Math.round((p.crawled / p.maxPages) * 100)) : null;
   return {
-    id: j.id, type: j.type, state: j.noRunner ? 'queued-no-runner' : j.state,
+    id: j.id, type: j.type, state: j.noRunner ? 'queued-no-runner' : j.state, pct,
     startedAt: j.startedAt, updatedAt: j.updatedAt, progress: bits.join(', '),
     error: j.error ?? null, note: j.note ?? null,
   };
@@ -168,6 +172,15 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
       const r = runAudit(dataDir(), siteUrl, { includeJudgement: a.includeJudgement === true, topLimit: 1 });
       void getDashboardDataAsync(dataDir(), siteUrl).catch(() => { /* warm the next load */ });
       return { runId: r.runId, total: r.total, bySeverity: r.bySeverity };
+    },
+    // "Verify live URL" on a finding: one live fetch of a URL on the property's own host (the probe
+    // refuses any other host, at every redirect hop). Free: it's your own server.
+    verify_url: async (a) => {
+      const siteUrl = requireProperty(a);
+      const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : siteUrl;
+      const [r] = await probeUrls([{ url: String(a.url ?? '') }], new URL(seed).hostname, { budgetMs: 20000 });
+      return { url: r.url, status: r.status, finalUrl: r.finalUrl, finalStatus: r.finalStatus, redirects: r.redirectChain.length,
+        canonical: r.canonical, metaRobots: r.metaRobots, xRobotsTag: r.xRobotsTag, title: r.title, ms: r.ms, fetchedAs: r.fetchedAs } as unknown as Record<string, unknown>;
     },
     check_agent_readiness: async (a) => {
       requireJobs();

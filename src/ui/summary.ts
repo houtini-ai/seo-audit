@@ -90,7 +90,9 @@ function verdict(d: any): string {
   if (v.empty) return empty('Nothing to summarise yet - sync Search Console (<code>sync_gsc</code>) or run a crawl and an audit.');
   const sentence = v.segments.map(s => (s.n ? `<b class="n">${esc(s.text)}</b>` : esc(s.text))).join('');
   const chipCls: Record<string, string> = { up: 'vc-up', down: 'vc-down', flat: 'vc-flat', neutral: 'vc-flat' };
-  const chips = v.chips.map(c => `<span class="vchip ${chipCls[c.direction]}"><span class="n">${esc(c.label)}</span></span>`).join('');
+  // Open critical issues read as critical, not as a neutral count.
+  const cls = (c: typeof v.chips[number]): string => (c.key === 'critical' && !/^0\b/.test(c.label) ? 'vc-crit' : chipCls[c.direction]);
+  const chips = v.chips.map(c => `<span class="vchip ${cls(c)}"><span class="n">${esc(c.label)}</span></span>`).join('');
   return `<p class="verdict-text" title="${esc(v.tooltip)}">${sentence}</p><div class="vchips">${chips}</div>`;
 }
 

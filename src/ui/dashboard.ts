@@ -325,12 +325,54 @@ function findingDetailHtml(f: any): string {
     meta.push(`<span class="fi-m">~<b>${eff.hours || 0}</b>h · ≈<b>${fmt(Math.round(eff.expectedClicks || 0))}</b> clicks${eff.fixType ? ` · ${esc(String(eff.fixType))}` : ''} <span class="fi-mlbl">payoff</span></span>`);
   }
   const url = f.url_key ? `<a class="fi-link" href="${esc(f.url_key)}" target="_blank" rel="noopener">${esc(f.url_key)}</a>` : '';
-  return `<div class="fi-detail">` +
-    (rec.text ? `<p class="fi-rec">${esc(rec.text)}</p>` : '') +
-    (chips.length ? `<div class="fi-grid">${chips.join('')}</div>` : '') +
-    notes.join('') +
-    (meta.length || url ? `<div class="fi-meta">${meta.join('')}${url}<code class="fi-check">${esc(f.check_id)}</code></div>` : '') +
+  // Two columns: what we measured (evidence) and what to do (the fix), with the two things you do
+  // next: copy the fix, and check the live URL now (a free probe of your own host, browser only).
+  const evidence = (chips.length ? `<div class="fi-grid">${chips.join('')}</div>` : '') + notes.join('') +
+    (meta.length || url ? `<div class="fi-meta">${meta.join('')}${url}<code class="fi-check">${esc(f.check_id)}</code></div>` : '');
+  const canVerify = !!__sacWeb && !!f.url_key && /^https?:\/\//.test(String(f.url_key));
+  const fix = `<p class="fi-rec">${rec.text ? esc(rec.text) : 'No fix text for this check.'}</p>` +
+    `<div class="fi-actions">` +
+    (rec.text ? `<button type="button" class="fi-btn primary" data-copy-fix>Copy fix</button>` : '') +
+    (canVerify ? `<button type="button" class="fi-btn" data-verify="${esc(String(f.url_key))}">Verify live URL</button>` : '') +
+    `</div><div class="fi-verify" aria-live="polite"></div>` +
+    `<div class="fi-hint">Generated fixes (JSON-LD, redirect rules, internal links): ask Claude to run <code>fix_finding</code> for this check and URL.</div>`;
+  return `<div class="fi-detail fi-split" data-fix-text="${esc([rec.title, rec.text, f.url_key].filter(Boolean).join('\n'))}">` +
+    `<div class="fi-col"><div class="fi-col-h">Evidence</div>${evidence || '<p class="muted">No evidence fields.</p>'}</div>` +
+    `<div class="fi-col"><div class="fi-col-h">Fix</div>${fix}</div>` +
     `</div>`;
+}
+
+/** Copy fix / Verify live URL inside an expanded finding (one delegated listener per table). */
+function wireFindingActions(tableEl: HTMLElement): void {
+  if (tableEl.dataset.fiWired) return;
+  tableEl.dataset.fiWired = '1';
+  tableEl.addEventListener('click', ev => {
+    const t = ev.target as HTMLElement;
+    const copy = t.closest<HTMLButtonElement>('[data-copy-fix]');
+    const verify = t.closest<HTMLButtonElement>('[data-verify]');
+    if (!copy && !verify) return;
+    ev.stopPropagation();
+    const detail = t.closest<HTMLElement>('.fi-detail');
+    if (copy && detail) {
+      const text = detail.dataset.fixText ?? '';
+      const done = (ok: boolean): void => { copy.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => { copy.textContent = 'Copy fix'; }, 1800); };
+      navigator.clipboard?.writeText(text).then(() => done(true), () => done(false)) ?? done(false);
+    }
+    if (verify && detail && currentData) {
+      const out = detail.querySelector<HTMLElement>('.fi-verify');
+      verify.disabled = true; verify.textContent = 'Checking...';
+      void callServer('verify_url', { siteUrl: currentData.siteUrl, url: verify.dataset.verify })
+        .then(res => {
+          const r = (res?.structuredContent ?? res) as { status: number | null; finalUrl: string | null; finalStatus: number | null; redirects: number; canonical: string | null; metaRobots: string | null; xRobotsTag: string | null; ms: number };
+          const robots = [r.metaRobots, r.xRobotsTag].filter(Boolean).join(', ');
+          if (out) out.innerHTML = `<div class="fi-live"><b>Live now:</b> ${r.status ?? 'no response'}` +
+            (r.redirects ? ` → ${esc(String(r.finalStatus ?? ''))} at <code>${esc(r.finalUrl ?? '')}</code> (${r.redirects} redirect${r.redirects === 1 ? '' : 's'})` : '') +
+            (r.canonical ? ` · canonical <code>${esc(r.canonical)}</code>` : '') + (robots ? ` · robots ${esc(robots)}` : '') + ` · ${r.ms} ms</div>`;
+        })
+        .catch(e => { if (out) out.innerHTML = `<div class="fi-live err">${esc(e instanceof Error ? e.message : String(e))}</div>`; })
+        .finally(() => { verify.disabled = false; verify.textContent = 'Verify live URL'; });
+    }
+  });
 }
 
 // Branded vs non-branded split - transparent brand match, surfaced so the user can verify it.
@@ -524,11 +566,12 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
     const more = rowsTotal > shown && canQuery && !loadingRows;
     const countLine = loadingRows && !shown ? '<p class="muted">Loading findings...</p>'
       : rowsTotal < 0 ? `<p class="muted fi-count">Showing ${fmt(shown)} from the 50 highest-priority findings. Open the live dashboard for every finding.</p>`
-        : `<p class="muted fi-count">Showing ${fmt(shown)} of ${fmt(rowsTotal)} finding${rowsTotal === 1 ? '' : 's'}${filtered() ? ' matching the filter' : ''}, highest impact first.${more ? ` <button type="button" class="link-btn" data-more>Show ${fmt(Math.min(PAGE, rowsTotal - shown))} more</button>` : ''}${loadingRows && shown ? ' Loading...' : ''}</p>`;
+        : `<p class="muted fi-count">Showing ${fmt(shown)} of ${fmt(rowsTotal)} finding${rowsTotal === 1 ? '' : 's'}${filtered() ? ' matching the filter' : ''}, highest impact first.${more ? ` <button type="button" class="link-btn" data-more>Show ${fmt(Math.min(PAGE, rowsTotal - shown))} more (${fmt(rowsTotal - shown)} remaining)</button>` : ''}${loadingRows && shown ? ' Loading...' : ''}</p>`;
     tableEl.innerHTML = rowHtml.length
       ? healthBar + `<table class="grid-virtual"><thead><tr><th>Sev</th><th>Issue</th><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th>Impact</th></tr></thead><tbody>${rowHtml.join('')}</tbody></table>` + countLine
       : healthBar + (loadingRows ? countLine : `<p class="muted">No findings match this filter.</p>`);
     tableEl.querySelector<HTMLButtonElement>('[data-more]')?.addEventListener('click', () => { void fetchRows(shown); });
+    wireFindingActions(tableEl);
     tableEl.querySelectorAll<HTMLElement>('.fi-row').forEach(row => {
       const toggle = (): void => {
         const det = row.nextElementSibling as HTMLElement | null;
@@ -546,13 +589,22 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
   const areaEl = document.getElementById('byArea');
   if (areaEl) {
     const byCat: Record<string, number> = {};
-    for (const c of fc.byCheck) byCat[c.category] = (byCat[c.category] ?? 0) + c.count;
+    const bySev: Record<string, Record<string, number>> = {}; // category -> severity -> findings
+    for (const c of fc.byCheck) {
+      byCat[c.category] = (byCat[c.category] ?? 0) + c.count;
+      (bySev[c.category] ??= {})[c.severity] = (bySev[c.category][c.severity] ?? 0) + c.count;
+    }
     const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
     const maxC = Math.max(...cats.map(c => c[1]), 1);
+    const HBC: Record<string, string> = { crit: 'hb-crit', high: 'hb-high', med: 'hb-med', low: 'hb-low', info: 'hb-low' };
+    // Each area's bar is split by severity (the same colours as the health bar), so an area with a
+    // few critical issues isn't read as smaller than one with many low ones.
+    const stack = (k: string, n: number): string => SEV_ORDER.filter(s => bySev[k]?.[s]).map(s =>
+      `<span class="${HBC[s]}" style="width:${((bySev[k][s] / maxC) * 100).toFixed(2)}%" title="${esc(SEV_LABEL[s])}: ${fmt(bySev[k][s])}"></span>`).join('') || `<span style="width:${Math.max(2, (n / maxC) * 100).toFixed(1)}%"></span>`;
     const drawArea = (): void => {
-      areaEl.innerHTML = `<h4>By area</h4><div class="hint" style="font-size:11px">Whole run; click to scope the list.</div>` + cats.map(([k, n]) =>
+      areaEl.innerHTML = `<h4>By area</h4><div class="hint" style="font-size:11px">Whole run, split by severity; click to scope the list.</div>` + cats.map(([k, n]) =>
         `<button type="button" class="area-row${area === k ? ' active' : ''}" data-area="${esc(k)}" aria-pressed="${area === k}"><div class="ar-top"><span>${esc(categoryLabel(k))}</span><b>${fmt(n)}</b></div>` +
-        `<div class="stat-track"><span style="width:${Math.max(2, (n / maxC) * 100).toFixed(1)}%;background:${area === k ? 'var(--accent)' : 'var(--chart-categorical-1)'}"></span></div></button>`).join('');
+        `<div class="stat-track sev-stack">${stack(k, n)}</div></button>`).join('');
       areaEl.querySelectorAll<HTMLButtonElement>('[data-area]').forEach(b => {
         b.onclick = (): void => { area = area === b.dataset.area ? 'all' : b.dataset.area!; drawArea(); refilter(); };
       });
@@ -575,8 +627,30 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
 
 // KPI tiles come from the display library (lib/kpi.ts: statBlock + kpiGrid).
 
+/** Counts in the menu, so it says what needs attention: open critical issues (else high), and the
+ * agent-readiness score. Nothing is shown for a source that hasn't run. */
+function paintNavBadges(data: DashboardData): void {
+  const set = (panel: string, text: string | null, cls: string, title: string): void => {
+    const btn = document.querySelector<HTMLButtonElement>(`.tab-btn[data-panel="${panel}"]`);
+    if (!btn) return;
+    btn.querySelector('.nav-badge')?.remove();
+    if (!text) return;
+    const b = document.createElement('span');
+    b.className = `nav-badge ${cls}`; b.textContent = text; b.title = title;
+    btn.appendChild(b);
+  };
+  const sev: Record<string, number> = {};
+  for (const c of data.findings?.byCheck ?? []) sev[c.severity] = (sev[c.severity] ?? 0) + c.count;
+  if (sev.crit) set('issues', fmt(sev.crit), 'nb-crit', `${sev.crit} critical issue${sev.crit === 1 ? '' : 's'} in the latest audit`);
+  else if (sev.high) set('issues', fmt(sev.high), 'nb-high', `${sev.high} high-severity issue${sev.high === 1 ? '' : 's'} in the latest audit`);
+  else set('issues', null, '', '');
+  const ar = (data as any).agentReadiness as { score?: number } | null | undefined;
+  set('ai', ar?.score != null ? String(ar.score) : null, 'nb-score', 'Agent readiness score, out of 100');
+}
+
 function render(data: DashboardData): void {
   $('loading').style.display = 'none';
+  paintNavBadges(data);
   renderSideFreshness(data); // the sidebar lives outside #content: show job status even with no GSC data
   if (data.empty || !data.summary) {
     // No Search Console yet. With a crawl or an audit the Summary still has plenty to say (health,
@@ -1392,9 +1466,17 @@ function renderCrawlOnly(data: DashboardData): void {
 /** Every window-dependent label reads the current window; the Summary keeps its fixed 28 days. */
 function applyWindowLabels(): void {
   document.querySelectorAll<HTMLElement>('[data-win]').forEach(el => { el.textContent = String(winDays); });
-  const sel = document.getElementById('rangeDays') as HTMLSelectElement | null;
-  if (sel) sel.value = String(winDays);
+  markWindow();
   syncRangeControl();
+}
+
+/** Highlight the active window button. */
+function markWindow(): void {
+  document.querySelectorAll<HTMLButtonElement>('#rangeCtl [data-days]').forEach(b => {
+    const on = Number(b.dataset.days) === winDays;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
 }
 
 /** Tabs whose data is monthly DataForSEO history, not a Search Console window. */
@@ -1411,27 +1493,34 @@ function syncRangeControl(): void {
   const r = document.getElementById('range');
   const dr = currentData?.dateRange;
   if (!r) return;
-  if (monthly) r.textContent = '';
-  else if (dr?.maxDate) r.textContent = onSummary || !__sacWeb ? `last ${onSummary ? 28 : winDays} days to ${fmtDate(dr.maxDate)}` : `to ${fmtDate(dr.maxDate)}`;
+  // One group: the window buttons and the end date read as a single control. The Summary says
+  // its fixed window; the monthly tabs say what their data is instead of a date range.
+  r.classList.toggle('range-joined', !!ctl && !ctl.hidden);
+  if (monthly) r.textContent = 'Monthly DataForSEO data';
+  else if (dr?.maxDate) r.textContent = onSummary ? `Summary: 28 days to ${fmtDate(dr.maxDate)}` : !__sacWeb ? `last ${winDays} days to ${fmtDate(dr.maxDate)}` : `to ${fmtDate(dr.maxDate)}`;
 }
 
 /** Change the window: refetch the payload for it and re-render, keeping the open tab. */
 function setupRangeControl(): void {
-  const sel = document.getElementById('rangeDays') as HTMLSelectElement | null;
-  if (!sel) return;
-  sel.value = String(winDays);
-  sel.addEventListener('change', () => {
-    const d = Number(sel.value);
+  const ctl = document.getElementById('rangeCtl');
+  if (!ctl) return;
+  markWindow();
+  ctl.addEventListener('click', ev => {
+    const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-days]');
+    if (!b || ctl.classList.contains('busy')) return;
+    const d = Number(b.dataset.days);
     if (!WINDOWS.includes(d) || d === winDays) return;
     winDays = d;
+    markWindow();
     const u = new URL(location.href);
     if (d === 28) u.searchParams.delete('days'); else u.searchParams.set('days', String(d));
     const tab = document.querySelector('.tab-btn.active')?.getAttribute('data-panel');
     if (tab && tab !== 'summary') u.searchParams.set('tab', tab);
     history.replaceState(null, '', u);
-    sel.disabled = true;
+    ctl.classList.add('busy');
+    ctl.setAttribute('aria-busy', 'true');
     dataLoaded = false;
-    void loadDashboard(loadedSite).finally(() => { sel.disabled = false; });
+    void loadDashboard(loadedSite).finally(() => { ctl.classList.remove('busy'); ctl.removeAttribute('aria-busy'); });
   });
 }
 
@@ -1443,7 +1532,8 @@ function setupTabs(): void {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
       document.querySelectorAll<HTMLElement>('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === panel));
       const title = document.getElementById('pageTitle');
-      if (title) title.textContent = btn.textContent?.trim() || 'Summary';
+      // The label span only: the button also holds the menu count badge.
+      if (title) title.textContent = btn.querySelector('span:not(.nav-badge)')?.textContent?.trim() || btn.textContent?.trim() || 'Summary';
       syncRangeControl();
       // Scroll to the top only for a real click: programmatic .click() (deep-link restore on every
       // re-render, [data-goto] cross-links) must not lose the reader's place.

@@ -133,3 +133,13 @@
 @media (max-width: 1100px) {
   .pf-root .page-header { flex-direction: column; }
 }
+
+/* Design pass: tab counts, a totals line, one-click fixes on needs-attention reasons, primary submit. */
+.pf-root .tab .tab-n { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+.pf-root .totals-line { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 10px 12px; border-top: 1px solid var(--border-standard); background: var(--bg-surface); font-size: 12px; color: var(--text-secondary); }
+.pf-root .totals-line b { color: var(--text-primary); }
+.pf-root .reason-fix { margin-left: 6px; border: 1px solid currentColor; background: transparent; color: inherit; border-radius: var(--radius-pill); font-size: 11px; padding: 0 8px; line-height: 18px; }
+.pf-root .reason-fix:hover:not(:disabled) { background: color-mix(in srgb, var(--intent-danger) 12%, transparent); }
+.pf-root .reason-fix:disabled { opacity: .7; cursor: default; }
+.pf-root .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-on, #fff); font-weight: 600; }
+.pf-root .btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
