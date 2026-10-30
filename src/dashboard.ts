@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { startDashboardServer } from './core/webServer.js';
+import { startDashboardServer, stopDashboardServer } from './core/webServer.js';
 import { buildWebCallHandlers } from './core/webHandlers.js';
 import { JobManager, jobsDbPath, jobRunnerModeFromEnv, runnerAlive } from './core/JobManager.js';
 import { buildJobDeps } from './core/jobRunner.js';
@@ -69,6 +69,15 @@ async function main(): Promise<void> {
   // startDashboardServer unref()s its listener so it can't hold an MCP process open; this is a
   // dedicated process whose whole job is to stay up, so keep the event loop alive explicitly.
   setInterval(() => { /* keep-alive */ }, 1 << 30);
+  // A docker stop is a normal stop: exit 0, so the npx wrapper doesn't log it as an npm error.
+  // A crawl the dashboard started in this process is recorded as interrupted by the job registry.
+  const stop = (sig: string): void => {
+    console.error(`[seo-audit-dashboard] ${sig}: stopping`);
+    void stopDashboardServer().finally(() => process.exit(0));
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
+  process.once('SIGTERM', () => stop('SIGTERM'));
+  process.once('SIGINT', () => stop('SIGINT'));
 }
 
 main().catch((e) => { console.error('[seo-audit-dashboard] failed to start:', e); process.exit(1); });

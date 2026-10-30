@@ -20,7 +20,8 @@
         <button class="tab-btn nav-item" data-panel="search" role="tab" type="button"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg><span>Search performance</span></button>
         <button class="tab-btn nav-item" data-panel="opportunities" role="tab" type="button"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z"/></svg><span>Opportunities</span></button>
         <button class="tab-btn nav-item" data-panel="links" role="tab" type="button"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span>Links</span></button>
-        <button class="tab-btn nav-item" data-panel="market" role="tab" type="button"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12" y="8" width="3" height="10" rx="0.5"/><rect x="17" y="5" width="3" height="13" rx="0.5"/></svg><span>Market &amp; AI</span></button>
+        <button class="tab-btn nav-item" data-panel="market" role="tab" type="button"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12" y="8" width="3" height="10" rx="0.5"/><rect x="17" y="5" width="3" height="13" rx="0.5"/></svg><span>Market</span></button>
+        <button class="tab-btn nav-item" data-panel="ai" role="tab" type="button"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/></svg><span>AI visibility</span></button>
         <button class="tab-btn nav-item" data-panel="research" role="tab" type="button"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/></svg><span>Content research</span></button>
       </nav>
       <div class="side-actions" id="sideActions" aria-label="Actions" hidden></div>
@@ -399,6 +400,14 @@
 
       <section class="tab-panel" data-panel="market" role="tabpanel">
         <div id="marketView"></div>
+      </section>
+
+      <section class="tab-panel" data-panel="ai" role="tabpanel">
+        <div class="chart-card">
+          <div class="card-head"><div><h3>Readiness and access</h3><div class="hint">Whether AI agents can find and use the site, which AI crawlers robots.txt lets in, and AI Overview presence on the queries content recon checked. From your own probes, free.</div></div></div>
+          <div id="aiSignals"></div>
+        </div>
+        <div id="aiView"></div>
       </section>
 
       <section class="tab-panel" data-panel="research" role="tabpanel">

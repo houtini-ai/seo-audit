@@ -172,8 +172,9 @@ export class PortfolioStore {
     const tx = this.db.transaction(() => {
       for (const p of props) {
         // A database named by a bare domain was created by a DataForSEO call on someone else's site
-        // (pull_backlinks, link_intersect): data we hold, not a property we own.
-        if (!p.gsc) continue;
+        // (pull_backlinks, link_intersect): data we hold, not a property we own. A hidden property
+        // (hiddenProperties.ts) is left out too; unhiding brings it back on the next sync.
+        if (!p.gsc || p.hidden) continue;
         const domain = targetForProperty(p.siteUrl);
         if (!isValidDomain(domain)) continue;
         let loc: string | number | undefined;

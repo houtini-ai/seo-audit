@@ -91,10 +91,10 @@ You often don't need to ask: when a refresh, crawl, sync or audit finishes, the 
 **Running it under Docker or the Docker MCP gateway?** The browser link points at a port inside the container, which your browser can't reach. Run the dashboard as its own small container on a fixed port instead, on the same data volume:
 
 ```bash
-docker run -d --name seo-audit-dashboard --restart unless-stopped -p 127.0.0.1:8788:8788 -e SAC_DATA_DIR=/data -e SAC_DASHBOARD_BIND=0.0.0.0 -e SAC_DASHBOARD_PORT=8788 -v seo-audit-data:/data node:22-slim npx -y -p @houtini/seo-audit-console seo-audit-dashboard
+docker run -d --init --name seo-audit-dashboard --restart unless-stopped -p 127.0.0.1:8788:8788 -e SAC_DATA_DIR=/data -e SAC_DASHBOARD_BIND=0.0.0.0 -e SAC_DASHBOARD_PORT=8788 -v <your-data-volume>:/data node:22-slim npx -y -p @houtini/seo-audit-console@<your-version> seo-audit-dashboard
 ```
 
-Then open `http://127.0.0.1:8788/dashboard?siteUrl=sc-domain:mysite.com`. Use the volume name your MCP server writes to. In Git Bash on Windows, put `MSYS_NO_PATHCONV=1` in front of the command so `/data` isn't rewritten as a Windows path. More in [dashboard.md](manual/dashboard.md).
+Then open `http://127.0.0.1:8788/dashboard?siteUrl=sc-domain:mysite.com`. Replace `<your-data-volume>` with the volume your MCP server writes to, and `<your-version>` with the version it runs, so the two match (the server prints this command with its own version filled in). The volume must be writable: the dashboard's actions start jobs. In Git Bash on Windows, put `MSYS_NO_PATHCONV=1` in front of the command so `/data` isn't rewritten as a Windows path. More in [dashboard.md](manual/dashboard.md).
 
 ## The manual
 

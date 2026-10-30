@@ -927,3 +927,8 @@ select, select.sel, #cannSelect {
 .range-select { font: inherit; font-size: 12.5px; font-weight: 500; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border-standard); border-radius: var(--radius-pill); padding: 5px 10px; cursor: pointer; }
 .range-select:disabled { opacity: .6; cursor: progress; }
 .fi-count { margin-top: 10px; font-size: 12.5px; }
+.side-actions .sa-hide { align-self: flex-start; border: 0; background: none; padding: 0; font: inherit; font-size: 11.5px; color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.side-actions .sa-hide:hover { color: var(--text-primary); }
+.hidden-props { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-muted); }
+.hidden-props:empty { display: none; }
+.hidden-props a { color: var(--text-secondary); font-family: var(--font-mono); }

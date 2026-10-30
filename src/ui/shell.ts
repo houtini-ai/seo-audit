@@ -85,14 +85,33 @@ let repaintMarket: (() => void) | null = null;
 /** Re-tint the overview charts after a theme change. */
 export function repaintDomainViews(): void {
   repaintMarket?.();
+  repaintAi?.();
   refreshPortfolioView();
 }
 
 /** "All domains": the domains table, with add and remove for watched domains. */
 export function showDomainsView(boot: WebBoot, callServer: CallServer): void {
-  const root = propertyChrome(false);
+  const view = propertyChrome(false);
   setTitle('All domains');
+  view.innerHTML = '<div id="pfMount"></div><div class="hidden-props" id="hiddenProps"></div>';
+  const root = document.getElementById('pfMount')!;
   mountPortfolio({ root, callServer, web: true, onChanged: () => { void buildDomainPicker(boot, callServer); } });
+  void paintHidden(boot, callServer);
+}
+
+/** The properties the user hid, each with a way to show it again. */
+async function paintHidden(boot: WebBoot, callServer: CallServer): Promise<void> {
+  const el = document.getElementById('hiddenProps');
+  if (!el) return;
+  let hidden: string[] = [];
+  try { hidden = (sc(await callServer('list_domains', {})).hidden ?? []) as string[]; } catch { /* nothing to show */ }
+  el.innerHTML = hidden.length
+    ? `<span>Hidden properties:</span> ${hidden.map(h => `<span class="hp-item"><a href="/dashboard?siteUrl=${encodeURIComponent(h)}">${esc(h)}</a> <button type="button" class="link-btn" data-unhide="${esc(h)}">Show</button></span>`).join('')}`
+    : '';
+  el.querySelectorAll<HTMLButtonElement>('[data-unhide]').forEach(b => b.addEventListener('click', () => {
+    b.disabled = true;
+    void callServer('set_property_hidden', { siteUrl: b.dataset.unhide, hidden: false }).then(() => location.reload());
+  }));
 }
 
 /** A watched domain: its overview (DataForSEO data, estimated), with a way back to the table. */
@@ -112,35 +131,47 @@ export async function showWatchedDomain(domain: string, callServer: CallServer):
   }
 }
 
-// ---------- Market & AI tab ----------
+// ---------- Market and AI visibility tabs ----------
+
+let repaintAi: (() => void) | null = null;
 
 /**
- * The property dashboard's "Market & AI" tab: the domain overview (DataForSEO estimates, AI
- * mentions, backlinks) for this property's domain. Loaded on first open, not on page load.
+ * The property dashboard's Market and AI visibility tabs. Both show part of the domain overview
+ * (DataForSEO: estimated traffic, keywords and backlinks on Market; AI Overview and ChatGPT
+ * mentions, cited pages and co-cited sources on AI visibility), fetched once on the first open of
+ * either. The AI tab also shows the free signals from the dashboard payload (`signals`).
  */
-export function setupMarketTab(siteUrl: string, callServer: CallServer): void {
-  const btn = document.querySelector<HTMLButtonElement>('.tab-btn[data-panel="market"]');
-  const root = document.getElementById('marketView');
-  if (!btn || !root) return;
-  let started = false;
-  btn.addEventListener('click', () => {
-    if (started) return;
-    started = true;
-    root.innerHTML = '<div class="loading">Loading market data...</div>';
-    void (async () => {
-      try {
-        const o = sc(await callServer('get_domain_overview', { domain: domainOfProperty(siteUrl) }));
-        // In chat the tool answers { notFound } instead of failing.
-        if (!o || o.notFound) throw new Error(`${domainOfProperty(siteUrl)} is not in the portfolio yet`);
-        const paint = (): void => renderDomainOverview(root, o, { onBack: () => {}, embedded: true });
+export function setupOverviewTabs(siteUrl: string, callServer: CallServer, signals: () => string): void {
+  const domain = domainOfProperty(siteUrl);
+  let overview: Promise<any> | null = null;
+  const fetchOverview = (): Promise<any> => (overview ??= (async () => {
+    const o = sc(await callServer('get_domain_overview', { domain }));
+    // In chat the tool answers { notFound } instead of failing.
+    if (!o || o.notFound) throw new Error(`${domain} is not in the portfolio yet`);
+    return o;
+  })().catch(e => { overview = null; throw e; }));
+  const noData = (title: string, e: unknown, what: string): string =>
+    `<div class="chart-card"><h3>${title}</h3><div class="hint">${esc(errText(e))}. ${what} arrive with a portfolio refresh. That costs money, so it starts from chat: ask Claude to "Refresh my SEO Console portfolio" and it quotes the cost first.</div></div>`;
+
+  const wire = (panel: string, rootId: string, section: 'market' | 'ai', title: string, what: string, onPaint: (p: () => void) => void): void => {
+    const btn = document.querySelector<HTMLButtonElement>(`.tab-btn[data-panel="${panel}"]`);
+    const root = document.getElementById(rootId);
+    if (!btn || !root) return;
+    let started = false;
+    btn.addEventListener('click', () => {
+      if (panel === 'ai') { const s = document.getElementById('aiSignals'); if (s) s.innerHTML = signals(); }
+      if (started) return;
+      started = true;
+      root.innerHTML = `<div class="loading">Loading ${section === 'ai' ? 'AI visibility' : 'market'} data...</div>`;
+      void fetchOverview().then(o => {
+        const paint = (): void => renderDomainOverview(root, o, { onBack: () => {}, embedded: true, section });
         paint();
-        repaintMarket = paint;
-      } catch (e) {
-        started = false;
-        root.innerHTML = `<div class="chart-card"><h3>Market &amp; AI</h3><div class="hint">${esc(errText(e))}. DataForSEO numbers (estimated traffic, keywords, backlinks, AI mentions) arrive with a portfolio refresh. That costs money, so it starts from chat: ask Claude to "Refresh my SEO Console portfolio" and it quotes the cost first.</div></div>`;
-      }
-    })();
-  });
+        onPaint(paint);
+      }).catch(e => { started = false; root.innerHTML = noData(title, e, what); });
+    });
+  };
+  wire('market', 'marketView', 'market', 'Market', 'DataForSEO numbers (estimated traffic and keywords, backlinks, countries)', p => { repaintMarket = p; });
+  wire('ai', 'aiView', 'ai', 'AI mentions', 'Mentions in Google AI Overviews and ChatGPT, AI search volume and the pages cited', p => { repaintAi = p; });
 }
 
 // ---------- Sidebar actions ----------
@@ -199,7 +230,8 @@ export function setupActions(siteUrl: string, callServer: CallServer): void {
       </div>
       ${msg ? `<div class="sa-msg ${msg.err ? 'err' : ''}">${esc(msg.text)}${msg.reload ? ' <button class="link-btn" type="button" data-reload>Reload</button>' : ''}</div>` : ''}
       ${status.jobs.length ? `<div class="sa-jobs">${jobs}</div>` : ''}
-      ${noGsc ? '<div class="sa-msg">Search Console jobs need its credentials, or the job runner.</div>' : ''}`;
+      ${noGsc ? '<div class="sa-msg">Search Console jobs need its credentials, or the job runner.</div>' : ''}
+      <button type="button" class="sa-hide" data-hide title="Leave this property out of the domain list and the portfolio. Its data is kept, and All domains can show it again.">Hide this property</button>`;
   };
 
   const poll = async (): Promise<void> => {
@@ -262,6 +294,12 @@ export function setupActions(siteUrl: string, callServer: CallServer): void {
     const c = t.closest<HTMLElement>('[data-cancel]');
     if (c) { void callServer('cancel_job', { id: c.dataset.cancel }).finally(() => { void poll(); }); return; }
     if (t.closest('[data-reload]')) location.reload();
+    if (t.closest('[data-hide]')) {
+      if (!window.confirm(`Hide ${siteUrl} from the domain list and the portfolio? Its data is kept, and All domains can show it again.`)) return;
+      void callServer('set_property_hidden', { siteUrl, hidden: true })
+        .then(() => { location.href = '/?all=1'; })
+        .catch(e => { msg = { text: errText(e), err: true }; paint(); });
+    }
   });
   void poll();
 }

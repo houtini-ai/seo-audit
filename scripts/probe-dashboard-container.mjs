@@ -2,7 +2,10 @@
 // unpublished port, the advertised http://127.0.0.1:<port> is unreachable from the host, so the
 // server must not present it as openable; on bare metal nothing changes.
 // Run: node scripts/probe-dashboard-container.mjs   (after npm run build:server). No network.
-import { inContainer, dashboardReachable, containerDashboardNote, DASHBOARD_SIDECAR_CMD } from '../dist/core/webServer.js';
+import { readFileSync } from 'node:fs';
+import { inContainer, dashboardReachable, containerDashboardNote, dashboardSidecarCmd, VOLUME_PLACEHOLDER } from '../dist/core/webServer.js';
+
+const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 let pass = 0, fail = 0;
 const check = (name, cond, detail) => { if (cond) { pass++; console.log(`  ok  ${name}`); } else { fail++; console.log(`FAIL  ${name} :: ${detail}`); } };
@@ -34,7 +37,9 @@ check('explicit SAC_DASHBOARD_URL_HOST: reachable', dashboardReachable(probe({ S
 // ── The message ──
 const note = containerDashboardNote('sc-domain:example.com', 'http://127.0.0.1:40123/dashboard?siteUrl=sc-domain%3Aexample.com');
 check('note says it only works inside the container', /only works inside it/.test(note), note);
-check('note carries the sidecar docker run', note.includes(DASHBOARD_SIDECAR_CMD) && /node:22-slim npx -y -p @houtini\/seo-audit-console seo-audit-dashboard/.test(note), note);
+check('note carries the sidecar docker run', note.includes(dashboardSidecarCmd()) && /node:22-slim npx -y -p @houtini\/seo-audit-console@\d+\.\d+\.\d+ seo-audit-dashboard/.test(note), note);
+check('the sidecar is pinned to this package version', dashboardSidecarCmd().includes(`@houtini/seo-audit-console@${pkgVersion} `), dashboardSidecarCmd());
+check('the volume is a named placeholder, never a guessed name', note.includes(`-v ${VOLUME_PLACEHOLDER}:/data`) && !note.includes('seo-audit-data:/data') && /can't see its name/.test(note), note);
 check('note offers get_dashboard', /get_dashboard for sc-domain:example\.com/.test(note), note);
 check('note gives the sidecar URL for the property', note.includes('http://127.0.0.1:8788/dashboard?siteUrl=sc-domain%3Aexample.com'), note);
 

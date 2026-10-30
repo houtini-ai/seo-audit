@@ -10,13 +10,22 @@ Run `refresh_property` first, and `run_audit` if you want the findings populated
 
 One dashboard covers every domain. The **domain dropdown** at the top of the sidebar lists:
 - **All domains**: every domain you look after in one table, with Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions and a needs-attention tab. With more than one property, the browser opens here. Add a domain to watch with the form above the table, or remove one from its row: both are free. It's in chat too, as `get_portfolio`. Everything about it is in [portfolio.md](portfolio.md).
-- **Your properties**: each opens the tabs described below. The **Market & AI** tab holds that domain's DataForSEO overview: estimated traffic and keywords, backlinks, AI mentions and cited pages.
+- **Your properties**: each opens the tabs described below. Two of them carry that domain's DataForSEO overview (monthly, refreshed from chat): **Market** (estimated traffic and keywords, positions, countries, backlinks, top pages) and **AI visibility** (see below).
 - **Watched** domains: each opens its overview.
 - **Backlink data only**: a database `pull_backlinks` or `link_intersect` made for a site that isn't yours. It is not counted as one of your domains.
 
 **Actions** (browser only, free): the sidebar starts a crawl, a Search Console sync, URL inspection, an audit or an agent-readiness check for the property, and shows each job's progress with a Cancel link. One job of a kind runs per property at a time. Behind the Docker gateway the dashboard queues Search Console jobs for the job runner, which holds the credentials. Anything that costs money (DataForSEO refreshes, backlinks, rank history) still starts from chat, where it's quoted first.
 
+**Hiding a property**: "Hide this property" at the foot of a property's actions leaves it out of the dropdown and the portfolio - for a stray URL-prefix twin of an `sc-domain:` property, say. Its data is kept; All domains lists hidden properties with a Show link. In chat: `data_storage` with `hide: {siteUrl}` (`hidden: false` to show it again).
+
 The old `/portfolio` links redirect.
+
+## AI visibility
+
+One tab for how the site shows up in AI search:
+- **Readiness and access** (free, from your own probes): the agent-readiness score by category, which AI crawlers robots.txt lets in (search and citation crawlers apart from training ones), and AI Overview presence on the queries content recon checked.
+- **AI mentions** (DataForSEO LLM Mentions, monthly, from a portfolio refresh): mentions and AI search volume per platform - Google AI Overviews, and ChatGPT (US data only) - over 15 months, the pages cited, joined to your crawl status and Search Console clicks, the sources cited alongside, and for owned sites the rank-and-citation table from content recon.
+- **Not measured**, and said so: Perplexity, Gemini, AI Mode, and any single 0 to 100 "visibility score".
 
 
 > Open the dashboard for mysite.com
