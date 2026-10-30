@@ -31,16 +31,12 @@
       <header class="topbar header">
         <h1 class="page-title" id="pageTitle">Summary</h1>
         <div class="header-right">
-          <div class="range-ctl" id="rangeCtl" hidden>
-            <label class="sr-only" for="rangeDays">Search Console window</label>
-            <select id="rangeDays" class="range-select" aria-label="Search Console window">
-              <option value="7">Last 7 days</option>
-              <option value="28" selected>Last 28 days</option>
-              <option value="90">Last 90 days</option>
-              <option value="180">Last 180 days</option>
-            </select>
+          <div class="range-group" id="rangeGroup">
+            <div class="range-seg" id="rangeCtl" role="group" aria-label="Search Console window: the last N days against the N before" hidden>
+              <button type="button" data-days="7">7d</button><button type="button" data-days="28">28d</button><button type="button" data-days="90">90d</button><button type="button" data-days="180">180d</button>
+            </div>
+            <div class="range" id="range"></div>
           </div>
-          <div class="range" id="range"></div>
           <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light or dark theme" title="Toggle light / dark"></button>
         </div>
       </header>

@@ -84,6 +84,15 @@ body {
   font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary);
   border: 1px solid var(--border-standard); background: var(--bg-surface); border-radius: var(--radius-sm); padding: 6px 10px; white-space: nowrap;
 }
+.range:empty { display: none; }
+/* The window buttons and the end date as one joined control. */
+.range-group { display: inline-flex; align-items: stretch; }
+.range-seg { display: inline-flex; border: 1px solid var(--border-standard); border-right: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); background: var(--bg-surface); overflow: hidden; }
+.range-seg button { font: inherit; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); background: transparent; border: 0; border-right: 1px solid var(--border-subtle); padding: 6px 10px; cursor: pointer; }
+.range-seg button:hover { color: var(--text-primary); }
+.range-seg button.active { color: var(--text-primary); background: var(--bg-card); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+.range-seg.busy { opacity: .6; pointer-events: none; }
+.range.range-joined { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 .dashboard { padding: 20px 24px 28px; max-width: 1240px; width: 100%; }
 
 /* Light/dark toggle */
@@ -932,3 +941,44 @@ select, select.sel, #cannSelect {
 .hidden-props { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-muted); }
 .hidden-props:empty { display: none; }
 .hidden-props a { color: var(--text-secondary); font-family: var(--font-mono); }
+/* Actions, design pass: one primary action, a row of compact secondary ones, live job cards. */
+.side-actions .sa-primary { width: 100%; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 10px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-on, #fff); cursor: pointer; }
+.side-actions .sa-primary:hover:not(:disabled) { filter: brightness(1.06); }
+.side-actions .sa-primary:disabled { opacity: .55; cursor: default; }
+.side-actions .sa-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.side-actions .sa-row .sa-btn { padding: 5px 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-actions .sa-card { border: 1px solid var(--border-standard); border-radius: var(--radius-sm); background: var(--bg-card); padding: 8px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-secondary); }
+.side-actions .sa-card-top { display: flex; align-items: center; gap: 6px; }
+.side-actions .sa-card-top b { color: var(--text-primary); font-weight: 600; }
+.side-actions .sa-card .sa-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 7px; animation: sa-pulse 1.4s ease-in-out infinite; }
+.side-actions .sa-card-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.side-actions .sa-pct { float: right; color: var(--text-secondary); }
+.side-actions .sa-bar { height: 4px; border-radius: 2px; background: var(--bg-inset); overflow: hidden; }
+.side-actions .sa-bar span { display: block; height: 100%; background: var(--accent); transition: width .4s var(--ease); }
+.side-actions .sa-bar.indeterminate span { animation: sa-slide 1.6s ease-in-out infinite; }
+@keyframes sa-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
+.side-actions .sa-when { color: var(--text-faint); font-size: 11px; }
+@media (prefers-reduced-motion: reduce) { .side-actions .sa-card .sa-dot, .side-actions .sa-bar.indeterminate span { animation: none !important; } }
+/* Design pass: menu counts, the critical verdict chip, the split finding detail, severity-stacked area bars, the AI bot grid. */
+.nav-item .nav-badge { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; line-height: 16px; padding: 0 6px; border-radius: var(--radius-pill); }
+.nav-badge.nb-crit { color: var(--intent-danger); background: color-mix(in srgb, var(--intent-danger) 14%, transparent); }
+.nav-badge.nb-high { color: var(--intent-warning); background: color-mix(in srgb, var(--intent-warning) 14%, transparent); }
+.nav-badge.nb-score { color: var(--text-secondary); background: var(--bg-inset); }
+.vchip.vc-crit { color: var(--intent-danger); background: color-mix(in srgb, var(--intent-danger) 12%, transparent); border-color: color-mix(in srgb, var(--intent-danger) 35%, transparent); }
+.fi-detail.fi-split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; }
+.fi-split .fi-col { min-width: 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--bg-surface); }
+.fi-split .fi-col-h { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.fi-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fi-btn { font: inherit; font-size: 12px; font-weight: 500; padding: 5px 10px; border: 1px solid var(--border-standard); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text-primary); cursor: pointer; }
+.fi-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-on, #fff); font-weight: 600; }
+.fi-btn:disabled { opacity: .6; cursor: progress; }
+.fi-live { margin-top: 8px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.fi-live.err { color: var(--intent-danger); }
+.fi-live code, .fi-hint code { font-size: 11px; }
+.fi-hint { margin-top: 8px; font-size: 11.5px; color: var(--text-muted); }
+@media (max-width: 900px) { .fi-detail.fi-split { grid-template-columns: minmax(0, 1fr); } }
+.stat-track.sev-stack { display: flex; }
+.stat-track.sev-stack span { display: block; height: 100%; min-width: 2px; }
+[data-panel="ai"] .bots ul { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 10px; }
+[data-panel="ai"] .bots li { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 4px 8px; }
+[data-panel="ai"] .bots li:first-child { border-top: 1px solid var(--border-subtle); }

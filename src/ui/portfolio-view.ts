@@ -208,6 +208,26 @@ function domainCell(row: PortfolioRow): string {
   </td>`;
 }
 
+/** Totals under the table for the rows shown: measured clicks and estimated traffic, never mixed. */
+function totalsLine(rows: PortfolioRow[]): string {
+  if (!rows.length) return '';
+  const clicks = rows.reduce((t, r) => t + (r.clicks28?.value ?? 0), 0);
+  const withClicks = rows.filter(r => r.clicks28).length;
+  const traffic = rows.reduce((t, r) => t + (r.organicTraffic.value ?? 0), 0);
+  const withTraffic = rows.filter(r => r.organicTraffic.value != null).length;
+  return `<div class="totals-line"><span>Showing <b>${rows.length}</b> domain${rows.length === 1 ? '' : 's'}</span>` +
+    (withClicks ? `<span>Search Console clicks, 28 days (measured): <b class="num">${esc(fmtCompact(clicks))}</b> across ${withClicks}</span>` : '') +
+    (withTraffic ? `<span>Organic traffic (estimated): <b class="num">${esc(fmtCompact(Math.round(traffic)))}</b> across ${withTraffic}</span>` : '') + '</div>';
+}
+
+/** A needs-attention reason that names a free fix gets a button for it (browser, owned rows only). */
+function fixButton(row: PortfolioRow, reason: string): string {
+  if (!host!.web || row.kind !== 'owned' || !row.siteUrls[0]) return '';
+  const kind = /Search Console data is/i.test(reason) ? 'sync' : /crawl/i.test(reason) ? 'crawl' : null;
+  if (!kind) return '';
+  return ` <button type="button" class="reason-fix" data-fix-kind="${kind}" data-site="${attr(row.siteUrls[0])}">${kind === 'sync' ? 'Sync now' : 'Crawl now'}</button>`;
+}
+
 /** The add-a-watched-domain form (browser dashboard only). Adding costs nothing: the domain's
  * numbers arrive on the next portfolio refresh, which is quoted and started from chat. */
 function addForm(): string {
@@ -218,7 +238,7 @@ function addForm(): string {
     <label><span>Group</span><input name="group" list="pf-groups" placeholder="competitors"></label>
     <datalist id="pf-groups">${groups.map(g => `<option value="${attr(g)}">`).join('')}</datalist>
     <label><span>Country</span><input name="location" placeholder="United States"></label>
-    <button class="btn" type="submit" ${adding ? 'disabled' : ''}>${adding ? 'Adding...' : 'Watch domain'}</button>
+    <button class="btn primary" type="submit" ${adding ? 'disabled' : ''}>${adding ? 'Adding...' : 'Watch domain'}</button>
     <span class="add-note">${addError ? `<span class="add-error">${esc(clean(addError))}</span>` : 'Free to add. Its numbers arrive with the next portfolio refresh.'}</span>
   </form>`;
 }
@@ -330,10 +350,10 @@ function renderTable(el: HTMLElement): void {
     ${p.empty ? `<div class="empty-state"><h2>No domains yet</h2><p>${host!.web ? 'Sync a property, or watch a domain with the form above.' : 'Sync a property, or ask in chat to add a domain to watch.'}</p></div>` : `
     <div class="tabs-row">
       <div class="tabs" role="tablist">
-        <button type="button" role="tab" class="tab ${currentTab === 'all' ? 'active' : ''}" data-tab="all">All</button>
+        <button type="button" role="tab" class="tab ${currentTab === 'all' ? 'active' : ''}" data-tab="all">All <span class="tab-n">${p.rows.length}</span></button>
         <button type="button" role="tab" class="tab ${currentTab === 'attention' ? 'active' : ''}" data-tab="attention">Needs attention<span class="pill">${p.counts.attention}</span></button>
-        <button type="button" role="tab" class="tab ${currentTab === 'owned' ? 'active' : ''}" data-tab="owned">Owned</button>
-        <button type="button" role="tab" class="tab ${currentTab === 'watched' ? 'active' : ''}" data-tab="watched">Watched</button>
+        <button type="button" role="tab" class="tab ${currentTab === 'owned' ? 'active' : ''}" data-tab="owned">Owned <span class="tab-n">${p.counts.owned}</span></button>
+        <button type="button" role="tab" class="tab ${currentTab === 'watched' ? 'active' : ''}" data-tab="watched">Watched <span class="tab-n">${p.counts.watched}</span></button>
       </div>
       ${p.groups.length ? `<select class="group-filter" id="group-filter" aria-label="Group">
         <option value="">Group: All groups</option>
@@ -361,13 +381,12 @@ function renderTable(el: HTMLElement): void {
       </thead>
       <tbody>
         ${rows.map(r => `<tr>${domainCell(r)}${clicksCell(r)}${metricCell(r.organicKeywords, 'Organic keywords')}${metricCell(r.organicTraffic, 'Organic traffic')}${paidCell(r)}${metricCell(r.referringDomains, 'Referring domains (root domains)')}${metricCell(r.domainRank, 'Domain Rank (DataForSEO, 0 to 100)', { suffix: ' / 100' })}${aiCell(r)}${auditCell(r)}</tr>`
-          + (r.attention.length ? `<tr class="attention-row"><td colspan="${cols}"><div class="attention-list">${r.attention.map(a => `<span class="attention-reason"><span class="dot"></span>${esc(clean(a))}</span>`).join('')}</div></td></tr>` : '')).join('')
+          + (r.attention.length ? `<tr class="attention-row"><td colspan="${cols}"><div class="attention-list">${r.attention.map(a => `<span class="attention-reason"><span class="dot"></span>${esc(clean(a))}${fixButton(r, a)}</span>`).join('')}</div></td></tr>` : '')).join('')
           || `<tr><td class="empty-filter" colspan="${cols}">No domains match the current filters.</td></tr>`}
       </tbody>
-    </table></div></div>
+    </table></div>${totalsLine(rows)}</div>
     <div class="footnote">
-      Estimated figures are DataForSEO estimates for each row's country. Clicks are measured by Google Search Console. Domain Rank is DataForSEO's rank (0 to 100), not an Authority Score. AI mentions cover Google AI Overviews and ChatGPT only; ChatGPT data is US-only.<br>
-      Showing ${rows.length} of ${p.rows.length} domains.
+      Estimated figures are DataForSEO estimates for each row's country. Clicks are measured by Google Search Console. Domain Rank is DataForSEO's rank (0 to 100), not an Authority Score. AI mentions cover Google AI Overviews and ChatGPT only; ChatGPT data is US-only.
     </div>`}`;
 
   el.querySelectorAll<HTMLElement>('[data-sort]').forEach(x => x.addEventListener('click', () => {
@@ -379,6 +398,13 @@ function renderTable(el: HTMLElement): void {
   el.querySelectorAll<HTMLElement>('[data-mode]').forEach(x => x.addEventListener('click', () => { periodMode = x.dataset.mode as PeriodMode; rerender(); }));
   el.querySelectorAll<HTMLElement>('button.domain-link').forEach(x => x.addEventListener('click', () => {
     if (x.dataset.domain) void openDomain(x.dataset.domain, Number(x.dataset.loc) || undefined);
+  }));
+  el.querySelectorAll<HTMLButtonElement>('[data-fix-kind]').forEach(x => x.addEventListener('click', () => {
+    const kind = x.dataset.fixKind!, siteUrl = x.dataset.site!;
+    x.disabled = true; x.textContent = 'Starting...';
+    void callServer('start_job', { siteUrl, kind })
+      .then(r => { const q = (r?.structuredContent ?? r)?.queued; x.textContent = q ? 'Queued' : 'Started'; })
+      .catch(e => { x.disabled = false; x.textContent = kind === 'sync' ? 'Sync now' : 'Crawl now'; window.alert(e instanceof Error ? e.message : String(e)); });
   }));
   el.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(x => x.addEventListener('click', () => {
     const d = x.dataset.remove!;

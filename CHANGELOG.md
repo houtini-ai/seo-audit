@@ -23,6 +23,15 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 - **`check_sync_status` with no jobId** returns `counts` by state, `live` (running + queued) and compact `jobs[]` rows (id, type, state, scope) in structuredContent, and leads its text with the counts. A client that searched the text for "running" matched it inside an interrupted job's explanation.
 - **Issues & fixes filters cover every finding.** The payload holds the top 50; a severity, area or check filter (and **Show more**) now pages through all matches via `list_findings` (an app-only tool for the in-chat widget, a web handler in the browser). Before, "High 386" listed nothing.
 
+- **Dashboard design pass** (from a Google Stitch review of four views):
+  - Sidebar actions: one primary **Run audit**, then Crawl / Sync GSC / Inspect / Agent; a live job is a card with a progress bar (a real percentage only while a crawl is fetching), finished jobs a one-line history.
+  - The window is one joined control: 7d / 28d / 90d / 180d beside the end date. The Summary says "Summary: 28 days to ..."; Market and AI visibility say "Monthly DataForSEO data".
+  - Menu counts: open critical issues (else high) on Issues & fixes, the agent-readiness score on AI visibility.
+  - A non-zero critical chip in the Summary verdict reads as critical.
+  - Issues & fixes: an expanded finding splits into **Evidence** and **Fix**, with **Copy fix** and **Verify live URL** (a free live probe of your own host, `verify_url`); by-area bars split by severity; "Show 100 more (N remaining)".
+  - All domains: counts on the tabs, a totals line (measured clicks and estimated traffic, never mixed), **Sync now / Crawl now** on needs-attention reasons for owned sites, a primary Watch button.
+  - AI visibility: AI crawlers as a two-column grid; co-cited sources as rows with a bar.
+
 ### Fixed
 - **Printed docker commands are pinned and honest about the volume.** The `open_dashboard` container hint and the "no job runner" note now pin `@houtini/seo-audit-console@<this version>` (an unpinned npx could run a different release from the server and runner), and the dashboard hint uses `<your-data-volume>` with a note that a process inside the container can't see the volume's name, instead of a guessed `seo-audit-data`.
 - **The dashboard sidecar logged every `docker stop` as an npm error.** It now exits 0 on SIGTERM / SIGINT, and its printed command adds `--init`.
