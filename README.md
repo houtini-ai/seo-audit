@@ -107,6 +107,7 @@ This README is the story and the quick start. The detail lives in the manual:
 | [The check registry](manual/checks.md) | All 143 checks with what each catches, its D/N label, and the fix |
 | [Composition](manual/composition.md) | The join keys, the grains, and fourteen recipes for asking your own questions across the data |
 | [Competitive analysis](manual/competitive.md) | The competitive workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
+| [Architecture](ARCHITECTURE.md) | For contributors and reviewers: how the code fits together (storage, the join key, collection, the audit engine, jobs, the dashboard) and the conventions it follows |
 | [SEO Recon](manual/recon.md) | Why a page is losing: the live SERP + AI-Overview citation verdict, the competitor diff, and the trackable to-do ledger |
 | [DataForSEO functions](manual/dataforseo.md) | Every DataForSEO-backed tool grouped by API module - Keywords, SERP, Labs, Backlinks, OnPage - each with its endpoint and cost |
 | [Majestic functions](manual/majestic.md) | The optional Trust Flow tier - what it adds, and how `link_intersect` and `pull_backlinks` use it |
