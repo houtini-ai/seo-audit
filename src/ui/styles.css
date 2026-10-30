@@ -1,6 +1,7 @@
 /* SEO Audit Console - dashboard styles. Tokens (pricemonitor SaaS theme) in
  * tokens.css; component classes here back the src/ui/lib display library. */
 @import './tokens.css';
+@import './portfolio-table.css';
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -20,9 +21,33 @@ body {
   background: var(--bg-sidebar); border-right: 1px solid var(--border-standard);
   padding: 18px 12px 14px;
 }
-.brand { display: flex; align-items: center; gap: 9px; padding: 0 8px; }
-.brand-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
-.brand-name { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-primary); }
+/* The houtini wordmark (houtini.com): heavy, tight "Houtini" with a gradient full stop. */
+.brand { display: flex; align-items: baseline; gap: 8px; padding: 0 8px; text-decoration: none; color: var(--text-primary); }
+.brand-mark { font-family: var(--font); font-size: 21px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
+.brand-mark-dot { background: linear-gradient(135deg, #5b5fff 0%, #8b5cf6 50%, #d946ef 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
+.brand-name { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+/* Sidebar actions: free jobs started from the dashboard, and their live status. */
+.side-actions { border: 1px solid var(--border-standard); border-radius: var(--radius-sm); background: var(--bg-surface); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.side-actions .sa-title { font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+.side-actions .sa-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.side-actions .sa-btn { font: inherit; font-size: 12px; font-weight: 500; padding: 6px 8px; border: 1px solid var(--border-standard); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text-primary); cursor: pointer; text-align: center; }
+.side-actions .sa-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.side-actions .sa-btn:disabled { opacity: .55; cursor: default; }
+.side-actions .sa-jobs { display: flex; flex-direction: column; gap: 6px; }
+.side-actions .sa-job { font-size: 11.5px; color: var(--text-secondary); line-height: 1.35; display: flex; gap: 6px; align-items: flex-start; }
+.side-actions .sa-job .sa-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 4px; flex: 0 0 7px; background: var(--text-faint); }
+.side-actions .sa-job.running .sa-dot, .side-actions .sa-job.queued .sa-dot { background: var(--accent); animation: sa-pulse 1.4s ease-in-out infinite; }
+.side-actions .sa-job.completed .sa-dot { background: var(--intent-success); }
+.side-actions .sa-job.failed .sa-dot, .side-actions .sa-job.interrupted .sa-dot, .side-actions .sa-job.queued-no-runner .sa-dot { background: var(--intent-danger); }
+.side-actions .sa-job .sa-cancel { margin-left: auto; border: 0; background: none; color: var(--text-muted); font-size: 11px; text-decoration: underline; cursor: pointer; padding: 0; }
+.side-actions .sa-msg { font-size: 11.5px; color: var(--text-muted); line-height: 1.4; }
+.side-actions .sa-msg.err { color: var(--intent-danger); }
+@keyframes sa-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .side-actions .sa-job .sa-dot { animation: none !important; } }
+/* The hidden attribute must win over the display rules above (nav, side-actions, views). */
+[hidden] { display: none !important; }
+/* The page title already names the view. */
+.domains-view .heading h1 { display: none; }
 .side-property { padding: 10px; border: 1px solid var(--border-standard); border-radius: var(--radius-sm); background: var(--bg-surface); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .side-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
 .site { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -170,6 +195,7 @@ body {
   .nav-item { width: auto; white-space: nowrap; padding: 7px 10px; font-size: 13px; }
   .nav-item.active::before { display: none; }
   .side-fresh { display: none; }
+  .side-actions { flex: 1 1 100%; }
   .topbar { position: static; padding: 0 16px; }
   .dashboard { padding: 16px; }
   .g-6-6 { grid-template-columns: minmax(0, 1fr); }

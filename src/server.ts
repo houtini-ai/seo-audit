@@ -41,7 +41,8 @@ function browserLink(siteUrl?: string): string {
 import { runAudit, runSingleCheck, listChecks } from './audit/engine.js';
 import { buildAuditMarkdown } from './audit/report.js';
 import { diffLatest, buildDriftMarkdown } from './audit/drift.js';
-import { checkAgentReadiness, buildAgentReadinessMarkdown } from './core/agentReadiness.js';
+import { buildAgentReadinessMarkdown } from './core/agentReadiness.js';
+import { checkAndSaveAgentReadiness } from './core/agentReadinessStore.js';
 import { detectTemplates } from './audit/templates.js';
 import { suggestPages } from './audit/opportunities.js';
 import { computeTopicGaps, type GapKeywordRow } from './audit/topicGaps.js';
@@ -364,8 +365,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const buildWebOpts = (port?: number): WebServerOptions => ({
     dataDir,
     uiHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8'),
-    portfolioHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'portfolio.html'), 'utf8'),
-    call: buildWebCallHandlers({ dataDir, dfs, apiKeys: apiKeysStatus }),
+    // Dashboard actions run on this server's own job manager: queued for the runner in external mode.
+    call: buildWebCallHandlers({ dataDir, dfs, apiKeys: apiKeysStatus, jobs: { pick: () => jobs, deps: jobDeps, gsc: () => !!sync } }),
     ...(port != null ? { port } : {}),
   });
   // Idempotent auto-start used by refresh_property / run_audit. Best-effort: a served port that
@@ -861,16 +862,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       inputSchema: { siteUrl: z.string() },
     },
     async ({ siteUrl }) => {
-      const r = await checkAgentReadiness(siteUrl);
-      // Persist so the dashboard/export can show it (live probe, not crawl-derived).
-      try {
-        const adb = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
-        try {
-          adb.db.prepare(`INSERT INTO agent_readiness (origin,score,level,checks,by_category,bots,checked_at) VALUES (?,?,?,?,?,?,datetime('now'))
-            ON CONFLICT(origin) DO UPDATE SET score=excluded.score, level=excluded.level, checks=excluded.checks, by_category=excluded.by_category, bots=excluded.bots, checked_at=excluded.checked_at`)
-            .run(r.origin, r.score, r.level, JSON.stringify(r.checks), JSON.stringify(r.byCategory), r.bots ? JSON.stringify(r.bots) : null);
-        } finally { adb.close(); }
-      } catch { /* persistence is best-effort */ }
+      const r = await checkAndSaveAgentReadiness(dataDir(), siteUrl);
       return {
         content: [{ type: 'text', text: buildAgentReadinessMarkdown(r) }],
         structuredContent: r as unknown as Record<string, unknown>,
@@ -2352,8 +2344,8 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const fmtChange = (c: { mode: 'pct' | 'abs'; value: number } | null): string => (!c ? '' : c.mode === 'pct' ? ` (${c.value >= 0 ? '+' : ''}${c.value.toFixed(1)}%)` : ` (${c.value >= 0 ? '+' : ''}${Math.round(c.value)})`);
   const portfolioLink = (domain?: string): string => {
     const base = dashboardServerUrl();
-    if (base && dashboardReachable()) return `\n\nPortfolio in the browser: ${base}/portfolio${domain ? `/domain?d=${encodeURIComponent(domain)}` : ''}`;
-    return `\n\nSee it in chat with get_portfolio${domain ? ` (domain: ${domain})` : ''}, or in the browser via serve_dashboard then /portfolio.`;
+    if (base && dashboardReachable()) return `\n\nIn the browser: ${base}/${domain ? `dashboard?domain=${encodeURIComponent(domain)}` : '?all=1'}`;
+    return `\n\nSee it in chat with get_portfolio${domain ? ` (domain: ${domain})` : ''}, or in the browser via serve_dashboard (All domains is the first entry in the domain dropdown).`;
   };
 
   server.registerTool(
@@ -2609,7 +2601,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'serve_dashboard',
     {
       title: 'Serve the dashboard on a local webserver',
-      description: 'Start a localhost-only webserver and return a URL that opens the full interactive dashboard in your browser — live data straight from the local database (always current, unlike export_report snapshots), a property switcher, working CSV downloads, and no host widget limits. The server stays up while the MCP server runs; call again with stop=true to shut it down. Localhost only — nothing is exposed to the network.',
+      description: 'Start a localhost-only webserver and return a URL that opens the full interactive dashboard in your browser — live data straight from the local database (always current, unlike export_report snapshots), a domain dropdown (All domains, your properties, watched domains), free actions (crawl, Search Console sync, URL inspection, audit, agent readiness), working CSV downloads, and no host widget limits. The server stays up while the MCP server runs; call again with stop=true to shut it down. Localhost only — nothing is exposed to the network.',
       inputSchema: { siteUrl: z.string().optional(), port: z.number().int().min(1024).max(65535).optional(), stop: z.boolean().optional() },
     },
     async ({ siteUrl, port, stop }) => {
@@ -2631,7 +2623,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         ? ` (already running on its original port — requested port ${port} ignored; stop=true first to move it)`
         : '';
       return {
-        content: [{ type: 'text', text: `Dashboard server running — open ${open} in your browser${portNote}. Live data, all charts, CSV downloads, property switcher. Stays up while this MCP server runs; serve_dashboard stop=true to stop it.` }],
+        content: [{ type: 'text', text: `Dashboard server running — open ${open} in your browser${portNote}. Live data, all charts, CSV downloads, the domain dropdown and free actions (crawl, sync, inspect, audit). Stays up while this MCP server runs; serve_dashboard stop=true to stop it.` }],
         structuredContent: { url: open, base: url },
       };
     },

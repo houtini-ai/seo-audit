@@ -2,10 +2,10 @@
 
 One table for every site you look after, and the competitors you watch, built on data you already hold plus a few cents of DataForSEO. **Every number says whether it was measured or estimated.**
 
-- **Owned domains** come from your synced properties, automatically.
+- **Owned domains** come from your synced Search Console properties, automatically. A database made by `pull_backlinks` or `link_intersect` for someone else's site is not one of them.
 - **Watched domains** are added by you: competitors, prospects, clients without Search Console access.
 
-The browser dashboard opens on the portfolio once you have more than one property (`/`, or `/portfolio`). In chat it's `get_portfolio`.
+In the browser it's **All domains**, the first entry in the dashboard's domain dropdown, and the page the dashboard opens on once you have more than one property. In chat it's `get_portfolio`.
 
 ## What the table shows
 
@@ -49,7 +49,7 @@ Click a domain for its overview, including joins only your own data allows:
 
 ## Refreshing, and what it costs
 
-The dashboard only reads. Spending starts from chat:
+The dashboard never spends. Adding or removing a watched domain is free and works from the All domains page; spending starts from chat:
 
 - **`refresh_portfolio`** quotes first: calls and cost per endpoint family, nothing spent. Run it again with `confirm: true` and it runs as a background job, then records what it actually spent. Cached responses cost nothing.
   - **Weekly tier:** current estimates, Domain Rank, referring domains, backlinks, new and lost, and the search-results mix. These are bulk calls, cents for the whole portfolio.
@@ -64,6 +64,8 @@ The dashboard only reads. Spending starts from chat:
 **DataForSEO needs:** Labs, Backlinks and LLM Mentions enabled on your account. Each is pay-as-you-go, with no monthly minimum since July 2026. A family that isn't enabled fails on its own and the rest of the refresh carries on.
 
 ## Managing the list
+
+In the browser, use the form above the All domains table to watch a domain (domain, optional group and country), and a row's Remove link to stop. In chat:
 
 ```text
 portfolio                                   list everything (free)

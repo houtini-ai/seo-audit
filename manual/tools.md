@@ -288,7 +288,7 @@ The interactive dashboard, rendered right in the chat: eight tabs - summary, iss
 > Show me the dashboard for mysite.com
 
 ### `serve_dashboard`
-The same dashboard, served on a localhost-only webserver so you can open it in a real browser tab: live data straight from the local database (always current, unlike an exported snapshot), a property switcher, and working CSV downloads. Localhost only - nothing is exposed to the network. A random free port unless you pass `port` (or set `SAC_DASHBOARD_PORT`); `stop:true` shuts it down.
+The same dashboard, served on a localhost-only webserver so you can open it in a real browser tab: live data straight from the local database (always current, unlike an exported snapshot), a domain dropdown (All domains, your properties, watched domains), free actions (crawl, sync, inspect, audit, agent readiness), and working CSV downloads. Localhost only - nothing is exposed to the network. A random free port unless you pass `port` (or set `SAC_DASHBOARD_PORT`); `stop:true` shuts it down.
 > Serve the dashboard for mysite.com
 
 ### `open_dashboard`
