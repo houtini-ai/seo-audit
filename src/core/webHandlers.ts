@@ -1,6 +1,7 @@
 import type { WebCallHandlers } from './webServer.js';
 import { listLocalProperties } from './webServer.js';
-import { getDashboardData } from './dashboardData.js';
+import { getDashboardDataAsync } from './dashboardAsync.js';
+import { listFindings } from './findingsQuery.js';
 import { getPortfolioData, getDomainOverview } from './portfolioData.js';
 import { PortfolioStore, resolveLocation } from './PortfolioStore.js';
 import { targetForProperty } from './portfolioTarget.js';
@@ -105,7 +106,15 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
     }),
     get_dashboard_data: async (a) => {
       const want = requireProperty(a);
-      return { ...getDashboardData(dataDir(), want), apiKeys: deps.apiKeys() } as unknown as Record<string, unknown>;
+      // Built on a worker thread: a cold build must not stall the rest of the server.
+      const data = await getDashboardDataAsync(dataDir(), want, { days: typeof a.days === 'number' ? a.days : undefined });
+      return { ...data, apiKeys: deps.apiKeys() } as unknown as Record<string, unknown>;
+    },
+    // The Issues list's filters run over every finding of the latest audit, not the payload's top 50.
+    list_findings: async (a) => {
+      const want = requireProperty(a);
+      const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+      return listFindings(dataDir(), want, { severity: str(a.severity), category: str(a.category), checkId: str(a.checkId), offset: Number(a.offset) || 0, limit: Number(a.limit) || 100 }) as unknown as Record<string, unknown>;
     },
 
     // Dashboard actions. Free work only; one job of a kind per property at a time.
@@ -149,11 +158,14 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
       const live = liveJobTypes(dataDir(), jobScopeFor(dataDir(), siteUrl));
       if (live?.has('crawl')) throw new Error(`A crawl is running for ${siteUrl}: audit once it finishes.`);
       const r = runAudit(dataDir(), siteUrl, { includeJudgement: a.includeJudgement === true, topLimit: 1 });
+      void getDashboardDataAsync(dataDir(), siteUrl).catch(() => { /* warm the next load */ });
       return { runId: r.runId, total: r.total, bySeverity: r.bySeverity };
     },
     check_agent_readiness: async (a) => {
       requireJobs();
-      const r = await checkAndSaveAgentReadiness(dataDir(), requireProperty(a));
+      const siteUrl = requireProperty(a);
+      const r = await checkAndSaveAgentReadiness(dataDir(), siteUrl);
+      void getDashboardDataAsync(dataDir(), siteUrl).catch(() => { /* warm the next load */ });
       return { score: r.score, level: r.level };
     },
 

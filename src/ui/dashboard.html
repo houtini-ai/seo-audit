@@ -30,6 +30,15 @@
       <header class="topbar header">
         <h1 class="page-title" id="pageTitle">Summary</h1>
         <div class="header-right">
+          <div class="range-ctl" id="rangeCtl" hidden>
+            <label class="sr-only" for="rangeDays">Search Console window</label>
+            <select id="rangeDays" class="range-select" aria-label="Search Console window">
+              <option value="7">Last 7 days</option>
+              <option value="28" selected>Last 28 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="180">Last 180 days</option>
+            </select>
+          </div>
           <div class="range" id="range"></div>
           <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light or dark theme" title="Toggle light / dark"></button>
         </div>
@@ -228,7 +237,7 @@
         </div>
         <div class="chart-card">
           <h3>Content decay - pages to refresh</h3>
-          <div class="hint">Pages that earned real clicks last period and have since dropped 20%+, ranked by clicks lost (the upside from refreshing the content and checking for lost rankings). Matched 28-day windows.</div>
+          <div class="hint">Pages that earned real clicks last period and have since dropped 20%+, ranked by clicks lost (the upside from refreshing the content and checking for lost rankings). Matched <span data-win>28</span>-day windows.</div>
           <div id="contentDecayTable" class="findings-table"></div>
         </div>
         <div class="chart-card">
@@ -254,17 +263,17 @@
         </div>
         <div class="grid g-6-6">
           <div class="chart-card">
-            <div class="card-head"><div><h3>Top keywords</h3><div class="hint">Last 28 days vs the prior 28, by clicks.</div></div></div>
+            <div class="card-head"><div><h3>Top keywords</h3><div class="hint">Last <span data-win>28</span> days vs the prior <span data-win>28</span>, by clicks.</div></div></div>
             <div id="spKeywords" class="findings-table"></div>
           </div>
           <div class="chart-card">
-            <div class="card-head"><div><h3>Top pages</h3><div class="hint">Last 28 days vs the prior 28, by clicks.</div></div></div>
+            <div class="card-head"><div><h3>Top pages</h3><div class="hint">Last <span data-win>28</span> days vs the prior <span data-win>28</span>, by clicks.</div></div></div>
             <div id="spPages" class="findings-table"></div>
           </div>
         </div>
         <div class="chart-card" id="brandedCard">
           <h3>Branded vs non-branded</h3>
-          <div class="hint" id="brandedHint">How much of your search demand is people looking for you (brand) vs discovering you (non-brand) - last 28 days.</div>
+          <div class="hint" id="brandedHint">How much of your search demand is people looking for you (brand) vs discovering you (non-brand) - last <span data-win>28</span> days.</div>
           <div id="brandedSplit"></div>
         </div>
         <div class="chart-card">
@@ -287,14 +296,14 @@
           <div class="chart" id="rankChart" role="img" aria-label="Average position and clicks over time"></div>
         </div>
         <div class="chart-card">
-          <h3>Top keyword performance - 28d vs prior</h3>
+          <h3>Top keyword performance - <span data-win>28</span>d vs prior</h3>
           <div class="hint">Green = improved · red = declined · the signed number is the click change · click a bar for related terms</div>
           <p class="sr-only" id="kwSummary"></p>
-          <div class="chart" id="kwChart" role="img" aria-label="Top keyword performance change, 28 days versus prior"></div>
+          <div class="chart" id="kwChart" role="img" aria-label="Top keyword performance change, current window versus prior"></div>
           <div id="related" class="related"></div>
         </div>
         <div class="chart-card">
-          <h3>Page performance - 28d vs prior</h3>
+          <h3>Page performance - <span data-win>28</span>d vs prior</h3>
           <div class="hint">Which pages to update, categorised by trend.</div>
           <p class="sr-only" id="pagePerfSummary"></p>
           <div id="pagePerfTable" class="findings-table"></div>

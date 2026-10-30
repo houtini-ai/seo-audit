@@ -7,9 +7,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
-import { getDashboardData } from './core/dashboardData.js';
 import { startDashboardServer, stopDashboardServer, dashboardServerUrl, dashboardReachable, containerDashboardNote, type WebServerOptions } from './core/webServer.js';
 import { buildWebCallHandlers } from './core/webHandlers.js';
+import { getDashboardDataAsync } from './core/dashboardAsync.js';
+import { listFindings } from './core/findingsQuery.js';
 import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
 import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
 import { parseSerpForRecon } from './core/serpRecon.js';
@@ -1488,7 +1489,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         weak = clusterKeywordList(db.db, undefined, { maxDate: fresh.effectiveMax }).clusters
           .filter(c => c.verdict === 'weak' && c.bestPosition != null && c.bestPosition >= 4).slice(0, n);
       } finally { db.close(); }
-      const dash = getDashboardData(dataDir(), siteUrl);
+      const dash = await getDashboardDataAsync(dataDir(), siteUrl);
       const decay = (dash.contentDecay ?? []).slice(0, n);
       const snippets = (dash.quickWins ?? []).filter(q => q.type === 'snippet').sort((a, b) => b.potential - a.potential).slice(0, n);
       const sect: string[] = [];
@@ -2534,7 +2535,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       // Return only a TINY model-facing result + the siteUrl; the widget fetches the full
       // (large) dataset itself via the app-only get_dashboard_data tool, which keeps the
       // big payload OUT of the model's context/token limit (per the MCP Apps large-data pattern).
-      const data = getDashboardData(dataDir(), siteUrl);
+      const data = await getDashboardDataAsync(dataDir(), siteUrl);
       if (data.empty) {
         return { content: [{ type: 'text', text: `No synced data for ${siteUrl} yet — run refresh_property.` }], structuredContent: { siteUrl, empty: true } };
       }
@@ -2554,12 +2555,32 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     {
       title: 'Dashboard data (internal)',
       description: 'Full dashboard dataset for the UI widget. App-only — not for direct use.',
-      inputSchema: { siteUrl: z.string() },
+      inputSchema: { siteUrl: z.string(), days: z.number().int().optional() },
       _meta: { ui: { visibility: ['app'] } },
     },
-    async ({ siteUrl }) => {
-      const data = { ...getDashboardData(dataDir(), siteUrl), apiKeys: apiKeysStatus() };
+    async ({ siteUrl, days }) => {
+      // Built on a worker thread so a cold build doesn't stall the MCP's other calls.
+      const data = { ...(await getDashboardDataAsync(dataDir(), siteUrl, { days })), apiKeys: apiKeysStatus() };
       return { content: [{ type: 'text', text: 'ok' }], structuredContent: data as unknown as Record<string, unknown> };
+    },
+  );
+
+  // The Issues list's filters: every finding of the latest audit that matches, a page at a time.
+  registerAppTool(
+    server,
+    'list_findings',
+    {
+      title: 'Findings page (internal)',
+      description: 'A page of the latest audit findings for the dashboard Issues list, filtered by severity / category / check. App-only.',
+      inputSchema: {
+        siteUrl: z.string(), severity: z.string().optional(), category: z.string().optional(), checkId: z.string().optional(),
+        offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(500).optional(),
+      },
+      _meta: { ui: { visibility: ['app'] } },
+    },
+    async ({ siteUrl, severity, category, checkId, offset, limit }) => {
+      const page = listFindings(dataDir(), siteUrl, { severity, category, checkId, offset, limit });
+      return { content: [{ type: 'text', text: 'ok' }], structuredContent: page as unknown as Record<string, unknown> };
     },
   );
 
@@ -2574,7 +2595,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       inputSchema: { siteUrl: z.string(), theme: z.enum(['light', 'dark']).optional() },
     },
     async ({ siteUrl, theme }) => {
-      const data = { ...getDashboardData(dataDir(), siteUrl), apiKeys: apiKeysStatus() };
+      const data = { ...(await getDashboardDataAsync(dataDir(), siteUrl)), apiKeys: apiKeysStatus() };
       if (data.empty) {
         return { content: [{ type: 'text', text: `No synced data for ${siteUrl} — run refresh_property first.` }], structuredContent: { error: 'empty', siteUrl } };
       }
