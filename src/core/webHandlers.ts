@@ -11,6 +11,7 @@ import { submitJob, type JobDeps } from './jobKinds.js';
 import { jobScopeFor } from './paths.js';
 import { runAudit } from '../audit/engine.js';
 import { checkAndSaveAgentReadiness } from './agentReadinessStore.js';
+import { setPropertyHidden } from './hiddenProperties.js';
 import type { DataForSeoClient } from './DataForSeoClient.js';
 
 /**
@@ -84,7 +85,8 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
       const props = listLocalProperties(dataDir());
       const watched = withStore(store => store.list().filter(d => d.kind === 'watched')
         .map(d => ({ domain: d.domain, group: d.groupLabel, locationCode: d.locationCode })));
-      return { properties: props.filter(p => p.gsc).map(p => p.siteUrl), others: props.filter(p => !p.gsc).map(p => p.siteUrl), watched };
+      const shown = props.filter(p => !p.hidden);
+      return { properties: shown.filter(p => p.gsc).map(p => p.siteUrl), others: shown.filter(p => !p.gsc).map(p => p.siteUrl), hidden: props.filter(p => p.hidden).map(p => p.siteUrl), watched };
     },
     get_domain_overview: async (a) => {
       // A property dashboard asks by siteUrl; the domains view asks by domain.
@@ -115,6 +117,12 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
       const want = requireProperty(a);
       const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
       return listFindings(dataDir(), want, { severity: str(a.severity), category: str(a.category), checkId: str(a.checkId), offset: Number(a.offset) || 0, limit: Number(a.limit) || 100 }) as unknown as Record<string, unknown>;
+    },
+
+    // Hide or unhide a property: out of the dropdown and the portfolio; the database is untouched.
+    set_property_hidden: async (a) => {
+      const siteUrl = requireProperty(a);
+      return { hidden: setPropertyHidden(dataDir(), siteUrl, a.hidden !== false) };
     },
 
     // Dashboard actions. Free work only; one job of a kind per property at a time.

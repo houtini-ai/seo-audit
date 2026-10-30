@@ -482,7 +482,9 @@ function movers(d: any, ctx: SummaryCtx): string {
 }
 
 // ── Panel 8: AI search ────────────────────────────────────────────────────────────────────────
-function ai(d: any): string {
+/** The AI search signals: agent readiness, AI-bot access in robots.txt, AI Overview presence.
+ * Shown on the Summary and on the AI visibility tab. */
+export function aiSignalsHtml(d: any): string {
   const ar = d.agentReadiness;
   const readiness = ar
     ? `<div class="ai-score"><span class="n">${ar.score}</span><span class="kpi-of">/100</span><span class="ai-level">${esc(ar.level)}</span></div>` +
@@ -517,7 +519,7 @@ function ai(d: any): string {
       `<div class="sum-note">Content-recon queries only, checked ${esc(ago(ao.checkedAt))}.</div>`);
   } else aio.push(empty('No queries checked yet. <code>recon_targets</code> reads the AI Overview for your losing pages.'));
   if (fp) aio.push(`<p class="ai-line">AI Overviews appear on <span class="n">${fp.volumeSharePct}%</span> of sampled search volume (top <span class="n">${fmt(d.serpFootprint.sampleKeywords)}</span> keywords).</p>`);
-  aio.push('<div class="not-measured">Answer share in chat assistants: <b>not measured</b>. We don\'t query ChatGPT, Perplexity or Gemini for brand mentions.</div>');
+  aio.push('<div class="not-measured">Mentions in AI Overviews and ChatGPT come from DataForSEO, on the AI visibility tab. Perplexity, Gemini and AI Mode: <b>not measured</b>.</div>');
 
   return `<div class="ai-grid"><div><h4>Agent readiness</h4>${readiness}</div><div><h4>AI bots in robots.txt</h4>${botsHtml}</div><div><h4>AI Overviews</h4>${aio.join('')}</div></div>`;
 }
@@ -563,7 +565,7 @@ export function renderSummary(d: any, ctx: SummaryCtx): void {
   set('sumDrift', drift(d, ctx));
   set('sumMix', rankingMix(d));
   set('sumMovers', movers(d, ctx));
-  set('sumAi', ai(d));
+  set('sumAi', aiSignalsHtml(d));
   set('sumCoverage', coverageFooter(d));
   // Traceability: an area row or an action opens Issues & fixes filtered to it.
   const bind = (sel: string, fn: (el: HTMLElement) => void): void => document.querySelectorAll<HTMLElement>(sel).forEach(el => {

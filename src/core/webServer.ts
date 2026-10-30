@@ -2,6 +2,8 @@ import http from 'node:http';
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { PACKAGE_VERSION, pinnedPackage } from './version.js';
+import { hiddenProperties } from './hiddenProperties.js';
 
 /**
  * Local dashboard webserver — the "Phase 2" delivery surface. Serves the built dashboard
@@ -40,9 +42,18 @@ function isLocalHostHeader(host: string | undefined): boolean {
   return bare === '127.0.0.1' || bare === 'localhost' || bare === '[::1]';
 }
 
-/** The one-line standalone dashboard container (README "Opening the dashboard"), on the same volume. */
-export const DASHBOARD_SIDECAR_CMD =
-  'docker run -d --name seo-audit-dashboard --restart unless-stopped -p 127.0.0.1:8788:8788 -e SAC_DATA_DIR=/data -e SAC_DASHBOARD_BIND=0.0.0.0 -e SAC_DASHBOARD_PORT=8788 -v seo-audit-data:/data node:22-slim npx -y -p @houtini/seo-audit-console seo-audit-dashboard';
+/** What the user replaces with their own volume: a process inside the container can see /data,
+ * but never the name of the Docker volume mounted there. */
+export const VOLUME_PLACEHOLDER = '<your-data-volume>';
+
+/**
+ * The one-line standalone dashboard container (README "Opening the dashboard"), on the same volume,
+ * pinned to this server's version: an unpinned npx installs whatever is latest, which can be a
+ * different release from the server and the job runner. --init forwards a stop signal to node.
+ */
+export function dashboardSidecarCmd(version: string | null = PACKAGE_VERSION, volume = VOLUME_PLACEHOLDER): string {
+  return `docker run -d --init --name seo-audit-dashboard --restart unless-stopped -p 127.0.0.1:8788:8788 -e SAC_DATA_DIR=/data -e SAC_DASHBOARD_BIND=0.0.0.0 -e SAC_DASHBOARD_PORT=8788 -v ${volume}:/data node:22-slim npx -y -p ${pinnedPackage(version)} seo-audit-dashboard`;
+}
 
 export interface ContainerProbe { env: NodeJS.ProcessEnv; exists: (p: string) => boolean; read: (p: string) => string | null }
 const realProbe = (): ContainerProbe => ({
@@ -79,7 +90,7 @@ export function containerDashboardNote(siteUrl?: string, containerUrl?: string |
   const inner = containerUrl ? ` (${containerUrl})` : '';
   const target = siteUrl ? ` for ${siteUrl}` : '';
   const open = `http://127.0.0.1:8788/dashboard${siteUrl ? `?siteUrl=${encodeURIComponent(siteUrl)}` : ''}`;
-  return `Running in a container: this link only works inside it${inner}. Run the dashboard sidecar on the same data volume (use your volume's name), then open ${open}:\n${DASHBOARD_SIDECAR_CMD}\nOr run get_dashboard${target} to see the dashboard in chat.`;
+  return `Running in a container: this link only works inside it${inner}. Run the dashboard sidecar on the same data volume, then open ${open}. Replace ${VOLUME_PLACEHOLDER} with the volume this MCP server mounts at /data (a process inside the container can't see its name):\n${dashboardSidecarCmd()}\nOr run get_dashboard${target} to see the dashboard in chat.`;
 }
 
 const CACHE_DBS = new Set(['dataforseo-cache.db', '_portfolio.db', '_jobs.db']);
@@ -93,11 +104,13 @@ const CACHE_DBS = new Set(['dataforseo-cache.db', '_portfolio.db', '_jobs.db']);
 export const isGscProperty = (siteUrl: string): boolean => /^(sc-domain:|https?:\/\/)/i.test(siteUrl.trim());
 
 /** Enumerate properties that have a local DB (property_meta.site_url is the source of truth).
- * `gsc` is false for a database named by a bare domain (see isGscProperty). */
-export function listLocalProperties(dataDir: string): { siteUrl: string; file: string; gsc: boolean }[] {
+ * `gsc` is false for a database named by a bare domain (see isGscProperty); `hidden` is the user's
+ * hide flag (hiddenProperties.ts): left out of the dropdown and the portfolio, still served by URL. */
+export function listLocalProperties(dataDir: string): { siteUrl: string; file: string; gsc: boolean; hidden: boolean }[] {
   let files: string[] = [];
   try { files = readdirSync(dataDir).filter(f => f.endsWith('.db') && !CACHE_DBS.has(f)); } catch { return []; }
-  const out: { siteUrl: string; file: string; gsc: boolean }[] = [];
+  const out: { siteUrl: string; file: string; gsc: boolean; hidden: boolean }[] = [];
+  const hidden = hiddenProperties(dataDir);
   for (const file of files.sort()) {
     let db: Database.Database | null = null;
     try {
@@ -107,7 +120,7 @@ export function listLocalProperties(dataDir: string): { siteUrl: string; file: s
       const meta = db.prepare(
         `SELECT site_url FROM property_meta ORDER BY COALESCE(last_synced_at,'') DESC, id ASC LIMIT 1`,
       ).get() as { site_url: string } | undefined;
-      if (meta?.site_url) out.push({ siteUrl: meta.site_url, file, gsc: isGscProperty(meta.site_url) });
+      if (meta?.site_url) out.push({ siteUrl: meta.site_url, file, gsc: isGscProperty(meta.site_url), hidden: hidden.has(meta.site_url) });
     } catch { /* not a property DB */ } finally { db?.close(); }
   }
   return out;
@@ -142,7 +155,8 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
       // watched domain. The domain dropdown moves between them. The old /portfolio routes redirect.
       const serve = (boot: Record<string, unknown>): void => {
         const props = listLocalProperties(opts.dataDir());
-        const full = { ...boot, properties: props.filter(p => p.gsc).map(p => p.siteUrl), others: props.filter(p => !p.gsc).map(p => p.siteUrl) };
+        const shown = props.filter(p => !p.hidden);
+        const full = { ...boot, properties: shown.filter(p => p.gsc).map(p => p.siteUrl), others: shown.filter(p => !p.gsc).map(p => p.siteUrl) };
         const inject = `<script>window.__SAC_WEB__=${JSON.stringify(full).replace(/</g, '\\u003c')};</script>`;
         // Replacement FUNCTION, not string — $-sequences in the payload must stay literal.
         const html = opts.uiHtml().replace(/<head([^>]*)>/i, (_m, attrs: string) => `<head${attrs}>${inject}`);
@@ -161,7 +175,7 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
         const domain = u.searchParams.get('domain');
         if (siteUrl) return serve({ siteUrl });
         if (domain) return serve({ siteUrl: '', domain });
-        const owned = listLocalProperties(opts.dataDir()).filter(p => p.gsc);
+        const owned = listLocalProperties(opts.dataDir()).filter(p => p.gsc && !p.hidden);
         if (route === '/' && owned.length === 1 && !u.searchParams.has('all')) return redirect(`/dashboard?siteUrl=${encodeURIComponent(owned[0].siteUrl)}`);
         return serve({ siteUrl: '', view: 'domains' });
       }

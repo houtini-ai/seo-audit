@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { JobState } from './types.js';
+import { pinnedPackage } from './version.js';
 
 export interface Job {
   id: string;
@@ -45,7 +46,7 @@ export const RUNNER_DOCKER_RUN =
   'docker run -d --init --name seo-audit-runner --restart unless-stopped -v mcp-sac-data:/data -v mcp-sac-creds:/creds:ro ' +
   '-e SAC_DATA_DIR=/data -e GOOGLE_APPLICATION_CREDENTIALS=/creds/gsc.json ' +
   '-e DATAFORSEO_USERNAME -e DATAFORSEO_PASSWORD -e MAJESTIC_API_KEY -e CRUX_API_KEY ' +
-  'node:22-slim npx -y -p @houtini/seo-audit-console seo-audit-runner';
+  `node:22-slim npx -y -p ${pinnedPackage()} seo-audit-runner`;
 export const QUEUED_NOTE = 'waiting for the job runner';
 
 /**

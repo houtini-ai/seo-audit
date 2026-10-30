@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
-import { startDashboardServer, stopDashboardServer, dashboardServerUrl, dashboardReachable, containerDashboardNote, type WebServerOptions } from './core/webServer.js';
+import { startDashboardServer, stopDashboardServer, dashboardServerUrl, dashboardReachable, containerDashboardNote, listLocalProperties, type WebServerOptions } from './core/webServer.js';
 import { buildWebCallHandlers } from './core/webHandlers.js';
 import { getDashboardDataAsync } from './core/dashboardAsync.js';
 import { listFindings } from './core/findingsQuery.js';
@@ -44,6 +44,7 @@ import { buildAuditMarkdown } from './audit/report.js';
 import { diffLatest, buildDriftMarkdown } from './audit/drift.js';
 import { buildAgentReadinessMarkdown } from './core/agentReadiness.js';
 import { checkAndSaveAgentReadiness } from './core/agentReadinessStore.js';
+import { setPropertyHidden } from './core/hiddenProperties.js';
 import { detectTemplates } from './audit/templates.js';
 import { suggestPages } from './audit/opportunities.js';
 import { computeTopicGaps, type GapKeywordRow } from './audit/topicGaps.js';
@@ -474,9 +475,20 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         }).optional(),
         confirm: z.boolean().optional(),
         check: z.union([z.boolean(), z.enum(['quick', 'full'])]).optional().describe('Run an integrity check on siteUrl\'s DB (async job). true = full integrity_check.'),
+        hide: z.object({ siteUrl: z.string(), hidden: z.boolean().optional() }).optional()
+          .describe('Hide a property from the dashboard\'s domain dropdown and the portfolio (hidden:false shows it again). Reversible; the database is untouched. For a stray duplicate such as a URL-prefix twin of an sc-domain property.'),
       },
     },
-    async ({ siteUrl, prune, confirm, check }) => {
+    async ({ siteUrl, prune, confirm, check, hide }) => {
+      if (hide) {
+        if (!listLocalProperties(dataDir()).some(p => p.siteUrl === hide.siteUrl)) throw new Error(`No local database for ${hide.siteUrl}.`);
+        const on = hide.hidden !== false;
+        const list = setPropertyHidden(dataDir(), hide.siteUrl, on);
+        return {
+          content: [{ type: 'text', text: `${hide.siteUrl} is ${on ? 'hidden from' : 'shown again in'} the dashboard and the portfolio. Its database is untouched${on ? '; data_storage hide {siteUrl, hidden:false} brings it back, and prune delete-property removes it for good' : ''}.${list.length ? ` Hidden: ${list.join(', ')}.` : ''}` }],
+          structuredContent: { siteUrl: hide.siteUrl, hidden: on, allHidden: list },
+        };
+      }
       if (check) {
         if (!siteUrl) throw new Error('check needs a siteUrl.');
         const mode = check === 'quick' ? 'quick' : 'full';
@@ -781,7 +793,18 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     }
     const all = jobs.list();
     const lines = all.slice(0, 20).map(j => oneLineJob(j));
-    return { content: [{ type: 'text' as const, text: `${all.length} jobs${lines.length ? '\n' + lines.join('\n') : ''}` }], structuredContent: { jobs: all } };
+    // Machine-readable first: a client once searched the text for "running" and matched it inside an
+    // interrupted job's explanation. `state` per job (queued-no-runner when nothing can claim it) and
+    // the counts are the fields to read; the text leads with the same counts.
+    const stateOf = (j: Job): string => (j.noRunner ? 'queued-no-runner' : j.state);
+    const counts: Record<string, number> = {};
+    for (const j of all) counts[stateOf(j)] = (counts[stateOf(j)] ?? 0) + 1;
+    const summary = Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(', ');
+    const rows = all.map(j => ({ id: j.id, type: j.type, state: stateOf(j), scope: j.scope ?? null, startedAt: j.startedAt, updatedAt: j.updatedAt, error: j.error ?? null }));
+    return {
+      content: [{ type: 'text' as const, text: `${all.length} jobs${summary ? ` (${summary})` : ''}${lines.length ? '\n' + lines.join('\n') : ''}` }],
+      structuredContent: { counts, live: (counts.running ?? 0) + (counts.queued ?? 0), jobs: rows },
+    };
   };
 
   server.registerTool(
@@ -1101,7 +1124,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'check_sync_status',
     {
       title: 'Check sync status',
-      description: 'Poll any async job (sync, crawl, refresh, inspect, render, recon, backlinks, …) by id, or omit jobId to list recent jobs. check_sync_status and check_crawl_status are the same tool under two names. A running crawl reports its stage (fetching, writing-links, image-weights, resource-headers, link-graph, revalidation-probe, snapshot, site-probes, external-links), pages crawled vs the cap, pages/sec and an ETA for the fetch stage, so a long crawl is never mistaken for a stalled one; poll every 60-120 s. A failed job\'s reason is in the text reply as well as in structuredContent.error. A job whose server process exited before it finished reads as "interrupted" (see README, Docker).',
+      description: 'Poll any async job (sync, crawl, refresh, inspect, render, recon, backlinks, …) by id, or omit jobId to list recent jobs (structuredContent: counts by state, live = running + queued, and jobs[] with id, type, state, scope; read state from there, not from the text). check_sync_status and check_crawl_status are the same tool under two names. A running crawl reports its stage (fetching, writing-links, image-weights, resource-headers, link-graph, revalidation-probe, snapshot, site-probes, external-links), pages crawled vs the cap, pages/sec and an ETA for the fetch stage, so a long crawl is never mistaken for a stalled one; poll every 60-120 s. A failed job\'s reason is in the text reply as well as in structuredContent.error. A job whose server process exited before it finished reads as "interrupted" (see README, Docker).',
       inputSchema: { jobId: z.string().optional() },
     },
     jobStatus,
@@ -1259,7 +1282,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'check_crawl_status',
     {
       title: 'Check crawl status',
-      description: 'Poll any async job (sync, crawl, refresh, inspect, render, recon, backlinks, …) by id, or omit jobId to list recent jobs. check_sync_status and check_crawl_status are the same tool under two names. A running crawl reports its stage (fetching, writing-links, image-weights, resource-headers, link-graph, revalidation-probe, snapshot, site-probes, external-links), pages crawled vs the cap, pages/sec and an ETA for the fetch stage, so a long crawl is never mistaken for a stalled one; poll every 60-120 s. A failed job\'s reason is in the text reply as well as in structuredContent.error. A job whose server process exited before it finished reads as "interrupted" (see README, Docker).',
+      description: 'Poll any async job (sync, crawl, refresh, inspect, render, recon, backlinks, …) by id, or omit jobId to list recent jobs (structuredContent: counts by state, live = running + queued, and jobs[] with id, type, state, scope; read state from there, not from the text). check_sync_status and check_crawl_status are the same tool under two names. A running crawl reports its stage (fetching, writing-links, image-weights, resource-headers, link-graph, revalidation-probe, snapshot, site-probes, external-links), pages crawled vs the cap, pages/sec and an ETA for the fetch stage, so a long crawl is never mistaken for a stalled one; poll every 60-120 s. A failed job\'s reason is in the text reply as well as in structuredContent.error. A job whose server process exited before it finished reads as "interrupted" (see README, Docker).',
       inputSchema: { jobId: z.string().optional() },
     },
     jobStatus,

@@ -7,9 +7,9 @@ import {
 import { shareText, sharePct, quickWinsEmptyReason, trappedEmptyReason, CATEGORY_LABEL, categoryLabel, breakdownsEmptyReason as emptyBreakdowns } from '../core/displayRules.js';
 import { TITLE_MAX_CHARS, META_DESC_MAX_CHARS } from '../core/onPageLimits.js';
 import { renderSearchTop, renderHealthTop, renderSideFreshness, drawNetwork, isolatedText, pctChg, SEV_ORDER, SEV_LABEL, type OverviewCtx } from './panels.js';
-import { renderSummary, type SummaryCtx } from './summary.js';
+import { renderSummary, aiSignalsHtml, type SummaryCtx } from './summary.js';
 import { renderFieldCwv } from './cwv.js';
-import { buildDomainPicker, showDomainsView, showWatchedDomain, setupMarketTab, setupActions, repaintDomainViews, type WebBoot } from './shell.js';
+import { buildDomainPicker, showDomainsView, showWatchedDomain, setupOverviewTabs, setupActions, repaintDomainViews, type WebBoot } from './shell.js';
 
 // Local view types (avoid importing core, which pulls node-only deps into the bundle).
 interface Totals { clicks: number; impressions: number; ctr: number; position: number }
@@ -234,7 +234,7 @@ let loadedSite = '';
 async function loadDashboard(siteUrl: string): Promise<void> {
   if (dataLoaded || !siteUrl) return;
   dataLoaded = true;
-  if (!loadedSite) setupMarketTab(siteUrl, callServer);
+  if (!loadedSite) setupOverviewTabs(siteUrl, callServer, () => (currentData ? aiSignalsHtml(currentData) : ''));
   loadedSite = siteUrl;
   // A cold build after a sync can take a minute on a big property: say so instead of a bare spinner.
   const slow = setTimeout(() => {
@@ -1375,7 +1375,7 @@ function renderCrawlOnly(data: DashboardData): void {
   renderFindings(data.findings, col);
   renderRecommendations(data.findings);
   buildExportBar(data);
-  const usable = new Set(['summary', 'issues', 'market']);
+  const usable = new Set(['summary', 'issues', 'market', 'ai']);
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(b => {
     const on = usable.has(b.dataset.panel ?? '');
     b.disabled = !on;
@@ -1397,15 +1397,22 @@ function applyWindowLabels(): void {
   syncRangeControl();
 }
 
-/** The window control shows on the tabs it drives; on the Summary a fixed label says what it uses. */
+/** Tabs whose data is monthly DataForSEO history, not a Search Console window. */
+const MONTHLY_TABS = new Set(['market', 'ai']);
+
+/** The window control shows on the tabs it drives; on the Summary a fixed label says what it uses;
+ * the Market and AI visibility tabs (monthly DataForSEO data) show neither. */
 function syncRangeControl(): void {
   const ctl = document.getElementById('rangeCtl');
-  const onSummary = document.querySelector('.tab-btn.active')?.getAttribute('data-panel') === 'summary';
+  const tab = document.querySelector('.tab-btn.active')?.getAttribute('data-panel') ?? 'summary';
+  const onSummary = tab === 'summary', monthly = MONTHLY_TABS.has(tab);
   const hasGsc = !!currentData?.summary;
-  if (ctl) ctl.hidden = !__sacWeb || !hasGsc || onSummary;
+  if (ctl) ctl.hidden = !__sacWeb || !hasGsc || onSummary || monthly;
   const r = document.getElementById('range');
   const dr = currentData?.dateRange;
-  if (r && dr?.maxDate) r.textContent = onSummary || !__sacWeb ? `last ${onSummary ? 28 : winDays} days to ${fmtDate(dr.maxDate)}` : `to ${fmtDate(dr.maxDate)}`;
+  if (!r) return;
+  if (monthly) r.textContent = '';
+  else if (dr?.maxDate) r.textContent = onSummary || !__sacWeb ? `last ${onSummary ? 28 : winDays} days to ${fmtDate(dr.maxDate)}` : `to ${fmtDate(dr.maxDate)}`;
 }
 
 /** Change the window: refetch the payload for it and re-render, keeping the open tab. */

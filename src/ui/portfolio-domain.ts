@@ -41,8 +41,9 @@ type DomainOverview = {
   notes: string[];
 };
 
-let charts: EChartWrapper[] = [];
-let aiCharts: EChartWrapper[] = [];
+/** Charts per mounted overview: the dashboard shows the market part and the AI part in two tabs at
+ * once, so one render must never dispose the other's charts. */
+const chartState = new WeakMap<HTMLElement, { charts: EChartWrapper[]; ai: EChartWrapper[] }>();
 
 function ensureStyles(): void {
   if (document.getElementById('pf-domain-style')) return;
@@ -168,9 +169,13 @@ function crawlPillHtml(crawl: CrawlState | null, isOwned: boolean): string {
 
 /** `embedded`: shown as a tab inside the domain's own property dashboard, so no back link and no
  * link to the dashboard it is already in. `backLabel` names where Back goes. */
-export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: () => void; embedded?: boolean; backLabel?: string }): void {
-  charts.forEach(c => c.dispose()); charts = [];
-  aiCharts.forEach(c => c.dispose()); aiCharts = [];
+export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: () => void; embedded?: boolean; backLabel?: string; section?: 'all' | 'market' | 'ai' }): void {
+  const st = chartState.get(root) ?? { charts: [], ai: [] };
+  chartState.set(root, st);
+  st.charts.forEach(c => c.dispose()); st.charts = [];
+  st.ai.forEach(c => c.dispose()); st.ai = [];
+  const section = opts.section ?? 'all';
+  const showMarket = section !== 'ai', showAi = section !== 'market';
   ensureStyles();
 
   const data = o as DomainOverview;
@@ -251,14 +256,14 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
         </div>
         ${attentionHtml}
       </header>
-      <section class="pf-card">
+      ${showMarket ? `<section class="pf-card">
         <div class="pf-search-grid">
           <div><div class="pf-section-label">Search (estimated, ${esc(data.row.countryName)})</div><div class="pf-kpis">${searchKpis}</div></div>
           <div><div class="pf-section-label">Search Console (measured)</div>${gscHtml}</div>
         </div>
         ${shareHtml}
-      </section>
-      <section class="pf-card">
+      </section>` : ''}
+      ${showAi ? `<section class="pf-card">
         <div class="pf-card-head">
           <div class="pf-section-label" style="margin:0">AI search</div>
           <div class="pf-segmented" id="pf-seg-ai" role="group" aria-label="AI platform">
@@ -267,8 +272,8 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
           </div>
         </div>
         <div id="pf-ai-body"></div>
-      </section>
-      <section class="pf-card"><div class="pf-section-label">Traffic trend</div><div id="pf-traffic-trend" class="pf-chart-tall"></div></section>
+      </section>` : ''}
+      ${showMarket ? `<section class="pf-card"><div class="pf-section-label">Traffic trend</div><div id="pf-traffic-trend" class="pf-chart-tall"></div></section>
       <section class="pf-card"><div class="pf-two-col">
         <div><div class="pf-section-label">Keyword positions (estimated)</div><div id="pf-positions-chart" class="pf-chart"></div></div>
         <div><div class="pf-section-label">Search results mix</div>
@@ -282,10 +287,10 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
         <div class="pf-tabs" id="pf-top-tabs" role="tablist">
           <button class="pf-tab is-active" type="button" data-tab="traffic">By traffic (estimated)</button>
           <button class="pf-tab" type="button" data-tab="links">By links</button>
-          <button class="pf-tab" type="button" data-tab="cited">Cited in AI Overviews</button>
+          ${showAi ? '<button class="pf-tab" type="button" data-tab="cited">Cited in AI Overviews</button>' : ''}
         </div>
         <div id="pf-top-pages-body"></div>
-      </section>
+      </section>` : ''}
     </div></div>`;
 
   const rootEl = root.querySelector<HTMLElement>('.pf-domain');
@@ -335,7 +340,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
   const renderAiSection = (platform: 'google' | 'chatgpt'): void => {
     const body = rootEl.querySelector<HTMLElement>('#pf-ai-body');
     if (!body) return;
-    aiCharts.forEach(c => c.dispose()); aiCharts = [];
+    st.ai.forEach(c => c.dispose()); st.ai = [];
     const isGoogle = platform === 'google';
     const getM = (s: DomainSeries): number | null => (isGoogle ? s.aiGoogle.mentions : s.aiChatgpt.mentions);
     const getV = (s: DomainSeries): number | null => (isGoogle ? s.aiGoogle.volume : s.aiChatgpt.volume);
@@ -386,7 +391,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
         <div><div class="pf-section-label">Sources cited alongside</div>${sourcesHtml}<div class="pf-caption">Sources, not competitors.</div></div>
       </div>`;
 
-    const combo = addChart(body.querySelector<HTMLElement>('#pf-ai-combo'), aiCharts);
+    const combo = addChart(body.querySelector<HTMLElement>('#pf-ai-combo'), st.ai);
     if (combo) {
       if (!data.series.some(s => getM(s) !== null || getV(s) !== null)) {
         combo.setEmpty('No AI mention history yet. Ask in chat to refresh the portfolio.', pal);
@@ -420,7 +425,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
       }
     }
 
-    const scatter = addChart(body.querySelector<HTMLElement>('#pf-ai-scatter'), aiCharts);
+    const scatter = addChart(body.querySelector<HTMLElement>('#pf-ai-scatter'), st.ai);
     if (scatter) {
       const rows = rc.filter(r => r.organicRank !== null && r.organicRank >= 1 && r.organicRank <= 100);
       if (!isOwned || !rows.length) {
@@ -456,7 +461,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
   };
 
   const trafficTrend = (): void => {
-    const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-traffic-trend'), charts);
+    const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-traffic-trend'), st.charts);
     if (!chart) return;
     const rows = data.series;
     if (!rows.some(s => s.organicEtv !== null || s.paidEtv !== null || s.gscClicks !== null)) { chart.setEmpty('No traffic history yet. Ask in chat to refresh the portfolio.', pal); return; }
@@ -481,7 +486,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
   };
 
   const positions = (): void => {
-    const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-positions-chart'), charts);
+    const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-positions-chart'), st.charts);
     if (!chart) return;
     const rows = data.series.filter(s => !s.partial && s.buckets.pos_1_3 !== null);
     if (!rows.length) { chart.setEmpty('No keyword position history yet.', pal); return; }
@@ -504,7 +509,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
   };
 
   const serpMix = (): void => {
-    const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-serpmix-chart'), charts);
+    const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-serpmix-chart'), st.charts);
     if (!chart) return;
     const mix = data.serpMix;
     if (!mix) { chart.setEmpty('No search results mix yet.', pal); return; }
@@ -531,7 +536,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
   };
 
   const backlinks = (): void => {
-    const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-backlinks-chart'), charts);
+    const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-backlinks-chart'), st.charts);
     if (!chart) return;
     const rows = data.series.filter(s => !s.partial && (s.newReferringMainDomains !== null || s.lostReferringMainDomains !== null || s.referringMainDomains !== null));
     if (!rows.length) { chart.setEmpty('No backlinks history yet.', pal); return; }
