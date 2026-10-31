@@ -285,6 +285,39 @@ const site = 'https://example.com/';
   a.close(); b.close();
 }
 
+// ── Collection jobs are serialised per property, in-process (concurrent-write guard) ──────────────
+// Two jobs that write a property's shared crawl / GSC tables (crawl, refresh, sync, inspect, crux)
+// would corrupt each other: the second crawl's wipe deletes the first's pages mid-run. The runner
+// queues the second (claimNext); in-process there is no queue, so submit() refuses it.
+{
+  const cdir = mkdtempSync(path.join(tmpdir(), 'sac-jobscope-'));
+  const block = () => new Promise(() => {}); // never resolves: the job stays 'running'
+  const run = () => block();
+  // In-process manager with a durable registry.
+  const jm = new JobManager({ dbPath: jobsDbPath(cdir) });
+  const refused = (type, scope) => { try { jm.submit(type, { siteUrl: 'x' }, run, { scope }); return null; } catch (e) { return e.message; } };
+  const idA = jm.submit('crawl', { siteUrl: 'a' }, run, { scope: 'a.db' });
+  check('a crawl starts and is running', jm.get(idA)?.state === 'running' && jm.get(idA)?.scope === 'a.db', JSON.stringify(jm.get(idA)));
+  const m1 = refused('crawl', 'a.db');
+  check('a second crawl on the same property is refused', m1 !== null && /already running/.test(m1) && /corrupt/.test(m1), String(m1));
+  const m2 = refused('refresh', 'a.db');
+  check('a refresh is refused while a crawl runs on the property (both write the crawl)', m2 !== null && /already running/.test(m2), String(m2));
+  const m3 = refused('sync', 'a.db');
+  check('a sync is refused while a crawl runs on the property (both touch its tables)', m3 !== null, String(m3));
+  const idB = jm.submit('crawl', { siteUrl: 'b' }, run, { scope: 'b.db' });
+  check('a crawl on a DIFFERENT property is allowed', jm.get(idB)?.state === 'running', JSON.stringify(jm.get(idB)));
+  const idBk = jm.submit('backlinks', { siteUrl: 'a' }, run, { scope: 'a.db' });
+  check('a non-collection job (backlinks) runs alongside the crawl', jm.get(idBk)?.state === 'running', JSON.stringify(jm.get(idBk)));
+  jm.close();
+  // External mode: both crawls queue (claimNext serialises them later), so neither is refused.
+  const ext = new JobManager({ dbPath: jobsDbPath(cdir), runner: 'external' });
+  const q1 = ext.submit('crawl', { siteUrl: 'a' }, run, { scope: 'c.db' });
+  const q2 = ext.submit('crawl', { siteUrl: 'a' }, run, { scope: 'c.db' });
+  check('in external mode a second crawl is queued, not refused (the runner serialises it)', !!q1 && !!q2 && ext.get(q1)?.state === 'queued' && ext.get(q2)?.state === 'queued', JSON.stringify({ q1, q2 }));
+  ext.close();
+  rmSync(cdir, { recursive: true, force: true });
+}
+
 rmSync(dir, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

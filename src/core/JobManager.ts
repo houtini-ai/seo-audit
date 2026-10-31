@@ -80,6 +80,13 @@ export const RUNNER_STOPPED_ERROR =
 
 const HEARTBEAT_MS = 20_000;
 const STALE_MS = 90_000;
+// Kinds that collect into a property's SHARED crawl / Search Console tables (pages, links,
+// search_analytics, url_inspection, crux_*). Two of these on one property race each other: a second
+// crawl's deferred wipe deletes the first crawl's pages mid-run, and two syncs race the GSC rows.
+// The runner serialises them per scope (claimNext queues the second); in-process there is no queue,
+// so submit() refuses the second. Other kinds (backlinks, entities, rank_history, render, recon,
+// duplicates, fts-index, integrity) write disjoint tables and may run alongside.
+export const COLLECTION_KINDS: ReadonlySet<string> = new Set(['crawl', 'refresh', 'sync', 'inspect', 'crux']);
 /**
  * How long a job stored as `running` is treated as possibly alive by DESTRUCTIVE guards (vacuum,
  * delete-property, repair). The heartbeat is a timer on the main thread, so a long synchronous step
@@ -305,6 +312,15 @@ export class JobManager {
       const id = this.db ? this.enqueue(type, plain, opts) : null;
       if (id) return id;
       this.warn('SAC_JOB_RUNNER=external, but the job registry is unavailable, so jobs cannot be queued for a runner; running them in this process.');
+    }
+    // In-process (or external without a usable registry): the job runs now, there is no queue to
+    // hold a second one, so refuse a collection job while another is live for the same property —
+    // two would corrupt the shared crawl / GSC tables. (External mode queued above; claimNext serialises.)
+    if (opts.scope && COLLECTION_KINDS.has(type)) {
+      const busy = this.liveForScope(opts.scope);
+      if (busy && COLLECTION_KINDS.has(busy.type)) {
+        throw new Error(`A ${busy.type} job is already running for this property. Wait for it to finish (poll check_sync_status) or cancel it, then start the ${type} again — two collection jobs on one property would corrupt the crawl and Search Console tables.`);
+      }
     }
     return this.start(type, (update, signal) => run(plain, update, signal), opts);
   }
@@ -649,6 +665,28 @@ export class JobManager {
    * a runner heartbeated recently, or the job was queued in the last ~2 min). A queued row nothing can
    * claim is stale and does not block prune / repair; it stays in the registry, marked noRunner.
    */
+  /**
+   * A live job for this property (scope), or null. "Live" mirrors claimNext's per-scope exclusion:
+   * a running job in THIS process, a running job in any process with a fresh heartbeat (staleMs),
+   * or a queued job a runner could still claim. Used to serialise collection jobs in-process.
+   */
+  liveForScope(scope: string): Job | null {
+    for (const j of this.jobs.values()) if (j.state === 'running' && j.scope === scope) return j;
+    if (this.db) {
+      try {
+        const fresh = new Date(Date.now() - this.staleMs).toISOString();
+        const r = this.db.prepare(`SELECT * FROM jobs WHERE state = 'running' AND scope = ? AND COALESCE(heartbeat_at, updated_at) >= ? ORDER BY started_at LIMIT 1`).get(scope, fresh) as JobRow | undefined;
+        if (r) return this.fromRow(r);
+        const alive = this.runnerAlive();
+        const queued = this.db.prepare(`SELECT * FROM jobs WHERE state = 'queued' AND scope = ? AND started_at >= ? ORDER BY started_at`).all(scope, new Date(Date.now() - DAY_MS).toISOString()) as JobRow[];
+        for (const row of queued) if (this.queuedIsLive(row.started_at, alive)) return this.fromRow(row);
+      } catch (err) {
+        this.warn(`checking live jobs for a property failed (${errText(err)}).`);
+      }
+    }
+    return null;
+  }
+
   possiblyRunning(windowMs = SAFETY_STALE_MS): Job[] {
     const out = new Map<string, Job>();
     for (const j of this.jobs.values()) if (j.state === 'running') out.set(j.id, j);

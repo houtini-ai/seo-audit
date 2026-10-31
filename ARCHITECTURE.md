@@ -48,7 +48,7 @@ Compiled layout: `dist/core/…`, `dist/audit/…` from `tsc`; `dist/src/ui/*.ht
 ## Jobs
 
 - Long work is a **job**: the tool returns a job id at once and the client polls `check_sync_status`. Kinds are named in `src/core/jobKinds.ts` and run from their arguments alone, so the same job can run in the MCP process or in the runner.
-- `JobManager.ts` keeps a durable registry (`_jobs.db`). Every job has a `scope` (the property's database file name), so "is a crawl live for this property" can be answered. Destructive operations check `possiblyRunning()` (stored state + heartbeat), never the derived display state.
+- `JobManager.ts` keeps a durable registry (`_jobs.db`). Every job has a `scope` (the property's database file name), so "is a crawl live for this property" can be answered. Destructive operations check `possiblyRunning()` (stored state + heartbeat), never the derived display state. One property runs one collection job at a time (crawl, refresh, sync, inspect, crux — the kinds that write the shared crawl / Search Console tables): the runner queues the second (`claimNext`), and in-process `submit()` refuses it (`COLLECTION_KINDS`, `liveForScope`), since two would wipe each other's `pages` mid-crawl. Other kinds write disjoint tables and may run alongside.
 - **External runner** (`SAC_JOB_RUNNER=external`): the MCP only queues; `seo-audit-runner` claims and runs. This exists because Docker MCP gateway workers are disposable.
 
 ## Dashboard
