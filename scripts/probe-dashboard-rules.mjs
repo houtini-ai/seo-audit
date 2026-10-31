@@ -16,6 +16,7 @@ import {
 import { cwvFieldPayload } from '../dist/core/CruxSync.js';
 import { loadBrandQueries, spacedIsUncertain } from '../dist/core/brand.js';
 import { getDashboardData } from '../dist/core/dashboardData.js';
+import { listFindings } from '../dist/core/findingsQuery.js';
 import { runSingleCheck } from '../dist/audit/engine.js';
 import { META_DESC_MAX_CHARS } from '../dist/core/onPageLimits.js';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
@@ -107,6 +108,36 @@ console.log('field CWV (CrUX)');
   ok(ph?.metrics?.inp === null && ph?.history?.inp?.length === 0, 'no INP rows: inp is null and its history empty (not zeros)');
   ok(cf?.lastChecked === '2026-10-17 16:20:57', 'the last check date ships, so the UI can say how old the window is');
   adb.close();
+}
+
+// ── 5b. A failed or still-running audit never replaces the latest completed one ──────────────
+// A failed run's findings are rolled back and a running one has none yet: reading either as "the
+// latest audit" showed health 100 and "0 critical" on a site with open critical issues.
+console.log('latest completed audit');
+{
+  const site = 'sc-domain:runs.test';
+  const adb = new AuditDatabase(dbPathFor(dataDir, site));
+  adb.upsertProperty(site, 'apex');
+  const db = adb.db;
+  db.prepare(`INSERT INTO crawl_metadata (crawl_id,base_url,base_domain,status,urls_crawled,started_at,finished_at) VALUES ('c1','https://runs.test','runs.test','completed',10,'2026-10-01 10:00:00','2026-10-01 10:10:00')`).run();
+  const insPage = db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,content_type,is_internal,indexable,title) VALUES ('c1',?,?,200,'text/html',1,1,'T')`);
+  for (let i = 0; i < 10; i++) insPage.run(`https://runs.test/p${i}`, `https://runs.test/p${i}`);
+  const insRun = db.prepare(`INSERT INTO audit_runs (run_id,crawl_id,scope,started_at,finished_at,finding_count,status) VALUES (?,?,?,?,?,?,?)`);
+  insRun.run('good', 'c1', 'core', '2026-10-02 09:00:00', '2026-10-02 09:01:00', 5, 'completed');
+  const insF = db.prepare(`INSERT INTO findings (run_id,check_id,category,severity,labels,certainty,url_key,evidence,traffic_at_risk,effort,priority,recommendation) VALUES ('good','x-crit','indexation','crit','["D"]',1,?,'{}','{}','{}',1,'{"title":"x","text":"y"}')`);
+  for (let i = 0; i < 5; i++) insF.run(`https://runs.test/p${i}`);
+  insRun.run('broke', 'c1', 'core', '2026-10-03 09:00:00', '2026-10-03 09:00:30', 0, 'failed');
+  adb.close();
+  const failed = getDashboardData(dataDir, site);
+  ok(failed.findings?.runId === 'good', `a later FAILED run: the dashboard still shows the completed run (${failed.findings?.runId})`);
+  ok(failed.healthScore?.score === 50, `a later FAILED run: health stays 50, not 100 (${failed.healthScore?.score})`);
+  const listed = listFindings(dataDir, site, { severity: 'crit' });
+  ok(listed.runId === 'good' && listed.total === 5, `a later FAILED run: list_findings pages the completed run (${listed.runId}, ${listed.total})`);
+  const adb2 = new AuditDatabase(dbPathFor(dataDir, site));
+  adb2.db.prepare(`INSERT INTO audit_runs (run_id,crawl_id,scope,started_at,finished_at,finding_count,status) VALUES ('busy','c1','core','2026-10-04 09:00:00',NULL,NULL,'running')`).run();
+  adb2.close();
+  const running = getDashboardData(dataDir, site);
+  ok(running.findings?.runId === 'good' && running.healthScore?.score === 50, `a RUNNING audit: the completed run is still shown (${running.findings?.runId}, ${running.healthScore?.score})`);
 }
 
 // ── 6. Empty states name the true reason ──────────────────────────────────────────────────────

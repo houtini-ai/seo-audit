@@ -1,5 +1,6 @@
 import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
+import { LATEST_COMPLETED_RUN_WHERE } from '../audit/history.js';
 
 /** One page of the latest audit's findings, for the dashboard's Issues list. */
 export interface FindingsPage {
@@ -18,13 +19,13 @@ export interface FindingsPage {
  * The dashboard payload carries only the top 50 findings (it would otherwise be megabytes on a big
  * run), so a filter applied to that list said "nothing at this severity" while the chip counted
  * hundreds. Filters now run here, over every finding. The run is chosen as the payload chooses it
- * (latest started), and impact is normalised to the run's top priority, the payload's scale.
+ * (latest completed), and impact is normalised to the run's top priority, the payload's scale.
  */
 export function listFindings(dataDir: string, siteUrl: string, f: { severity?: string; category?: string; checkId?: string; offset?: number; limit?: number }): FindingsPage {
   const db = new AuditDatabase(dbPathFor(dataDir, siteUrl));
   try {
     const offset = Math.max(0, Math.floor(Number(f.offset) || 0));
-    const run = db.db.prepare('SELECT run_id FROM audit_runs ORDER BY started_at DESC LIMIT 1').get() as { run_id: string } | undefined;
+    const run = db.db.prepare(`SELECT run_id FROM audit_runs WHERE ${LATEST_COMPLETED_RUN_WHERE} ORDER BY started_at DESC, rowid DESC LIMIT 1`).get() as { run_id: string } | undefined;
     if (!run) return { runId: null, total: 0, offset, rows: [] };
     const where = ['run_id = ?'];
     const args: (string | number)[] = [run.run_id];
