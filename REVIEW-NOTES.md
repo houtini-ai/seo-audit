@@ -29,16 +29,21 @@ One disclosure: during the web-security review, one test call to `news_discovery
 | 15 | houtini-ai/seo-audit#101 | fix: SSRF guards for third-party URLs (competitor fetch, outbound links), `probe_urls` and `render_pages` | medium (security) |
 | 16 | houtini-ai/seo-audit#102 | docs: README, manual and labels match the code. **Folds in #80; close #80 after merging** | docs |
 | 17 | houtini-ai/seo-audit#103 | fix: the model can find setup problems and help on its own (setup status in the instructions, `seo_audit_help`, open `dashboardUrl` in a built-in browser, cost and accuracy fixes in tool text) | model context |
-| 18 | this PR | REVIEW-NOTES.md and four screenshots | - |
+| 18 | houtini-ai/seo-audit#105 | docs: document the review fixes and remove stale setup steps (npx-first getting started, the new behaviour in tools.md / dashboard.md / README, CHANGELOG). **Stacked on #102**; merge after the fix PRs | docs |
+| 19 | this PR | REVIEW-NOTES.md and four screenshots | - |
 
-Every PR was checked with `npm ci`, `npm run build` and each `npm test` step run individually. Every step passes except `probe:web` before #91 lands. Each PR body states which new assertions fail against master's `src`.
+**How each PR was checked:**
+- `npm ci` once on master.
+- The full `npm run build` (server and UI) on every review branch.
+- `npm run build:server` and each `npm test` step, run individually, on every branch. Every step passes except `probe:web` until #91 lands.
+- Each PR body states which of its new assertions fail against master's `src`.
 
-**Expected merge friction:**
-- Several PRs add assertions to the same probe files at *different* anchors, and several touch different lines of `ARCHITECTURE.md`.
-- `src/core/Crawler.ts` is touched by #89/#98 (stacked), #90 (body read), #97 (via `userAgents.ts`, not Crawler) and #101 (one line: the external-links call).
-- `package.json` is touched only by #101 (`probe:ssrf`).
+**Merged together:** all 18 review branches, plus this one, merge into master **cleanly, in the order above**. I checked this; four branches got small follow-up commits to move their edits off lines another PR changes. With the 17 code and docs PRs (#87 to #103) merged:
+- `npm run build` passes;
+- **`npm test` exits 0, with 1,029 assertions passing and none failing**;
+- the browser QA in section 5 gives the same results.
 
-Any conflict should be a trivial rebase. I didn't test merging them in sequence.
+**Stacked PRs:** #98 is stacked on #89, #92 on #91, and #105 on #102. Merge each pair in order.
 
 **PR #80:** its non-`server.ts` hunks are in #102 and its `server.ts` hunks in #103. Two of its hunks needed redoing: the CHANGELOG (master already had an `[Unreleased]`) and the dashboard URL options (the paragraph was rewritten, and `?redact` → `&redact` was only half right). Its author is credited in both commits. It can be closed once those merge.
 
@@ -94,9 +99,11 @@ Severity is for the product's promise: a wrong or overstated number ranks above 
 22. **`coverage-not-indexed`'s title:** it reads "Crawled but not indexed", but `LIKE '%not indexed%'` also matches "Discovered - currently not indexed".
 23. **Critical-count wording:** the verdict's "N critical issues are open" should read "at least N" when a crit check is capped. The same applies to the portfolio's "Audit health down" across different scopes, which is unverified.
 24. **`findingsQuery` sort:** no tie-breaker (`, id`). Paging tested stable here, but SQLite doesn't promise it.
-25. **Em dashes in UI text:** 78 check titles and fix strings in `src/audit/checks*.ts` contain em dashes, and they are shown in the Issues table (see the screenshot). This breaks the house rule.
+25. **Em dashes in UI text:** 78 lines of check titles and fix strings in `src/audit/checks*.ts` contain em dashes, and they are shown in the Issues table (see the screenshot). This breaks the house rule.
 26. **UI type-checking:** `src/ui/**` is not type-checked by any build step (`tsconfig.server.json` excludes it, and Vite doesn't check). `tsc` reports 74 pre-existing errors when it is.
-27. **ARCHITECTURE.md:** the data-dir file list omits `wikidata-cache.db` and `reports/`.
+27. **ARCHITECTURE.md**, one-line fixes left until after the merge (each sits next to a line a fix PR edits, so changing it now would conflict):
+    - The data-dir file list omits `wikidata-cache.db` and `reports/`.
+    - The Collection bullet says the GSC resume uses a "3-day lag buffer"; `LAG_DAYS` is 4. #95 states the right figure under Conventions.
 
 ### Dependencies (`npm audit --omit=dev`)
 - **`zod` < 4.6.6 (high, GHSA-mrhx-c7xc-m3w5):** memory exhaustion validating oversized constrained collections. Inputs come from the local MCP client; the web handlers don't use zod. The fix is zod 4 (breaking; check the MCP SDK's compatibility first).
