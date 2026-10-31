@@ -8,7 +8,7 @@ The product in one line: **collect** (Google Search Console history, a crawl of 
 
 | Path | What it is |
 |---|---|
-| `src/index.ts`, `src/server.ts` | The MCP server (stdio). Every tool is registered in `server.ts`; `SERVER_VERSION` comes from `package.json` at runtime. |
+| `src/index.ts`, `src/server.ts` | The MCP server (stdio). Every tool is registered in `server.ts`; `SERVER_VERSION` comes from `package.json` at runtime. The server instructions carry a one-line setup status computed at start (`src/core/setupStatus.ts`: which keys are set, local properties), and `seo_audit_help` leads with the full status; credentials errors point to it. |
 | `src/runner.ts` | `seo-audit-runner`: the job runner, for the Docker MCP gateway (see Jobs). |
 | `src/dashboard.ts` | `seo-audit-dashboard`: the standalone dashboard server (see Dashboard). |
 | `src/core/` | Data collection, storage, clients, jobs, the web server and the dashboard payloads. |
