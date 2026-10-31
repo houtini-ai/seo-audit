@@ -86,7 +86,7 @@ _Fixed by #106 and #107: the overstated-payoff (T = impressions × CTR curve, up
 12. **`missing-required-fields`** treats recommended properties as "Google-required" (Article: headline/author/datePublished/image; Organization: logo) (`schema-validate.ts:32-36`). See section 3.
 
 ### Low
-13. **The domain picker shows "All domains" for a hidden property opened by URL** (`shell.ts:39-51`). Verified in the browser QA below.
+13. ~~**The domain picker shows "All domains" for a hidden property opened by URL** (`shell.ts:39-51`).~~ **Fixed** (#109-follow-up): the open property is always a selected option (the logic moved to a pure `core/domainPicker.ts`, tested in `probe-dashboard-rules`), labelled "(hidden)" when hidden.
 14. **A failed window switch** leaves the new window labelled over the old data (`dashboard.ts:1513-1523`). Not verified.
 15. **Cancel feedback:** after Cancel, a running crawl's card still reads "running" for about 10 s, because the in-flight fetch doesn't take the job signal (`webHandlers.ts:166`).
 16. **"Show more" can mix runs:** "Show more" and the filters page the latest completed run, which may differ from the run the page loaded. Pass `fc.runId` to `list_findings`.
@@ -97,7 +97,7 @@ _Fixed by #106 and #107: the overstated-payoff (T = impressions × CTR curve, up
 21. **Critical-count wording:** the verdict's "N critical issues are open" should read "at least N" when a crit check is capped. The same applies to the portfolio's "Audit health down" across different scopes, which is unverified.
 22. **`findingsQuery` sort:** no tie-breaker (`, id`). Paging tested stable here, but SQLite doesn't promise it.
 23. **Em dashes in UI text:** 78 lines of check titles and fix strings in `src/audit/checks*.ts` contain em dashes, and they are shown in the Issues table (see the screenshot). This breaks the house rule.
-24. **UI type-checking:** `src/ui/**` is not type-checked by any build step (`tsconfig.server.json` excludes it, and Vite doesn't check). `tsc` reports 74 pre-existing errors when it is.
+24. ~~**UI type-checking:** `src/ui/**` is not type-checked by any build step.~~ **Fixed:** `tsconfig.ui.json` type-checks `src/ui`, wired into `build` (and so CI). The 74 errors were drift (the UI kept a partial copy of `DashboardData`) plus loose callback params; the UI now reads the server's `DashboardData` type, and `noImplicitAny` is relaxed for DOM callbacks.
 25. **ARCHITECTURE.md**, one-line fixes left until after the merge (each sits next to a line a fix PR edits, so changing it now would conflict):
     - The data-dir file list omits `wikidata-cache.db` and `reports/`.
     - The Collection bullet says the GSC resume uses a "3-day lag buffer"; `LAG_DAYS` is 4. #95 states the right figure under Conventions.

@@ -4,6 +4,7 @@
 // readiness) and show their progress. Paid DataForSEO work is never started here: from chat only,
 // where it is quoted first.
 import { esc } from './lib/h.js';
+import { domainPickerOptions, type DomainPickerLists } from '../core/domainPicker.js';
 import { mountPortfolio, refreshPortfolioView } from './portfolio-view.js';
 import { renderDomainOverview } from './portfolio-domain.js';
 
@@ -27,28 +28,27 @@ export function domainOfProperty(siteUrl: string): string {
 export async function buildDomainPicker(boot: WebBoot, callServer: CallServer): Promise<void> {
   const holder = document.getElementById('sideProperty');
   if (!holder) return;
-  let list: { properties: string[]; others: string[]; watched: { domain: string; group: string | null }[] } = {
-    properties: boot.properties ?? [], others: boot.others ?? [], watched: [],
-  };
+  let list: DomainPickerLists = { properties: boot.properties ?? [], others: boot.others ?? [], watched: [] };
   try { list = sc(await callServer('list_domains', {})); } catch { /* the boot list is enough */ }
 
   holder.querySelector('.property-switcher')?.remove();
   const sel = document.createElement('select');
   sel.className = 'property-switcher';
   sel.setAttribute('aria-label', 'Choose a domain');
-  const current = boot.view === 'domains' ? '__all' : boot.domain ? `d:${boot.domain}` : `p:${boot.siteUrl}`;
-  const opt = (value: string, label: string, parent: HTMLElement): void => {
-    const o = document.createElement('option');
-    o.value = value; o.textContent = label; o.selected = value === current;
-    parent.appendChild(o);
+  // Options and selection come from the pure model (core/domainPicker), so a property opened by URL
+  // that is not in the lists (a hidden one) is still shown and selected, not "All domains".
+  const groups = new Map<string | null, HTMLElement>([[null, sel]]);
+  const groupEl = (label: string | null): HTMLElement => {
+    if (label === null) return sel;
+    let g = groups.get(label);
+    if (!g) { const og = document.createElement('optgroup'); og.label = label; sel.appendChild(og); groups.set(label, og); g = og; }
+    return g;
   };
-  const group = (label: string): HTMLOptGroupElement => {
-    const g = document.createElement('optgroup'); g.label = label; sel.appendChild(g); return g;
-  };
-  opt('__all', 'All domains', sel);
-  if (list.properties.length) { const g = group('Your properties'); for (const p of list.properties) opt(`p:${p}`, p, g); }
-  if (list.watched.length) { const g = group('Watched'); for (const w of list.watched) opt(`d:${w.domain}`, w.group ? `${w.domain} (${w.group})` : w.domain, g); }
-  if (list.others.length) { const g = group('Backlink data only'); for (const p of list.others) opt(`p:${p}`, p, g); }
+  for (const o of domainPickerOptions(boot, list)) {
+    const el = document.createElement('option');
+    el.value = o.value; el.textContent = o.label; el.selected = o.selected;
+    groupEl(o.group).appendChild(el);
+  }
   sel.addEventListener('change', () => {
     const v = sel.value;
     location.href = v === '__all' ? '/?all=1'

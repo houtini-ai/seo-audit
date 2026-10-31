@@ -14,7 +14,7 @@ The product in one line: **collect** (Google Search Console history, a crawl of 
 | `src/core/` | Data collection, storage, clients, jobs, the web server and the dashboard payloads. |
 | `src/audit/` | The checks, the audit engine, templates, opportunities, drift, schema validation. |
 | `src/generators/` | Paste-ready fixes for findings (JSON-LD, redirect rules, internal links): `fix_finding`. |
-| `src/ui/` | The dashboard UI: plain TypeScript + ECharts, built by Vite into single-file HTML under `dist/src/ui/`. |
+| `src/ui/` | The dashboard UI: plain TypeScript + ECharts, type-checked by `tsc -p tsconfig.ui.json` (the `build` runs it) and built by Vite into single-file HTML under `dist/src/ui/`. It reads the server's own `DashboardData` type from `src/core`, so the payload type never drifts. |
 | `scripts/probe-*.mjs` | The test suite: probes that exercise the compiled code (`dist/`) against fixtures, run by `npm test`. |
 | `scripts/fixtures/` | Saved API responses (DataForSEO, portfolio) the probes replay. No probe calls a paid API. |
 
