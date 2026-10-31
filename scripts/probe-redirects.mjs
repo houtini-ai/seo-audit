@@ -14,6 +14,7 @@ import { runAudit } from '../dist/audit/engine.js';
 import { gscFreshness } from '../dist/core/gscFreshness.js';
 import { loopPoint, NON_SEO_FLOW } from '../dist/audit/checks-redirects.js';
 import { Crawler } from '../dist/core/Crawler.js';
+import { rulesFromText, robotsVerdict } from '../dist/core/robots.js';
 
 process.env.SAC_AUTOSERVE = '0';
 let pass = 0, fail = 0;
@@ -259,6 +260,59 @@ try {
       check('both sources are stored as redirects (301, 302)', src?.status_code === 301 && src?.indexable_reason === 'redirect' && out?.status_code === 302 && out?.indexable_reason === 'redirect', JSON.stringify([src, out]));
       adb.close();
     } finally { server.close(); other.close(); }
+  }
+
+  // ── 6. robots.txt per RFC 9309 (review/11) ───────────────────────────────────────────────────
+  {
+    const r = (txt) => rulesFromText(txt, 'seo-audit-console');
+    const pdf = r('User-agent: *\nDisallow: /*.pdf$\n');
+    check('`*` and `$`: /*.pdf$ blocks /file.pdf and /a/b.pdf, not /file.pdfx or /file.pdf?x=1', !pdf.isAllowed('/file.pdf') && !pdf.isAllowed('/a/b.pdf') && pdf.isAllowed('/file.pdfx') && pdf.isAllowed('/file.pdf?x=1'));
+    const star = r('User-agent: *\nDisallow: /private*\nDisallow: /*/admin/\n');
+    check('`*` inside a pattern: /private* and /*/admin/', !star.isAllowed('/private-area') && !star.isAllowed('/shop/admin/users') && star.isAllowed('/admin/') && star.isAllowed('/public'));
+    const q = r('User-agent: *\nDisallow: /search?q=\n');
+    check('patterns match the query string too: /search?q= blocks /search?q=x, not /search', !q.isAllowed('/search?q=x') && q.isAllowed('/search'));
+    const root = r('User-agent: *\nAllow: /$\nDisallow: /\n');
+    check('Allow: /$ with Disallow: / allows the homepage only', root.isAllowed('/') && !root.isAllowed('/page'));
+    const tie = r('User-agent: *\nDisallow: /a\nAllow: /a\n');
+    check('Allow wins a tie; robots.txt itself is always allowed', tie.isAllowed('/a') && r('User-agent: *\nDisallow: /\n').isAllowed('/robots.txt'));
+    check('`User-agent: bot` does not name Googlebot (no substring match)', JSON.stringify(robotsVerdict('User-agent: bot\nDisallow: /\n', 'Googlebot')) === '{"named":false,"allowed":true}');
+    check('`User-agent: Googlebot/2.1` names googlebot (product token, any case)', JSON.stringify(robotsVerdict('User-agent: Googlebot/2.1\nDisallow: /\n', 'googlebot')) === '{"named":true,"allowed":false}');
+  }
+
+  // ── 7. An unreachable robots.txt stops the crawl before it writes; site probes obey robots.txt ──────
+  {
+    let robotsStatus = 200;
+    let robotsBody = 'User-agent: *\nAllow: /\n';
+    const hits = [];
+    const server = http.createServer((req, res) => {
+      hits.push(req.url);
+      if (req.url === '/robots.txt') { res.writeHead(robotsStatus, { 'content-type': 'text/plain' }); return res.end(robotsBody); }
+      if (req.url === '/') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<html><head><title>Home</title></head><body><a href="/a">a</a></body></html>'); }
+      if (req.url === '/a') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<html><head><title>A</title></head><body>a</body></html>'); }
+      res.writeHead(404, { 'content-type': 'text/html' }); res.end('nf');
+    });
+    await new Promise(r => server.listen(0, '127.0.0.1', r));
+    const site = `http://127.0.0.1:${server.address().port}/`;
+    const dir7 = tmp('sac-robots-');
+    const crawl = (o = {}) => new Crawler(dir7).run(site, { maxPages: 10, delayMs: 0, maxConcurrency: 1, checkExternal: false, siteProbes: false, ...o }, () => {}, new AbortController().signal);
+    const pages = () => { const a = new AuditDatabase(dbPathFor(dir7, site)); try { return a.db.prepare(`SELECT COUNT(*) n FROM pages WHERE status_code = 200`).get().n; } finally { a.close(); } };
+    try {
+      await crawl();
+      check('a crawl with a reachable robots.txt stores its pages', pages() === 2, String(pages()));
+      robotsStatus = 503;
+      hits.length = 0;
+      let err = null;
+      try { await crawl(); } catch (e) { err = e; }
+      check('robots.txt answering 503: the crawl stops and says why (RFC 9309: unreachable = disallow all)', /robots\.txt was unreachable \(HTTP 503\)/.test(err?.message ?? ''), String(err?.message));
+      check('nothing but robots.txt was requested, and the previous crawl\'s pages are untouched', hits.every(h => h === '/robots.txt') && pages() === 2, JSON.stringify({ hits, pages: pages() }));
+      robotsStatus = 404;
+      await crawl();
+      check('robots.txt answering 404 (none): the site is crawled', pages() === 2);
+      robotsStatus = 200; robotsBody = 'User-agent: seo-audit-console\nDisallow: /\n';
+      hits.length = 0;
+      await crawl({ siteProbes: true });
+      check('site probes never request a path robots.txt disallows', !hits.some(h => /seo-audit-probe|^\/a$/.test(h)), JSON.stringify(hits));
+    } finally { server.close(); }
   }
 } catch (e) {
   fail++;

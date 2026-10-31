@@ -4,7 +4,7 @@ import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
 import { extractPage, isInternalHost, decodeHtmlBody } from './extract.js';
-import { fetchRobotsTxt, rulesFromText } from './robots.js';
+import { fetchRobotsTxt, rulesFromText, robotsUnreachable } from './robots.js';
 import { storeRobotsTxt } from './robotsStore.js';
 import { finalizeLinkGraph } from './linkGraph.js';
 import { crawlRate, type CrawlStage } from './crawlProgress.js';
@@ -402,10 +402,14 @@ export class Crawler {
     };
 
     // robots.txt: the crawl's own politeness gate, and the stored bytes the audit reads for
-    // Googlebot / AI-bot verdicts (#55). Unreachable or non-2xx = no restrictions, as before.
+    // Googlebot / AI-bot verdicts (#55). RFC 9309: a 4xx means no robots.txt (crawl everything); an
+    // UNREACHABLE file (5xx, 429, no response) means crawl nothing, as Google does: the crawl stops
+    // (failed, with the reason) before it writes anything.
     const robotsTxt = await fetchRobotsTxt(origin, ua);
     try { storeRobotsTxt(db.db, origin, robotsTxt); } catch (err) { console.error('[crawl] robots.txt not stored:', err instanceof Error ? err.message : String(err)); }
+    const robotsDown = robotsUnreachable(robotsTxt.status);
     const robots = rulesFromText(robotsTxt.body ?? '', 'seo-audit-console');
+    const robotsNote = `robots.txt was unreachable (${robotsTxt.status ? `HTTP ${robotsTxt.status}` : 'no response'}): RFC 9309 treats that as "disallow everything", as Google does, so nothing was crawled. Fix robots.txt (it should answer 200, or 404 for none) and crawl again.`;
 
     const pageInsert = db.db.prepare(
       `INSERT INTO pages (crawl_id, url, url_key, status_code, content_type, content_encoding, cache_control,
@@ -442,6 +446,9 @@ export class Crawler {
     const errorInsert = db.db.prepare(
       `INSERT INTO errors (crawl_id, url, error_type, error_message) VALUES (?, ?, ?, ?)`,
     );
+    // Stop before anything is written: the previous crawl's pages stay as they were (the wipe is
+    // deferred to the first write, and there is none). The crawl is marked failed with the reason.
+    if (robotsDown) { errorInsert.run(crawlId, `${origin}/robots.txt`, 'robots-unreachable', robotsNote); throw new Error(robotsNote); }
     const redirectInsert = db.db.prepare(
       `INSERT INTO redirect_sources (url_key, url, status, final_url, final_key, hops, chain, crawl_id) VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT(url_key) DO UPDATE SET url=excluded.url, status=excluded.status, final_url=excluded.final_url,
@@ -562,14 +569,14 @@ export class Crawler {
     const redirectStop = (target: URL): RedirectStop | null => {
       if (target.protocol !== 'http:' && target.protocol !== 'https:') return 'offsite';
       if (!isInternalHost(target.hostname, baseHost) || skipUrl(target.toString(), excludeRes)) return 'offsite';
-      return robots.isAllowed(target.pathname) ? null : 'robots';
+      return robots.isAllowed(target.pathname + target.search) ? null : 'robots';
     };
     const processOne = async (item: FrontierItem): Promise<void> => {
       // A re-queued rate-limited URL waits out its spacing (usually long past by the time it is reached).
       if (item.notBefore && item.notBefore > Date.now()) await sleepUnlessAborted(item.notBefore - Date.now(), signal);
       if (signal.aborted) return;
       if (dynamicDelay) await sleep(dynamicDelay);
-      const path = (() => { try { return new URL(item.url).pathname; } catch { return '/'; } })();
+      const path = (() => { try { const u = new URL(item.url); return u.pathname + u.search; } catch { return '/'; } })();
       if (!robots.isAllowed(path)) {
         ensureWiped();
         try { robotsInsert.run({ crawl_id: crawlId, url: item.url, url_key: urlKey(item.url, keyOpts), depth: item.depth }); } catch { /* dup */ }
@@ -798,7 +805,7 @@ export class Crawler {
       // but they go through the paced pool like everything else.
       const sample = [...imageRefs.entries()]
         .filter(([url]) => {
-          try { const u = new URL(url); return !isInternalHost(u.hostname, baseHost) || robots.isAllowed(u.pathname); } catch { return false; }
+          try { const u = new URL(url); return !isInternalHost(u.hostname, baseHost) || robots.isAllowed(u.pathname + u.search); } catch { return false; }
         })
         .sort((a, b) => b[1] - a[1]).slice(0, MAX_IMAGES);
       const imgInsert = db.db.prepare(
@@ -824,7 +831,7 @@ export class Crawler {
       stage('resource-headers');
       const MAX_RESOURCES = 500;
       const sample = [...resourceRefs.entries()]
-        .filter(([url]) => { try { const u = new URL(url); return !isInternalHost(u.hostname, baseHost) || robots.isAllowed(u.pathname); } catch { return false; } })
+        .filter(([url]) => { try { const u = new URL(url); return !isInternalHost(u.hostname, baseHost) || robots.isAllowed(u.pathname + u.search); } catch { return false; } })
         .sort((a, b) => b[1].usedOn - a[1].usedOn).slice(0, MAX_RESOURCES);
       const rows: [string, string, number, number | null, string, string | null, number][] = [];
       await probePool(sample, async ([url, ref]) => {
@@ -896,7 +903,7 @@ export class Crawler {
     if (opts.siteProbes !== false && !signal.aborted && wipedPrior) {
       try {
         stage('site-probes');
-        siteProbes = await runSiteProbes(db.db, siteUrl, { crawlId, userAgent: ua, chromeFallback: uaState.fallback, preferChrome: uaState.preferChrome, delayMs, signal });
+        siteProbes = await runSiteProbes(db.db, siteUrl, { crawlId, userAgent: ua, chromeFallback: uaState.fallback, preferChrome: uaState.preferChrome, delayMs, signal, isAllowed: u => robots.isAllowed(u.pathname + u.search) });
       } catch (e) { console.error(`[crawl ${crawlId}] site probes skipped:`, e instanceof Error ? e.message : String(e)); }
     }
 
