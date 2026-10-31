@@ -1,10 +1,10 @@
-import { fetch as ufetch } from 'undici';
-import { publicOnlyAgent } from './netGuard.js';
+import { Agent, fetch as ufetch } from 'undici';
 import { hostOf } from './serpRecon.js';
 import { extractPage, decodeHtmlBody } from './extract.js';
+import { publicOnlyAgent } from './netGuard.js';
 
 // Competitor URLs come from SERPs (third parties) and so do their redirects: public addresses only (netGuard.ts).
-const httpAgent = publicOnlyAgent({ allowH2: true, connections: 6, keepAliveTimeout: 30_000 });
+const httpAgent: Agent = publicOnlyAgent({ allowH2: true, connections: 6, keepAliveTimeout: 30_000 });
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const GOOGLEBOT_UA = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/131.0.0.0 Safari/537.36';
 
