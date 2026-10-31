@@ -37,7 +37,7 @@ export function classifyAnchor(anchor: string | null | undefined, tokens: string
 export interface HistoryRow { date: string; backlinks: number | null; referring_domains: number | null; new_referring_domains: number | null; lost_referring_domains: number | null; new_backlinks?: number | null; lost_backlinks?: number | null }
 export interface MonthRow { month: string; newDomains: number; lostDomains: number; referringDomains: number | null; backlinks: number | null; days: number }
 
-/** Daily history → one row per month: new/lost summed, the stock values taken from the month's last day. */
+/** History rows (DataForSEO returns one per month) → one row per month: new/lost summed, the stock values taken from the month's last row. */
 export function monthlyFromHistory(rows: HistoryRow[]): MonthRow[] {
   const byMonth = new Map<string, MonthRow>();
   for (const r of [...rows].sort((a, b) => a.date.localeCompare(b.date))) {

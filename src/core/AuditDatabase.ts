@@ -299,7 +299,7 @@ export class AuditDatabase {
         pos_4_10 INTEGER DEFAULT 0,
         pos_11_20 INTEGER DEFAULT 0,
         pos_21_100 INTEGER DEFAULT 0,
-        etv REAL DEFAULT 0,              -- estimated organic traffic value
+        etv REAL DEFAULT 0,              -- estimated organic traffic volume
         keyword_count INTEGER DEFAULT 0, -- total ranking keywords (not 'count' — clashes with COUNT())
         source TEXT,
         fetched_at TEXT DEFAULT (datetime('now'))
@@ -365,7 +365,7 @@ export class AuditDatabase {
     `);
 
     // ── Backlink profile (#47): referring domains + anchors per pull (snapshot_at = the pull), and
-    // DataForSEO's daily history for the new/lost trend. Filled by pull_backlinks; a panel reads
+    // DataForSEO's monthly history for the new/lost trend. Filled by pull_backlinks; a panel reads
     // "not collected" when a table is empty, never zero.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS referring_domains (
