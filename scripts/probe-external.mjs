@@ -6,6 +6,9 @@ import path from 'node:path';
 import { rmSync } from 'node:fs';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
 import { checkExternalLinks } from '../dist/core/externalLinks.js';
+import { allowPrivateAddressesForTests } from '../dist/core/netGuard.js';
+// Local 127.0.0.1 servers stand in for third-party hosts here; the SSRF guard (netGuard.ts) would refuse them.
+allowPrivateAddressesForTests(true);
 import { CHECKS } from '../dist/audit/checks.js';
 
 let pass = 0, fail = 0;

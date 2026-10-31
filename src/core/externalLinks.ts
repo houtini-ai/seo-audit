@@ -13,6 +13,12 @@
  */
 import type Database from 'better-sqlite3';
 import { fetch as ufetch, type Dispatcher } from 'undici';
+import { publicOnlyAgent } from './netGuard.js';
+
+// Outbound link targets are written by whoever wrote the page, and so are their redirects: checked
+// through an agent that only connects to public addresses (netGuard.ts) unless a caller passes its own.
+let sharedPublicAgent: Dispatcher | null = null;
+const publicAgent = (): Dispatcher => (sharedPublicAgent ??= publicOnlyAgent({ connections: 4, keepAliveTimeout: 10_000 }));
 import { CHROME_HEADERS, looksBotBlocked, type FetchedAs } from './userAgents.js';
 
 export type ExternalVerdict = 'ok' | 'redirected' | 'broken' | 'unverifiable';
@@ -40,6 +46,7 @@ const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
 
 function classifyError(e: unknown): string {
   const c = (e as any)?.cause?.code ?? (e as any)?.code ?? '';
+  if (c === 'EBLOCKEDADDRESS') return 'private address: not checked';
   if (/ENOTFOUND|EAI_AGAIN/.test(c)) return 'dns';
   if (/bad port/i.test(String((e as any)?.cause?.message ?? ''))) return 'blocked port';
   if (/ECONNREFUSED/.test(c)) return 'connection refused';
@@ -56,7 +63,7 @@ async function follow(url: string, method: 'HEAD' | 'GET', o: CheckOpts, ranged 
   let current = url;
   for (let hop = 0; hop <= 6; hop++) {
     const res = await ufetch(current, {
-      method, redirect: 'manual', dispatcher: o.dispatcher, signal: AbortSignal.timeout(o.timeoutMs),
+      method, redirect: 'manual', dispatcher: o.dispatcher ?? publicAgent(), signal: AbortSignal.timeout(o.timeoutMs),
       headers: { ...(chrome ? CHROME_HEADERS : { 'user-agent': o.userAgent, accept: 'text/html,*/*;q=0.8' }), ...(method === 'GET' && ranged ? { range: 'bytes=0-0' } : {}) },
     });
     try { await res.body?.cancel(); } catch { /* closed */ }
@@ -99,6 +106,8 @@ async function attempt(url: string, o: CheckOpts, chrome: boolean): Promise<Exte
     // about the page. Retry once as a plain GET; the body is cancelled unread, as always.
     if (r && method === 'GET' && r.status === 416) { try { r = await follow(url, 'GET', o, false, chrome); } catch { /* keep the 416 result */ } }
   }
+  // A target (or a redirect) on a private or local address is never requested: unknown, not broken.
+  if (!r && ((err as any)?.cause?.code ?? (err as any)?.code) === 'EBLOCKEDADDRESS') return { url, status: null, finalUrl: null, chain: [], verdict: 'unverifiable', permanent: false, error: classifyError(err), method, fetchedAs };
   if (!r) return { url, status: null, finalUrl: null, chain: [], verdict: 'broken', permanent: false, error: classifyError(err), method, fetchedAs };
   const permanent = r.chain.some(h => h.status === 301 || h.status === 308);
   let verdict: ExternalVerdict;

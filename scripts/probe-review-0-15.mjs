@@ -10,6 +10,7 @@ import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { allowPrivateAddressesForTests } from '../dist/core/netGuard.js';
 import { probeUrls } from '../dist/core/probeUrls.js';
 import { fetchSitemapUrls } from '../dist/core/sitemap.js';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
@@ -19,6 +20,8 @@ import { DEFAULT_DFS_CACHE_DAYS, dfsCacheDaysFromEnv } from '../dist/core/DataFo
 import { fetchCompetitorContent } from '../dist/core/reconResearch.js';
 import { runSingleCheck } from '../dist/audit/engine.js';
 
+// Local 127.0.0.1 servers stand in for third-party hosts here; the SSRF guard (netGuard.ts) would refuse them.
+allowPrivateAddressesForTests(true);
 let pass = 0, fail = 0;
 const check = (name, cond, detail) => { if (cond) { pass++; console.log(`  ok  ${name}`); } else { fail++; console.log(`FAIL  ${name} :: ${detail}`); } };
 

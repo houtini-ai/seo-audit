@@ -107,6 +107,7 @@ scripts/*
 !scripts/probe-startup-hints.mjs
 !scripts/probe-portfolio.mjs
 !scripts/probe-external.mjs
+!scripts/probe-ssrf.mjs
 !scripts/probe-blocking.mjs
 !scripts/probe-redirects.mjs
 !scripts/probe-ecommerce.mjs

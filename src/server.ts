@@ -1186,6 +1186,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       },
     },
     async ({ siteUrl, urls, variantsOf, followRedirects, persist, chromeFallback }) => {
+      // The own-host guard checks every hop against siteUrl's host, so siteUrl itself must be one of
+      // the user's properties: any host passed here (http://169.254.169.254/) was otherwise "own".
+      if (!listLocalProperties(dataDir()).some(p => p.siteUrl === siteUrl)) {
+        throw new Error(`${siteUrl} is not a property with local data. Pass the property exactly as list_properties shows it (sc-domain:example.com or https://example.com/), after a sync or crawl.`);
+      }
       const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : siteUrl;
       const baseHost = new URL(seed).hostname;
       const variantSets = (variantsOf ?? []).map(u => ({ of: u, list: urlVariants(u) }));

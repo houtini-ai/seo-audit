@@ -922,7 +922,7 @@ export class Crawler {
     if (opts.checkExternal !== false && !signal.aborted && wipedPrior) {
       try {
         stage('external-links');
-        external = await checkExternalLinks(db.db, { userAgent: ua, chromeFallback: uaState.fallback, dispatcher, signal, update: p => update({ crawlId, stage: 'external-links', ...p }), cacheDays: opts.externalCacheDays });
+        external = await checkExternalLinks(db.db, { userAgent: ua, chromeFallback: uaState.fallback, signal, update: p => update({ crawlId, stage: 'external-links', ...p }), cacheDays: opts.externalCacheDays });
       } catch (e) { console.error(`[crawl ${crawlId}] external link check skipped:`, e instanceof Error ? e.message : String(e)); }
     }
 
