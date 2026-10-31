@@ -20,6 +20,7 @@ import { urlKey, hostFormForProperty } from '../dist/core/url-key.js';
 import { AimdLimiter, parseRetryAfter, rateLimitWaitMs, isRateLimited, looksLikeShopify, rateLimitSummary, RETRY_AFTER_CAP_MS } from '../dist/core/rateLimit.js';
 import { crawlNotes } from '../dist/core/crawlProgress.js';
 import { probeUrls } from '../dist/core/probeUrls.js';
+import { looksBotBlocked } from '../dist/core/userAgents.js';
 
 let pass = 0, fail = 0;
 const check = (name, cond, detail = '') => { if (cond) { pass++; console.log(`  ok  ${name}`); } else { fail++; console.log(`FAIL  ${name} :: ${detail}`); } };
@@ -61,6 +62,42 @@ const hdr = (o) => (n) => o[n.toLowerCase()] ?? null;
   const notes = crawlNotes({ platform: { name: 'shopify', startConcurrency: 3, userSetConcurrency: false }, rateLimited: { events: 2, currentConcurrency: 2, minConcurrency: 2, maxConcurrency: 8, retried: 2, unfetched: 0 } });
   check('crawlNotes: Shopify + rate-limit notes for check_crawl_status', notes === '; Shopify host: started at concurrency 3; rate limited by the host: concurrency reduced to 2; 2 URLs retried, 0 not fetched', notes);
   check('crawlNotes: empty for a clean crawl', crawlNotes({ rateLimited: { events: 0, currentConcurrency: 8, minConcurrency: 8, maxConcurrency: 8, retried: 0, unfetched: 0 } }) === '');
+}
+
+// ── A CDN's `server` header is not a bot wall (review/10) ─────────────────────
+// Shopify and most CDN-fronted sites send `server: cloudflare` on ordinary rate-limit 429s. Read
+// as a WAF challenge, every rate-limited URL was retried at once as Chrome (no backoff), the crawl
+// switched to Chrome after three, and probe_urls stored the 429 as the page's status.
+{
+  check('a 429 from server: cloudflare is a rate limit, not a bot wall', !looksBotBlocked(429, hdr({ server: 'cloudflare', 'retry-after': '5' })));
+  check('a 503 + Retry-After from server: cloudflare is a rate limit, not a bot wall', !looksBotBlocked(503, hdr({ server: 'cloudflare', 'retry-after': '5' })));
+  check('a challenge marker still makes a 429 a bot wall', looksBotBlocked(429, hdr({ server: 'cloudflare', 'cf-mitigated': 'challenge' })) && looksBotBlocked(429, hdr({ 'x-datadome': '1' })));
+  check('403 and 999 are still bot walls', looksBotBlocked(403, hdr({})) && looksBotBlocked(999, hdr({})));
+  const seen = new Map(); const log = [];
+  const srv = http.createServer((req, res) => {
+    const p = req.url.split('?')[0];
+    const ua = /Chrome\//.test(req.headers['user-agent'] ?? '') ? 'chrome' : 'bot';
+    if (p === '/robots.txt' || /sitemap/.test(p)) { res.writeHead(404); return res.end(); }
+    if (p === '/always429') { log.push(`${p} ${ua}`); res.writeHead(429, { server: 'cloudflare', 'retry-after': '1', 'content-type': 'text/html' }); return res.end('slow down'); }
+    const n = (seen.get(p) ?? 0) + 1; seen.set(p, n);
+    log.push(`${p} ${ua}`);
+    if (n === 1) { res.writeHead(429, { server: 'cloudflare', 'retry-after': '1', 'content-type': 'text/html' }); return res.end('rate limited'); }
+    res.writeHead(200, { server: 'cloudflare', 'content-type': 'text/html' });
+    res.end(`<html><head><title>${p}</title></head><body>${[1, 2, 3, 4].map(i => `<a href="/p${i}">x</a>`).join('')}</body></html>`);
+  });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const origin = `http://127.0.0.1:${srv.address().port}`;
+  const dirC = mkdtempSync(path.join(tmpdir(), 'sac-cf429-'));
+  try {
+    const r = await new Crawler(dirC).run(`${origin}/`, { maxPages: 5, delayMs: 0, maxConcurrency: 1, checkExternal: false, siteProbes: false }, () => {}, new AbortController().signal);
+    const adb = new AuditDatabase(dbPathFor(dirC, `${origin}/`));
+    const rows = adb.db.prepare('SELECT fetched_as, status_code FROM pages').all();
+    adb.close();
+    check('crawl: Cloudflare rate limits never trigger the Chrome retry', !log.some(l => l.endsWith('chrome')) && !r.blocking?.switchedToChrome, log.join(' | '));
+    check('crawl: every page is fetched as the bot, after backing off, with status 200', rows.length === 5 && rows.every(x => x.fetched_as === 'bot' && x.status_code === 200) && (r.rateLimited?.events ?? 0) >= 5, JSON.stringify({ rows, rl: r.rateLimited }));
+    const [pr] = await probeUrls([{ url: `${origin}/always429` }], '127.0.0.1', { budgetMs: 15000 });
+    check('probe_urls: a persistent Cloudflare 429 is "rate limited", never stored as status 429', pr.rateLimited === true && pr.status == null && pr.finalStatus == null, JSON.stringify({ s: pr.status, f: pr.finalStatus, rl: pr.rateLimited }));
+  } finally { srv.close(); rmSync(dirC, { recursive: true, force: true }); }
 }
 
 // ── Local rate-limiting host ───────────────────────────────────────────────
