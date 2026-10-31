@@ -61,7 +61,7 @@ async function main(): Promise<void> {
   const { url } = await startDashboardServer({
     dataDir,
     uiHtml,
-    call: buildWebCallHandlers({ dataDir, dfs, apiKeys, jobs: { pick: pickJobs, deps: jobDeps, gsc: () => !!jobDeps.sync } }),
+    call: buildWebCallHandlers({ dataDir, apiKeys, jobs: { pick: pickJobs, deps: jobDeps, gsc: () => !!jobDeps.sync } }),
     ...(process.env.SAC_DASHBOARD_PORT ? { port: Number(process.env.SAC_DASHBOARD_PORT) } : {}),
   });
   // Never stdout — parity with the MCP's stdio rule (and harmless here). Log the reachable URL.

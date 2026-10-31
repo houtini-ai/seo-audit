@@ -9,6 +9,8 @@ import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import Database from 'better-sqlite3';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
 import { dbPathFor } from '../dist/core/paths.js';
 import { startDashboardServer, stopDashboardServer, listLocalProperties } from '../dist/core/webServer.js';
@@ -42,11 +44,12 @@ property(OWNED, 620);
 property(OTHER);
 
 /** A raw request, so the Host and Content-Type headers are exactly what the test says. */
-function req(port, { method = 'GET', path: p = '/', host = `127.0.0.1:${port}`, type, body } = {}) {
+function req(port, { method = 'GET', path: p = '/', host = `127.0.0.1:${port}`, type, body, origin } = {}) {
   return new Promise((resolve, reject) => {
     const headers = {};
     if (host !== null) headers.host = host;
     if (type) headers['content-type'] = type;
+    if (origin) headers.origin = origin;
     if (body != null) headers['content-length'] = Buffer.byteLength(body);
     const r = http.request({ host: '127.0.0.1', port, method, path: p, headers, setHost: false }, (res) => {
       const chunks = []; res.on('data', c => chunks.push(c));
@@ -65,7 +68,7 @@ const handlers = buildWebCallHandlers({
   dataDir: () => dataDir, dfs: null, apiKeys: () => ({ dataforseo: false, majestic: false }),
   jobs: { pick: () => pick, deps: { dataDir: () => dataDir }, gsc: () => false },
 });
-const call = (port, name, args = {}) => req(port, { method: 'POST', path: '/api/call', type: 'application/json', body: JSON.stringify({ name, arguments: args }) })
+const call = (port, name, args = {}, origin) => req(port, { method: 'POST', path: '/api/call', type: 'application/json', body: JSON.stringify({ name, arguments: args }), origin })
   .then(r => ({ ...r, json: (() => { try { return JSON.parse(r.body); } catch { return null; } })() }));
 
 const UI = '<!doctype html><html><head><title>ui</title></head><body>dashboard</body></html>';
@@ -190,6 +193,89 @@ try {
     ok(data?.siteUrl === OWNED || data?.findings?.runId === 'r1', 'the worker returns the property payload');
     const viaApi = (await call(port, 'get_dashboard_data', { siteUrl: OWNED })).json?.structuredContent;
     ok(viaApi?.apiKeys?.dataforseo === false && viaApi?.findings?.total === 620, 'get_dashboard_data returns the payload with the key status');
+  }
+
+  // ── 8. Security review (review/03) ──────────────────────────────────────────────────────────
+  console.log('security');
+  {
+    // No paid action is reachable from the browser: the DataForSEO lookups start from chat only.
+    for (const name of ['related_terms', 'keyword_volume', 'youtube_discovery', 'topic_trend']) {
+      const r = await call(port, name, { keyword: 'x', keywords: ['x'] });
+      ok(r.status === 404, `the paid lookup ${name} is not offered to the browser`, String(r.status));
+    }
+    // The allowlist is the handler object's OWN names, not its prototype chain.
+    for (const name of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
+      const r = await call(port, name);
+      ok(r.status === 404, `"${name}" is not a handler`, String(r.status));
+    }
+    const evil = await call(port, 'list_domains', {}, 'http://evil.example');
+    ok(evil.status === 403, `a POST from another origin is refused (${evil.status})`);
+    const nul = await call(port, 'list_domains', {}, 'null');
+    ok(nul.status === 403, `a POST from an opaque origin ("null") is refused (${nul.status})`);
+    const same = await call(port, 'list_domains', {}, `http://127.0.0.1:${port}`);
+    ok(same.status === 200, `a POST from the dashboard's own origin is answered (${same.status})`);
+    const page = await req(port, { path: '/?all=1' });
+    ok(page.headers['x-frame-options'] === 'DENY' && /frame-ancestors 'none'/.test(page.headers['content-security-policy'] ?? ''), 'the dashboard page refuses to be framed');
+    // A queued crawl with no live runner (older than 2 minutes) still blocks a second one.
+    const first = (await call(port, 'start_job', { siteUrl: OWNED, kind: 'crawl' })).json?.structuredContent?.jobId;
+    const jdb = new Database(jobsDbPath(dataDir));
+    const old = new Date(Date.now() - 10 * 60_000).toISOString();
+    jdb.prepare(`UPDATE jobs SET started_at = ?, updated_at = ? WHERE id = ?`).run(old, old, first);
+    jdb.prepare(`DELETE FROM runners`).run();
+    jdb.close();
+    const dup = await call(port, 'start_job', { siteUrl: OWNED, kind: 'crawl' });
+    ok(dup.status === 500 && /already running or queued/.test(dup.json?.error ?? ''), 'a crawl queued with no runner alive still blocks a second crawl', dup.body);
+    queue.cancel(first);
+    // The worker's in-flight key uses the window the build will use: odd `days` share the 28-day build.
+    const w1 = getDashboardDataAsync(dataDir, OWNED, { days: 1 });
+    const w2 = getDashboardDataAsync(dataDir, OWNED, { days: 2 });
+    const w28 = getDashboardDataAsync(dataDir, OWNED, { days: 28 });
+    ok(w1 === w2 && w2 === w28, 'days=1, days=2 and days=28 share one build (no worker per bogus value)');
+    await w28;
+  }
+
+  // ── 9. Adopting a dashboard on the fixed port: only this app, on this data dir, still alive ──────
+  console.log('fixed-port adoption');
+  {
+    await stopDashboardServer();
+    const freePort = () => new Promise(r => { const s = http.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+    const opts = { dataDir: () => dataDir, uiHtml: () => UI, call: handlers };
+    // (a) An unrelated service that answers /api/properties with a list is NOT adopted.
+    const fakePort = await freePort();
+    const fake = http.createServer((q, r) => { r.writeHead(200, { 'content-type': 'application/json' }); r.end(JSON.stringify({ properties: [], app: 'seo-audit-dashboard', proof: '00'.repeat(32) })); });
+    await new Promise(r => fake.listen(fakePort, '127.0.0.1', r));
+    process.env.SAC_DASHBOARD_PORT = String(fakePort);
+    let adoptedFake = null;
+    try { adoptedFake = await startDashboardServer(opts); } catch (e) { adoptedFake = e.code ?? 'error'; }
+    ok(adoptedFake === 'EADDRINUSE', `another service on the port is not adopted (${JSON.stringify(adoptedFake)})`);
+    fake.close();
+    // (b) A real standalone dashboard on the SAME data dir is adopted; (c) once it exits, the port is bound again.
+    const realPort = await freePort();
+    const spawnDash = (dir) => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [path.resolve('dist/dashboard.js')], { env: { ...process.env, SAC_DATA_DIR: dir, SAC_DASHBOARD_PORT: String(realPort), SAC_JOB_RUNNER: '' }, stdio: ['ignore', 'ignore', 'pipe'] });
+      let err = '';
+      child.stderr.on('data', d => { err += d; if (/serving http/.test(err)) resolve(child); });
+      child.once('exit', c => reject(new Error(`dashboard exited ${c}: ${err}`)));
+      setTimeout(() => reject(new Error(`dashboard did not start: ${err}`)), 20000);
+    });
+    process.env.SAC_DASHBOARD_PORT = String(realPort);
+    const child = await spawnDash(dataDir);
+    const adopted = await startDashboardServer(opts);
+    ok(adopted.port === realPort, `a standalone dashboard on the same data dir is adopted (${adopted.url})`);
+    await new Promise(r => { child.once('exit', r); child.kill('SIGTERM'); });
+    const rebound = await startDashboardServer(opts);
+    const alive = await req(rebound.port, { path: '/api/properties' });
+    ok(rebound.port === realPort && alive.status === 200, `after it exits, the next start binds the port itself instead of handing out a dead link (${alive.status})`);
+    await stopDashboardServer();
+    // (d) A dashboard serving ANOTHER data dir is not adopted.
+    const otherDir = mkdtempSync(path.join(tmpdir(), 'sac-web-other-'));
+    const child2 = await spawnDash(otherDir);
+    let adoptedOther = null;
+    try { adoptedOther = await startDashboardServer(opts); } catch (e) { adoptedOther = e.code ?? 'error'; }
+    ok(adoptedOther === 'EADDRINUSE', `a dashboard serving another data dir is not adopted (${JSON.stringify(adoptedOther)})`);
+    await new Promise(r => { child2.once('exit', r); child2.kill('SIGTERM'); });
+    rmSync(otherDir, { recursive: true, force: true });
+    delete process.env.SAC_DASHBOARD_PORT;
   }
 } catch (e) {
   fail++;

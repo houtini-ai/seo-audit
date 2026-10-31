@@ -368,7 +368,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     dataDir,
     uiHtml: () => readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8'),
     // Dashboard actions run on this server's own job manager: queued for the runner in external mode.
-    call: buildWebCallHandlers({ dataDir, dfs, apiKeys: apiKeysStatus, jobs: { pick: () => jobs, deps: jobDeps, gsc: () => !!sync } }),
+    call: buildWebCallHandlers({ dataDir, apiKeys: apiKeysStatus, jobs: { pick: () => jobs, deps: jobDeps, gsc: () => !!sync } }),
     ...(port != null ? { port } : {}),
   });
   // Idempotent auto-start used by refresh_property / run_audit. Best-effort: a served port that

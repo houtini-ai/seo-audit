@@ -13,7 +13,6 @@ import { runAudit } from '../audit/engine.js';
 import { checkAndSaveAgentReadiness } from './agentReadinessStore.js';
 import { setPropertyHidden } from './hiddenProperties.js';
 import { probeUrls } from './probeUrls.js';
-import type { DataForSeoClient } from './DataForSeoClient.js';
 
 /**
  * The web UI's server-side call handlers (POST /api/call allowlist), factored out so BOTH
@@ -23,7 +22,6 @@ import type { DataForSeoClient } from './DataForSeoClient.js';
  */
 export interface WebHandlerDeps {
   dataDir: () => string;
-  dfs: DataForSeoClient | null;
   apiKeys: () => { dataforseo: boolean; majestic: boolean };
   /**
    * Dashboard actions (free work only: crawl, Search Console sync, URL inspection, audit, agent
@@ -60,10 +58,6 @@ function jobView(j: Job): Record<string, unknown> {
 
 export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
   const { dataDir } = deps;
-  const requireDfs = (): DataForSeoClient => {
-    if (!deps.dfs) throw new Error('DataForSEO not configured (DATAFORSEO_USERNAME / DATAFORSEO_PASSWORD)');
-    return deps.dfs;
-  };
   const requireJobs = (): NonNullable<WebHandlerDeps['jobs']> => {
     if (!deps.jobs) throw new Error('This dashboard is read-only: start jobs from chat.');
     return deps.jobs;
@@ -147,7 +141,9 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
       }
       const scope = jobScopeFor(dataDir(), siteUrl);
       const live = liveJobTypes(dataDir(), scope);
-      if (live && (live.has(kind) || live.queued?.has(kind))) throw new Error(`A ${kind} job is already running or queued for ${siteUrl}.`);
+      // A queued job with no runner alive yet (queuedNoRunner) is still waiting to run: a second one
+      // would run straight after it.
+      if (live && (live.has(kind) || live.queued?.has(kind) || live.queuedNoRunner?.has(kind))) throw new Error(`A ${kind} job is already running or queued for ${siteUrl}.`);
       if (kind !== 'crawl' && live?.has('crawl')) throw new Error(`A crawl is running for ${siteUrl}: wait for it to finish.`);
       let jobId: string;
       if (kind === 'crawl') {
@@ -190,34 +186,14 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
       return { score: r.score, level: r.level };
     },
 
-    related_terms: async (a) => {
-      const r = await requireDfs().relatedTerms(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined);
-      return r as unknown as Record<string, unknown>;
-    },
-    // Content research (on-demand) — News (free Google News + paid DFS) / Videos / Trends.
+    // Content research: the free source only (Google News RSS). The DataForSEO lookups (related
+    // terms, search volume, the news / YouTube SERPs, Google Trends) spend money, so the browser
+    // can't reach them: they run from chat, where paid work is quoted first. They used to be here,
+    // and any page that could POST to the dashboard could spend the user's DataForSEO credit.
     news_discovery: async (a) => {
       const kw = String(a.keyword ?? '');
-      const seen = new Set<string>(); const articles: any[] = [];
-      const add = (x: any): void => { const k = String(x.url || x.title || '').toLowerCase(); if (k && !seen.has(k)) { seen.add(k); articles.push(x); } };
-      try { const g = await fetchGoogleNews(kw, { limit: 20 }); for (const x of g.articles) add({ ...x, via: 'google-news' }); } catch { /* free source optional */ }
-      if (deps.dfs) { try { const r = await deps.dfs.serpNews(kw, a.location as string | number | undefined, a.languageCode as string | undefined); for (const x of r.articles) add({ ...x, via: 'dataforseo' }); } catch { /* paid optional */ } }
-      return { articles } as unknown as Record<string, unknown>;
-    },
-    youtube_discovery: async (a) => {
-      const r = await requireDfs().serpYoutube(String(a.keyword ?? ''), a.location as string | number | undefined, a.languageCode as string | undefined, a.blockDepth as number | undefined);
-      return r as unknown as Record<string, unknown>;
-    },
-    topic_trend: async (a) => {
-      const kws = Array.isArray(a.keywords) ? (a.keywords as string[]) : [String(a.keyword ?? '')].filter(Boolean);
-      const r = await requireDfs().googleTrends(kws, a.location as string | number | undefined, a.languageCode as string | undefined, {});
-      return r as unknown as Record<string, unknown>;
-    },
-    keyword_volume: async (a) => {
-      const r = await requireDfs().searchVolume((a.keywords as string[]) ?? [], a.location as string | number | undefined, a.languageCode as string | undefined);
-      const items = (r.tasks[0]?.result ?? []).map((k: any) => ({
-        keyword: k.keyword, searchVolume: k.search_volume, cpc: k.cpc, competition: k.competition,
-      }));
-      return { keywords: items, cached: r.cached, cost: r.cost };
+      const g = await fetchGoogleNews(kw, { limit: 20 });
+      return { articles: g.articles.map(x => ({ ...x, via: 'google-news' })) } as unknown as Record<string, unknown>;
     },
   };
 }
