@@ -80,6 +80,29 @@ try {
   check('topLimit is clamped to TOP_MAX', runAudit(dir, SITE, { topLimit: 999 }).top.length === TOP_MAX);
   const pr50 = r50.top.map(f => f.priority);
   check('top is sorted by priority', pr50.every((p, i) => i === 0 || p <= pr50[i - 1]));
+
+  // ── The health score counts pages past the per-check findings cap (review/12) ───────────────────
+  // 1,200 pages share one title: duplicate-title (high) finds all 1,200 but stores 500. Counting only
+  // stored findings made health 58 ("Fair"); every page carries a high issue, so it is 0.
+  {
+    const dirH = mkdtempSync(path.join(tmpdir(), 'sac-health-cap-'));
+    const SITE_H = 'sc-domain:cap.test';
+    try {
+      const adb = new AuditDatabase(dbPathFor(dirH, SITE_H));
+      adb.upsertProperty(SITE_H, 'apex');
+      adb.db.prepare(`INSERT INTO crawl_metadata (crawl_id,base_url,base_domain,status,urls_crawled,started_at,finished_at) VALUES ('c1','https://cap.test','cap.test','completed',1200,'2026-10-01T00:00:00Z','2026-10-01T01:00:00Z')`).run();
+      const ins = adb.db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,content_type,is_internal,indexable,title,title_length,meta_description,h1,h1_count,word_count,viewport,lang,ipr,inlink_count,click_depth) VALUES ('c1',?,?,200,'text/html',1,1,'Same title',10,'d','h',1,500,'w','en',10,3,1)`);
+      adb.db.transaction(() => { for (let i = 0; i < 1200; i++) ins.run(`https://cap.test/p${i}`, `https://cap.test/p${i}`); })();
+      adb.close();
+      const res = runAudit(dirH, SITE_H, {});
+      const t = res.truncatedChecks?.find(c => c.checkId === 'duplicate-title');
+      check('duplicate-title is capped at 500 stored of 1,200 found', t?.stored === 500 && t?.totalFound === 1200, JSON.stringify(t));
+      const a2 = new AuditDatabase(dbPathFor(dirH, SITE_H));
+      const h = a2.db.prepare('SELECT health_score, health_error_pages, health_total_pages FROM audit_runs WHERE run_id = ?').get(res.runId);
+      a2.close();
+      check('health counts every page with a high issue, not just the stored 500 (0 / 1,200 error pages)', h.health_score === 0 && h.health_error_pages === 1200 && h.health_total_pages === 1200, JSON.stringify(h));
+    } finally { rmSync(dirH, { recursive: true, force: true }); }
+  }
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

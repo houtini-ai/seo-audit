@@ -346,6 +346,7 @@ export function pruneProperty(
     }
     db.transaction(() => {
       db.prepare(`DELETE FROM findings WHERE run_id NOT IN (${ph(keepRuns.length)})`).run(...keepRuns);
+      if (db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'audit_error_pages'`).get()) db.prepare(`DELETE FROM audit_error_pages WHERE run_id NOT IN (${ph(keepRuns.length)})`).run(...keepRuns);
       db.prepare(`DELETE FROM audit_runs WHERE run_id NOT IN (${ph(keepRuns.length)})`).run(...keepRuns);
       db.prepare(`DELETE FROM page_snapshots WHERE crawl_id NOT IN (${ph(keepCrawls.length)})`).run(...keepCrawls);
     })();
