@@ -133,6 +133,8 @@ interface FetchOutcome {
   redirects: RedirectHop[];
   xRobotsTag: string | null;
   bytes: number | null;
+  /** The HTML body was longer than MAX_HTML_BYTES and was read only up to it. */
+  truncated?: boolean;
   timeMs: number;
   throttled: boolean; // saw a plain 503 or a network error (after retries) — signal for adaptive pacing
   fetchedAs: FetchedAs; // which user agent produced this response
@@ -142,8 +144,6 @@ interface FetchOutcome {
   sentAt: number;
   /** Any response on the way carried Shopify storefront headers. */
   shopify: boolean;
-  /** The HTML body was longer than MAX_HTML_BYTES and was read only up to it. */
-  truncated?: boolean;
 }
 
 /** Per-crawl bot-block bookkeeping: whether the Chrome fallback is allowed, and how it's going. */
