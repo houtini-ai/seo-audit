@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync, copyFileSync, readFileSync } from 'node:fs';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
-import { dbPathFor } from '../dist/core/paths.js';
-import { storageSummary, removeEmptySidecars, COUNTS_CACHE_FILE } from '../dist/core/dataStorage.js';
+import { dbPathFor, _resetDbPathCache } from '../dist/core/paths.js';
+import { storageSummary, removeEmptySidecars, COUNTS_CACHE_FILE, pruneProperty } from '../dist/core/dataStorage.js';
 import { migrateGscStorage } from '../dist/core/gscMigrate.js';
 import { setGscStorageState } from '../dist/core/gscRows.js';
 
@@ -89,6 +89,40 @@ try {
     check('a write to the database invalidates them', recount?.findings === first.findings && recount.findings !== 4242, String(recount?.findings));
     writeFileSync(cacheFile, '{not json');
     check('an unreadable cache just means counting', storageSummary(dir, site).properties[0]?.findings === first.findings);
+  }
+
+  // ── Two properties never share a file: a Domain property and a legacy URL-prefix database ─────────
+  // Before per-form file names, `https://x.com/` was stored as `x.com.db`, which is also the
+  // `sc-domain:x.com` stem. The Domain property opened that file and wrote into it (its crawl
+  // wiped the other's pages); after a restart the URL-prefix property no longer adopted the shared
+  // file and showed no data; delete-property for the Domain property deleted the other's database.
+  {
+    const ldir = mkdtempSync(path.join(tmpdir(), 'sac-legacy-'));
+    try {
+      const legacy = path.join(ldir, 'x.com.db');
+      { const a = new AuditDatabase(legacy); a.upsertProperty('https://x.com/', 'apex');
+        a.db.prepare(`INSERT INTO search_analytics (date,query,page,page_key,device,country,clicks,impressions,ctr,position) VALUES ('2026-10-01','q','https://x.com/a','https://x.com/a','','',7,70,.1,3)`).run(); a.close(); }
+      _resetDbPathCache();
+      const fHttps = dbPathFor(ldir, 'https://x.com/'), fDom = dbPathFor(ldir, 'sc-domain:x.com');
+      check('the URL-prefix property keeps its legacy file', path.basename(fHttps) === 'x.com.db', fHttps);
+      check('the Domain property gets its own file, not the other property\'s', fDom !== fHttps && path.basename(fDom) === 'x.com_domain.db', fDom);
+      { const d = new AuditDatabase(fDom); d.upsertProperty('sc-domain:x.com', 'apex');
+        check('the Domain property sees none of the other property\'s rows', d.db.prepare('SELECT COUNT(*) n FROM search_analytics').get().n === 0); d.close(); }
+      _resetDbPathCache();
+      const again = dbPathFor(ldir, 'https://x.com/');
+      const h = new AuditDatabase(again);
+      check('after a restart the URL-prefix property still has its data', path.basename(again) === 'x.com.db' && h.db.prepare('SELECT SUM(clicks) c FROM search_analytics').get().c === 7);
+      h.close();
+      check('and the Domain property still resolves to its own file', path.basename(dbPathFor(ldir, 'sc-domain:x.com')) === 'x.com_domain.db');
+      check('data_storage narrowed to the URL-prefix property reports its actual (legacy) file', storageSummary(ldir, 'https://x.com/').properties.map(p => p.file).join() === 'x.com.db', JSON.stringify(storageSummary(ldir, 'https://x.com/').properties.map(p => p.file)));
+      const del = pruneProperty(ldir, 'sc-domain:x.com', 'delete-property', true, []);
+      check('delete-property for the Domain property leaves the other property\'s database', del.ok !== false && existsSync(legacy) && !existsSync(fDom), JSON.stringify({ ok: del.ok, refused: del.refused, legacy: existsSync(legacy) }));
+      // A Domain property's own pre-fix file (it names only that property) is still found under its stem.
+      const own = path.join(ldir, 'y.com.db');
+      { const a = new AuditDatabase(own); a.upsertProperty('sc-domain:y.com', 'apex'); a.close(); }
+      _resetDbPathCache();
+      check('a Domain property\'s own database keeps resolving to its stem', dbPathFor(ldir, 'sc-domain:y.com') === own);
+    } finally { rmSync(ldir, { recursive: true, force: true }); }
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });
