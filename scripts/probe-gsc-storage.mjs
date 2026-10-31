@@ -284,6 +284,69 @@ async function migrate(file, opts = {}) {
   }
 }
 
+// ── 8. A sync that stops part-way writes nothing (review/04) ───────────────────────────────────────
+// GSC pages rows sorted by clicks across the whole window, so page 1 touches every day with only its
+// top rows. A failure or cancel after page 1 used to leave every day truncated (and the next
+// incremental sync resumed from the latest day, never refilling them), and a search-type wipe or a
+// segment window replace that rode page 1 destroyed the previous history.
+{
+  const site = 'sc-domain:partial.test';
+  const window = { startDate: '2026-08-01', endDate: '2026-08-30' };
+  const DATES = days(window.startDate, window.endDate);
+  /** 4 rows a day (one 100-click head row, three 0-click tail rows), paged 30 at a time by clicks. */
+  const rowsFor = (dims) => {
+    const out = [];
+    for (const d of DATES) for (let i = 0; i < 4; i++) {
+      const k = { date: d, query: `q${i}`, page: `https://partial.test/p${i}`, device: 'MOBILE', country: 'gbr' };
+      out.push({ keys: dims.map(x => k[x]), clicks: i === 0 ? 100 : 0, impressions: i === 0 ? 1000 : 50, ctr: 0, position: 5 });
+    }
+    return out.sort((a, b) => b.clicks - a.clicks);
+  };
+  const client = (opts = {}) => ({ async fetchSearchAnalytics(_s, o, signal, onPage) {
+    const rows = rowsFor(o.dimensions).filter(r => r.keys[0] >= o.startDate && r.keys[0] <= o.endDate);
+    for (let st = 0, pg = 0; st < rows.length; st += 30, pg++) {
+      if (signal?.aborted) break; // GscClient stops paging on abort; it doesn't throw
+      if (opts.failOnPage === pg) throw new Error('quota exceeded');
+      onPage({ rows: rows.slice(st, st + 30) });
+      if (opts.abortAfterPage === pg) opts.ctl.abort();
+    }
+    return rows.length;
+  } });
+  const sync = async (c, o = {}, ctl = new AbortController()) => {
+    try { return await new GscSync(c, dataDir).run(site, { ...window, ...o }, () => {}, ctl.signal); } catch (e) { return { error: String(e.message) }; }
+  };
+  const stat = (table) => { const d = new AuditDatabase(dbPathFor(dataDir, site)); try { return d.db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(impressions),0) i, COUNT(DISTINCT date) days FROM ${table}`).get(); } finally { d.close(); } };
+  const synced = () => { const d = new AuditDatabase(dbPathFor(dataDir, site)); try { return d.db.prepare(`SELECT last_synced_at FROM property_meta WHERE site_url = ?`).get(site)?.last_synced_at ?? null; } finally { d.close(); } };
+
+  const first = await sync(client({ failOnPage: 1 }));
+  ok(first.error && stat('gsc_rows').n === 0, `a first sync failing on page 2 writes nothing (${stat('gsc_rows').n} rows)`);
+  const retry = await sync(client());
+  const all = stat('gsc_rows');
+  ok(retry.rowsFetched === 120 && retry.startDate === window.startDate && all.n === 120 && all.i === 34500, `the retry fetches the whole window, not from the latest day (${retry.startDate}, ${all.n} rows, ${all.i} impressions)`);
+
+  const seg = await sync(client(), { dimensions: FULL_DIMENSIONS, fullResync: true });
+  const segBefore = stat('search_analytics_segments');
+  ok(!seg.error && segBefore.n === 120, `a complete segment sync stores 120 segment rows (${segBefore.n})`);
+  const segFail = await sync(client({ failOnPage: 1 }), { dimensions: FULL_DIMENSIONS, fullResync: true });
+  const segAfter = stat('search_analytics_segments');
+  ok(segFail.error && segAfter.n === 120 && segAfter.i === segBefore.i, `a segment fullResync failing on page 2 leaves the segment rows untouched (${segAfter.n})`);
+
+  const totalsBefore = stat('gsc_rows');
+  const disc = await sync(client({ failOnPage: 1 }), { searchType: 'discover' });
+  const totalsAfter = stat('gsc_rows');
+  ok(disc.error && totalsAfter.n === totalsBefore.n && totalsAfter.i === totalsBefore.i && stat('search_analytics_segments').n === 120, `a discover sync failing on page 2 does not wipe the web history (${totalsAfter.n} totals rows)`);
+
+  const at = synced();
+  const ctl = new AbortController();
+  const cancelled = await sync(client({ abortAfterPage: 0, ctl }), { fullResync: true, searchType: 'discover' }, ctl);
+  ok(cancelled.rowsFetched === 0 && cancelled.discarded === 30, `a cancelled sync reports the fetched rows as discarded (${JSON.stringify({ r: cancelled.rowsFetched, d: cancelled.discarded })})`);
+  ok(stat('gsc_rows').n === totalsBefore.n && synced() === at, 'a cancelled sync writes nothing and leaves last_synced_at alone');
+
+  const discOk = await sync(client(), { searchType: 'discover' });
+  const d = stat('gsc_rows');
+  ok(!discOk.error && d.n === 120 && d.days === 30, `a complete discover sync replaces the web history whole (${d.n} rows over ${d.days} days)`);
+}
+
 rmSync(dataDir, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
