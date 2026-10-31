@@ -11,7 +11,7 @@ import { getDashboardData } from '../dist/core/dashboardData.js';
 import { dbPathFor } from '../dist/core/paths.js';
 import { robotsVerdict } from '../dist/core/robots.js';
 import { AI_BOTS, AI_BOT_PATTERN } from '../dist/core/aiBots.js';
-import { monthlyClicks, yearOnYear } from '../dist/core/summaryData.js';
+import { monthlyClicks, yearOnYear, clickWindows } from '../dist/core/summaryData.js';
 import { buildVerdict } from '../dist/core/summaryVerdict.js';
 
 let pass = 0, fail = 0;
@@ -194,6 +194,42 @@ function audit(db, runId, at, crawlId, findings, checkIds = CHECKS) {
   ok(d.findings === null && d.healthScore === null, 'no crawl: no findings, no health (not 0, not 100)');
   ok(d.drift.snapshots === 0 && d.drift.counts === null && d.coverage.crawlPages === 0, 'no crawl: drift has no snapshots');
   ok(d.aiOverview === null, 'no recon: aiOverview is null');
+}
+
+// ── 4b. A prior window that isn't held is missing, never zero or a partial window ─────────────────
+// Flat traffic, 10 clicks a day. With 28 days held, the prior 28 read as 0 ("up from none"); with
+// 40 days held, 12 of the prior 28 days made flat traffic "+133%".
+{
+  const max = '2026-10-10';
+  const text = (v) => v.segments.map(x => x.text).join('');
+  const flat = (name, daysHeld, skip = new Set()) => {
+    const { site, adb, db } = property(name);
+    gscDays(db, iso(Date.parse(max) - (daysHeld - 1) * DAY), max, 10, skip);
+    const w = clickWindows(db, max);
+    adb.close();
+    return { site, w };
+  };
+  for (const held of [28, 40]) {
+    const { site, w } = flat(`held${held}`, held);
+    const p = getDashboardData(dataDir, site);
+    ok(w.prior === null && w.current === 280, `${held} days held: the prior 28 days are missing (null), not ${held === 28 ? '0' : 'a partial sum'} (${w.prior})`);
+    ok(p.summary.prior === null, `${held} days held: the KPI prior is null (${JSON.stringify(p.summary.prior)})`);
+    ok(p.topKeywords[0]?.prevClicks === null && p.topKeywords[0]?.prevPosition === null, `${held} days held: top keywords carry no prior clicks or position`);
+    const v = text(buildVerdict({ clicks: { current: p.clickWindows.current, prior: p.clickWindows.prior } }));
+    ok(!/up from none|%/.test(v) && /no comparison/.test(v), `${held} days held: the verdict makes no comparison (${v})`);
+  }
+  const full = flat('held60', 60);
+  ok(full.w.prior === 280 && text(buildVerdict({ clicks: { current: full.w.current, prior: full.w.prior } })) === 'Organic clicks are flat on the prior 28 days.', `60 days held: the prior 28 compare, and flat reads flat (${full.w.prior})`);
+  const gaps = new Set(Array.from({ length: 10 }, (_, i) => iso(Date.parse(max) - (35 + i) * DAY)));
+  const gappy = flat('gappy', 60, gaps);
+  ok(gappy.w.prior === null && gappy.w.priorDays === 18, `a 10-day sync gap in the prior window: no comparison (${gappy.w.prior}, ${gappy.w.priorDays} days)`);
+  // Year on year: 400 days held, but 21 days missing from the prior-year window.
+  const yGaps = new Set(Array.from({ length: 21 }, (_, i) => iso(Date.parse(max) - (364 + 3 + i) * DAY)));
+  const { db: ydb, adb: yadb } = property('yoygaps');
+  gscDays(ydb, iso(Date.parse(max) - 399 * DAY), max, 10, yGaps);
+  const y = yearOnYear(ydb, max);
+  yadb.close();
+  ok(y.available === false && y.reason === 'prior-year-gaps' && y.priorYearDays === 7 && y.currentDays === 28, `year-on-year with 7 of 28 prior-year days held is unavailable, not "+300%" (${JSON.stringify(y)})`);
 }
 
 // ── 5. A completed crawl that never made it into page_snapshots: staleness, not a current diff ─

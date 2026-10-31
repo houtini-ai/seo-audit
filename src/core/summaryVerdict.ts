@@ -7,10 +7,10 @@
 export const DEAD_BAND_PCT = 5;
 
 export interface VerdictInput {
-  /** Last 28 days vs the prior 28 (absent with no GSC). */
-  clicks?: { current: number; prior: number } | null;
+  /** Last 28 days vs the prior 28 (absent with no GSC). `prior` null = the prior 28 days aren't held. */
+  clicks?: { current: number; prior: number | null } | null;
   /** Non-brand clicks, same windows; the brand token is a heuristic, named in the tooltip. */
-  nonBrand?: { current: number; prior: number; brand: string } | null;
+  nonBrand?: { current: number; prior: number | null; brand: string } | null;
   /** Critical findings in the latest audit (absent with no audit). */
   criticalOpen?: number | null;
   /** Findings resolved since the previous COMPARABLE audit (absent when there is no such pair). */
@@ -42,13 +42,17 @@ export function buildVerdict(v: VerdictInput): Verdict {
   const chips: VerdictChip[] = [];
   const tips: string[] = [];
 
-  if (v.clicks) {
+  if (v.clicks && v.clicks.prior == null) {
+    // No comparison to make: say what is held instead of comparing with a window we don't have.
+    clauses.push([{ text: 'Organic clicks: ' }, { text: fmt(v.clicks.current), n: true }, { text: ' in the last 28 days (the prior 28 days are not fully held, so there is no comparison)' }]);
+    chips.push({ key: 'clicks', label: 'Clicks: no prior', direction: 'neutral' });
+  } else if (v.clicks && v.clicks.prior != null) {
     const d = direction(v.clicks.current, v.clicks.prior);
     const seg: Segment[] = [];
     if (d.dir === 'flat') seg.push({ text: 'Organic clicks are flat on the prior 28 days' });
     else if (d.pct == null) seg.push({ text: 'Organic clicks are up from none in the prior 28 days' });
     else seg.push({ text: `Organic clicks are ${d.dir} ` }, { text: `${Math.abs(Math.round(d.pct))}%`, n: true }, { text: ' on the prior 28 days' });
-    if (v.nonBrand) {
+    if (v.nonBrand && v.nonBrand.prior != null) {
       const nb = direction(v.nonBrand.current, v.nonBrand.prior);
       if (nb.dir === 'flat') seg.push({ text: ' (non-brand flat)' });
       else if (nb.pct == null) seg.push({ text: ' (non-brand up from none)' }); // prior 0, current > 0: no percentage to give

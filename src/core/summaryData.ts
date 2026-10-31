@@ -45,8 +45,22 @@ export interface MonthlyClicks {
   truncated?: { shownMonths: number; monthsHeld: number };
 }
 export type YearOnYear =
-  | { available: true; window: { start: string; end: string }; priorWindow: { start: string; end: string }; clicks: number; priorYearClicks: number; priorYearDays: number }
-  | { available: false; reason: 'needs-13-months'; gscMinDate: string; neededFrom: string };
+  | { available: true; window: { start: string; end: string }; priorWindow: { start: string; end: string }; clicks: number; priorYearClicks: number; priorYearDays: number; currentDays: number }
+  | { available: false; reason: 'needs-13-months'; gscMinDate: string; neededFrom: string }
+  | { available: false; reason: 'prior-year-gaps'; gscMinDate: string; neededFrom: string; priorYearDays: number; currentDays: number };
+
+/**
+ * When is a prior window held well enough to compare against? Product rule (stated, not a
+ * benchmark): the history reaches the prior window's first day, and the prior window has data on at
+ * least COMPARABLE_DAY_SHARE as many days as the current one. A window the history doesn't reach
+ * read as 0 ("up from none"), and one only partly held as a full one (12 of 28 days held made flat
+ * traffic "+133%").
+ */
+export const COMPARABLE_DAY_SHARE = 0.9;
+export function priorHeld(minDate: string | null, priorStart: string, currentDays: number, priorDays: number): boolean {
+  if (!minDate || minDate > priorStart) return false;
+  return priorDays >= currentDays * COMPARABLE_DAY_SHARE;
+}
 
 const MAX_MONTHS = 16;
 const DAY = 86_400_000;
@@ -111,7 +125,9 @@ export function yearOnYear(db: Database.Database, maxDate: string): YearOnYear |
   const sum = (a: string, b: string): { clicks: number; days: number } => clicksBetween(db, a, b);
   const cur = sum(start, end);
   const prior = sum(pStart, pEnd);
-  return { available: true, window: { start, end }, priorWindow: { start: pStart, end: pEnd }, clicks: cur.clicks, priorYearClicks: prior.clicks, priorYearDays: prior.days };
+  // A gap in the prior-year window (7 of 28 days held made flat traffic "+300%") is not a comparison.
+  if (!priorHeld(span.lo, pStart, cur.days, prior.days)) return { available: false, reason: 'prior-year-gaps', gscMinDate: span.lo, neededFrom: pStart, priorYearDays: prior.days, currentDays: cur.days };
+  return { available: true, window: { start, end }, priorWindow: { start: pStart, end: pEnd }, clicks: cur.clicks, priorYearClicks: prior.clicks, priorYearDays: prior.days, currentDays: cur.days };
 }
 
 function clicksBetween(db: Database.Database, a: string, b: string): { clicks: number; days: number } {
@@ -121,12 +137,16 @@ function clicksBetween(db: Database.Database, a: string, b: string): { clicks: n
   ).get({ a, b }) as { clicks: number; days: number };
 }
 
-/** Clicks for the last 28 days and the prior 28, each day counted once (see GscShape). */
-export interface ClickWindows { current: number; prior: number; window: { start: string; end: string }; priorWindow: { start: string; end: string } }
+/** Clicks for the last 28 days and the prior 28, each day counted once (see GscShape). `prior` is
+ *  null when the prior window isn't held (priorHeld): missing, never 0. */
+export interface ClickWindows { current: number; prior: number | null; currentDays: number; priorDays: number; window: { start: string; end: string }; priorWindow: { start: string; end: string } }
 export function clickWindows(db: Database.Database, maxDate: string): ClickWindows {
   const start = iso(ms(maxDate) - 27 * DAY), pEnd = iso(ms(maxDate) - 28 * DAY), pStart = iso(ms(maxDate) - 55 * DAY);
+  const cur = clicksBetween(db, start, maxDate), prior = clicksBetween(db, pStart, pEnd);
+  const minDate = (db.prepare(`SELECT MIN(date) d FROM gsc_rows`).get() as { d: string | null }).d;
   return {
-    current: clicksBetween(db, start, maxDate).clicks, prior: clicksBetween(db, pStart, pEnd).clicks,
+    current: cur.clicks, prior: priorHeld(minDate, pStart, cur.days, prior.days) ? prior.clicks : null,
+    currentDays: cur.days, priorDays: prior.days,
     window: { start, end: maxDate }, priorWindow: { start: pStart, end: pEnd },
   };
 }

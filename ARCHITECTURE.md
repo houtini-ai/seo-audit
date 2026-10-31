@@ -61,7 +61,7 @@ Compiled layout: `dist/core/…`, `dist/audit/…` from `tsc`; `dist/src/ui/*.ht
 ## Conventions (the rules, and why)
 
 - **Never write to stdout** in server code. It is the MCP JSON-RPC channel; use `console.error`.
-- **Never claim a measurement that wasn't taken.** Unknown is `null`, never `false` or `0`. Every figure carries its window or scale. An AI Overview whose citations didn't load is "unknown", not "not cited".
+- **Never claim a measurement that wasn't taken.** Unknown is `null`, never `false` or `0`. Every figure carries its window or scale. An AI Overview whose citations didn't load is "unknown", not "not cited". A prior period the synced history doesn't hold (it starts later, or the window is mostly gaps: `summaryData.priorHeld`) is null, never a row of zeros or a partial sum, so nothing reads as "up from none".
 - **No silent caps.** Anything bounded reports what it skipped.
 - **Host matching is exact-or-subdomain, never substring** (`hostIsOneOf`). A substring match once routed `pimax.com` pages as `x.com`.
 - **DataForSEO is never called in bulk.** On-demand only; cached; location per property. Paid work is quoted before it runs.
