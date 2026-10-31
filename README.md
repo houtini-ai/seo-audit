@@ -42,7 +42,7 @@ you  › generate the fix for #1 ▍
 
 ## Quick start
 
-It's on npm, so there's nothing to clone or build. You need Node.js 20 or newer and a Search Console property you own.
+It's on npm, so there's nothing to clone or build. You need Node.js 22 or newer (Node 20 is end-of-life) and a Search Console property you own.
 
 **Claude Desktop** - add this to `claude_desktop_config.json`, then restart Claude:
 
@@ -86,7 +86,7 @@ Once a property has been refreshed or audited, there are three ways to see it:
 | The full dashboard in your browser | *"open the dashboard for mysite.com"* | A link such as `http://127.0.0.1:53817/dashboard?siteUrl=…` (`open_dashboard`). Click it. It reads the local database live, so reload after each refresh |
 | Something to send a client | *"export the report for mysite.com"* | One self-contained HTML file (`export_report`) |
 
-You often don't need to ask: when a refresh, crawl, sync or audit finishes, the reply says the dashboard is updated and includes the browser link. The link is local to your machine (it only answers on `127.0.0.1`), and the port changes each time the server starts, so use the link from the latest reply. Add `&theme=dark` for dark mode, or `&redact=1` to blur the numbers for a screenshot.
+You often don't need to ask: when a refresh, crawl, sync or audit finishes, the reply says the dashboard is updated and includes the browser link. The link is local to your machine (it only answers on `127.0.0.1`), and the port changes each time the server starts, so use the link from the latest reply. Want one stable address? Run `seo-audit-dashboard` with `SAC_DASHBOARD_PORT=8788` as a standing process and give the MCP the same port and data dir: it then hands out that dashboard's link (it checks the process on that port really is this dashboard, serving the same data, before it does). Add `&theme=dark` for dark mode, or `&redact=1` to blur the numbers for a screenshot.
 
 **Running it under Docker or the Docker MCP gateway?** The browser link points at a port inside the container, which your browser can't reach. Run the dashboard as its own small container on a fixed port instead, on the same data volume:
 
@@ -173,7 +173,7 @@ The crawl is where audits usually go wrong, so it's worth understanding what thi
 
 **It refuses to be fooled.** A redirect that leaves your site (Shopify OAuth flows, I'm looking at you) is recorded as a redirect-out, never stored as a page. It always uses GET rather than HEAD, because a HEAD request can return a different status than the real request would - but it abandons the body for images, PDFs and assets, so it records status and size without downloading the bytes.
 
-**It's quick without being rude.** HTTP/2 where your origin supports it, gzip and brotli negotiated, keep-alive connections reused. The speed comes from efficiency, not from hammering your server. It respects robots.txt properly (a bot-specific group replaces `*`, per the spec, which plenty of commercial crawlers get wrong), and skips the junk: internal search, faceted filter combinations, login flows. This is a crawler for sites you own. Being a good guest is the point.
+**It's quick without being rude.** HTTP/2 where your origin supports it, gzip and brotli negotiated, keep-alive connections reused. The speed comes from efficiency, not from hammering your server. It respects robots.txt properly, per RFC 9309: a bot-specific group replaces `*` (plenty of commercial crawlers get that wrong), `*` and `$` wildcards and query strings match, a redirect into a disallowed path is never followed, and a robots.txt that errors stops the crawl rather than being read as "allow everything". It skips the junk: internal search, faceted filter combinations, login flows. This is a crawler for sites you own. Being a good guest is the point.
 
 **It slows down when your host asks it to.** A 429 (or a 503 with `Retry-After`) halves the crawl's concurrency, waits out the `Retry-After`, and puts the URL at the back of the queue for two more tries; clean responses add workers back. Shopify stores are spotted from their headers and start gently. A URL still rate limited at the end is stored as *rate limited* with no status, never as a broken page, and the crawl status tells you how many.
 
@@ -261,7 +261,7 @@ Optional, and I mean optional: with no key, `link_intersect` still runs and stil
 
 Three steps - the [quick start](#quick-start) above is the short version, and the full walkthrough with the gotchas is [getting-started.md](manual/getting-started.md):
 
-1. **Get it:** the quick route is npx - point your MCP config at `npx -y @houtini/seo-audit-console` and there's nothing to build. Or clone this repo, `npm install`, `npm run build` if you want the source. Either way, Node ≥ 20.
+1. **Get it:** the quick route is npx - point your MCP config at `npx -y @houtini/seo-audit-console` and there's nothing to build. Or clone this repo, `npm install`, `npm run build` if you want the source. Either way, Node ≥ 22.
 2. **Connect Search Console:** create a Google Cloud service account, download its JSON key, and - the step everyone misses - **add the service account's email as a user on your property** in Search Console. Prefer a walkthrough with pictures? [Setting it up from scratch](https://houtini.com/articles/better-search-console/#setting-it-up-from-scratch) covers the whole flow.
 3. **Point your MCP client at it** with `GOOGLE_APPLICATION_CREDENTIALS` set: `npx -y @houtini/seo-audit-console` for the published package, or `node /path/to/seo-audit-console/dist/index.js` if you built from source. Works in Claude Desktop and Claude Code; only the one env var is required.
 

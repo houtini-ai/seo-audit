@@ -70,7 +70,7 @@ Compiled layout: `dist/core/…`, `dist/audit/…` from `tsc`; `dist/src/ui/*.ht
 - **Owned-site crawling only**, polite, robots-respecting.
 - **A Search Console sync writes all or nothing** (`GscSync.ts`): every page is staged (a TEMP table on disk) and applied in one transaction only after the whole fetch succeeded, whether it is a wipe (another search type), a window replace, the lag-day replace or a plain upsert. A sync that fails or is cancelled part-way writes nothing and leaves `last_synced_at` alone, so it can neither destroy history nor leave days truncated behind the incremental resume point (latest stored day minus `LAG_DAYS`, 4).
 - **Secrets** are read from the environment (placeholder values count as unset, `secrets.ts`); `.secrets/`, `*.db`, `.env` and credentials files are gitignored.
-- ES modules with `.js` import extensions; Node 20+.
+- ES modules with `.js` import extensions; Node 22+ (undici 8 and the Google client libraries require it; Node 20 is end-of-life).
 
 ## Testing
 
