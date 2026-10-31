@@ -10,10 +10,6 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 
 ## [Unreleased]
 
-### Dependencies & packaging
-- **No known vulnerabilities, and a much smaller install.** `npm audit` went from 6 findings (1 high, 5 moderate) to 0. The giant `googleapis` meta-package (clients for every Google API) is replaced by the two scoped packages Search Console actually uses, `@googleapis/searchconsole` and `google-auth-library`; `zod` moves to 4 (the high advisory's fix; the MCP SDK supports it); and `echarts` and the web fonts move to devDependencies (Vite inlines them into the dashboard HTML at build time, so the published package never installed them at runtime anyway). A production install drops from 208 packages / 862 MB to 180 / 588 MB.
-- **Node 22 or newer.** `undici` 8 and the Google client libraries require it, and Node 20 reached end-of-life; `engines`, the MCPB manifest and the docs now say Node 22.
-
 ### Changed
 - **One dashboard for every domain.** The browser dashboard and the portfolio were two separate apps; they are now one. A domain dropdown at the top of the sidebar lists All domains (the domains table, and the landing page once there is more than one property), your Search Console properties, watched domains, and databases held for sites that aren't yours. A property's dashboard gains a **Market & AI** tab with its DataForSEO overview. `/portfolio` and `/portfolio/domain?d=` redirect. The sidebar carries the Houtini mark.
 
