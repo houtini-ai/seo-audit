@@ -45,6 +45,7 @@ research/
 
 # Internal working docs — not part of the public repo (kept locally)
 CLAUDE.md
+data-smoke.md
 plan/
 findings/
 /audit/

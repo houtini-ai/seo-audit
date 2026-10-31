@@ -7,7 +7,7 @@ mcpb-staging
 .git
 .github
 
-# Local data + secrets — must never enter an image
+# Local data + secrets — must never enter an image (not even the build layer)
 *.db
 *.db-wal
 *.db-shm
@@ -15,6 +15,16 @@ mcpb-staging
 .claude
 .env
 .env.*
+# Credential files and tokens (mirror .gitignore; defense-in-depth for the build context)
+CLAUDE.md
+*-credentials.json
+credentials.json
+gsc*.json
+service-account*.json
+*.pem
+*.p12
+*.pfx
+.mcpregistry_*
 
 # Build caches / logs
 *.tsbuildinfo
@@ -32,3 +42,6 @@ crawl-tests
 findings
 assets
 images
+ARCHITECTURE.md
+data-smoke.md
+CHANGELOG.md
