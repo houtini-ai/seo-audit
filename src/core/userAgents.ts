@@ -25,12 +25,16 @@ export type FetchedAs = 'bot' | 'chrome';
  * Does this response look like a bot block rather than a genuine status? 403 and LinkedIn's 999
  * always qualify (a cheap single retry settles it); 429/503 only with a WAF challenge marker,
  * since plain rate limiting is handled by backoff, not by changing identity.
+ *
+ * The `server` header is NOT a challenge marker: Shopify and most CDN-fronted sites send
+ * `server: cloudflare` on every response, ordinary rate-limit 429s included, so treating it as one
+ * retried every rate-limited URL at once as Chrome (no backoff) and switched whole crawls to Chrome.
+ * It only counts for a 503 that is not a rate limit (no Retry-After): the old interstitial pages.
  */
 export function looksBotBlocked(status: number, header: (name: string) => string | null): boolean {
   if (status === 403 || status === 999) return true;
   const server = (header('server') ?? '').toLowerCase();
-  const challenge = header('cf-mitigated') === 'challenge' || !!header('x-datadome') || !!header('x-px-block')
-    || (server.includes('cloudflare') && (status === 429 || status === 503))
-    || (server.includes('akamaighost') && status === 503);
-  return challenge;
+  const marker = header('cf-mitigated') === 'challenge' || !!header('x-datadome') || !!header('x-px-block');
+  if (marker) return true;
+  return status === 503 && !header('retry-after') && (server.includes('cloudflare') || server.includes('akamaighost'));
 }

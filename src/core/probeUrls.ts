@@ -67,7 +67,8 @@ async function probeOne(url: string, o: ResolvedProbeOptions, deadline: number, 
       const res = await o.fetchImpl(current, { redirect: 'manual', headers: chrome ? CHROME_HEADERS : { 'user-agent': o.userAgent, accept: 'text/html,*/*;q=0.8' }, signal: AbortSignal.timeout(left) });
       // #54: rate limited (and not a bot wall, which the Chrome retry handles). Wait out Retry-After
       // once if the budget allows (capped at 5 s), then report "unknown" rather than a 429 status.
-      if (isRateLimited(res.status, n => res.headers.get(n)) && !looksBotBlocked(res.status, n => res.headers.get(n))) {
+      // On the Chrome attempt a rate limit is a rate limit, whatever its markers: it is never stored as a status.
+      if (isRateLimited(res.status, n => res.headers.get(n)) && (chrome || !looksBotBlocked(res.status, n => res.headers.get(n)))) {
         try { await res.body?.cancel(); } catch { /* already closed */ }
         const waitMs = Math.min(parseRetryAfter(res.headers.get('retry-after')) ?? 1000, 5000);
         if (!rateWaited && Date.now() + waitMs < deadline - 2000) {
