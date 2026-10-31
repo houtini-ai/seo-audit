@@ -129,3 +129,7 @@ gsc*.json
 # Local design and planning material: specs, briefs, proposals, mockups. Kept locally, never published.
 design/
 proposals/
+
+# Code-review artefacts - kept in PR history, not in the published repo.
+REVIEW-NOTES.md
+review-screenshots/
