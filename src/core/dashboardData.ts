@@ -305,18 +305,24 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     // cap below maxDate, so they don't need it.) maxDate is our own ISO date — safe to interpolate.
     const UB = `date <= '${maxDate}'`;
 
-    const totals = (start: string, end?: string): Totals & { days: number } => {
+    const totals = (start: string, end?: string): Totals => {
       const where = end
         ? `date > date(?, '${start}') AND date <= date(?, '${end}')`
         : `date > date(?, '${start}') AND ${UB}`;
       const args = end ? [maxDate, maxDate] : [maxDate];
       const r = db.db
-        .prepare(`SELECT COUNT(DISTINCT date) days, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position FROM gsc_rows WHERE ${where}`)
-        .get(...args) as Totals & { days: number };
+        .prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position FROM gsc_rows WHERE ${where}`)
+        .get(...args) as Totals;
       return r;
     };
-    const { days: curDays, ...cur } = totals(W1);
-    const { days: priorDays, ...priorAll } = totals(W2, W1);
+
+    // Days with data in each window: the prior compares only when it is held (priorHeld).
+    const daysWithData = (start: string, end?: string): number => (db.db
+      .prepare(`SELECT COUNT(DISTINCT date) n FROM gsc_rows WHERE ${end ? `date > date(?, '${start}') AND date <= date(?, '${end}')` : `date > date(?, '${start}') AND ${UB}`}`)
+      .get(...(end ? [maxDate, maxDate] : [maxDate])) as { n: number }).n;
+    const curDays = daysWithData(W1), priorDays = daysWithData(W2, W1);
+    const cur = totals(W1);
+    const priorAll = totals(W2, W1);
     // The prior window compares only when it is held (the history reaches it, and it isn't mostly
     // gaps): otherwise it is null, never a row of zeros that reads as "up from none".
     const heldFrom = (db.db.prepare('SELECT MIN(date) d FROM gsc_rows').get() as { d: string | null }).d;
