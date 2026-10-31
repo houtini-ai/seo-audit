@@ -1,0 +1,46 @@
+name: CI
+
+# Build and test on every pull request and every push to master, so a change
+# that breaks the build or a probe is caught before it lands. The repo's only
+# other workflow (publish-mcp.yml) is manual and unrelated.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      # The probe suite never drives a browser (demo-screenshots does, and it is
+      # not part of `npm test`), so don't spend CI time downloading Chromium for
+      # the optional playwright dependency.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      - name: Build (server + dashboard UI)
+        run: npm run build
+
+      - name: Test (full probe suite)
+        run: npm test
+
+      - name: Audit production dependencies (informational)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
