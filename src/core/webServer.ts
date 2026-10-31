@@ -30,7 +30,8 @@ export interface WebServerOptions {
   port?: number;
 }
 
-interface RunningServer { server: http.Server; port: number; url: string }
+/** `server` is null when we adopted a dashboard another process already serves on the fixed port. */
+interface RunningServer { server: http.Server | null; port: number; url: string }
 let running: RunningServer | null = null;
 let starting: Promise<{ url: string; port: number }> | null = null;
 
@@ -214,17 +215,29 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
     const bindHost = process.env.SAC_DASHBOARD_BIND || '127.0.0.1';
     // Port: explicit arg > SAC_DASHBOARD_PORT (a fixed, publishable port for Docker) > 0 (random).
     const wantPort = opts.port ?? (Number(process.env.SAC_DASHBOARD_PORT) || 0);
-    const port = await new Promise<number>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(wantPort, bindHost, () => {
-        const addr = server.address();
-        resolve(typeof addr === 'object' && addr ? addr.port : wantPort);
-      });
-    });
-    server.unref(); // never keep the MCP process alive on our account
     // Advertised host is the address the user's browser reaches — 127.0.0.1 for a host-run process,
     // and also for a container whose port is published to the host's 127.0.0.1:PORT.
     const urlHost = process.env.SAC_DASHBOARD_URL_HOST || '127.0.0.1';
+    let port: number;
+    try {
+      port = await new Promise<number>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(wantPort, bindHost, () => {
+          const addr = server.address();
+          resolve(typeof addr === 'object' && addr ? addr.port : wantPort);
+        });
+      });
+    } catch (e) {
+      // A fixed port from the env that's already taken: if a standalone `seo-audit-dashboard` holds
+      // it (the bare-metal fixed-address setup), hand out its link rather than failing. Only when the
+      // port came from the env: an explicit opts.port is the standalone process itself.
+      const inUse = (e as NodeJS.ErrnoException).code === 'EADDRINUSE';
+      if (!inUse || opts.port !== undefined || !(await isOurDashboard(wantPort))) throw e;
+      const url = `http://${urlHost}:${wantPort}`;
+      running = { server: null, port: wantPort, url };
+      return { url, port: wantPort };
+    }
+    server.unref(); // never keep the MCP process alive on our account
     const url = `http://${urlHost}:${port}`;
     running = { server, port, url };
     return { url, port };
@@ -240,8 +253,21 @@ export async function stopDashboardServer(): Promise<boolean> {
   if (!running) return false;
   const s = running.server;
   running = null;
+  if (!s) return false; // adopted: another process owns that dashboard
   await new Promise<void>(resolve => s.close(() => resolve()));
   return true;
+}
+
+/** Does 127.0.0.1:port answer like this dashboard (`/api/properties` returning a list)? */
+async function isOurDashboard(port: number): Promise<boolean> {
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/api/properties`, { signal: AbortSignal.timeout(2000) });
+    if (!r.ok) return false;
+    const body = (await r.json()) as { properties?: unknown };
+    return Array.isArray(body.properties);
+  } catch {
+    return false;
+  }
 }
 
 export function dashboardServerUrl(): string | null {
