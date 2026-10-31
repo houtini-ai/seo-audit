@@ -141,7 +141,13 @@ interface FetchOutcome {
   sentAt: number;
   /** Any response on the way carried Shopify storefront headers. */
   shopify: boolean;
+  /** Set when a redirect hop was NOT followed: it left the property (another host, a skip pattern,
+   *  a non-http scheme) or robots.txt disallows it. `finalUrl` is then the unfetched target. */
+  stoppedAt?: RedirectStop;
 }
+
+/** Why a redirect hop was not followed. */
+export type RedirectStop = 'offsite' | 'robots';
 
 /** Per-crawl bot-block bookkeeping: whether the Chrome fallback is allowed, and how it's going. */
 export interface UaState { fallback: boolean; preferChrome: boolean; botTried: number; blockedAsBot: number; okAsChrome: number; blockedAsChrome: number }
@@ -153,7 +159,11 @@ export interface UaState { fallback: boolean; preferChrome: boolean; botTried: n
 const makeDispatcher = (connections: number): Agent =>
   new Agent({ allowH2: true, connections, keepAliveTimeout: 30_000, keepAliveMaxTimeout: 60_000 });
 
-async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, gate: ThrottleGate, signal: AbortSignal, maxHops = 5, uaState?: UaState): Promise<FetchOutcome> {
+// `stopAt` is asked about every redirect target BEFORE it is requested. The crawler passes one that
+// stops at a target off the property or disallowed by robots.txt: following first and checking the
+// final URL afterwards sent a request to whatever host a Location header named (an SSRF through any
+// open redirect) and fetched robots-disallowed paths.
+async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, gate: ThrottleGate, signal: AbortSignal, maxHops = 5, uaState?: UaState, stopAt?: (target: URL) => RedirectStop | null): Promise<FetchOutcome> {
   // Starts as the crawler's own UA unless this crawl already switched to Chrome (see below).
   let asChrome = !!uaState?.preferChrome;
   let retriedAsChrome = false;
@@ -250,6 +260,15 @@ async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, ga
       // keep-alive connection is released — otherwise redirect-heavy crawls leak sockets.
       try { await res.body?.cancel(); } catch { /* already closed */ }
       redirects.push({ from: current, to: loc, status: res.status });
+      const stop = stopAt ? stopAt(new URL(loc)) : null;
+      if (stop) {
+        return {
+          finalUrl: loc, status: res.status, contentType: '', contentEncoding: null, cacheControl: null, lastModified: null,
+          etag: null, vary: null, securityHeaders: null, body: '', redirects, xRobotsTag: null, bytes: null,
+          timeMs: Date.now() - start, throttled: transientRetries > 0 || netRetries > 0, fetchedAs: asChrome ? 'chrome' : 'bot',
+          rateLimited: null, sentAt, shopify, stoppedAt: stop,
+        };
+      }
       current = loc;
       hops++;
       continue;
@@ -539,6 +558,12 @@ export class Crawler {
     let dynamicDelay = delayMs;
     // One throttle gate shared by every worker: a 429/503 anywhere pauses the whole pool.
     const gate: ThrottleGate = { until: 0 };
+    // Asked before every redirect hop is requested (see fetchWithRedirects).
+    const redirectStop = (target: URL): RedirectStop | null => {
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') return 'offsite';
+      if (!isInternalHost(target.hostname, baseHost) || skipUrl(target.toString(), excludeRes)) return 'offsite';
+      return robots.isAllowed(target.pathname) ? null : 'robots';
+    };
     const processOne = async (item: FrontierItem): Promise<void> => {
       // A re-queued rate-limited URL waits out its spacing (usually long past by the time it is reached).
       if (item.notBefore && item.notBefore > Date.now()) await sleepUnlessAborted(item.notBefore - Date.now(), signal);
@@ -551,7 +576,7 @@ export class Crawler {
         skipped++; return;
       }
       try {
-        const r = await fetchWithRedirects(item.url, ua, dispatcher, gate, signal, 5, uaState);
+        const r = await fetchWithRedirects(item.url, ua, dispatcher, gate, signal, 5, uaState, redirectStop);
         // Platform sniff on the first responses (#54): Shopify rate-limits hard at concurrency 8, so
         // start it at 3 unless the user chose maxConcurrency. AIMD can still climb back from there.
         if (sniffed < PLATFORM_SNIFF_RESPONSES && !platform) {
@@ -586,8 +611,14 @@ export class Crawler {
         // Redirect that leaves the internal host or lands on a skip-pattern URL (e.g. an internal
         // link 301-ing into Shopify's accounts.<domain> OAuth flow): record the ORIGINAL URL as a
         // redirect-out and do NOT store the off-site target as a page or extract its links.
-        let offsite = false;
-        try { offsite = r.redirects.length > 0 && (!isInternalHost(new URL(r.finalUrl).hostname, baseHost) || skipUrl(r.finalUrl, excludeRes)); } catch { /* unparseable final URL */ }
+        // A hop that was not followed (stoppedAt) is handled the same way: the source is the redirect
+        // and the target is never fetched; a robots-disallowed target is recorded as such.
+        let offsite = r.stoppedAt != null;
+        try { offsite ||= r.redirects.length > 0 && (!isInternalHost(new URL(r.finalUrl).hostname, baseHost) || skipUrl(r.finalUrl, excludeRes)); } catch { /* unparseable final URL */ }
+        if (r.stoppedAt === 'robots') {
+          ensureWiped();
+          try { robotsInsert.run({ crawl_id: crawlId, url: r.finalUrl, url_key: urlKey(r.finalUrl, keyOpts), depth: item.depth + 1 }); } catch { /* dup */ }
+        }
         const pageUrl = offsite ? item.url : r.finalUrl;
         const finalKey = urlKey(pageUrl, keyOpts);
         // Record the redirect SOURCE before the dedupe below can drop it (#32).
