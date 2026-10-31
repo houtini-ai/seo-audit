@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { searchconsole, type searchconsole_v1 } from '@googleapis/searchconsole';
-import { GoogleAuth } from 'google-auth-library';
+import { JWT } from 'google-auth-library';
 import type { GscProperty, GscApiRow, FetchOptions } from './types.js';
 
 const ROW_LIMIT = 25000; // GSC API max per request
@@ -36,12 +37,35 @@ export interface PageResult {
 
 /** Thin googleapis wrapper for Search Console (ported from better-search-console). */
 export class GscClient {
-  private auth: GoogleAuth;
+  private auth: JWT;
   private searchconsole: searchconsole_v1.Searchconsole;
 
   constructor(credentialsPath: string) {
-    this.auth = new GoogleAuth({
-      keyFile: credentialsPath,
+    // Build the service-account JWT client ourselves and hand it to the API client as `auth`.
+    // Passing `keyFile`/`credentials` to GoogleAuth is deprecated in google-auth-library
+    // (googleauth.js warns on both: "use the `auth` object constructor instead"). JWT's own
+    // keyFile reader rejects this key ("account not found"), so we read client_email/private_key
+    // out of the JSON and pass them directly — the one form that both authenticates and is quiet.
+    // The read is wrapped so a missing or malformed path never throws at construction: the first
+    // authorized request then fails clearly instead, exactly as GoogleAuth({ keyFile }) did (GSC
+    // stays optional, so the dashboard and other tools still start without a key).
+    let email: string | undefined, key: string | undefined, keyId: string | undefined;
+    try {
+      const k = JSON.parse(readFileSync(credentialsPath, 'utf8')) as {
+        client_email?: string;
+        private_key?: string;
+        private_key_id?: string;
+      };
+      email = k.client_email;
+      key = k.private_key;
+      keyId = k.private_key_id;
+    } catch {
+      /* leave undefined — the first GSC request fails with a clear auth error, as before */
+    }
+    this.auth = new JWT({
+      email,
+      key,
+      keyId,
       scopes: ['https://www.googleapis.com/auth/webmasters.readonly'],
     });
     this.searchconsole = searchconsole({ version: 'v1', auth: this.auth });
