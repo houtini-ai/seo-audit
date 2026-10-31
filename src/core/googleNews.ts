@@ -1,3 +1,4 @@
+import { readCappedText, MAX_HTML_BYTES } from './cappedBody.js';
 import * as cheerio from 'cheerio';
 
 /**
@@ -32,7 +33,7 @@ export async function fetchGoogleNews(
     signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) throw new Error(`Google News RSS ${res.status}`);
-  const xml = await res.text();
+  const xml = (await readCappedText(res, MAX_HTML_BYTES)).text;
 
   // RSS is well-formed XML — parse with cheerio in xmlMode (already a dependency).
   const $ = cheerio.load(xml, { xmlMode: true });

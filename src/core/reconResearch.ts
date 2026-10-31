@@ -1,3 +1,4 @@
+import { readCapped, readCappedText, MAX_HTML_BYTES } from './cappedBody.js';
 import { Agent, fetch as ufetch } from 'undici';
 import { hostOf } from './serpRecon.js';
 import { extractPage, decodeHtmlBody } from './extract.js';
@@ -75,7 +76,7 @@ export async function fetchRedditJson(url: string, maxChars = 4000, ua: UaMode =
   const jsonUrl = url.split('?')[0].replace(/\/$/, '') + '.json';
   const res = await ufetch(jsonUrl, { headers: browserHeaders(ua), dispatcher: httpAgent, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`Reddit .json ${res.status}`);
-  const data: any = await res.json();
+  const data: any = JSON.parse((await readCappedText(res as unknown as { body: ReadableStream<Uint8Array> | null }, MAX_HTML_BYTES)).text);
   const post = data?.[0]?.data?.children?.[0]?.data ?? {};
   const comments: any[] = data?.[1]?.data?.children ?? [];
   const parts: string[] = [];
@@ -97,7 +98,7 @@ export async function fetchRedditJson(url: string, maxChars = 4000, ua: UaMode =
 export async function fetchPlainPage(url: string, maxChars = 4000, ua: UaMode = 'browser'): Promise<{ title: string | null; content: string }> {
   const res = await ufetch(url, { headers: browserHeaders(ua), dispatcher: httpAgent, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`plain fetch ${res.status}`);
-  const html = decodeHtmlBody(Buffer.from(await res.arrayBuffer()), res.headers.get('content-type'));
+  const html = decodeHtmlBody((await readCapped(res as unknown as { body: ReadableStream<Uint8Array> | null }, MAX_HTML_BYTES)).buf, res.headers.get('content-type'));
   const host = new URL(url).hostname.replace(/^www\./, '');
   const ex = extractPage(html, url, host, { hostForm: 'asis' }, null);
   const text = (ex.bodyChunks ?? []).map(c => `${c.heading} ${c.text}`).join('\n').trim();

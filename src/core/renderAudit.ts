@@ -1,3 +1,4 @@
+import { readCapped, MAX_HTML_BYTES } from './cappedBody.js';
 import { fetch as ufetch, Agent } from 'undici';
 import * as cheerio from 'cheerio';
 import { AuditDatabase } from './AuditDatabase.js';
@@ -161,7 +162,7 @@ export async function auditRender(
           const res = await ufetch(url, { dispatcher, headers: { 'user-agent': ua, 'accept-encoding': 'gzip, deflate, br' }, signal: AbortSignal.timeout(20000) }) as unknown as Response;
           rawStatus = res.status;
           xRobotsTag = res.headers.get('x-robots-tag');
-          rawHtml = decodeHtmlBody(Buffer.from(await res.arrayBuffer()), res.headers.get('content-type'));
+          rawHtml = decodeHtmlBody((await readCapped(res, MAX_HTML_BYTES)).buf, res.headers.get('content-type'));
           rendered = await renderHtml(url, ua);
         } catch (e) {
           // No browser on this install (npm ships the optional playwright package without Chromium):

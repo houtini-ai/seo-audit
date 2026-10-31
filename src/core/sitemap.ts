@@ -1,4 +1,5 @@
 import { gunzipSync } from 'node:zlib';
+import { readCapped, MAX_SITEMAP_BYTES } from './cappedBody.js';
 import { urlKey, type UrlKeyOptions } from './url-key.js';
 
 /**
@@ -23,15 +24,22 @@ const decodeXmlEntities = (s: string): string => s
 /** GET with redirects followed. `finalUrl` is where it landed - Yoast answers /sitemap.xml and
  * /wp-sitemap.xml with a redirect to /sitemap_index.xml, and that has to be known to avoid fetching
  * and reporting the same document three times. */
-async function fetchText(url: string, ua: string): Promise<{ text: string; finalUrl: string } | null> {
+// Bounded (cappedBody.ts): a sitemap is at most 50 MB uncompressed (sitemaps.org), so the read stops
+// there and a .gz is inflated with the same output limit. Unbounded, a 1 MB gzip bomb declared in
+// robots.txt cost about 1 GB of memory. A document over the limit is reported, not parsed in part.
+async function fetchText(url: string, ua: string): Promise<{ text: string; finalUrl: string; oversized?: boolean } | null> {
   try {
     const res = await fetch(url, { headers: { 'user-agent': ua }, signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return null;
+    if (!res.ok) { try { await res.body?.cancel(); } catch { /* no body */ } return null; }
     const finalUrl = res.url || url;
-    const buf = Buffer.from(await res.arrayBuffer());
+    const { buf, truncated } = await readCapped(res, MAX_SITEMAP_BYTES);
+    if (truncated) return { text: '', finalUrl, oversized: true };
     const ct = (res.headers.get('content-type') ?? '').toLowerCase();
     if (finalUrl.toLowerCase().endsWith('.gz') || url.toLowerCase().endsWith('.gz') || ct.includes('gzip')) {
-      try { return { text: gunzipSync(buf).toString('utf8'), finalUrl }; } catch { return { text: buf.toString('utf8'), finalUrl }; }
+      try { return { text: gunzipSync(buf, { maxOutputLength: MAX_SITEMAP_BYTES }).toString('utf8'), finalUrl }; } catch (err) {
+        if (err instanceof RangeError || (err as { code?: string })?.code === 'ERR_BUFFER_TOO_LARGE') return { text: '', finalUrl, oversized: true };
+        return { text: buf.toString('utf8'), finalUrl };
+      }
     }
     return { text: buf.toString('utf8'), finalUrl };
   } catch { return null; }
@@ -44,6 +52,8 @@ export interface SitemapResult {
   sources: string[];
   /** Conventional locations that existed but robots.txt didn't declare (e.g. a Yoast sitemap_index.xml). */
   undeclared: string[];
+  /** Sitemaps over the 50 MB limit (after decompression): not parsed, so their URLs are missing here. */
+  oversized: string[];
 }
 
 // Probed on every crawl, not only when robots.txt is silent (#25): robots.txt often lists just a
@@ -63,6 +73,7 @@ export async function fetchSitemapUrls(
   if (robots) for (const m of robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)) sources.push(m[1].trim());
   const conventional = CONVENTIONAL.map(p => new URL(p, origin).toString());
   const undeclared: string[] = [];
+  const oversized: string[] = [];
 
   // Sitemaps are compared by urlKey, never by raw string: robots.txt declaring
   // https://www.example.com/sitemap_index.xml while the crawl origin is https://example.com made
@@ -95,6 +106,7 @@ export async function fetchSitemapUrls(
     if (parsed.has(smKey)) continue; // this document was already parsed (another spelling, or a redirect target): no fetch
     const got = await fetchText(sm, ua);
     fetched++;
+    if (got?.oversized) { oversized.push(sm); continue; }
     const txt = got?.text;
     // A catch-all route can answer 200 with HTML for /sitemap.xml: only count real sitemap XML.
     // A failed fetch is NOT marked parsed, so another spelling of the same sitemap is still tried.
@@ -131,5 +143,5 @@ export async function fetchSitemapUrls(
       }
     }
   }
-  return { urls: [...out].map(([k, v]) => ({ urlKey: k, url: v.url, lastmod: v.lastmod })), sitemapsFetched: fetched, sources, undeclared };
+  return { urls: [...out].map(([k, v]) => ({ urlKey: k, url: v.url, lastmod: v.lastmod })), sitemapsFetched: fetched, sources, undeclared, oversized };
 }

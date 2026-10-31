@@ -63,6 +63,7 @@ Compiled layout: `dist/core/…`, `dist/audit/…` from `tsc`; `dist/src/ui/*.ht
 - **Never write to stdout** in server code. It is the MCP JSON-RPC channel; use `console.error`.
 - **Never claim a measurement that wasn't taken.** Unknown is `null`, never `false` or `0`. Every figure carries its window or scale. An AI Overview whose citations didn't load is "unknown", not "not cited".
 - **No silent caps.** Anything bounded reports what it skipped.
+- **Bounded reads.** A fetched body (crawled page, sitemap, robots.txt, a competitor page) is read through `readCapped` (`src/core/cappedBody.ts`), never `arrayBuffer()` / `text()`: HTML up to 5 MB (extraction costs ~70x the size in memory), sitemaps up to 50 MB inflated, robots.txt 500 KiB. A cut body is recorded (`errors.error_type = 'body-truncated'`, `sitemaps.oversized`).
 - **Host matching is exact-or-subdomain, never substring** (`hostIsOneOf`). A substring match once routed `pimax.com` pages as `x.com`.
 - **DataForSEO is never called in bulk.** On-demand only; cached; location per property. Paid work is quoted before it runs.
 - **Owned-site crawling only**, polite, robots-respecting.

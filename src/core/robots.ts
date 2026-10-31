@@ -1,3 +1,4 @@
+import { readCappedText, MAX_ROBOTS_BYTES } from './cappedBody.js';
 /**
  * robots.txt politeness gate. Honours both Disallow AND Allow with longest-prefix-match
  * (most specific path wins; Allow wins ties) — so a broad `Disallow: /` paired with
@@ -86,7 +87,7 @@ export async function fetchRobots(origin: string, userAgent: string, uaToken = '
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return ALLOW_ALL;
-    return makeRules(parseRules(await res.text(), uaToken));
+    return makeRules(parseRules((await readCappedText(res, MAX_ROBOTS_BYTES)).text, uaToken));
   } catch {
     return ALLOW_ALL; // robots unavailable → don't block (owned-site crawl)
   }
@@ -111,7 +112,8 @@ export async function fetchRobotsTxt(origin: string, userAgent: string): Promise
       headers: { 'user-agent': userAgent, 'cache-control': 'no-cache' },
       signal: AbortSignal.timeout(10000),
     });
-    return { status: res.status, body: res.ok ? (await res.text()).slice(0, 512 * 1024) : null };
+    if (!res.ok) { try { await res.body?.cancel(); } catch { /* no body */ } }
+    return { status: res.status, body: res.ok ? (await readCappedText(res, MAX_ROBOTS_BYTES)).text : null };
   } catch {
     return { status: 0, body: null };
   }

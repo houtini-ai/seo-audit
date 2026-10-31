@@ -7,6 +7,7 @@
  * slash, index.php, unknown-param, scheme and host variants of a URL and summarises whether the
  * site normalises each.
  */
+import { readCapped } from './cappedBody.js';
 import { createHash } from 'node:crypto';
 import * as cheerio from 'cheerio';
 import { isInternalHost } from './extract.js';
@@ -109,8 +110,8 @@ async function probeOne(url: string, o: ResolvedProbeOptions, deadline: number, 
       out.xRobotsTag = res.headers.get('x-robots-tag');
       out.cache = { cfCacheStatus: res.headers.get('cf-cache-status'), xCache: res.headers.get('x-cache'), age: res.headers.get('age'), cacheControl: res.headers.get('cache-control') };
       if ((out.contentType ?? '').toLowerCase().includes('html')) {
-        const buf = Buffer.from(await res.arrayBuffer());
-        const html = buf.subarray(0, MAX_BODY).toString('utf8');
+        const { buf } = await readCapped(res as unknown as { body: ReadableStream<Uint8Array> | null }, MAX_BODY);
+        const html = buf.toString('utf8');
         const $ = cheerio.load(html);
         out.title = $('head > title').first().text().replace(/\s+/g, ' ').trim() || null;
         const can = $('link[rel="canonical"]').first().attr('href')?.trim();

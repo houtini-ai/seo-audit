@@ -226,5 +226,50 @@ try {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 }
 
+// ── Bounded body reads (cappedBody.ts) ────────────────────────────────────────
+// A response body is never buffered whole: a 40 MB page was read and extracted whole (50 MB
+// crashed the process), and a 1 MB gzip sitemap inflated to ~1 GB. Reads stop at the cap and say so.
+{
+  const { gzipSync } = await import('node:zlib');
+  const { readCapped, MAX_HTML_BYTES } = await import('../dist/core/cappedBody.js');
+  const big = Buffer.alloc(MAX_HTML_BYTES + 25 * 1024 * 1024, 0x61); // 40 MB of "a"
+  const bomb = gzipSync(Buffer.alloc(60 * 1024 * 1024, 0x20));      // ~60 KB on the wire, 60 MB inflated
+  let bigServed = 0;
+  const srv = http.createServer((req, res) => {
+    if (req.url === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end(`User-agent: *\nAllow: /\nSitemap: http://127.0.0.1:${srv.address().port}/sitemap.xml.gz\n`); }
+    if (req.url === '/sitemap.xml.gz') { res.writeHead(200, { 'content-type': 'application/gzip' }); return res.end(bomb); }
+    if (req.url === '/') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<html><head><title>Home</title></head><body><a href="/big">big</a></body></html>'); }
+    if (req.url === '/big') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.write('<html><head><title>Big</title></head><body>');
+      let off = 0;
+      const pump = () => { while (off < big.length) { const ok = res.write(big.subarray(off, off + 1024 * 1024)); off += 1024 * 1024; bigServed = off; if (!ok) return res.once('drain', pump); } res.end('</body></html>'); };
+      res.on('error', () => {}); req.socket.on('error', () => {});
+      return pump();
+    }
+    res.writeHead(404); res.end();
+  });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const origin = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const r = await readCapped(await fetch(`${origin}/big`), 1024 * 1024);
+    check('readCapped stops at the cap and says so', r.truncated === true && r.buf.length === 1024 * 1024, `${r.truncated} ${r.buf.length}`);
+    const small = await readCapped(await fetch(`${origin}/`), 1024 * 1024);
+    check('readCapped reads a small body whole', small.truncated === false && /<title>Home/.test(small.buf.toString()), `${small.truncated}`);
+    const dirB = mkdtempSync(path.join(tmpdir(), 'sac-bigbody-'));
+    dirs.push(dirB);
+    const heapBefore = process.memoryUsage().rss;
+    const res = await new Crawler(dirB).run(`${origin}/`, { maxPages: 5, delayMs: 0, maxConcurrency: 1, checkExternal: false, siteProbes: false }, () => {}, new AbortController().signal);
+    const grew = (process.memoryUsage().rss - heapBefore) / 1024 / 1024;
+    const adb = new AuditDatabase(dbPathFor(dirB, `${origin}/`));
+    const pg = adb.db.prepare(`SELECT status_code, title FROM pages WHERE url LIKE '%/big'`).get();
+    const err = adb.db.prepare(`SELECT error_type, error_message FROM errors WHERE url LIKE '%/big'`).get();
+    adb.close();
+    check('a 40 MB page is crawled up to 5 MB: stored with its title, and the truncation is recorded', pg?.status_code === 200 && pg?.title === 'Big' && err?.error_type === 'body-truncated', JSON.stringify({ pg, err }));
+    check('the oversized gzip sitemap is reported, not inflated', JSON.stringify(res.sitemaps?.oversized ?? []).includes('sitemap.xml.gz'), JSON.stringify(res.sitemaps));
+    check(`memory stays bounded while crawling them (RSS grew ${Math.round(grew)} MB)`, grew < 800, `${grew}`);
+  } finally { srv.close(); }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;
