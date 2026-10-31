@@ -1,5 +1,6 @@
 import http from 'node:http';
-import { readdirSync, existsSync, readFileSync } from 'node:fs';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { readdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { PACKAGE_VERSION, pinnedPackage } from './version.js';
@@ -13,9 +14,10 @@ import { hiddenProperties } from './hiddenProperties.js';
  *
  * Localhost-only by design. Binds 127.0.0.1 by default; a container sets
  * SAC_DASHBOARD_BIND=0.0.0.0 (so a published `127.0.0.1:PORT->PORT` host mapping can reach it)
- * and SAC_DASHBOARD_PORT to a fixed, publishable port. Even bound to 0.0.0.0, the Host-header
- * allowlist below refuses any request not addressed to localhost, so the SQLite data is never
- * answered to a network client. The advertised URL host stays 127.0.0.1 (SAC_DASHBOARD_URL_HOST
+ * and SAC_DASHBOARD_PORT to a fixed, publishable port. The Host-header allowlist below defeats DNS
+ * rebinding from a browser, but it is NOT access control: bound to 0.0.0.0, any client that can
+ * reach the port and sends `Host: localhost` is answered, so publish the port to 127.0.0.1 only
+ * (`-p 127.0.0.1:8788:8788`). The advertised URL host stays 127.0.0.1 (SAC_DASHBOARD_URL_HOST
  * to override) — that is the address the user's browser actually reaches.
  */
 
@@ -127,6 +129,26 @@ export function listLocalProperties(dataDir: string): { siteUrl: string; file: s
   return out;
 }
 
+/** Is an Origin header (sent by a browser on every POST) one of this server's own localhost origins? */
+function isLocalOrigin(origin: string): boolean {
+  try { return isLocalHostHeader(new URL(origin).host); } catch { return false; }
+}
+
+/**
+ * Identity proof for adopting a dashboard on the fixed port. The secret lives in the data dir
+ * (0600), so only a process of the same user serving the SAME data dir can answer a nonce with the
+ * right HMAC. Answering `/api/properties` with a list, the old test, adopted any service on the port,
+ * and every dashboardUrl the MCP handed out then pointed at it.
+ */
+const SECRET_FILE = '.dashboard-secret';
+function dashboardSecret(dataDir: string): Buffer {
+  const file = path.join(dataDir, SECRET_FILE);
+  try { const s = readFileSync(file); if (s.length >= 32) return s; } catch { /* create it */ }
+  try { writeFileSync(file, randomBytes(32), { mode: 0o600, flag: 'wx' }); } catch { /* another process won the race */ }
+  return readFileSync(file);
+}
+export const identityProof = (dataDir: string, nonce: string): string => createHmac('sha256', dashboardSecret(dataDir)).update(`seo-audit-dashboard:${nonce}`).digest('hex');
+
 const json = (res: http.ServerResponse, status: number, body: unknown): void => {
   const s = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -142,7 +164,13 @@ const readBody = (req: http.IncomingMessage, limit = 256 * 1024): Promise<string
   });
 
 export async function startDashboardServer(opts: WebServerOptions): Promise<{ url: string; port: number }> {
-  if (running) return { url: running.url, port: running.port };
+  if (running?.server) return { url: running.url, port: running.port };
+  // An adopted dashboard belongs to another process, which may have exited since: check it is still
+  // there (and still ours) before handing its link out again; otherwise bind the port ourselves.
+  if (running && !running.server) {
+    if (await isOurDashboard(running.port, opts.dataDir())) return { url: running.url, port: running.port };
+    running = null;
+  }
   if (starting) return starting; // concurrent callers share one startup — never bind twice
 
   const server = http.createServer(async (req, res) => {
@@ -161,7 +189,8 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
         const inject = `<script>window.__SAC_WEB__=${JSON.stringify(full).replace(/</g, '\\u003c')};</script>`;
         // Replacement FUNCTION, not string — $-sequences in the payload must stay literal.
         const html = opts.uiHtml().replace(/<head([^>]*)>/i, (_m, attrs: string) => `<head${attrs}>${inject}`);
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        // Never framed by another page (clickjacking the sidebar's actions).
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" });
         res.end(html);
       };
       const redirect = (to: string): void => { res.writeHead(302, { location: to }); res.end(); };
@@ -181,6 +210,12 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
         return serve({ siteUrl: '', view: 'domains' });
       }
 
+      if (req.method === 'GET' && route === '/api/identity') {
+        const nonce = u.searchParams.get('nonce') ?? '';
+        if (!/^[0-9a-f]{32}$/.test(nonce)) return json(res, 400, { error: 'nonce must be 32 hex characters' });
+        return json(res, 200, { app: 'seo-audit-dashboard', version: PACKAGE_VERSION, proof: identityProof(opts.dataDir(), nonce) });
+      }
+
       if (req.method === 'GET' && route === '/api/properties') {
         return json(res, 200, { properties: listLocalProperties(opts.dataDir()) });
       }
@@ -191,8 +226,13 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
         if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) {
           return json(res, 415, { error: 'content-type must be application/json' });
         }
+        // A browser sends Origin on every POST: refuse one from any page that isn't this server
+        // (a sandboxed or file: page sends the literal "null").
+        const origin = req.headers.origin;
+        if (origin && !isLocalOrigin(origin)) return json(res, 403, { error: 'forbidden origin' });
         const body = JSON.parse((await readBody(req)) || '{}') as { name?: string; arguments?: Record<string, unknown> };
-        const handler = body.name ? opts.call[body.name] : undefined;
+        // Own properties only: `constructor`, `toString` and the rest of the prototype chain are not handlers.
+        const handler = typeof body.name === 'string' && Object.hasOwn(opts.call, body.name) ? opts.call[body.name] : undefined;
         if (!handler) return json(res, 404, { error: `unknown tool ${body.name ?? ''}` });
         try {
           const structuredContent = await handler(body.arguments ?? {});
@@ -232,7 +272,7 @@ export async function startDashboardServer(opts: WebServerOptions): Promise<{ ur
       // it (the bare-metal fixed-address setup), hand out its link rather than failing. Only when the
       // port came from the env: an explicit opts.port is the standalone process itself.
       const inUse = (e as NodeJS.ErrnoException).code === 'EADDRINUSE';
-      if (!inUse || opts.port !== undefined || !(await isOurDashboard(wantPort))) throw e;
+      if (!inUse || opts.port !== undefined || !(await isOurDashboard(wantPort, opts.dataDir()))) throw e;
       const url = `http://${urlHost}:${wantPort}`;
       running = { server: null, port: wantPort, url };
       return { url, port: wantPort };
@@ -258,13 +298,18 @@ export async function stopDashboardServer(): Promise<boolean> {
   return true;
 }
 
-/** Does 127.0.0.1:port answer like this dashboard (`/api/properties` returning a list)? */
-async function isOurDashboard(port: number): Promise<boolean> {
+/** Is 127.0.0.1:port this app's dashboard serving THIS data dir? It must answer a fresh nonce
+ *  with the HMAC of the data dir's secret (identityProof), which no other service can. */
+async function isOurDashboard(port: number, dataDir: string): Promise<boolean> {
   try {
-    const r = await fetch(`http://127.0.0.1:${port}/api/properties`, { signal: AbortSignal.timeout(2000) });
+    const nonce = randomBytes(16).toString('hex');
+    const r = await fetch(`http://127.0.0.1:${port}/api/identity?nonce=${nonce}`, { signal: AbortSignal.timeout(2000) });
     if (!r.ok) return false;
-    const body = (await r.json()) as { properties?: unknown };
-    return Array.isArray(body.properties);
+    const body = (await r.json()) as { app?: unknown; proof?: unknown };
+    if (body.app !== 'seo-audit-dashboard' || typeof body.proof !== 'string') return false;
+    const want = Buffer.from(identityProof(dataDir, nonce), 'hex');
+    const got = Buffer.from(body.proof, 'hex');
+    return got.length === want.length && timingSafeEqual(got, want);
   } catch {
     return false;
   }

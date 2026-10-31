@@ -1732,6 +1732,19 @@ function renderLinks(data: DashboardData): void {
 function renderResearch(data: DashboardData): void {
   const el = document.getElementById('researchPanel');
   if (!el) return;
+  // In the browser only the free lookup runs (Google News). The DataForSEO ones spend money, so
+  // they start from chat, where paid work is quoted first; the server doesn't offer them here.
+  if (__sacWeb) {
+    el.innerHTML = `<div class="chart-card"><h3>Content research</h3>
+      <div class="hint">News from Google News (free). Videos, Google Trends and the DataForSEO news results are paid lookups, so they run from chat: ask Claude for <code>youtube_discovery</code>, <code>topic_trend</code> or <code>news_discovery</code> on a topic.</div>
+      <div class="research-bar"><input id="researchKw" type="text" placeholder="Enter a topic or keyword…" aria-label="Research keyword" /><button class="btn" data-research="news">News</button></div>
+      <div id="researchOut" class="research-out"></div></div>`;
+    const out = document.getElementById('researchOut') as HTMLElement;
+    const kw = document.getElementById('researchKw') as HTMLInputElement;
+    el.querySelectorAll<HTMLButtonElement>('[data-research]').forEach(b => { b.onclick = (): void => { void runResearch('news', kw.value.trim(), out); }; });
+    kw.addEventListener('keydown', e => { if (e.key === 'Enter') void runResearch('news', kw.value.trim(), out); });
+    return;
+  }
   if (data.apiKeys && !data.apiKeys.dataforseo) {
     el.innerHTML = upsellCard({ title: 'Content research — News, Videos & Trends', lead: 'The news articles, YouTube videos and Google-Trends interest behind any topic — the freshness and query-fan-out signals that feed AI answers. Needs a DataForSEO account.', provider: 'dataforseo', cta: 'Get DataForSEO' });
     return;
@@ -1795,6 +1808,11 @@ function renderTrapped(data: DashboardData): void {
 // a site can have a million keywords; we enrich what's on screen / clicked).
 async function loadRelated(keyword: string): Promise<void> {
   const el = $('related');
+  // Related terms and search volume are paid DataForSEO lookups: not offered in the browser.
+  if (__sacWeb) {
+    el.innerHTML = `<div class="group-label">“${esc(keyword)}”</div><div class="hint">Related searches and search volume are paid DataForSEO lookups, so they run from chat: ask Claude for <code>related_terms</code> or <code>keyword_volume</code> for this keyword.</div>`;
+    return;
+  }
   el.innerHTML = `<div class="group-label">Looking up “${esc(keyword)}”…</div>`;
   try {
     const [relRes, volRes] = await Promise.all([

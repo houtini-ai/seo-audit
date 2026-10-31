@@ -1,5 +1,5 @@
 import { Worker } from 'node:worker_threads';
-import { getDashboardData, type DashboardData } from './dashboardData.js';
+import { getDashboardData, WINDOW_DAYS, type DashboardData } from './dashboardData.js';
 
 /**
  * The dashboard payload, built on a worker thread. A cold build (after a sync, crawl or audit
@@ -15,7 +15,11 @@ import { getDashboardData, type DashboardData } from './dashboardData.js';
 const inflight = new Map<string, Promise<DashboardData>>();
 
 export function getDashboardDataAsync(dataDir: string, siteUrl: string, opts: { days?: number } = {}): Promise<DashboardData> {
-  const key = `${dataDir}|${siteUrl}|${opts.days ?? 28}`;
+  // The window the build will use (getDashboardData reads any other value as 28): keyed on the raw
+  // value, days=1..30 started thirty identical full builds at once.
+  const days = (WINDOW_DAYS as readonly number[]).includes(Number(opts.days)) ? Number(opts.days) : 28;
+  opts = { days };
+  const key = `${dataDir}|${siteUrl}|${days}`;
   const running = inflight.get(key);
   if (running) return running;
   const p = new Promise<DashboardData>((resolve, reject) => {
