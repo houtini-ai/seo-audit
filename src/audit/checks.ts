@@ -49,6 +49,17 @@ export interface CheckDef {
    * uncached script), which are keyed to the page with the most clicks but don't put all of them at stake.
    */
   stakeShare?: number;
+  /**
+   * How a finding's traffic-at-stake (T, the "payoff" in the priority model) is read from its page
+   * or query (engine.ts). Default 'clicks' = the real GSC clicks the fix protects or recovers.
+   *   - 'ctr-gap':  a snippet/CTR fix on a page that already ranks — the recoverable gap,
+   *                 impressions × expected-CTR(current position) − clicks.
+   *   - 'rank-gap': a page-2 query a push could move to page 1 — impressions × expected-CTR@8 − clicks.
+   * Only set it on checks whose fix IS closing that gap; everything else stakes the page's own clicks
+   * (pricing T at the curve would claim a well-ranking page's whole curve-implied traffic for, say, an
+   * oversized image — 75× its real clicks on a page with a SERP-feature CTR gap).
+   */
+  stakeModel?: 'clicks' | 'ctr-gap' | 'rank-gap';
   title: string;
   fix: string;
   run(ctx: CheckContext): RawFinding[];
@@ -363,7 +374,7 @@ export const CHECKS: CheckDef[] = [
     run: (c) => rows(c, `SELECT url_key urlKey, google_canonical g, user_canonical u FROM url_inspection WHERE user_canonical IS NOT NULL AND google_canonical IS NOT NULL AND google_canonical != user_canonical`).map(r => ({ urlKey: r.urlKey, evidence: { googleCanonical: r.g, userCanonical: r.u } })),
   },
   {
-    id: 'striking-distance', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    id: 'striking-distance', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page', stakeModel: 'rank-gap',
     title: 'Striking-distance query (page 2)', fix: 'Small on-page + internal-link push could reach page 1.',
     run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position, SUM(impressions) impressions FROM gsc_rows WHERE query IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query, page_key HAVING SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0)>10 AND SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0)<=20 AND SUM(impressions)>=20 ORDER BY impressions DESC LIMIT 50`).map(r => ({ urlKey: r.urlKey, evidence: { query: r.query, position: Math.round(r.position * 10) / 10, impressions: r.impressions } })) : [],
   },
@@ -505,7 +516,7 @@ export const CHECKS: CheckDef[] = [
     },
   },
   {
-    id: 'ctr-below-expected', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    id: 'ctr-below-expected', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page', stakeModel: 'ctr-gap',
     title: 'CTR far below position-expected', fix: 'Rewrite title/meta — ranking well but under-clicked (snippet opportunity).',
     // High-confidence floor: ≥500 impressions/28d. A title/meta rewrite (HIGH, ~3h) is only
     // worth flagging where the snippet earns enough visibility for a CTR lift to pay back — a
@@ -871,7 +882,7 @@ export const CHECKS: CheckDef[] = [
     },
   },
   {
-    id: 'title-missing-top-query', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page',
+    id: 'title-missing-top-query', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 3, fixType: 'per-page', stakeModel: 'ctr-gap',
     title: 'Top query missing from the title', fix: 'Work the page’s top-performing query into the <title> — it already ranks for this term but the title doesn’t mention it.',
     run: (c) => {
       if (!c.gscMaxDate) return [];
