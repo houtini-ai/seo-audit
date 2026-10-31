@@ -13,6 +13,7 @@ import { shareText, capHealth, runLabels, categoryLabel, shortDay } from '../cor
 import { buildVerdict, direction } from '../core/summaryVerdict.js';
 import { ago, SEV_LABEL, freshVerdict } from './panels.js';
 import { cwvTile, cwvCoverage } from './cwv.js';
+import { clickCta, clickText, askChip, askClaudePrompt, promptTarget } from './askClaude.js';
 
 const fmt = fmtNum;
 
@@ -68,7 +69,7 @@ function freshness(d: any): string {
       `<div class="sf-v">${esc(line)}${flag ? ` <span class="sf-flag">${esc(flag)}</span>` : ''}</div></div>`);
     if (s.error) problems.push(`<div class="sf-err"><b>${esc(LABEL[kind])}:</b> ${esc(String(s.error).slice(0, 160))}</div>`);
   }
-  if (!cells.length) return empty('No data sources recorded yet - run <code>refresh_property</code>.');
+  if (!cells.length) return empty('No data sources recorded yet. Use Crawl and Sync GSC in the Actions panel.');
   const sh = d.gscShape;
   const shapeNote = sh ? `<div class="sf-warn">Search Console history holds two row shapes (${esc((sh.shapes ?? ['all-country', 'per-country']).join(' and '))} rows) on <span class="n">${fmt(sh.mixedDays)}</span> days, ${esc(dayLabel(sh.from))} to ${esc(dayLabel(sh.to))}. Every figure in the dashboard reads one shape per day (the fuller one), so each of those days counts once.</div>` : '';
   return `<div class="sf-row">${cells.join('')}</div>${problems.join('')}${shapeNote}`;
@@ -88,7 +89,7 @@ function verdict(d: any): string {
     resolvedNote: lastDelta && !lastDelta.skipped ? lastDelta.excluded?.note ?? null : null,
     pagesChanged: dr?.counts && !dr.staleness ? dr.counts.pagesChanged : null,
   });
-  if (v.empty) return empty('Nothing to summarise yet - sync Search Console (<code>sync_gsc</code>) or run a crawl and an audit.');
+  if (v.empty) return empty('Nothing to summarise yet. Sync Search Console, then run a crawl and an audit, from the Actions panel.');
   const sentence = v.segments.map(s => (s.n ? `<b class="n">${esc(s.text)}</b>` : esc(s.text))).join('');
   const chipCls: Record<string, string> = { up: 'vc-up', down: 'vc-down', flat: 'vc-flat', neutral: 'vc-flat' };
   // Open critical issues read as critical, not as a neutral count.
@@ -107,7 +108,7 @@ function tiles(d: any): string {
   const out: string[] = [];
   const sum = d.summary;
   if (!sum) {
-    out.push(`<div class="metric-card tile-connect"><div class="label">Search Console</div><div class="connect-msg">Connect Search Console to see traffic and trends.</div><div class="metric-sub">Run <code>sync_gsc</code> for this property.</div></div>`);
+    out.push(`<div class="metric-card tile-connect"><div class="label">Search Console</div><div class="connect-msg">Connect Search Console to see traffic and trends.</div><div class="metric-sub">Click Sync GSC in Actions.</div></div>`);
   } else {
     const { current: c, prior: p } = clicks28(d)!;
     const months = (d.monthly?.months ?? []).filter((m: any) => !m.partial && m.clicks != null).map((m: any) => m.clicks);
@@ -154,20 +155,20 @@ function tiles(d: any): string {
       title: `${hs.definition} ${hs.totalPages - hs.errorPages} of ${hs.totalPages} pages.${capNote} Bands (Weak under 31, Fair, Good from 71, Excellent from 91) are a product convention, not an industry benchmark.${hist.length >= 2 ? ` Sparkline: ${hist.length} audits.` : ''}`,
     }));
   } else {
-    out.push(tile({ label: 'Site health', value: '–', sub: (d.coverage?.crawlPages ?? 0) > 0 ? 'run <code>run_audit</code>' : 'run a crawl, then <code>run_audit</code>' }));
+    out.push(tile({ label: 'Site health', value: '–', sub: (d.coverage?.crawlPages ?? 0) > 0 ? 'click Run audit in Actions' : 'crawl, then Run audit, in Actions' }));
   }
 
   const ic = d.indexCoverage;
   out.push(ic
     ? tile({ label: 'Indexed', value: `<span class="n">${fmt(ic.indexed)}</span><span class="kpi-of"> of <span class="n">${fmt(ic.total)}</span></span>`, sub: 'inspected URLs (a sample)', title: 'From URL Inspection, which is quota-bound: a sample of URLs, never a share of the whole site.' })
-    : tile({ label: 'Indexed', value: '–', sub: 'run <code>inspect_urls</code>' }));
+    : tile({ label: 'Indexed', value: '–', sub: 'click Inspect in Actions' }));
 
   out.push(cwvTile(d));
 
   const ar = d.agentReadiness;
   out.push(ar
     ? tile({ label: 'AI readiness', value: `<span class="n">${ar.score}</span><span class="kpi-of">/100</span>`, foot: `<span class="tile-band">${esc(ar.level)}</span>`, sub: `checked ${esc(ago(ar.checkedAt))}`, title: 'Agent-readiness probe (check_agent_readiness): the share of discoverability, content, bot-access and capability checks the site passes. One stored result, so no trend yet.' })
-    : tile({ label: 'AI readiness', value: '–', sub: 'run <code>check_agent_readiness</code>' }));
+    : tile({ label: 'AI readiness', value: '–', sub: 'click Agent in Actions' }));
   return out.join('');
 }
 
@@ -177,7 +178,7 @@ function trend(d: any, ctx: SummaryCtx): void {
   const { col } = ctx;
   if (!m?.months?.length) {
     show('sumTrendLegend', false);
-    set('sumTrendNote', d.summary ? '' : 'Connect Search Console (<code>sync_gsc</code>) to see up to 16 months of clicks.');
+    set('sumTrendNote', d.summary ? '' : 'Connect Search Console: click Sync GSC in Actions to see up to 16 months of clicks.');
     set('sumTrendSrc', '');
     ctx.wrap('sumTrendChart').setEmpty(d.summary ? 'No monthly data yet' : 'No Search Console data', col);
     return;
@@ -282,7 +283,7 @@ function health(d: any, ctx: SummaryCtx): void {
   // The same cap as the tile: never 100 while a page carries a critical or high issue.
   const hist = histAll.slice(-MAX).map(h => ({ ...h, score: h.score == null ? null : capHealth(h.score, h.errorPages) }));
   if (!hist.length) {
-    ctx.wrap('sumHealthChart').setEmpty((d.coverage?.crawlPages ?? 0) > 0 ? 'No audit yet - run run_audit' : 'Run a crawl, then run_audit', col);
+    ctx.wrap('sumHealthChart').setEmpty((d.coverage?.crawlPages ?? 0) > 0 ? clickText('audit', 'No audit yet.') : clickText('crawl', 'No audit yet.'), col);
     set('sumHealthNotes', ''); set('sumHealthSrc', '');
     return;
   }
@@ -356,7 +357,7 @@ function health(d: any, ctx: SummaryCtx): void {
 // ── Panel 4: what's broken, by area ───────────────────────────────────────────────────────────
 function areas(d: any, ctx: SummaryCtx): string {
   const fc = d.findings;
-  if (!fc) return empty((d.coverage?.crawlPages ?? 0) > 0 ? 'No audit yet - run <code>run_audit</code>.' : 'No crawl yet - run <code>start_crawl</code>, then <code>run_audit</code>.');
+  if (!fc) return empty((d.coverage?.crawlPages ?? 0) > 0 ? clickCta('audit', 'No audit yet.') : clickCta('crawl', 'No crawl yet.'));
   const rows: any[] = fc.byCategory ?? [];
   if (!rows.length) return empty('The latest audit found nothing to fix.');
   const LBL: Record<string, string> = { ...ctx.catLabel, merged: 'Search demand' };
@@ -402,7 +403,7 @@ const evidenceTitle = (labels: string[]): string => [
 // ── Panel 5: do this first ────────────────────────────────────────────────────────────────────
 function actions(d: any, ctx: SummaryCtx): string {
   const fc = d.findings;
-  if (!fc?.top?.length) return empty(fc ? 'The latest audit found nothing to fix.' : 'No audit yet - run <code>run_audit</code> to rank the fixes.');
+  if (!fc?.top?.length) return empty(fc ? 'The latest audit found nothing to fix.' : clickCta('audit', 'No audit yet.'));
   const seen = new Set<string>(); const top: any[] = [];
   for (const f of fc.top) { if (top.length >= 5) break; if (seen.has(f.check_id)) continue; seen.add(f.check_id); top.push(f); }
   const byCheck = new Map((fc.byCheck ?? []).map((b: any) => [b.check_id, b]));
@@ -433,8 +434,8 @@ function actions(d: any, ctx: SummaryCtx): string {
 // ── Panel 6: changed since last crawl ─────────────────────────────────────────────────────────
 function drift(d: any, ctx: SummaryCtx): string {
   const dr = d.drift;
-  if (!dr || dr.snapshots === 0) return empty('No crawl yet - run <code>start_crawl</code>.');
-  if (dr.staleness) return `<div class="sum-banner">This comparison isn't current: a newer crawl (${esc(dayLabel(dr.staleness.newestCrawlAt))}) has no snapshot. Run <code>run_audit</code> to snapshot it.</div>`;
+  if (!dr || dr.snapshots === 0) return empty(clickCta('crawl', 'No crawl yet.'));
+  if (dr.staleness) return `<div class="sum-banner">This comparison isn't current: a newer crawl (${esc(dayLabel(dr.staleness.newestCrawlAt))}) has no snapshot. Click Run audit in Actions to snapshot it.</div>`;
   if (!dr.counts) return empty('Needs two crawls to show change. Crawl again on another day.');
   const c = dr.counts;
   const rows = [
@@ -496,12 +497,12 @@ export function aiSignalsHtml(d: any): string {
         const p = c.total ? Math.round((c.passed / c.total) * 100) : 0;
         return `<div class="stat-row"><div class="sr-top"><span>${esc(c.category)}</span><span><b class="n">${c.passed}</b><em class="n">of ${c.total}</em></span></div><div class="stat-track"><span style="width:${p}%;background:var(--accent)"></span></div></div>`;
       }).join('')}</div><div class="sum-note">Checked ${esc(ago(ar.checkedAt))}.</div>`
-    : empty('Run <code>check_agent_readiness</code> to score how ready the site is for AI agents.');
+    : empty(clickCta('agent', 'Not checked yet.'));
 
   let botsHtml: string;
   const bots: any[] | null = ar?.bots ?? null;
-  if (!ar) botsHtml = empty('Run <code>check_agent_readiness</code> to read the AI-bot rules in robots.txt.');
-  else if (!bots) botsHtml = empty('Per-bot access needs a fresh <code>check_agent_readiness</code> (this result predates it), or the site has no robots.txt.');
+  if (!ar) botsHtml = empty(clickCta('agent', 'Not checked yet.'));
+  else if (!bots) botsHtml = empty('Per-bot access needs a fresh agent check - click Agent in Actions - or the site has no robots.txt.');
   else {
     const pill = (b: any): string => {
       const blocked = b.verdict === 'blocked' || (b.verdict === 'not-stated' && b.inherits === 'blocked');
@@ -521,7 +522,7 @@ export function aiSignalsHtml(d: any): string {
     aio.push(`<p class="ai-line"><span class="n">${fmt(ao.present)}</span> of <span class="n">${fmt(ao.checked)}</span> checked queries show an AI Overview; it cites the site on <span class="n">${fmt(ao.cited)}</span>` +
       `${ao.unknown ? `, and <span class="n">${fmt(ao.unknown)}</span> ${ao.unknown === 1 ? 'is' : 'are'} unknown (the citations didn't load)` : ''}.</p>` +
       `<div class="sum-note">Content-recon queries only, checked ${esc(ago(ao.checkedAt))}.</div>`);
-  } else aio.push(empty('No queries checked yet. <code>recon_targets</code> reads the AI Overview for your losing pages.'));
+  } else aio.push(askChip(askClaudePrompt.recon(promptTarget(d.siteUrl)), 'No queries checked yet. Read the AI Overview for your losing pages:'));
   if (fp) aio.push(`<p class="ai-line">AI Overviews appear on <span class="n">${fp.volumeSharePct}%</span> of sampled search volume (top <span class="n">${fmt(d.serpFootprint.sampleKeywords)}</span> keywords).</p>`);
   aio.push('<div class="not-measured">Mentions in AI Overviews and ChatGPT come from DataForSEO, on the AI visibility tab. Perplexity, Gemini and AI Mode: <b>not measured</b>.</div>');
 
@@ -535,14 +536,14 @@ function coverageFooter(d: any): string {
   const chip = (on: boolean, k: string, v: string, title = ''): string =>
     `<span class="cov-chip${on ? '' : ' cov-off'}"${title ? ` title="${esc(title)}"` : ''}><span class="dot ${on ? 'dot-ok' : 'dot-never'}"></span><span class="cov-k">${k}</span> ${v}</span>`;
   const chips = [
-    chip(!!cv.gsc, 'Search Console', cv.gsc ? `<span class="n">${cv.gsc.months}</span> months` : 'none', cv.gsc ? `${cv.gsc.minDate} to ${cv.gsc.maxDate}` : 'Run sync_gsc'),
+    chip(!!cv.gsc, 'Search Console', cv.gsc ? `<span class="n">${cv.gsc.months}</span> months` : 'none', cv.gsc ? `${cv.gsc.minDate} to ${cv.gsc.maxDate}` : 'Click Sync GSC in Actions'),
     // Device / country rows: only a segments:true sync writes them, so they can stop while the totals go on.
     ...(d.segmentsLastDate === undefined || !cv.gsc ? [] : [(() => {
       const last: string | null = d.segmentsLastDate;
       const inWindow = !!last && (!d.breakdownWindowStart || last >= d.breakdownWindowStart);
       return chip(inWindow, 'Device & country', last ? `to ${esc(shortDay(last))}` : 'not synced',
-        !last ? 'Run sync_gsc with segments:true to add device and country breakdowns.'
-          : inWindow ? `Segment rows to ${last}.` : `No device or country rows in the last 28 days: the last segment sync covered up to ${last}. Run sync_gsc with segments:true to refresh.`);
+        !last ? 'Device and country need a segmented sync - ask Claude to add device and country breakdowns.'
+          : inWindow ? `Segment rows to ${last}.` : `No device or country rows in the last 28 days: the last segment sync covered up to ${last}. Ask Claude to refresh device and country breakdowns.`);
     })()]),
     chip(cv.crawlPages > 0, 'Crawl', cv.crawlPages ? `<span class="n">${fmt(cv.crawlPages)}</span> pages` : 'none'),
     chip(cv.inspected > 0, 'URL inspection', !cv.inspected ? 'none' : cv.inspectedIndexable == null ? `<span class="n">${fmt(cv.inspected)}</span> URLs (a sample)`

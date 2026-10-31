@@ -143,7 +143,7 @@ function render(job: Job): void {
         r.inspect ? ['URL inspection', `${r.inspect.inspected ?? 0} inspected`] : null,
         r.ranks ? ['Rank history', `${r.ranks.periods ?? 0} periods${r.ranks.cost ? ` · $${r.ranks.cost}` : ''}`] : null,
       ].filter(Boolean) as [string, string][];
-      sum.innerHTML = `<div class="summary-done">✓ Refresh complete - run <code>run_audit</code> next.</div>` +
+      sum.innerHTML = `<div class="summary-done">✓ Refresh complete - click Run audit in Actions next.</div>` +
         rows.map(([k, v]) => `<div class="summary-row"><span>${k}</span><span>${escapeHtml(v)}</span></div>`).join('');
     }
   } else {

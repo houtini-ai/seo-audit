@@ -102,7 +102,7 @@
       <section class="tab-panel" data-panel="issues" role="tabpanel">
         <div class="chart-card" id="findingsCard">
           <h3>Issues &amp; fixes</h3>
-          <div class="hint">Every issue found in the audit, ranked by impact ÷ effort using real traffic at risk. Switch to <strong>By category</strong> for the recommended fix and real examples. Run <code>run_audit</code> to populate.</div>
+          <div class="hint">Every issue found in the audit, ranked by impact ÷ effort using real traffic at risk. Switch to <strong>By category</strong> for the recommended fix and real examples. Click Run audit in Actions to populate.</div>
           <div class="seg" id="issuesToggle" role="tablist" aria-label="Issues view">
             <button class="seg-btn active" data-view="list" role="tab">Prioritised list</button>
             <button class="seg-btn" data-view="grouped" role="tab">By category (with fixes)</button>
@@ -222,13 +222,13 @@
         </div>
         <div class="chart-card" id="marketSizingCard" style="display:none">
           <h3>Market sizing - share of voice by topic</h3>
-          <div class="hint" id="marketSizingHint">Each bar is a topic cluster in your market's keyword universe, split by estimated share of voice (ETV share) per domain. Deterministic: the ranked keywords behind it. Judgement: ETV is a CTR-curve traffic estimate. Run <code>market_sizing</code> with your competitors to populate.</div>
+          <div class="hint" id="marketSizingHint">Each bar is a topic cluster in your market's keyword universe, split by estimated share of voice (ETV share) per domain. Deterministic: the ranked keywords behind it. Judgement: ETV is a CTR-curve traffic estimate. Ask Claude to size your market against your competitors to populate.</div>
           <p class="sr-only" id="marketSizingSummary"></p>
           <div class="chart chart-tall" id="marketSizingChart" role="img" aria-label="Share of voice per topic cluster, stacked to 100 percent"></div>
         </div>
         <div class="chart-card" id="serpFeaturesCard" style="display:none">
           <h3>SERP-feature footprint - AI Overviews, snippets and friends</h3>
-          <div class="hint">Share of your sampled search volume whose results pages carry each SERP feature. The solid segment is volume where you already rank page 1 (an ownership proxy - feature presence is deterministic, ownership needs per-keyword SERP checks); the pale remainder is exposure you don't yet capture. Run <code>serp_features</code> to populate or refresh.</div>
+          <div class="hint">Share of your sampled search volume whose results pages carry each SERP feature. The solid segment is volume where you already rank page 1 (an ownership proxy - feature presence is deterministic, ownership needs per-keyword SERP checks); the pale remainder is exposure you don't yet capture. Ask Claude for SERP-feature coverage to populate or refresh.</div>
           <p class="sr-only" id="serpFeaturesSummary"></p>
           <div class="chart" id="serpFeaturesChart" role="img" aria-label="SERP-feature footprint: volume share per feature, split by page-1 presence"></div>
         </div>
@@ -361,12 +361,12 @@
         </div>
         <div class="chart-card" id="trappedCard">
           <h3>Trapped authority - pages the web trusts that you've buried</h3>
-          <div class="hint">Pages with real external authority (referring domains) sitting deep in your architecture - click depth 3+ from the homepage via in-content links, or unreachable through the body - so their link equity never reaches your money pages. The fix: link to them from higher up. Run <code>pull_backlinks</code> to populate.</div>
+          <div class="hint">Pages with real external authority (referring domains) sitting deep in your architecture - click depth 3+ from the homepage via in-content links, or unreachable through the body - so their link equity never reaches your money pages. The fix: link to them from higher up. Ask Claude to pull your backlinks to populate.</div>
           <div id="trappedTable" class="findings-table"></div>
         </div>
         <div class="chart-card">
           <h3>Agent readiness - is your site ready for AI agents?</h3>
-          <div class="hint">How discoverable and usable your site is for AI agents - llms.txt, agents.md, AI-bot rules, MCP server card and more. Run <code>check_agent_readiness</code> to populate.</div>
+          <div class="hint">How discoverable and usable your site is for AI agents - llms.txt, agents.md, AI-bot rules, MCP server card and more. Click Agent in Actions to populate.</div>
           <div id="agentPanel"></div>
         </div>
         <div class="chart-card" id="answerabilityCard" style="display:none">
@@ -410,7 +410,7 @@
         <div id="researchPanel"></div>
       </section>
     </div>
-    <div class="empty" id="empty" style="display:none">No data yet - run <code>refresh_property</code> or <code>sync_gsc</code> for this property first.</div>
+    <div class="empty" id="empty" style="display:none">No data yet - crawl and sync this property from the Actions panel first.</div>
     <footer class="app-footer">
       <a href="https://houtini.com" target="_blank" rel="noopener noreferrer">By Houtini.com</a>
     </footer>

@@ -309,7 +309,7 @@ function renderTable(el: HTMLElement): void {
   const s = p.refresh.schedule;
   const scheduleText = s?.enabled
     ? `Schedule: weekly on ${DAYS[s.weeklyDow] ?? s.weeklyDow}, monthly on day ${s.monthlyDom}, budget $${fmtNum(s.budgetUsd)} a month, spent $${fmtNum(p.refresh.spentThisMonth)} this month`
-    : `No schedule. Ask in chat to schedule a refresh.${p.refresh.spentThisMonth ? ` Spent $${fmtNum(p.refresh.spentThisMonth)} this month.` : ''}`;
+    : `No schedule set. Ask Claude to schedule a monthly portfolio refresh.${p.refresh.spentThisMonth ? ` Spent $${fmtNum(p.refresh.spentThisMonth)} this month.` : ''}`;
   const last = p.refresh.lastRuns?.[0];
   const warn = last && (last.status === 'partial-budget' || last.status === 'skipped-reconfirm' || last.status === 'partial') && last.note
     ? `<div class="warning-line">${esc(clean(last.note))}</div>` : '';

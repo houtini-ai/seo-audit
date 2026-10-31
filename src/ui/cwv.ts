@@ -52,7 +52,7 @@ export function cwvTile(d: any): string {
   const ffs = formFactors(cf);
   if (!cf || !ffs.length) {
     return `<div class="metric-card"><div class="label">Field CWV</div><div class="value">–</div>` +
-      `<div class="metric-sub">run <code>sync_crux</code> for Chrome UX Report data</div></div>`;
+      `<div class="metric-sub">ask Claude to pull CrUX field data</div></div>`;
   }
   const per = ffs.map(f => ({ f, a: assessField(cf.formFactors[f].metrics) }));
   const anyFail = per.some(p => p.a.status === 'fail');
@@ -89,7 +89,7 @@ export function cwvTile(d: any): string {
 export function cwvCoverage(d: any): { on: boolean; value: string; title: string } {
   const cf = d.cwvField;
   const ffs = formFactors(cf);
-  if (!cf || !ffs.length) return { on: false, value: 'none', title: 'Chrome UX Report field data: run sync_crux (needs a CRUX_API_KEY).' };
+  if (!cf || !ffs.length) return { on: false, value: 'none', title: 'Chrome UX Report field data: ask Claude to pull CrUX (needs a CRUX_API_KEY).' };
   const w = windowInfo(cf)!;
   const windows = Math.max(...ffs.map(f => cf.formFactors[f].windows ?? 0));
   return {
@@ -153,7 +153,7 @@ export function renderFieldCwv(d: any, ctx: CwvCtx): void {
   set('fieldCwvSrc', `CrUX · to ${day(w.last)}`);
   set('fieldCwvNote', w.historyOnly
     ? `<div class="sum-banner">No current 28-day record: Chrome had too little recent traffic on ${esc(cf.origin)} for CrUX to publish one. The newest window with enough traffic is ${esc(day(w.first, true))} to ${esc(day(w.last, true))}${w.lag != null ? `, <span class="n">${w.lag}</span> days before the last check (${esc(day(cf.lastChecked ?? cf.fetchedAt, true))})` : ''}. These are the latest real-user figures CrUX holds, not today's.</div>`
-    : w.old ? `<div class="sum-banner">The newest window ends ${esc(day(w.last, true))}, ${w.lag} days before the last check: run <code>sync_crux</code> for a fresher one.</div>` : '');
+    : w.old ? `<div class="sum-banner">The newest window ends ${esc(day(w.last, true))}, ${w.lag} days before the last check: ask Claude to pull CrUX again for a fresher one.</div>` : '');
   set('fieldCwv', ffs.map(ff => {
     const f = cf.formFactors[ff];
     const a = assessField(f.metrics);
