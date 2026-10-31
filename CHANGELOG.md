@@ -10,6 +10,10 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 
 ## [Unreleased]
 
+### Dependencies & packaging
+- **No known vulnerabilities, and a much smaller install.** `npm audit` went from 6 findings (1 high, 5 moderate) to 0. The giant `googleapis` meta-package (clients for every Google API) is replaced by the two scoped packages Search Console actually uses, `@googleapis/searchconsole` and `google-auth-library`; `zod` moves to 4 (the high advisory's fix; the MCP SDK supports it); and `echarts` and the web fonts move to devDependencies (Vite inlines them into the dashboard HTML at build time, so the published package never installed them at runtime anyway). A production install drops from 208 packages / 862 MB to 180 / 588 MB.
+- **Node 22 or newer.** `undici` 8 and the Google client libraries require it, and Node 20 reached end-of-life; `engines`, the MCPB manifest and the docs now say Node 22.
+
 ### Security (code review, PRs #87-#104)
 - **The crawler never requests a redirect target off your site or in a robots-disallowed path.** It used to follow any `Location` header and check the final URL afterwards, so an open redirect could make it request an internal address.
 - **Third-party URLs never reach a private or local address.** Competitor pages (content recon) and outbound link checks connect only to public addresses, checked at every redirect hop; `probe_urls` only accepts one of your properties as the own host, and `render_pages` only renders URLs on it.

@@ -42,7 +42,7 @@ you  › generate the fix for #1 ▍
 
 ## Quick start
 
-It's on npm, so there's nothing to clone or build. You need Node.js 20 or newer and a Search Console property you own.
+It's on npm, so there's nothing to clone or build. You need Node.js 22 or newer (Node 20 is end-of-life) and a Search Console property you own.
 
 **Claude Desktop** - add this to `claude_desktop_config.json`, then restart Claude:
 
@@ -261,7 +261,7 @@ Optional, and I mean optional: with no key, `link_intersect` still runs and stil
 
 Three steps - the [quick start](#quick-start) above is the short version, and the full walkthrough with the gotchas is [getting-started.md](manual/getting-started.md):
 
-1. **Get it:** the quick route is npx - point your MCP config at `npx -y @houtini/seo-audit-console` and there's nothing to build. Or clone this repo, `npm install`, `npm run build` if you want the source. Either way, Node ≥ 20.
+1. **Get it:** the quick route is npx - point your MCP config at `npx -y @houtini/seo-audit-console` and there's nothing to build. Or clone this repo, `npm install`, `npm run build` if you want the source. Either way, Node ≥ 22.
 2. **Connect Search Console:** create a Google Cloud service account, download its JSON key, and - the step everyone misses - **add the service account's email as a user on your property** in Search Console. Prefer a walkthrough with pictures? [Setting it up from scratch](https://houtini.com/articles/better-search-console/#setting-it-up-from-scratch) covers the whole flow.
 3. **Point your MCP client at it** with `GOOGLE_APPLICATION_CREDENTIALS` set: `npx -y @houtini/seo-audit-console` for the published package, or `node /path/to/seo-audit-console/dist/index.js` if you built from source. Works in Claude Desktop and Claude Code; only the one env var is required.
 

@@ -4,7 +4,7 @@ This page takes you from nothing to your first audit: install, connect Google Se
 
 ## What you need
 
-- **Node.js 20 or newer** (never installed it? Step 0 below walks you through it)
+- **Node.js 22 or newer** (Node 20 reached end-of-life in 2026; never installed it? Step 0 below walks you through it)
 - **Git** - only if you build from source; the npx route below doesn't need it (and even the source route has a ZIP download)
 - **Claude Desktop** or **Claude Code** (any MCP client works; these are the two I test on)
 - A **Google Search Console property you own**. If your site isn't verified there yet, do that first - it's free, takes ten minutes, and you should have it regardless of this tool.
@@ -55,7 +55,7 @@ Check it worked - open a terminal (Windows: search for "PowerShell"; Mac: search
 node --version
 ```
 
-Anything starting `v20` or higher and you're set. `npm` (the package installer used below) comes bundled with it - nothing extra to do.
+Anything starting `v22` or higher and you're set. `npm` (the package installer used below) comes bundled with it - nothing extra to do.
 
 **Git** (source route only) is how you download the code and, later, pull updates with one command.
 
