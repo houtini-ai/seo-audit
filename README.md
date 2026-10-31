@@ -44,6 +44,8 @@ you  › generate the fix for #1 ▍
 
 It's on npm, so there's nothing to clone or build. You need Node.js 22 or newer (Node 20 is end-of-life) and a Search Console property you own.
 
+**The quickest start, on Windows, is one-click.** Download `seo-audit-console.mcpb` from the [latest release](https://github.com/houtini-ai/seo-audit/releases/latest) and open it in Claude Desktop (Settings → Extensions). It installs itself, dependencies and runtime included, and asks for your Google key in a form instead of any JSON editing. The bundle carries native modules built for Windows; on macOS or Linux (or if you'd rather wire it up yourself, or you're on Claude Code) use the config routes below, which fetch the right binaries for your system. Either way you still need the Search Console service account - see [getting started](manual/getting-started.md).
+
 **Claude Desktop** - add this to `claude_desktop_config.json`, then restart Claude:
 
 ```json
