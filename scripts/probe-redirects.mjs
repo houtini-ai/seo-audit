@@ -224,6 +224,42 @@ try {
       adb.close();
     } finally { server.close(); }
   }
+
+  // ── 5. Redirect hops are checked BEFORE they are requested ────────────────────────────────────
+  // An internal link 302-ing to another host (here `localhost` on a second port, standing in for
+  // 169.254.169.254 or a 10.x service) must never be requested, and a 301 into a robots-disallowed
+  // path must not fetch that path. Following first and checking the final URL afterwards did both.
+  {
+    const otherHits = [];
+    const other = http.createServer((req, res) => { otherHits.push(req.url); res.writeHead(200, { 'content-type': 'text/html' }); res.end('<title>INTERNAL</title>'); });
+    await new Promise(r => other.listen(0, '127.0.0.1', r));
+    const siteHits = [];
+    const server = http.createServer((req, res) => {
+      siteHits.push(req.url);
+      const u = req.url;
+      if (u === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: *\nDisallow: /private/\n'); }
+      if (u === '/') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<html><head><title>Home</title></head><body><a href="/go-private">a</a> <a href="/go-elsewhere">b</a></body></html>'); }
+      if (u === '/go-private') { res.writeHead(301, { location: '/private/secret' }); return res.end(); }
+      if (u === '/go-elsewhere') { res.writeHead(302, { location: `http://localhost:${other.address().port}/latest/meta-data/` }); return res.end(); }
+      if (u.startsWith('/private/')) { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<title>PRIVATE</title>'); }
+      res.writeHead(404, { 'content-type': 'text/html' }); res.end('nf');
+    });
+    await new Promise(r => server.listen(0, '127.0.0.1', r));
+    const site = `http://127.0.0.1:${server.address().port}/`;
+    const dir5 = tmp('sac-redir-hops-');
+    try {
+      await new Crawler(dir5).run(site, { maxPages: 20, delayMs: 0, maxConcurrency: 1, checkExternal: false, siteProbes: false }, () => {}, new AbortController().signal);
+      const adb = new AuditDatabase(dbPathFor(dir5, site));
+      const row = (p) => adb.db.prepare(`SELECT status_code, indexable_reason, title FROM pages WHERE url LIKE ?`).get(`%${p}`);
+      check('redirect hop to another host is never requested', otherHits.length === 0, JSON.stringify(otherHits));
+      check('redirect hop into a robots-disallowed path is never requested', !siteHits.some(u => u.startsWith('/private/')), JSON.stringify(siteHits));
+      const priv = row('/private/secret');
+      check('the disallowed target is recorded as robots-disallowed, not as a fetched page', priv?.indexable_reason === 'robots-disallowed' && priv?.status_code == null && priv?.title == null, JSON.stringify(priv));
+      const src = row('/go-private'), out = row('/go-elsewhere');
+      check('both sources are stored as redirects (301, 302)', src?.status_code === 301 && src?.indexable_reason === 'redirect' && out?.status_code === 302 && out?.indexable_reason === 'redirect', JSON.stringify([src, out]));
+      adb.close();
+    } finally { server.close(); other.close(); }
+  }
 } catch (e) {
   fail++;
   console.log(`FAIL  probe threw :: ${e?.stack ?? e}`);
