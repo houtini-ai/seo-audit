@@ -48,6 +48,9 @@ export function stakeShareOf(chk: CheckDef): number {
 }
 // Floor so a high-severity finding on a zero-GSC page (e.g. backlinks-to-404) never scores 0.
 const SEVERITY_FLOOR: Record<Severity, number> = { crit: 5, high: 2, med: 0.5, low: 0.1, info: 0.05 };
+// A page-2 query a push could move to page 1 is priced at the page-1 CTR (matches the dashboard's
+// quick-wins target, dashboardData.ts), minus the clicks it already earns deeper down.
+const STRIKING_TARGET_POSITION = 8;
 
 interface Traffic { clicks: number; impressions: number; position: number }
 
@@ -235,13 +238,22 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
           } else {
             traf = { clicks: 0, impressions: 0, position: 0 };
           }
-          // T = expected monthly clicks at stake: max(current clicks recovered, potential from
-          // impressions × CTR@position). Site-wide findings with no traffic signal fall back to a
-          // severity fraction of total site clicks.
+          // T = expected monthly clicks at stake. For almost every check the fix protects or
+          // recovers the page's OWN clicks, so T is its real GSC clicks (NOT the curve-implied
+          // potential: a well-ranking page with a SERP-feature CTR gap would otherwise claim its
+          // whole curve traffic — e.g. 84k clicks for an oversized image on a 1.1k-click page).
+          // Only the CTR/rank-opportunity checks (stakeModel) trade on the curve, and there T is the
+          // RECOVERABLE gap. Site-wide findings with no traffic signal fall back to a severity
+          // fraction of total site clicks.
           let T: number;
           if (traf.impressions > 0 || traf.clicks > 0) {
-            const potential = traf.impressions > 0 ? traf.impressions * expectedCtr(traf.position || 10) : 0;
-            T = Math.max(traf.clicks, potential);
+            if (chk.stakeModel === 'ctr-gap' || chk.stakeModel === 'rank-gap') {
+              const target = chk.stakeModel === 'rank-gap' ? STRIKING_TARGET_POSITION : (traf.position || 10);
+              const potential = traf.impressions > 0 ? traf.impressions * expectedCtr(target) : 0;
+              T = Math.max(0, potential - traf.clicks); // recoverable clicks, not the page's whole traffic
+            } else {
+              T = traf.clicks; // the page/query's real clicks are what the fix puts at stake
+            }
           } else if (!f.urlKey) {
             T = siteClicks * SITEWIDE_FRACTION[chk.severity];
           } else {
