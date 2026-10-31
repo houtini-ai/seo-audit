@@ -9,7 +9,7 @@
 [![npm version](https://img.shields.io/npm/v/@houtini/seo-audit-console.svg?style=flat-square)](https://www.npmjs.com/package/@houtini/seo-audit-console)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](./LICENSE)
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-server-purple?style=flat-square)](https://modelcontextprotocol.io)
-[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![Socket Badge](https://socket.dev/api/badge/npm/package/@houtini/seo-audit-console)](https://socket.dev/npm/package/@houtini/seo-audit-console)
 
 Almost every technical SEO audit I've been handed in twenty years is a crawler's opinion, and a crawler only ever sees half the picture. It tells you what your site *says*. It has nothing to say about what Google *did* about it: which queries you rank for, which pages earn the impressions, where the clicks land.

@@ -45,8 +45,9 @@ try {
 
   // ── probe_urls: siteUrl must be one of the user's properties ──────────────────────────────
   const dataDir = mkdtempSync(path.join(tmpdir(), 'sac-ssrf-'));
+  let child;
   try {
-    const child = spawn(process.execPath, [path.join(root, 'dist/index.js')], { env: { ...process.env, SAC_DATA_DIR: dataDir, SAC_AUTOSERVE: '0', GOOGLE_APPLICATION_CREDENTIALS: '', DATAFORSEO_USERNAME: '', DATAFORSEO_PASSWORD: '', MAJESTIC_API_KEY: '', CRUX_API_KEY: '' }, stdio: ['pipe', 'pipe', 'ignore'] });
+    child = spawn(process.execPath, [path.join(root, 'dist/index.js')], { env: { ...process.env, SAC_DATA_DIR: dataDir, SAC_AUTOSERVE: '0', GOOGLE_APPLICATION_CREDENTIALS: '', DATAFORSEO_USERNAME: '', DATAFORSEO_PASSWORD: '', MAJESTIC_API_KEY: '', CRUX_API_KEY: '' }, stdio: ['pipe', 'pipe', 'ignore'] });
     let buf = '';
     const waiters = new Map();
     child.stdout.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); try { const m = JSON.parse(line); waiters.get(m.id)?.(m); } catch { /* not JSON */ } } });
@@ -58,7 +59,13 @@ try {
     check('probe_urls refuses a siteUrl that is not one of the user\'s properties', (r.result?.isError === true || !!r.error) && /not a property with local data/.test(text), text.slice(0, 300));
     check('and nothing was requested from that host', hits.length === 0, JSON.stringify(hits));
     child.kill();
-  } finally { rmSync(dataDir, { recursive: true, force: true }); }
+  } finally {
+    // Wait for the killed child to release its SQLite handle before removing the temp dir;
+    // on Windows a still-open handle makes rmSync throw EPERM. Retry, then ignore - it's a
+    // temp dir the OS reaps anyway, and a cleanup hiccup must never read as a probe failure.
+    if (child && child.exitCode === null) await new Promise(res => { child.once('exit', res); setTimeout(res, 1500); });
+    try { rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* OS temp dir */ }
+  }
 } catch (e) {
   fail++;
   console.log(`FAIL  probe threw :: ${e?.stack ?? e}`);
