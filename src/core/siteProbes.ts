@@ -139,6 +139,8 @@ export interface SiteProbeOptions {
   /** The crawl switched to Chrome (the site walls the honest UA): probe as Chrome too. */
   preferChrome?: boolean;
   signal?: AbortSignal; slug?: () => string; fetchImpl?: typeof fetch;
+  /** The crawl's robots.txt gate: a probe URL it disallows is skipped (with the reason), never requested. */
+  isAllowed?: (url: URL) => boolean;
 }
 
 /** Run the plan one URL at a time (the crawler's delay between requests) and replace the site-probe rows. */
@@ -159,6 +161,11 @@ export async function runSiteProbes(db: Database.Database, siteUrl: string, opts
       x.protocol = x.protocol === 'https:' ? 'http:' : 'https:';
       p = { ...p, url: x.toString() };
       skipped.push('host-deep: the twin host does not resolve, so the deep URL was probed on the other scheme only');
+    }
+    if (opts.isAllowed) {
+      let u: URL | null = null;
+      try { u = new URL(p.url); } catch { /* unparseable: let the probe report it */ }
+      if (u && !opts.isAllowed(u)) { skipped.push(`${p.kind}: robots.txt disallows ${u.pathname}`); continue; }
     }
     if (done.length && opts.delayMs) await new Promise(r => setTimeout(r, opts.delayMs));
     const [r] = await probeUrls([{ url: p.url, variantType: p.kind }], baseHost, {

@@ -1,15 +1,32 @@
 /**
- * robots.txt politeness gate. Honours both Disallow AND Allow with longest-prefix-match
- * (most specific path wins; Allow wins ties) — so a broad `Disallow: /` paired with
- * `Allow: /public/` doesn't wrongly empty the crawl. NB: prefix match only — `*`/`$`
- * wildcard patterns (e.g. `Disallow: /*?`) are not yet interpreted (owned-site crawl).
+ * robots.txt politeness gate, per RFC 9309:
+ *  - the group whose user-agent line names this crawler's product token (exact, case-insensitive)
+ *    replaces `*`; `User-agent: bot` does not name Googlebot (a substring match said it did);
+ *  - Allow and Disallow patterns match the path AND query from the start, `*` matches any run of
+ *    characters and a trailing `$` anchors the end (`Disallow: /*.pdf$`, `Disallow: /search?q=`);
+ *  - the longest matching pattern wins, Allow wins a tie (`Allow: /$` + `Disallow: /` allows '/');
+ *  - /robots.txt itself is always allowed.
+ * Pass `pathname + search` to isAllowed.
  */
 export interface RobotsRules {
-  isAllowed(pathname: string): boolean;
+  isAllowed(pathAndQuery: string): boolean;
 }
 
-interface Rule { path: string; allow: boolean }
+interface Rule { path: string; allow: boolean; re: RegExp }
 const ALLOW_ALL: RobotsRules = { isAllowed: () => true };
+/** RFC 9309 §2.3.1.4: a 5xx, a 429 or no response means robots.txt is unreachable, so nothing may be
+ *  crawled (complete disallow). A 4xx means there is no robots.txt: everything may be crawled. */
+export const robotsUnreachable = (status: number): boolean => status === 0 || status === 429 || status >= 500;
+
+/** A robots.txt path pattern as an anchored RegExp: `*` = any run, a trailing `$` = end of URL. */
+function patternRe(pattern: string): RegExp {
+  const anchored = pattern.endsWith('$');
+  const body = (anchored ? pattern.slice(0, -1) : pattern)
+    .split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  return new RegExp(`^${body}${anchored ? '$' : ''}`);
+}
+/** The product token at the start of a user-agent line (`Googlebot/2.1` -> `googlebot`). */
+const productToken = (agent: string): string => (/^[a-z0-9_-]+/i.exec(agent)?.[0] ?? '').toLowerCase();
 
 function parseRules(txt: string, uaToken: string): Rule[] {
   return matchGroup(txt, uaToken).rules;
@@ -35,7 +52,7 @@ function matchGroup(txt: string, uaToken: string): { rules: Rule[]; named: boole
       lastWasAgent = true;
     } else if ((field === 'disallow' || field === 'allow') && current) {
       // An empty Disallow value means "allow everything" — carries no restriction.
-      if (value) current.rules.push({ path: value, allow: field === 'allow' });
+      if (value) current.rules.push({ path: value, allow: field === 'allow', re: patternRe(value) });
       lastWasAgent = false;
     } else {
       lastWasAgent = false;
@@ -47,7 +64,7 @@ function matchGroup(txt: string, uaToken: string): { rules: Rule[]; named: boole
   // whitelists this bot (`User-agent: seo-audit-console / Allow: /`) alongside a broad
   // `User-agent: * / Disallow: /` would still be blocked. Groups at equal specificity merge.
   const ua = uaToken.toLowerCase();
-  const agentScore = (a: string): number => (a === '*' ? 0 : ua.includes(a) ? a.length : -1);
+  const agentScore = (a: string): number => (a === '*' ? 0 : productToken(a) === ua ? a.length : -1);
   const groupScore = (g: { agents: string[] }): number => Math.max(-1, ...g.agents.map(agentScore));
   const best = Math.max(-1, ...groups.map(groupScore));
   if (best < 0) return { rules: [], named: false, matched: false };
@@ -68,9 +85,10 @@ function makeRules(rules: Rule[]): RobotsRules {
   if (!rules.length) return ALLOW_ALL;
   return {
     isAllowed(p: string): boolean {
+      if (p === '/robots.txt') return true;
       let best: Rule | null = null;
       for (const r of rules) {
-        if (!p.startsWith(r.path)) continue;
+        if (!r.re.test(p)) continue;
         // longest match wins; Allow beats Disallow at equal length
         if (!best || r.path.length > best.path.length || (r.path.length === best.path.length && r.allow)) best = r;
       }
