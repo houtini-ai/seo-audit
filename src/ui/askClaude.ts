@@ -38,3 +38,8 @@ export function askChip(prompt: string, lead = ''): string {
 export function askText(prompt: string, lead = ''): string {
   return lead ? `${lead} ${prompt}` : prompt;
 }
+
+/** Just the Copy button (no surrounding chip) - for placing a prompt inline, e.g. per table row. */
+export function askButton(prompt: string, label = 'Copy for Claude'): string {
+  return `<button type="button" class="ask-copy" data-ask-copy="${escAttr(prompt)}">${escHtml(label)}</button>`;
+}

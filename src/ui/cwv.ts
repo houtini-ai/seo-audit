@@ -7,6 +7,7 @@
 //   - the windows overlap (28 days, a week apart): plotted as a trend, never summed.
 import { esc, sparkline, axisDefaults, tooltipDefaults, monoFont, type ChartPalette, type EChartWrapper } from './lib/index.js';
 import { assessField, fieldValue, fieldWindowLagDays, parseAt, type FieldBand } from '../core/displayRules.js';
+import { askChip, askClaudePrompt, promptTarget } from './askClaude.js';
 
 type FF = 'PHONE' | 'DESKTOP';
 const FF_LABEL: Record<FF, string> = { PHONE: 'Phone', DESKTOP: 'Desktop' };
@@ -144,7 +145,7 @@ export function renderFieldCwv(d: any, ctx: CwvCtx): void {
   if (!cf || !ffs.length) {
     set('fieldCwvSrc', '');
     set('fieldCwvNote', '');
-    set('fieldCwv', '<div class="empty-state">No field data yet. <code>sync_crux</code> pulls the Chrome UX Report for this origin and its top pages (needs a <code>CRUX_API_KEY</code>).</div>');
+    set('fieldCwv', askChip(askClaudePrompt.crux(promptTarget(d.siteUrl)), 'No field data yet. Pulls the Chrome UX Report for this origin and its top pages (needs a CRUX_API_KEY):'));
     if (trendEl) trendEl.style.display = 'none';
     set('fieldCwvTrendNote', '');
     return;
@@ -175,7 +176,7 @@ export function renderFieldCwv(d: any, ctx: CwvCtx): void {
   if (!trendEl) return;
   if (!metrics.length || maxWindows < 2) {
     trendEl.style.display = 'none';
-    set('fieldCwvTrendNote', `Trend: CrUX holds ${maxWindows} window${maxWindows === 1 ? '' : 's'} with data, so there's no trend yet. Each weekly <code>sync_crux</code> adds one.${absent.length ? ` ${absent.join(', ')}: ${NO_TRAFFIC} in any window.` : ''}`);
+    set('fieldCwvTrendNote', `Trend: CrUX holds ${maxWindows} window${maxWindows === 1 ? '' : 's'} with data, so there's no trend yet. Each weekly CrUX pull adds one.${absent.length ? ` ${absent.join(', ')}: ${NO_TRAFFIC} in any window.` : ''}`);
     return;
   }
   trendEl.style.display = '';
@@ -218,5 +219,5 @@ export function renderFieldCwv(d: any, ctx: CwvCtx): void {
       };
     })),
   });
-  set('fieldCwvTrendNote', `p75 per 28-day window, oldest first; the windows overlap (a week apart), so read them as a trend, never a sum. Dashed: Google's "good" threshold.${absent.length ? ` ${absent.join(', ')}: ${NO_TRAFFIC} in any window.` : ''}${maxWindows < 4 ? ` Only <span class="n">${maxWindows}</span> windows held: each weekly <code>sync_crux</code> adds one.` : ''}`);
+  set('fieldCwvTrendNote', `p75 per 28-day window, oldest first; the windows overlap (a week apart), so read them as a trend, never a sum. Dashed: Google's "good" threshold.${absent.length ? ` ${absent.join(', ')}: ${NO_TRAFFIC} in any window.` : ''}${maxWindows < 4 ? ` Only <span class="n">${maxWindows}</span> windows held: each weekly CrUX pull adds one.` : ''}`);
 }

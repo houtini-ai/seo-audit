@@ -258,7 +258,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
           ${isOwned ? '<span class="pf-badge pf-badge-owned">GSC</span>' : '<span class="pf-badge pf-badge-watched">Watched</span>'}
           ${data.row.group ? `<span class="pf-group">${esc(data.row.group)}</span>` : ''}
           <span class="pf-header-spacer"></span>
-          <div class="pf-meta"><span>Data captured ${esc(capturedStr)}</span>${dashLink}</div>
+          <div class="pf-meta"><span>${capturedStr === 'never' ? 'No data captured yet' : `Data captured ${esc(capturedStr)}`}</span>${dashLink}</div>
         </div>
         ${attentionHtml}
       </header>

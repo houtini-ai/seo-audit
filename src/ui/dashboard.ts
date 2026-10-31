@@ -10,7 +10,7 @@ import { renderSearchTop, renderHealthTop, renderSideFreshness, drawNetwork, iso
 import { renderSummary, aiSignalsHtml, type SummaryCtx } from './summary.js';
 import { renderFieldCwv } from './cwv.js';
 import { buildDomainPicker, showDomainsView, showWatchedDomain, setupOverviewTabs, setupActions, repaintDomainViews, type WebBoot } from './shell.js';
-import { clickCta, askChip, askText, askClaudePrompt, promptTarget } from './askClaude.js';
+import { clickCta, askChip, askText, askButton, askClaudePrompt, promptTarget } from './askClaude.js';
 
 // Local view types (avoid importing core, which pulls node-only deps into the bundle).
 interface Totals { clicks: number; impressions: number; ctr: number; position: number }
@@ -361,6 +361,7 @@ function renderTopicClusters(d: DashboardData): void {
     const gaps = c.gaps.length ? `<div class="ca-gaps"><span class="ca-gaps-lbl">Gaps</span> ${c.gaps.map(g => `${esc(g.topic)} <span class="ca-gap-impr">${fmt(g.impressions)}</span>`).join(' · ')}</div>` : '';
     const fn = funnelLabel[c.funnel] ?? c.funnel;
     const links = c.linkSuggestions.length ? `<span class="ca-links">${c.linkSuggestions.length} internal-link suggestion${c.linkSuggestions.length === 1 ? '' : 's'}</span>` : '';
+    const brief = askButton(askClaudePrompt.articleBrief(c.pillar.label, promptTarget(d.siteUrl)), 'Research a better article →');
     return `<div class="ca-cluster">`
       + `<div class="ca-chead"><span class="ca-pillar">${esc(c.pillar.label)}</span>`
       + (fn ? `<span class="ca-funnel">${esc(fn)}</span>` : '')
@@ -368,7 +369,7 @@ function renderTopicClusters(d: DashboardData): void {
       + `<span class="ca-impr">${fmt(c.totalImpressions)} impr</span></div>`
       + `<div class="ca-members">${members}</div>`
       + gaps
-      + (links ? `<div class="ca-foot">${links}</div>` : '')
+      + `<div class="ca-foot">${links}${brief}</div>`
       + `</div>`;
   }).join('');
   const list = $('topicClustersList');
@@ -1123,14 +1124,16 @@ function render(data: DashboardData): void {
     $('rankHistSummary').textContent = `DataForSEO ranking keywords by position bucket across ${rh.length} months, with estimated traffic volume.`;
   } else {
     wrap('rankHistChart').setEmpty(askText(askClaudePrompt.ranks(promptTarget(data.siteUrl)), 'No rank history yet.'), col);
-    $('rankHistSummary').textContent = 'No DataForSEO rank history yet.';
+    $('rankHistSummary').innerHTML = askChip(askClaudePrompt.ranks(promptTarget(data.siteUrl)), 'No DataForSEO rank history yet.');
   }
   const al: any = data.dateAlignment;
+  // Only the reconciliation note needs words here; the "no rank history" case is covered by the
+  // copy-a-prompt chip in the summary above, so don't repeat the payload note as plain text.
   $('alignNote').textContent = al?.gsc && al?.dataforseo
     ? (al.overlap
       ? `Search Console holds ${fmtDate(al.gsc.start)} to ${fmtDate(al.gsc.end)} (daily) and DataForSEO ${fmtMonth(al.dataforseo.start)} to ${fmtMonth(al.dataforseo.end)} (monthly); they overlap from ${fmtMonth(al.overlap.start)} to ${fmtMonth(al.overlap.end)}.`
       : `No overlap: Search Console ends ${fmtDate(al.gsc.end)}, DataForSEO covers ${fmtMonth(al.dataforseo.start)} to ${fmtMonth(al.dataforseo.end)}.`)
-    : (al?.note ?? '');
+    : '';
 
   // 2) Rank + clicks over time - two small multiples on one shared x (dataviz: never dual-axis).
   const trend = data.rankTrend ?? [];
@@ -1719,7 +1722,7 @@ function renderResearch(data: DashboardData): void {
   // they start from chat, where paid work is quoted first; the server doesn't offer them here.
   if (__sacWeb) {
     el.innerHTML = `<div class="chart-card"><h3>Content research</h3>
-      <div class="hint">News from Google News (free). Videos, Google Trends and the DataForSEO news results are paid lookups, so they run from chat: ask Claude for <code>youtube_discovery</code>, <code>topic_trend</code> or <code>news_discovery</code> on a topic.</div>
+      <div class="hint">News search runs right here, free (Google News). Videos and Google Trends are paid DataForSEO lookups, so ask Claude to run those for a topic.</div>
       <div class="research-bar"><input id="researchKw" type="text" placeholder="Enter a topic or keyword…" aria-label="Research keyword" /><button class="btn" data-research="news">News</button></div>
       <div id="researchOut" class="research-out"></div></div>`;
     const out = document.getElementById('researchOut') as HTMLElement;
@@ -1793,7 +1796,7 @@ async function loadRelated(keyword: string): Promise<void> {
   const el = $('related');
   // Related terms and search volume are paid DataForSEO lookups: not offered in the browser.
   if (__sacWeb) {
-    el.innerHTML = `<div class="group-label">“${esc(keyword)}”</div><div class="hint">Related searches and search volume are paid DataForSEO lookups, so they run from chat: ask Claude for <code>related_terms</code> or <code>keyword_volume</code> for this keyword.</div>`;
+    el.innerHTML = `<div class="group-label">“${esc(keyword)}”</div>${askChip(askClaudePrompt.relatedTerms(keyword), 'Related searches and search volume are paid DataForSEO lookups:')}`;
     return;
   }
   el.innerHTML = `<div class="group-label">Looking up “${esc(keyword)}”…</div>`;

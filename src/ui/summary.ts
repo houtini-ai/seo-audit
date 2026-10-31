@@ -450,7 +450,7 @@ function drift(d: any, ctx: SummaryCtx): string {
     `<li><span class="dot dot-${t.severity === 'info' ? 'low' : t.severity}"></span><span class="url" title="${esc(t.urlKey)}">${esc(ctx.shortPath(t.urlKey, 30))}</span><span class="dr-f">${esc(t.kind === 'modified' ? t.fields.join(', ').replace(/_/g, ' ') : t.kind === 'added' ? 'new page' : 'not reached')}</span></li>`).join('');
   return `<div class="dr-rows">${rows.map(r => `<div class="dr-row"><span class="dot ${r.dot}"></span><span>${r.k}</span><b class="n">${fmt(r.v)}</b></div>`).join('')}</div>` +
     (top ? `<div class="dr-top-h">Most severe of <span class="n">${fmt(dr.total)}</span> changed</div><ul class="dr-top">${top}</ul>` : '<div class="sum-note">No changes between the two crawls.</div>') +
-    `<div class="sum-note">Crawls of ${esc(dayLabel(dr.baselineAt))} and ${esc(dayLabel(dr.currentAt))}. The full diff: <code>detect_changes</code>.</div>`;
+    `<div class="sum-note">Crawls of ${esc(dayLabel(dr.baselineAt))} and ${esc(dayLabel(dr.currentAt))}. Ask Claude for the full change log.</div>`;
 }
 
 // ── Panel 7a: ranking mix (now vs prior 28 days) ──────────────────────────────────────────────
