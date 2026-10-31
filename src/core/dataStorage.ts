@@ -7,7 +7,7 @@
 import Database from 'better-sqlite3';
 import { readdirSync, statSync, existsSync, rmSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
-import { dbPathFor, sanitizeProperty } from './paths.js';
+import { dbPathFor } from './paths.js';
 
 /** How many recent audit runs / crawl snapshots clear-crawl-history keeps. */
 export const KEEP_RECENT = 5;
@@ -168,7 +168,9 @@ export function storageSummary(dataDir: string, siteUrl?: string): StorageSummar
   let all: string[] = [];
   try { all = readdirSync(dataDir); } catch { /* dataDir absent */ }
   const files = all.filter(f => f.endsWith('.db'));
-  const wantStem = siteUrl ? sanitizeProperty(siteUrl) : null;
+  // The property's actual file (dbPathFor), not its stem: an adopted legacy file or a Domain
+  // property moved off a shared stem lives under another name.
+  const wantFile = siteUrl ? path.basename(dbPathFor(dataDir, siteUrl)) : null;
   // Backups (`x.db.bak-<stamp>`), with their stray empty sidecars cleared first.
   const straySidecarsRemoved: string[] = [];
   const backupNames = all.filter(f => BACKUP_RE.test(f) && !isSidecar(f)).sort();
@@ -201,7 +203,7 @@ export function storageSummary(dataDir: string, siteUrl?: string): StorageSummar
       // >1 property in one file = a database created before per-form filenames. Say so rather than
       // silently attributing every row to one of them.
       const sharedWith = metaRows.length > 1 ? metaRows.slice(1).map(r => r.site_url) : undefined;
-      if (wantStem && file !== `${wantStem}.db`) continue;
+      if (wantFile && file !== wantFile) continue;
       let lastCrawl: string | null = null;
       let latestCrawlRun: PropertyStorage['latestCrawlRun'];
       try {
@@ -256,7 +258,7 @@ export function storageSummary(dataDir: string, siteUrl?: string): StorageSummar
   }
   const reportsBytes = dirSize(path.join(dataDir, 'reports'));
   // Narrowed to one property: only its backups.
-  const backups = wantStem ? backupsAll.filter(b => b.of === `${wantStem}.db`) : backupsAll;
+  const backups = wantFile ? backupsAll.filter(b => b.of === wantFile) : backupsAll;
   const backupBytes = backups.reduce((s, b) => s + b.bytes, 0);
   const totalBytes = properties.reduce((s, p) => s + p.bytes, 0)
     + caches.reduce((s, c) => s + c.bytes, 0)
