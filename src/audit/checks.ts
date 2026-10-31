@@ -549,15 +549,20 @@ export const CHECKS: CheckDef[] = [
   },
   {
     id: 'position-slipping', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
-    title: 'Page-1 ranking slipping', fix: 'Average position for this query worsened by 3+ spots vs the previous 28 days while it was still on page one — investigate the ranking loss before the clicks follow it down.',
+    title: 'Page-1 ranking slipping', fix: 'Average position for this query on this page worsened by 3+ spots vs the previous 28 days while it was still on page one — investigate the ranking loss before the clicks follow it down.',
+    // Measured per (query, page), with real impressions in BOTH windows. Per query alone, a second
+    // page starting to show at #30 dragged the query's average from 3 to 13 while the ranking page
+    // never moved; and one prior impression at #2 against 150 now at #6 read as a 4-place slip.
     run: (c) => (!c.gscMaxDate || spanDays(c) < 56) ? [] : rows(c, `
-      WITH cur AS (SELECT query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos, SUM(impressions) i, SUM(clicks) c
-                   FROM gsc_rows WHERE query IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query HAVING SUM(impressions) >= 100),
-           prev AS (SELECT query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos FROM gsc_rows WHERE query IS NOT NULL AND ${winPrev(c.gscMaxDate)} GROUP BY query)
-      SELECT cur.query query, prev.pos prevPos, cur.pos curPos, cur.i i, cur.c c FROM cur JOIN prev ON prev.query=cur.query
+      WITH cur AS (SELECT query, page_key, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos, SUM(impressions) i, SUM(clicks) c
+                   FROM gsc_rows WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query, page_key HAVING SUM(impressions) >= 100),
+           prev AS (SELECT query, page_key, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos, SUM(impressions) i
+                    FROM gsc_rows WHERE query IS NOT NULL AND page_key IS NOT NULL AND ${winPrev(c.gscMaxDate)} GROUP BY query, page_key HAVING SUM(impressions) >= 100)
+      SELECT cur.query query, cur.page_key page, prev.pos prevPos, prev.i prevI, cur.pos curPos, cur.i i, cur.c c
+      FROM cur JOIN prev ON prev.query = cur.query AND prev.page_key = cur.page_key
       WHERE prev.pos <= 10 AND cur.pos - prev.pos >= 3
       ORDER BY (cur.pos - prev.pos) * cur.i DESC LIMIT 40`)
-      .map(r => ({ urlKey: null, evidence: { query: r.query, previousPosition: Math.round(r.prevPos * 10) / 10, currentPosition: Math.round(r.curPos * 10) / 10, slippedBy: Math.round((r.curPos - r.prevPos) * 10) / 10, impressions: r.i, clicks: r.c, position: Math.round(r.curPos * 10) / 10 } })),
+      .map(r => ({ urlKey: null, evidence: { query: r.query, page: r.page, previousPosition: Math.round(r.prevPos * 10) / 10, currentPosition: Math.round(r.curPos * 10) / 10, slippedBy: Math.round((r.curPos - r.prevPos) * 10) / 10, previousImpressions: r.prevI, impressions: r.i, clicks: r.c, position: Math.round(r.curPos * 10) / 10 } })),
   },
   {
     id: 'index-bloat', category: 'indexation', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',

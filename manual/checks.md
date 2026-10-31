@@ -199,7 +199,7 @@ These are the ones that need both datasets - your crawl (what the site says) joi
 | `ctr-below-expected` | G | Pages ranking well but clicked far below what the position predicts | Rewrite the title and meta - the snippet is the problem. |
 | `traffic-decay` | G | Pages whose clicks fell sharply against the previous 28 days | Refresh the content and check for lost rankings. |
 | `lost-queries` | G | Queries that drove clicks last period and drive none now | Find the page that ranked and win it back. |
-| `position-slipping` | G | Page-1 rankings that worsened by 3+ positions | Investigate before the clicks follow the position down. |
+| `position-slipping` | G | A page-1 ranking that worsened by 3+ positions for the same query on the same page, with 100+ impressions in both 28-day windows | Investigate before the clicks follow the position down. |
 | `nonbrand-decline-masked` | G | Total clicks flat or up (no more than 5% down) while non-brand clicks fell more than 15% on the prior 28 days (finalised days, prior non-brand at least 100 clicks). Brand = whole-token match of the domain label, the same heuristic as the dashboard's branded split, named in the evidence; a day holding both GSC row shapes is counted once | Brand demand is hiding a ranking loss - work through traffic-decay, lost-queries and position-slipping. |
 | `rising-pages` | G | Pages gaining clicks fast | Reinforce with internal links and related content while the momentum is there. |
 | `stale-content` | D+G | Pages unmodified for over a year with clicks down year-on-year | Refresh and expand it, and re-date only once the content has changed. |
