@@ -17,6 +17,7 @@ import { getDashboardData } from '../dist/core/dashboardData.js';
 import { dbPathFor } from '../dist/core/paths.js';
 import { DEFAULT_DFS_CACHE_DAYS, dfsCacheDaysFromEnv } from '../dist/core/DataForSeoClient.js';
 import { fetchCompetitorContent } from '../dist/core/reconResearch.js';
+import { runSingleCheck } from '../dist/audit/engine.js';
 
 let pass = 0, fail = 0;
 const check = (name, cond, detail) => { if (cond) { pass++; console.log(`  ok  ${name}`); } else { fail++; console.log(`FAIL  ${name} :: ${detail}`); } };
@@ -121,6 +122,32 @@ const base = `http://localhost:${server.address().port}`;
   check('a competitor page is fetched with no API key (plain fetch)', page.via === 'plain-fetch' && /direct drive/.test(page.content) && !page.error, JSON.stringify(page));
   const vid = await fetchCompetitorContent('https://www.youtube.com/watch?v=abc', { maxChars: 500 });
   check('a ranking video is reported, not fetched', vid.kind === 'video' && vid.via === 'none' && /not fetched/.test(vid.error ?? ''), JSON.stringify(vid));
+}
+
+// ── position-slipping is measured per query and page, with impressions in both windows (review/13) ──
+{
+  const dirP = mkdtempSync(path.join(tmpdir(), 'sac-slip-'));
+  const SITE_P = 'sc-domain:slip.test';
+  try {
+    const adb = new AuditDatabase(dbPathFor(dirP, SITE_P));
+    adb.upsertProperty(SITE_P, 'apex');
+    const ins = adb.db.prepare(`INSERT INTO search_analytics (date,query,page,page_key,device,country,clicks,impressions,ctr,position) VALUES (?,?,?,?,'','',?,?,0,?)`);
+    const E = Date.parse('2026-10-01');
+    const d = (off) => new Date(E + off * 86_400_000).toISOString().slice(0, 10);
+    const A = 'https://slip.test/a', B = 'https://slip.test/b', C = 'https://slip.test/c', F = 'https://slip.test/filler';
+    adb.db.transaction(() => {
+      for (let i = -69; i <= 0; i++) ins.run(d(i), 'filler', F, F, 5, 1000, 3);           // 70 days of history
+      ins.run(d(-40), 'new query', A, A, 0, 1, 2); ins.run(d(-5), 'new query', A, A, 3, 150, 6); // 1 prior impression
+      ins.run(d(-40), 'stable query', A, A, 50, 1000, 3); ins.run(d(-5), 'stable query', A, A, 50, 1000, 3);
+      ins.run(d(-5), 'stable query', B, B, 0, 600, 30);                                  // a second page appears at #30
+      ins.run(d(-40), 'real slip', C, C, 40, 800, 3); ins.run(d(-5), 'real slip', C, C, 10, 800, 7);
+    })();
+    adb.close();
+    const f = runSingleCheck(dirP, SITE_P, 'position-slipping').findings.map(x => x.evidence);
+    check('position-slipping: a second page appearing at #30 is not a slip of the page holding #3', !f.some(e => e.query === 'stable query'), JSON.stringify(f));
+    check('position-slipping: one prior impression is not a baseline', !f.some(e => e.query === 'new query'), JSON.stringify(f));
+    check('position-slipping: a real 3 -> 7 slip on the same page is found, with the page', f.length === 1 && f[0].query === 'real slip' && f[0].page === C && f[0].slippedBy === 4, JSON.stringify(f));
+  } finally { rmSync(dirP, { recursive: true, force: true }); }
 }
 
 server.close();
