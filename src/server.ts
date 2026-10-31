@@ -49,6 +49,7 @@ import { detectTemplates } from './audit/templates.js';
 import { suggestPages } from './audit/opportunities.js';
 import { computeTopicGaps, type GapKeywordRow } from './audit/topicGaps.js';
 import { AuditDatabase } from './core/AuditDatabase.js';
+import { setupStatus, setupStatusLine, setupStatusText } from './core/setupStatus.js';
 import { dbPathFor, sanitizeProperty, jobScopeFor, CONFIG_PATH, DEFAULT_DATA_DIR, resolveDataDir } from './core/paths.js';
 import { npxInContainerWarning } from './core/startupHints.js';
 import { fmtDuration, crawlNotes } from './core/crawlProgress.js';
@@ -127,7 +128,14 @@ function isoDaysAgo(days: number): string {
 
 // Server-level instructions (MCP `initialize` result): teach the assistant how the data
 // sources JOIN so it can COMPOSE bespoke multi-source analyses, not just run presets.
-const SERVER_INSTRUCTIONS = `SEO Audit Console fuses four data sources into one SQLite database per property: Google Search Console history, a first-party site crawl, GSC URL Inspection, and on-demand DataForSEO (SERP/Labs/Backlinks). Its real power is COMPOSITION — joining sources to answer questions no single tool answers.
+/** The server instructions, with this machine's setup line (setupStatus.ts) computed at start. */
+const serverInstructions = (setupLine: string): string => `SEO Audit Console fuses four data sources into one SQLite database per property: Google Search Console history, a first-party site crawl, GSC URL Inspection, and on-demand DataForSEO (SERP/Labs/Backlinks). Its real power is COMPOSITION — joining sources to answer questions no single tool answers.
+
+START HERE:
+- ${setupLine}
+- On first use, or after any "not set" / credentials / permission error, call seo_audit_help (free, local): it says what is configured on this machine and how to fix the rest. list_properties (free) confirms Search Console access.
+- siteUrl is a property exactly as list_properties returns it: sc-domain:example.com or https://example.com/.
+- Data jobs and audits return a dashboardUrl (http://127.0.0.1:PORT/...). If you have a built-in browser, open that URL in it for the user; otherwise give them the link.
 
 JOIN KEYS (memorise these):
 - url_key — one normalised URL form (https, unified www/apex, sorted params, no tracking params/fragments). Joins the crawl (pages, links) ↔ GSC (search_analytics.page_key) ↔ url_inspection ↔ page_backlinks ↔ page_cwv ↔ page_entity. normalize_url shows the key for any URL.
@@ -139,7 +147,7 @@ GRAIN (one line per source):
 - pages / links: the LATEST crawl only, one row per url_key (history lives in page_snapshots, diffed by detect_changes). Carries title/H1/meta, canonical, schema (json_ld), body_chunks, iPR, click_depth, inlink_count.
 - url_inspection: one row per inspected URL — Google's own view (coverage_state, google_canonical vs user_canonical, last_crawl_time, crawled_as, rich_results).
 - rank_history: month × domain (DataForSEO rank distribution + ETV).
-- page_backlinks: one row per backlinked URL (counts + live HTTP status). referring_domains / backlink_anchors: one row per domain / anchor per pull (snapshot_at; anchors carry kind). backlink_history: one row per day (new/lost referring domains).
+- page_backlinks: one row per backlinked URL (counts + live HTTP status). referring_domains / backlink_anchors: one row per domain / anchor per pull (snapshot_at; anchors carry kind). backlink_history: one row per month (new/lost referring domains).
 - Labs tools: keyword × target, or month × target; cached 20 days; each call costs money — never loop them in bulk.
 
 ARCHETYPE CHAINS (compose along these lines):
@@ -148,11 +156,13 @@ ARCHETYPE CHAINS (compose along these lines):
 3. Competitor → gap: competitor keyword footprints (ranked_keywords / topic_gaps) minus our GSC + crawled-page footprint → topics to cover, each tied to the nearest existing page.
 
 COST DISCIPLINE (behave like a strategist who knows the margins):
-- Free and instant, use liberally: trend_categories, and everything on synced data — query_data, run_audit, query_audit, suggest_pages, list_templates, detect_changes, get_dashboard, serve_dashboard, export_report.
+- Free and instant, use liberally: everything on synced data — query_data, run_audit, query_audit, suggest_pages, list_templates, detect_changes, export_report; get_dashboard / serve_dashboard to open (in chat, a keyword click or a Content research lookup in the dashboard is a paid per-keyword call). trend_categories is free but needs DataForSEO credentials.
+- Free collection (your own site and Google APIs): sync_gsc, start_crawl, inspect_urls, sync_crux, probe_urls, check_agent_readiness. refresh_property is free EXCEPT one DataForSEO Labs rank call when DataForSEO is set (ranks:false skips it).
 - Paid but CHEAP and 20-day cached (Labs/Keywords, ~$0.01–0.13 a call): keyword_volume, topic_trend, search_intent, ranked_keywords, serp_features, domain_visibility, top_pages, competitors_domain, page_intersection, topic_gaps. Top-down pulls only — ONE ranked_keywords call answers "what does this domain rank for"; NEVER loop keywords through SERP endpoints to reconstruct what a Labs call returns.
 - Paid per-keyword (SERP): related_terms, youtube_discovery (ranking videos for a topic — pair with a transcript tool), news_discovery (recent coverage / freshness), and AI-Overview CITATION checks. On-demand for a handful of clicked/explicit keywords, never a list.
 - Content research (what to write / what changed): topic_trend (is a topic rising/seasonal; with a categoryCode from the free trend_categories, is a whole market growing and what is breaking out in it) → youtube_discovery + news_discovery (what the winning videos/articles cover) → draft_content.
-- Separate subscription: pull_backlinks (DataForSEO Backlinks — a 40204 error means it isn't activated).
+- Also paid (quote or cap first): recon_targets (a live SERP per page), market_sizing, page_lighthouse, track_ranks, link_intersect, refresh_portfolio (quotes, then needs confirm).
+- Separate subscription: pull_backlinks and link_intersect (DataForSEO Backlinks — a 40204 error means it isn't activated).
 
 AGENCY MACRO-WORKFLOWS (the engagement arc — each stage feeds the next):
 1. Baseline: refresh_property → run_audit → serve_dashboard (share the URL).
@@ -178,7 +188,7 @@ This server's value is composition: joining Search Console, the crawl, URL Inspe
 | rank_history | month × domain | rank distribution (1–3/4–10/11–20/21–100), ETV | period | track_ranks | paid, 20-day cache |
 | referring_domains | one row per referring domain per pull (snapshot_at) | rank, backlinks, referring_pages, nofollow_pages, spam_score, first_seen, lost_date | domain | pull_backlinks | paid, 20-day cache |
 | backlink_anchors | one row per anchor text per pull (snapshot_at) | kind (branded/keyword/url/generic/empty), backlinks, referring_domains | anchor | pull_backlinks | paid, 20-day cache |
-| backlink_history | one row per day | backlinks, referring_domains, new_/lost_referring_domains | date | pull_backlinks (12 months) | paid, 20-day cache |
+| backlink_history | one row per month | backlinks, referring_domains, new_/lost_referring_domains | date | pull_backlinks (12 months) | paid, 20-day cache |
 | page_backlinks | one row per backlinked URL | backlinks, referring_domains, live status_code | url_key, domain | pull_backlinks (needs the DataForSEO Backlinks subscription) | paid, 20-day cache |
 | link_prospects | one row per prospect domain (links to competitors, not you) | intersections, domain_trust, spam_score, dofollow, trust_flow, topical_trust_flow | domain | link_intersect (needs the DataForSEO Backlinks subscription; Majestic optional) | paid, 20-day cache |
 | keyword_intent | one row per keyword | intent + probability | query | search_intent (pass siteUrl to persist) | paid (cheap), cached |
@@ -192,7 +202,7 @@ This server's value is composition: joining Search Console, the crawl, URL Inspe
 | image_assets | one row per sampled image | bytes, status, content_type, used_on | url | every crawl (top 500 by use) | free |
 | probes | one row per probe_urls fetch (persist:true), plus the crawl's site probes (source='site-probe': soft-404 + host variants) | status, redirect chain, canonical, verdict | url | on demand; site probes every crawl (latest only) | free |
 
-Raw access: query_data reads any of these tables (aggregate by default; filters eq/ne/gt/gte/lt/lte/like/in, and "match" for full-text search over GSC queries, page titles/H1s/body text and anchor text); query_audit runs any single check with full evidence; every table lives in one SQLite file per property (path via data_location) if you need direct SQL.
+Raw access: query_data reads pages, links, search_analytics, url_inspection, sitemap_urls, findings, image_assets, page_backlinks, redirect_sources, probes, page_resources, resource_assets, external_link_status, referring_domains, backlink_anchors and backlink_history (aggregate by default; filters eq/ne/gt/gte/lt/lte/like/in, and "match" for full-text search over GSC queries, page titles/H1s/body text and anchor text); query_audit runs any single check with full evidence; every table lives in one SQLite file per property (path via data_location) if you need direct SQL.
 
 ## Worked recipes
 
@@ -264,7 +274,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **render_pages** — Response vs Render: a sampled set of pages in headless Chromium, showing content and links that only exist after JavaScript (needs the optional Playwright). _"Render the top pages on example.com"_
 
 ## 3. Fix (the moat)
-- **fix_finding** — paste-ready remediation from your own data: JSON-LD for missing/invalid schema, a 301 rule for broken links, iPR-ranked internal-link suggestions. _"Generate the fix for finding 12"_ or _"fix_finding check:missing-required-fields url:https://example.com/x"_
+- **fix_finding** — paste-ready remediation from your own data: JSON-LD for missing/invalid schema, a 301 rule for broken links, internal-link suggestions (the closest pages by URL tokens among the highest-iPR ones). _"Generate the fix for finding 12"_ or _"fix_finding check:missing-required-fields url:https://example.com/x"_
 - **detect_changes** — what changed since the last crawl (status, canonical, noindex, title, schema), severity-ranked — the regression monitor. _"Detect changes on example.com"_
 - **check_agent_readiness** — is your site ready for AI agents? Scores llms.txt / agents.md / AI-bot rules / Content Signals / MCP server card / Agent Skills / API Catalog / OAuth signals (0–100 + level) with copy-paste fixes. _"Check agent readiness for example.com"_
 
@@ -306,7 +316,7 @@ _Tip: first time on a property → \`refresh_property\` then \`run_audit\`._
 _Composing your own analysis? Call \`composition_cookbook\` first — the data-surface map (grain + join keys per source) and worked multi-source recipes._`;
 
 export function createServer(): { server: McpServer; run: () => Promise<void> } {
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: SERVER_INSTRUCTIONS });
+  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: serverInstructions(setupStatusLine(setupStatus(dataDir()))) });
   // Durable registry in the data dir (#9): a later process can still report a finished job, or an
   // interrupted one whose process died. Falls back to memory-only if the file can't be opened.
   // SAC_JOB_RUNNER=external (#56): jobs are only queued here and a seo-audit-runner process runs them.
@@ -348,11 +358,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const startFor = <K extends JobKindName>(siteUrl: string, kind: K, args: JobArgsByKind[K]): string =>
     submitJob(jobs, kind, args, jobDeps, jobScope(siteUrl));
   const requireGsc = <T>(v: T | null): T => {
-    if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access.');
+    if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access. Call seo_audit_help for what is configured on this machine and how to set it up.');
     return v;
   };
   const requireDfs = <T>(v: T | null): T => {
-    if (!v) throw new Error('DATAFORSEO_USERNAME / DATAFORSEO_PASSWORD not set (or still a placeholder such as "your-..." or "${...}") — required for DataForSEO.');
+    if (!v) throw new Error('DATAFORSEO_USERNAME / DATAFORSEO_PASSWORD not set (or still a placeholder such as "your-..." or "${...}") — required for DataForSEO (a paid, optional tier). Call seo_audit_help for what is configured.');
     return v;
   };
   // Which optional integrations have a key set — drives the dashboard's key-gated tabs
@@ -385,11 +395,11 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   server.registerTool(
     'seo_audit_help',
     {
-      title: 'Help — what this audit can do',
-      description: 'Overview of every tool/feature with an example prompt for each. Start here.',
+      title: 'Help — setup status and what this audit can do',
+      description: 'Start here on first use, or after a "not set" / credentials / permission error: what is configured on this machine (Search Console key, DataForSEO, Majestic, CrUX, local data) and how to fix the rest, then every feature with an example prompt. Free, local, no API calls.',
       inputSchema: {},
     },
-    async () => ({ content: [{ type: 'text', text: HELP_TEXT }] }), // text-only: a structuredContent stub eclipses the text in hosts that prefer structured output
+    async () => ({ content: [{ type: 'text', text: `${setupStatusText(setupStatus(dataDir()))}\n${HELP_TEXT}` }] }), // text-only: a structuredContent stub eclipses the text in hosts that prefer structured output
   );
 
   server.registerTool(
@@ -406,7 +416,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'list_checks',
     {
       title: 'List audit checks',
-      description: 'List the technical-SEO check categories this server can evaluate.',
+      description: 'The live check registry (every check: id, category, severity, D/G/N labels, certainty, the fix). Free, local. Use it to pick a check for query_audit, or to explain what run_audit covers.',
       inputSchema: { category: z.enum(CHECK_CATEGORIES).optional() },
     },
     async ({ category }) => {
@@ -1046,8 +1056,13 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     },
     async () => {
       const properties = await requireGsc(gsc).listProperties();
+      // Zero properties is nearly always the service account not yet added as a user on them.
+      const none = properties.length ? '' : (() => {
+        const email = setupStatus(dataDir()).gsc.clientEmail;
+        return ` The key works but sees no property: in Search Console, open the property → Settings → Users and permissions → Add user, and add ${email ?? 'the service account\'s client_email'} (Restricted is enough).`;
+      })();
       return {
-        content: [{ type: 'text', text: `${properties.length} properties: ${properties.map(p => p.siteUrl).join(', ')}` }],
+        content: [{ type: 'text', text: `${properties.length} properties: ${properties.map(p => p.siteUrl).join(', ')}${none}` }],
         structuredContent: { properties },
       };
     },
@@ -1060,7 +1075,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'refresh_property',
     {
       title: 'Refresh a property (sync + crawl + inspect)',
-      description: 'Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history → CrUX field data (when CRUX_API_KEY is set; each target at most once per 7 days). Opens a live progress widget (phases + counts). Set gsc/crawl/inspect/ranks/crux=false to run just part. GSC sync is "lite" (date×query×page) by default — set segments=true to also pull device/country breakdowns (much heavier on large sites). GSC sync is INCREMENTAL: the first sync pulls the window (default last 90 days; pass startDate to go deeper), later syncs only fetch new days — set full=true to force a full re-pull. Use this for "sync everything"; use the single-purpose tools to update just one thing.',
+      description: '[Free, except one paid DataForSEO Labs rank call when DataForSEO is set (cached 20 days; ranks:false skips it)] Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history → CrUX field data (when CRUX_API_KEY is set; each target at most once per 7 days). Opens a live progress widget (phases + counts). Set gsc/crawl/inspect/ranks/crux=false to run just part. GSC sync is "lite" (date×query×page) by default — set segments=true to also pull device/country breakdowns (much heavier on large sites). GSC sync is INCREMENTAL: the first sync pulls the window (default last 90 days; pass startDate to go deeper), later syncs only fetch new days — set full=true to force a full re-pull. Use this for "sync everything"; use the single-purpose tools to update just one thing.',
       inputSchema: {
         siteUrl: z.string(),
         gsc: z.boolean().optional(),
@@ -1287,7 +1302,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'check_crawl_status',
     {
       title: 'Check crawl status',
-      description: 'Poll any async job (sync, crawl, refresh, inspect, render, recon, backlinks, …) by id, or omit jobId to list recent jobs (structuredContent: counts by state, live = running + queued, and jobs[] with id, type, state, scope; read state from there, not from the text). check_sync_status and check_crawl_status are the same tool under two names. A running crawl reports its stage (fetching, writing-links, image-weights, resource-headers, link-graph, revalidation-probe, snapshot, site-probes, external-links), pages crawled vs the cap, pages/sec and an ETA for the fetch stage, so a long crawl is never mistaken for a stalled one; poll every 60-120 s. A failed job\'s reason is in the text reply as well as in structuredContent.error. A job whose server process exited before it finished reads as "interrupted" (see README, Docker).',
+      description: 'The same tool as check_sync_status (same arguments, same reply), under the name a crawl result points to. Free.',
       inputSchema: { jobId: z.string().optional() },
     },
     jobStatus,
@@ -1898,7 +1913,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'domain_visibility',
     {
       title: 'Domain visibility over time (DataForSEO Labs)',
-      description: '[Paid: Labs, cheap, cached 20d | Use for: visibility-over-time trend, any domain, no GSC needed] Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic value (ETV) per month, plus a trend verdict. The "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market. Grain: month × domain. Joins: domain → Labs/backlinks tools; period → rank_history.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: visibility-over-time trend, any domain, no GSC needed] Monthly organic visibility for ANY domain or subdomain — no Search Console access needed: ranking-keyword totals, position distribution (1–3 / 4–10 / 11–20 / 21–100) and estimated traffic volume (ETV) per month, plus a trend verdict. The "organic overview / visibility over time" for you or a competitor. Labs call, cached 20 days. Pass location (name or code) for the right market. Grain: month × domain. Joins: domain → Labs/backlinks tools; period → rank_history.',
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme (e.g. example.com or blog.example.com)'),
         location: z.union([z.string(), z.number()]).optional(),
@@ -1973,7 +1988,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'top_pages',
     {
       title: 'Top ranking pages on a domain (DataForSEO Labs)',
-      description: '[Paid: Labs, cheap, cached 20d | Use for: where rival traffic actually lands] The top organic pages of ANY domain or subdomain, ranked by estimated traffic value (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market. Grain: page × domain. Joins: domain → Labs tools; URL → pages.url_key on your own property.',
+      description: '[Paid: Labs, cheap, cached 20d | Use for: where rival traffic actually lands] The top organic pages of ANY domain or subdomain, ranked by estimated traffic volume (ETV): page, ranking-keyword count, ETV and top-3 / top-10 keyword counts. The "top pages" view — works on competitors, no crawl or GSC needed. Labs call, cached 20 days. Pass location for the right market. Grain: page × domain. Joins: domain → Labs tools; URL → pages.url_key on your own property.',
       inputSchema: {
         target: z.string().describe('Domain or subdomain, no scheme'),
         location: z.union([z.string(), z.number()]).optional(),
@@ -2708,7 +2723,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'pull_backlinks',
     {
       title: 'Pull backlink profile (DataForSEO)',
-      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), cached 20d | Use for: authority + dead-backlink recovery] Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Also collects the profile behind the dashboard\'s Links tab (#47): referring domains (live and lost, with rank, spam score, first seen) into referring_domains, anchor texts classified branded / keyword / url / generic / empty into backlink_anchors, and 12 months of daily new/lost history into backlink_history — three more cheap Backlinks calls, each reported separately if it fails (profile:false skips them). Paid DataForSEO calls, 20-day cached, on-demand only. Async job — poll check_sync_status. Grain: one row per backlinked URL (page_backlinks), per domain / anchor per pull (snapshot_at), per day (history). Joins: url_key → pages/GSC; domain → Labs tools.',
+      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), cached 20d | Use for: authority + dead-backlink recovery] Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Also collects the profile behind the dashboard\'s Links tab (#47): referring domains (live and lost, with rank, spam score, first seen) into referring_domains, anchor texts classified branded / keyword / url / generic / empty into backlink_anchors, and 12 months of monthly new/lost history into backlink_history — three more cheap Backlinks calls, each reported separately if it fails (profile:false skips them). Paid DataForSEO calls, 20-day cached, on-demand only. Async job — poll check_sync_status. Grain: one row per backlinked URL (page_backlinks), per domain / anchor per pull (snapshot_at), per month (history). Joins: url_key → pages/GSC; domain → Labs tools.',
       inputSchema: {
         siteUrl: z.string(),
         limit: z.number().int().min(1).max(1000).optional().describe('Backlinked pages to store (default 1000)'),
@@ -2716,7 +2731,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         profile: z.boolean().optional().describe('Also collect referring domains, anchors and history (default true)'),
         domainLimit: z.number().int().min(10).max(1000).optional().describe('Referring domains to store per pull (default 1000, best rank first)'),
         anchorLimit: z.number().int().min(10).max(1000).optional().describe('Anchors to store per pull (default 500, most backlinks first)'),
-        historyMonths: z.number().int().min(1).max(36).optional().describe('Months of daily history to pull (default 12)'),
+        historyMonths: z.number().int().min(1).max(36).optional().describe('Months of history to pull (default 12)'),
       },
     },
     async ({ siteUrl, limit, statusLimit, profile, domainLimit, anchorLimit, historyMonths }) => {
