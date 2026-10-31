@@ -119,30 +119,31 @@
     "probe:regrouped-deltas": "node scripts/probe-regrouped-deltas.mjs"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.12.0"
   },
   "dependencies": {
-    "@fontsource-variable/rubik": "^5.3.0",
-    "@fontsource-variable/work-sans": "^5.3.0",
+    "@googleapis/searchconsole": "^11.0.1",
     "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.11.1",
     "cheerio": "^1.0.0",
-    "echarts": "^6.0.0",
-    "googleapis": "^173.0.0",
+    "google-auth-library": "^11.3.2",
     "undici": "^8.7.0",
-    "zod": "^3.25.1"
+    "zod": "^4.6.7"
   },
   "optionalDependencies": {
     "playwright": "^1.50.0"
   },
   "devDependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@fontsource-variable/rubik": "^5.3.0",
     "@fontsource-variable/schibsted-grotesk": "^5.2.8",
+    "@fontsource-variable/work-sans": "^5.3.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.0",
     "cross-env": "^10.1.0",
+    "echarts": "^6.0.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3",
     "vite": "^6.4.1",
