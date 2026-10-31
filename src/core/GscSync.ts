@@ -1,5 +1,4 @@
 import { AuditDatabase } from './AuditDatabase.js';
-import { addQueries } from './fts.js';
 import Database from 'better-sqlite3';
 import { SEGMENTS, gscStorageState, refreshLegacyDayShapes, segmentSql, segmentsMaxDate, settleGscTotals, type SettleResult } from './gscRows.js';
 import { gb, migrateGscStorage, type GscMigrationResult } from './gscMigrate.js';
@@ -49,6 +48,8 @@ export interface SyncResult {
   storageMigrationDeferred?: string;
   /** The dimensions actually fetched: a lite request on a property whose segments are kept current fetches segments. */
   dimensions?: string[];
+  /** Set when the sync was cancelled: rows fetched before the cancel, discarded (nothing was written). */
+  discarded?: number;
 }
 
 /** True when a dimension set produces segment rows (a device or a country). */
@@ -192,60 +193,54 @@ export class GscSync {
       const SEG = segmentSql();
       const ownClass = segments ? SEG : `NOT ${SEG}`;
 
-      const insert = db.db.prepare(
-        `INSERT INTO ${table}
-           (date, query, page, page_key, device, country, search_type, clicks, impressions, ctr, position)
-         VALUES (@date, @query, @page, @page_key, @device, @country, @search_type, @clicks, @impressions, @ctr, @position)
-         ON CONFLICT(date, query, page, device, country) DO UPDATE SET
-           clicks = excluded.clicks, impressions = excluded.impressions, search_type = excluded.search_type,
-           ctr = excluded.ctr, position = excluded.position, page_key = excluded.page_key`,
-      );
-      // Distinct-query FTS index (#35): each batch's NEW distinct queries go in inside the batch's
-      // own transaction. seenQueries spans the run so repeat queries across batches cost nothing.
-      const seenQueries = new Set<string>();
-      const indexQueries = (records: Record<string, unknown>[]): void => {
-        const fresh: string[] = [];
-        for (const r of records) { const q = r.query; if (typeof q === 'string' && !seenQueries.has(q)) { seenQueries.add(q); fresh.push(q); } }
-        if (fresh.length) addQueries(db.db, fresh);
-      };
-      const insertMany = db.db.transaction((records: Record<string, unknown>[]) => {
-        for (const r of records) insert.run(r);
-        indexQueries(records);
-      });
+      // ── Every write is staged, then applied in ONE transaction after the whole fetch succeeded ──
+      // GSC pages rows sorted by clicks across the whole window, so the first page already touches
+      // every day with only its top rows. Committing page by page meant a sync that failed or was
+      // cancelled on page 2 left every day of the window truncated, and the next incremental sync
+      // resumed from the latest stored day, so those days were never fetched again; a search-type
+      // wipe or a segment window replace that rode the first page destroyed the previous history
+      // on a failure. Now a failure, an abort or an exception leaves the stored rows exactly as they
+      // were. The lag-day replace (#22) always worked this way; the other paths now do too.
+      // The stage is a TEMP table on disk (a first sync can stage millions of rows; this connection's
+      // temp_store would otherwise keep them in RAM). It disappears with the connection.
+      db.db.pragma('temp_store = FILE');
+      const STAGE_COLS = 'date, query, page, page_key, device, country, search_type, clicks, impressions, ctr, position';
+      db.db.exec(`CREATE TEMP TABLE IF NOT EXISTS sa_stage (${STAGE_COLS})`);
+      db.db.exec('DELETE FROM sa_stage');
+      const stageIns = db.db.prepare(`INSERT INTO sa_stage (${STAGE_COLS}) VALUES (@date, @query, @page, @page_key, @device, @country, @search_type, @clicks, @impressions, @ctr, @position)`);
+      const stageRows = db.db.transaction((records: Record<string, unknown>[]) => { for (const r of records) stageIns.run(r); });
 
       let total = 0;
       // Search-type guard: the unique indexes (date,query,page,device,country) do NOT include
       // search_type (rebuilding them on existing rows would rewrite months of history), so the
       // property holds ONE search type at a time. Syncing a different type (e.g. discover over web
-      // history) would silently mix/overwrite rows; it wipes both tables instead, and the wipe rides
-      // the first fetched batch's transaction, so a failed fetch destroys nothing.
+      // history) would silently mix/overwrite rows; it wipes both tables instead, in the apply
+      // transaction, so a failed fetch destroys nothing.
       const wantType = options.searchType ?? 'web';
       const storedTypes = storedSearchTypes(db.db);
-      let mustWipe = storedTypes.length > 0 && (storedTypes.length > 1 || storedTypes[0] !== wantType);
-      const wipeAndInsert = db.db.transaction((records: Record<string, unknown>[]) => {
-        db.db.exec(`DELETE FROM search_analytics; DELETE FROM ${SEGMENTS}; DELETE FROM gsc_day_shape;`);
-        for (const r of records) insert.run(r);
-        indexQueries(records);
-      });
-      // Lag-day replace (#22), made atomic: re-pulled rows are STAGED in a temp table while GSC pages
-      // in, then one transaction deletes exactly the re-pulled window [from, endDate] and inserts the
-      // staged rows — only after the whole fetch succeeded and returned rows. A failure or abort on
-      // any page leaves the stored days untouched, and rows after endDate are never touched.
-      const STAGE_COLS = 'date, query, page, page_key, device, country, search_type, clicks, impressions, ctr, position';
-      const stageRows = (records: Record<string, unknown>[]): void => {
-        db.db.exec(`CREATE TEMP TABLE IF NOT EXISTS sa_stage (${STAGE_COLS})`);
-        const ins = db.db.prepare(`INSERT INTO sa_stage (${STAGE_COLS}) VALUES (@date, @query, @page, @page_key, @device, @country, @search_type, @clicks, @impressions, @ctr, @position)`);
-        db.db.transaction(() => { for (const r of records) ins.run(r); })();
-      };
-      const applyStaged = db.db.transaction((from: string, to: string) => {
-        if (!legacy) db.db.prepare(`DELETE FROM ${table} WHERE date >= ? AND date <= ?`).run(from, to);
-        else {
-          db.db.prepare(`DELETE FROM search_analytics WHERE date >= ? AND date <= ? AND ${ownClass}`).run(from, to);
-          if (segments) db.db.prepare(`DELETE FROM ${SEGMENTS} WHERE date >= ? AND date <= ?`).run(from, to); // a migrated day's segments: one table per day
+      const mustWipe = storedTypes.length > 0 && (storedTypes.length > 1 || storedTypes[0] !== wantType);
+      /**
+       * How the staged rows land: 'wipe' (another search type: empty both tables first), 'lag'
+       * (replace the re-pulled days [from, to] of this sync's shape class, #22), 'window' (a
+       * full-window segment sync replaces that window's segment rows, so a day never holds two
+       * segment shapes) or 'upsert' (merge, e.g. a first sync or a totals fullResync).
+       */
+      const applyStaged = db.db.transaction((mode: 'wipe' | 'lag' | 'window' | 'upsert', from: string, to: string) => {
+        if (mode === 'wipe') db.db.exec(`DELETE FROM search_analytics; DELETE FROM ${SEGMENTS}; DELETE FROM gsc_day_shape;`);
+        else if (mode === 'lag') {
+          if (!legacy) db.db.prepare(`DELETE FROM ${table} WHERE date >= ? AND date <= ?`).run(from, to);
+          else {
+            db.db.prepare(`DELETE FROM search_analytics WHERE date >= ? AND date <= ? AND ${ownClass}`).run(from, to);
+            if (segments) db.db.prepare(`DELETE FROM ${SEGMENTS} WHERE date >= ? AND date <= ?`).run(from, to); // a migrated day's segments: one table per day
+          }
+        } else if (mode === 'window') {
+          db.db.prepare(`DELETE FROM ${SEGMENTS} WHERE date >= ? AND date <= ?`).run(from, to);
+          if (legacy) db.db.prepare(`DELETE FROM search_analytics WHERE date >= ? AND date <= ? AND ${SEG}`).run(from, to);
         }
         db.db.exec(`INSERT INTO ${table} (${STAGE_COLS}) SELECT ${STAGE_COLS} FROM sa_stage WHERE true
           ON CONFLICT(date, query, page, device, country) DO UPDATE SET clicks = excluded.clicks, impressions = excluded.impressions,
             search_type = excluded.search_type, ctr = excluded.ctr, position = excluded.position, page_key = excluded.page_key`);
+        // Distinct-query FTS index (#35).
         db.db.exec(`INSERT OR IGNORE INTO sa_queries(query) SELECT DISTINCT query FROM sa_stage WHERE query IS NOT NULL`);
         db.db.exec('DELETE FROM sa_stage');
       });
@@ -271,18 +266,11 @@ export class GscSync {
         }
         if (plan.replaceFrom) { options2 = { ...options2, startDate: plan.startDate }; replaceFrom = plan.replaceFrom; }
       }
-      // A full-window segment sync over stored segment rows replaces that window (deferred into the
-      // first batch's transaction, like the wipe), so a day never holds two segment shapes.
-      let replaceWindow = segments && !mustWipe && !replaceFrom
+      // A full-window segment sync over stored segment rows replaces that window (in the apply
+      // transaction, like the wipe), so a day never holds two segment shapes.
+      const replaceWindow = segments && !mustWipe && !replaceFrom
         && (!!db.db.prepare(`SELECT 1 FROM ${SEGMENTS} WHERE date >= ? AND date <= ? LIMIT 1`).get(options2.startDate, options2.endDate)
           || (legacy && !!db.db.prepare(`SELECT 1 FROM search_analytics WHERE date >= ? AND date <= ? AND ${SEG} LIMIT 1`).get(options2.startDate, options2.endDate)));
-      const windowAndInsert = db.db.transaction((records: Record<string, unknown>[]) => {
-        db.db.prepare(`DELETE FROM ${SEGMENTS} WHERE date >= ? AND date <= ?`).run(options2.startDate, options2.endDate);
-        if (legacy) db.db.prepare(`DELETE FROM search_analytics WHERE date >= ? AND date <= ? AND ${SEG}`).run(options2.startDate, options2.endDate);
-        for (const r of records) insert.run(r);
-        indexQueries(records);
-      });
-
       await this.gsc.fetchSearchAnalytics(siteUrl, options2, signal, ({ rows }) => {
         const records = rows.map((row: GscApiRow) => {
           const keys = row.keys ?? [];
@@ -303,17 +291,18 @@ export class GscSync {
             position: row.position,
           };
         });
-        if (mustWipe) { wipeAndInsert(records); mustWipe = false; }
-        else if (replaceWindow) { windowAndInsert(records); replaceWindow = false; }
-        else if (replaceFrom) stageRows(records);
-        else insertMany(records);
+        stageRows(records);
         total += records.length;
         update({ siteUrl, rowsFetched: total });
       });
 
-      if (replaceFrom) {
-        if (signal.aborted) return result(0); // staged rows discarded with the connection
-        if (total > 0) applyStaged(replaceFrom, options2.endDate); // an empty response never wipes stored days
+      // Cancelled part-way (the client stops paging on abort, it doesn't throw): nothing is written,
+      // last_synced_at is not touched, and the staged rows go with the connection.
+      if (signal.aborted) return result(0, { discarded: total });
+      // An empty response never wipes or replaces stored days.
+      if (total > 0) {
+        const mode = mustWipe ? 'wipe' : replaceFrom ? 'lag' : replaceWindow ? 'window' : 'upsert';
+        applyStaged(mode, replaceFrom ?? options2.startDate, options2.endDate);
       }
       // The writer owns the totals: over the synced window, each day's totals in search_analytics
       // become the fuller of the all-country rows and the segment rows aggregated (#65). In the old
