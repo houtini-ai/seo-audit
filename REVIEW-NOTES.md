@@ -12,25 +12,28 @@ One disclosure: during the web-security review, one test call to `news_discovery
 
 | # | PR | Theme | Severity |
 |---|---|---|---|
-| 1 | houtini-ai/seo-audit#91 | test: restore `scripts/probe-web-unified.mjs`. `npm test` fails on a clean clone of master without it | blocker for CI |
+| 1 | houtini-ai/seo-audit#91 | test: restore `scripts/probe-web-unified.mjs`. `npm test` fails on a clean clone of master without it | blocker (test) |
 | 2 | houtini-ai/seo-audit#89 | fix: the crawler checks every redirect hop **before** requesting it. It followed redirects to any host (SSRF) and into robots-disallowed paths | high (security) |
 | 3 | houtini-ai/seo-audit#98 | fix: robots.txt per RFC 9309: `*` / `$`, path + query, product-token UA match, unreachable = disallow, site probes obey it. **Stacked on #89** | high |
 | 4 | houtini-ai/seo-audit#92 | fix: dashboard web security. Paid DataForSEO calls were reachable from the browser; `SAC_DASHBOARD_PORT` adopted any service; plus Origin check, framing, prototype lookup, queued duplicates, worker fan-out. **Stacked on #91** | high (security, money) |
 | 5 | houtini-ai/seo-audit#95 | fix: a Search Console sync that stops part-way writes nothing. It left days truncated for good, or wiped history | critical (data) |
 | 6 | houtini-ai/seo-audit#90 | fix: response bodies are read with a size cap. A 50 MB page crashed the process | high (availability) |
 | 7 | houtini-ai/seo-audit#96 | fix: a Domain property never shares a URL-prefix property's legacy file. `delete-property` could delete the other property's database | high (data) |
-| 8 | houtini-ai/seo-audit#88 | fix: the dashboard and `list_findings` read the latest **completed** audit. A failed or running audit showed health 100 | high (numbers) |
-| 9 | houtini-ai/seo-audit#87 | fix: average position is weighted by impressions on the dashboard (a plain mean said 26 for a true 2.05) | high (numbers) |
-| 10 | houtini-ai/seo-audit#94 | fix: a prior period that isn't held is missing, not zero or partial ("up from none", "+133%", "+300% YoY") | high (numbers) |
-| 11 | houtini-ai/seo-audit#93 | fix: default audits run every deterministic check. Three D checks were silently gated | medium-high (rules) |
-| 12 | houtini-ai/seo-audit#99 | fix: the health score counts pages past the per-check findings cap (58 for a true 0) | high (numbers) |
-| 13 | houtini-ai/seo-audit#100 | fix: `position-slipping` compares the same page with a real baseline (false "high" findings) | high (rules) |
-| 14 | houtini-ai/seo-audit#97 | fix: a CDN's `server` header is not a bot wall. Cloudflare rate limits triggered Chrome and stored 429 | high (fetchers) |
-| 15 | houtini-ai/seo-audit#101 | fix: SSRF guards for third-party URLs (competitor fetch, outbound links), `probe_urls` and `render_pages` | medium (security) |
-| 16 | houtini-ai/seo-audit#102 | docs: README, manual and labels match the code. **Folds in #80; close #80 after merging** | docs |
-| 17 | houtini-ai/seo-audit#103 | fix: the model can find setup problems and help on its own (setup status in the instructions, `seo_audit_help`, open `dashboardUrl` in a built-in browser, cost and accuracy fixes in tool text) | model context |
-| 18 | houtini-ai/seo-audit#105 | docs: document the review fixes and remove stale setup steps (npx-first getting started, the new behaviour in tools.md / dashboard.md / README, CHANGELOG). **Stacked on #102**; merge after the fix PRs | docs |
-| 19 | this PR | REVIEW-NOTES.md and four screenshots | - |
+| 8 | houtini-ai/seo-audit#107 | fix: one collection job per property at a time, in-process too (two crawls corrupted each other's pages) | high (data) |
+| 9 | houtini-ai/seo-audit#88 | fix: the dashboard and `list_findings` read the latest **completed** audit. A failed or running audit showed health 100 | high (numbers) |
+| 10 | houtini-ai/seo-audit#87 | fix: average position is weighted by impressions on the dashboard (a plain mean said 26 for a true 2.05) | high (numbers) |
+| 11 | houtini-ai/seo-audit#106 | fix: a finding's payoff is the page's real clicks, not the CTR curve (was overstated up to 75x) | high (numbers) |
+| 12 | houtini-ai/seo-audit#94 | fix: a prior period that isn't held is missing, not zero or partial ("up from none", "+133%", "+300% YoY") | high (numbers) |
+| 13 | houtini-ai/seo-audit#93 | fix: default audits run every deterministic check. Three D checks were silently gated | medium-high (rules) |
+| 14 | houtini-ai/seo-audit#99 | fix: the health score counts pages past the per-check findings cap (58 for a true 0) | high (numbers) |
+| 15 | houtini-ai/seo-audit#100 | fix: `position-slipping` compares the same page with a real baseline (false "high" findings) | high (rules) |
+| 16 | houtini-ai/seo-audit#97 | fix: a CDN's `server` header is not a bot wall. Cloudflare rate limits triggered Chrome and stored 429 | high (fetchers) |
+| 17 | houtini-ai/seo-audit#101 | fix: SSRF guards for third-party URLs (competitor fetch, outbound links), `probe_urls` and `render_pages` | medium (security) |
+| 18 | houtini-ai/seo-audit#108 | chore(deps): drop the googleapis meta-package, zod 4, slim the install (862->588 MB), Node 22; 6 npm-audit findings to 0 | deps |
+| 19 | houtini-ai/seo-audit#103 | fix: the model can find setup problems and help on its own (setup status in the instructions, `seo_audit_help`, open `dashboardUrl` in a built-in browser, cost and accuracy fixes in tool text) | model context |
+| 20 | houtini-ai/seo-audit#102 | docs: README, manual and labels match the code. **Folds in #80; close #80 after merging** | docs |
+| 21 | houtini-ai/seo-audit#105 | docs: document the review fixes and remove stale setup steps (npx-first getting started, the new behaviour in tools.md / dashboard.md / README, CHANGELOG, Node 22). **Stacked on #102** | docs |
+| 22 | this PR | REVIEW-NOTES.md and four screenshots | - |
 
 **How each PR was checked:**
 - `npm ci` once on master.
@@ -38,12 +41,13 @@ One disclosure: during the web-security review, one test call to `news_discovery
 - `npm run build:server` and each `npm test` step, run individually, on every branch. Every step passes except `probe:web` until #91 lands.
 - Each PR body states which of its new assertions fail against master's `src`.
 
-**Merged together:** all 18 review branches, plus this one, merge into master **cleanly, in the order above**. I checked this; four branches got small follow-up commits to move their edits off lines another PR changes. With the 17 code and docs PRs (#87 to #103) merged:
-- `npm run build` passes;
-- **`npm test` exits 0, with 1,029 assertions passing and none failing**;
+**Merged together:** all 22 review branches, plus this one, merge into master **cleanly, in the order above**. I checked this; a few branches got small follow-up commits to move their edits off lines another PR changes. With the 22 code/docs/deps PRs merged:
+- `npm ci` and `npm run build` pass;
+- **the full `npm test` exits 0, with 1,038 assertions passing and none failing**;
+- `npm audit --omit=dev` reports **0 vulnerabilities**;
 - the browser QA in section 5 gives the same results.
 
-**Stacked PRs:** #98 is stacked on #89, #92 on #91, and #105 on #102. Merge each pair in order.
+**Stacked PRs:** #98 is stacked on #89, #92 on #91, and #105 on #102 — merge each pair in order. #106, #107 and #108 branch from master and are independent.
 
 **PR #80:** its non-`server.ts` hunks are in #102 and its `server.ts` hunks in #103. Two of its hunks needed redoing: the CHANGELOG (master already had an `[Unreleased]`) and the dashboard URL options (the paragraph was rewritten, and `?redact` → `&redact` was only half right). Its author is credited in both commits. It can be closed once those merge.
 
@@ -52,63 +56,56 @@ One disclosure: during the web-security review, one test call to `news_discovery
 Severity is for the product's promise: a wrong or overstated number ranks above a crash.
 
 ### High
-1. **The priority model's "expected clicks" (T) is impressions × the CTR curve, not the page's clicks.**
-   - **Where:** `src/audit/engine.ts:243-244`: `T = max(clicks, impressions × expectedCtr(position))`.
-   - **Input → output:** a page with 1,120 clicks and 560k impressions at #2 over 28 days. Every finding on it (`uncompressed-html`, `ctr-below-expected`, `title-missing-top-query`) claims `expectedClicks = 84,000`, 75× the page's real clicks. The dashboard shows the figure as a clicks payoff (`src/ui/dashboard.ts:325`).
-   - **Related:**
-     - Traffic-decay stake flips about 100× depending on whether the page kept one row in the current window (`engine.ts:231-236`).
-     - The performance crawl checks (`uncompressed-html`, `slow-response`, `large-html`) keep the full page stake and fill the top of the list.
-     - `manual/checks.md` says `high-yield-cwv-fail` uses field data, but it reads Lighthouse lab data (`page_cwv`).
-   - **Why not fixed:** the fix changes the ordering of every report and the calibration probes. It is a model decision: real clicks for most checks, and `potential - clicks` only for snippet/CTR checks. Verified with a synthetic repro.
-2. **Two jobs can write one property at once in in-process mode.** `JobManager.start()` has no per-scope check (`JobManager.ts:278`), unlike the runner's `claimNext`. The dashboard's guard is per kind, so a live `refresh` doesn't block a `crawl`. A second crawl's deferred wipe would delete the first one's `pages` mid-crawl. The guard gap is verified; the crawl damage follows from reading the code and wasn't run.
-3. **The dashboard has no access token when bound to `0.0.0.0`** (the container setup). The Host check stops browser DNS rebinding, but any client that can reach the port and sends `Host: localhost` is answered. #92 corrects the comment and #102 the docs ("publish to 127.0.0.1 only"). A per-launch token for `/api/*` is the real fix.
+1. **The dashboard has no access token when bound to `0.0.0.0`** (the container setup). The Host check stops browser DNS rebinding, but any client that can reach the port and sends `Host: localhost` is answered. #92 corrects the comment and #102 the docs ("publish to 127.0.0.1 only"). A per-launch token for `/api/*` is the real fix.
+
+_Fixed by #106 and #107: the overstated-payoff (T = impressions × CTR curve, up to 75× the real clicks) and the concurrent-in-process jobs are now addressed. #106 does not cover two adjacent items it noted: the traffic-decay stake flipping ~100× on whether the page kept a current-window row (`engine.ts:231-236`); and the doc claim that `high-yield-cwv-fail` uses field data when it reads Lighthouse lab data (`page_cwv`, `manual/checks.md`). Those remain open._
 
 ### Medium
-4. **`url-key.ts` merges distinct pages** (`:15-20`).
+2. **`url-key.ts` merges distinct pages** (`:15-20`).
    - `?ref=` is stripped, and the whole `pk_*`, `mc_*` and `_hs*` prefixes are stripped too. So `?ref=main` / `?ref=dev` and `?pk_id=5` / `?pk_id=6` collapse into one key.
    - Invalid UTF-8 query escapes collapse to U+FFFD (`?q=%E9` and `?q=%E8`).
    - The key is not idempotent for `//`, `www.www.` or lowercase percent-hex.
    - `hostForm:'www'` prefixes `www.` to any host, including external link targets (`:66`).
-5. **Silent caps** (the "no silent caps" rule):
+3. **Silent caps** (the "no silent caps" rule):
    - URLs dropped at the crawl's `maxPages` or `maxDepth` are never counted (`Crawler.ts:668`).
    - `MAX_IMAGES` and `MAX_RESOURCES` (500) apply silently.
    - The external link check stops at `maxTargets` silently.
    - The sitemap reader's `maxSitemaps` (60) and `maxUrls` caps (`sitemap.ts:92,113`) are silent too, which makes `indexable-not-in-sitemap` over-report. #90 reports oversized sitemaps only.
-6. **Device / country breakdowns compare part of a window with a full prior one** when the segment rows stop early (`dashboardData.ts:444-450`). `breakdownWindowStart` is always 28 days, whatever window is selected.
-7. **The Summary's non-brand figures follow the selected window while its text says 28 days** (`summary.ts:84`, built from `brandedSplit`). Needs a fixed 28-day non-brand pair in the payload.
-8. **The Summary's ranking mix slices rows, not dates** (`summary.ts:459`): "last 28 days" covers more calendar days on a site with gaps.
-9. **Portfolio:**
+4. **Device / country breakdowns compare part of a window with a full prior one** when the segment rows stop early (`dashboardData.ts:444-450`). `breakdownWindowStart` is always 28 days, whatever window is selected.
+5. **The Summary's non-brand figures follow the selected window while its text says 28 days** (`summary.ts:84`, built from `brandedSplit`). Needs a fixed 28-day non-brand pair in the payload.
+6. **The Summary's ranking mix slices rows, not dates** (`summary.ts:459`): "last 28 days" covers more calendar days on a site with gaps.
+7. **Portfolio:**
    - AI mentions add the platforms even when one is missing for a month, giving a false "down 50%" (`portfolioData.ts:226-231`).
    - Its 28-day window and monthly completeness use the raw latest day, not `gscFreshness` (`:266`, `:401`), so the portfolio and the dashboard disagree for the same property.
-10. **"Zero impressions" claims from query-level rows** (`index-bloat`, `faceted-spider-trap`, `checks.ts:563-566`, `:1001-1010`). GSC drops anonymised queries from date×query×page rows, so a page with only rare-query impressions reads as zero. `faceted-spider-trap` also has no history-span guard.
-11. **Missing data reads as a pass for most checks.** Only the asset, probe and render checks have `collected()` hooks. For example, with no GSC at all `notCollected` lists no GSC check.
-12. **External link check details:**
+8. **"Zero impressions" claims from query-level rows** (`index-bloat`, `faceted-spider-trap`, `checks.ts:563-566`, `:1001-1010`). GSC drops anonymised queries from date×query×page rows, so a page with only rare-query impressions reads as zero. `faceted-spider-trap` also has no history-span guard.
+9. **Missing data reads as a pass for most checks.** Only the asset, probe and render checks have `collected()` hooks. For example, with no GSC at all `notCollected` lists no GSC check.
+10. **External link check details:**
     - A 503 with Retry-After is stored as `broken`.
     - `conditional_304` is stored as 0 for any non-304 status (`Crawler.ts:829`), so `no-304-revalidation` claims more than it saw.
-13. **`render_pages`:** Chromium following a redirect isn't guarded. #101 checks the passed URLs only.
-14. **`missing-required-fields`** treats recommended properties as "Google-required" (Article: headline/author/datePublished/image; Organization: logo) (`schema-validate.ts:32-36`). See section 3.
+11. **`render_pages`:** Chromium following a redirect isn't guarded. #101 checks the passed URLs only.
+12. **`missing-required-fields`** treats recommended properties as "Google-required" (Article: headline/author/datePublished/image; Organization: logo) (`schema-validate.ts:32-36`). See section 3.
 
 ### Low
-15. **The domain picker shows "All domains" for a hidden property opened by URL** (`shell.ts:39-51`). Verified in the browser QA below.
-16. **A failed window switch** leaves the new window labelled over the old data (`dashboard.ts:1513-1523`). Not verified.
-17. **Cancel feedback:** after Cancel, a running crawl's card still reads "running" for about 10 s, because the in-flight fetch doesn't take the job signal (`webHandlers.ts:166`).
-18. **"Show more" can mix runs:** "Show more" and the filters page the latest completed run, which may differ from the run the page loaded. Pass `fc.runId` to `list_findings`.
-19. **Runner staleness:** the runner's claim treats a same-property job as dead after 90 s without a heartbeat, not the 30-minute `SAFETY_STALE_MS` (`JobManager.ts:417`).
-20. **Database file names:** separators collapse, so `https://x.com/~u/` and `https://x.com/u/` share a file (`paths.ts:19-33`). Rare.
-21. **`ipr-bleed-by-status`** sums iPR per link row, not per source (`checks.ts:972`).
-22. **`coverage-not-indexed`'s title:** it reads "Crawled but not indexed", but `LIKE '%not indexed%'` also matches "Discovered - currently not indexed".
-23. **Critical-count wording:** the verdict's "N critical issues are open" should read "at least N" when a crit check is capped. The same applies to the portfolio's "Audit health down" across different scopes, which is unverified.
-24. **`findingsQuery` sort:** no tie-breaker (`, id`). Paging tested stable here, but SQLite doesn't promise it.
-25. **Em dashes in UI text:** 78 lines of check titles and fix strings in `src/audit/checks*.ts` contain em dashes, and they are shown in the Issues table (see the screenshot). This breaks the house rule.
-26. **UI type-checking:** `src/ui/**` is not type-checked by any build step (`tsconfig.server.json` excludes it, and Vite doesn't check). `tsc` reports 74 pre-existing errors when it is.
-27. **ARCHITECTURE.md**, one-line fixes left until after the merge (each sits next to a line a fix PR edits, so changing it now would conflict):
+13. **The domain picker shows "All domains" for a hidden property opened by URL** (`shell.ts:39-51`). Verified in the browser QA below.
+14. **A failed window switch** leaves the new window labelled over the old data (`dashboard.ts:1513-1523`). Not verified.
+15. **Cancel feedback:** after Cancel, a running crawl's card still reads "running" for about 10 s, because the in-flight fetch doesn't take the job signal (`webHandlers.ts:166`).
+16. **"Show more" can mix runs:** "Show more" and the filters page the latest completed run, which may differ from the run the page loaded. Pass `fc.runId` to `list_findings`.
+17. **Runner staleness:** the runner's claim treats a same-property job as dead after 90 s without a heartbeat, not the 30-minute `SAFETY_STALE_MS` (`JobManager.ts:417`).
+18. **Database file names:** separators collapse, so `https://x.com/~u/` and `https://x.com/u/` share a file (`paths.ts:19-33`). Rare.
+19. **`ipr-bleed-by-status`** sums iPR per link row, not per source (`checks.ts:972`).
+20. **`coverage-not-indexed`'s title:** it reads "Crawled but not indexed", but `LIKE '%not indexed%'` also matches "Discovered - currently not indexed".
+21. **Critical-count wording:** the verdict's "N critical issues are open" should read "at least N" when a crit check is capped. The same applies to the portfolio's "Audit health down" across different scopes, which is unverified.
+22. **`findingsQuery` sort:** no tie-breaker (`, id`). Paging tested stable here, but SQLite doesn't promise it.
+23. **Em dashes in UI text:** 78 lines of check titles and fix strings in `src/audit/checks*.ts` contain em dashes, and they are shown in the Issues table (see the screenshot). This breaks the house rule.
+24. **UI type-checking:** `src/ui/**` is not type-checked by any build step (`tsconfig.server.json` excludes it, and Vite doesn't check). `tsc` reports 74 pre-existing errors when it is.
+25. **ARCHITECTURE.md**, one-line fixes left until after the merge (each sits next to a line a fix PR edits, so changing it now would conflict):
     - The data-dir file list omits `wikidata-cache.db` and `reports/`.
     - The Collection bullet says the GSC resume uses a "3-day lag buffer"; `LAG_DAYS` is 4. #95 states the right figure under Conventions.
 
-### Dependencies (`npm audit --omit=dev`)
-- **`zod` < 4.6.6 (high, GHSA-mrhx-c7xc-m3w5):** memory exhaustion validating oversized constrained collections. Inputs come from the local MCP client; the web handlers don't use zod. The fix is zod 4 (breaking; check the MCP SDK's compatibility first).
-- **`glob` / `minimatch` / `rimraf` / `gaxios` (moderate):** under `googleapis-common`, with no user input reaching them. `npm audit fix` (non-breaking) clears them.
-- **Node version:** `undici` 8 declares `engines: node >=22.19.0` and `cheerio` 1.2 needs `>=20.18.1`. But `package.json` engines, `mcpb/manifest.json` and the docs say Node 20+. I couldn't run Node 20 here. Either test on Node 20 and pin `undici` ^7, or raise the stated minimum.
+### Dependencies (`npm audit --omit=dev`) — fixed by #108
+- The high `zod` advisory (GHSA-mrhx-c7xc-m3w5) and all five moderates (`glob` / `minimatch` / `rimraf` / `gaxios` under `googleapis-common`) are cleared: **0 vulnerabilities**. zod moved to 4 (the MCP SDK 1.32 declares `zod ^3.25 || ^4.0`), and the `googleapis` meta-package was replaced by the scoped `@googleapis/searchconsole` + `google-auth-library`, which removes `googleapis-common`.
+- **Node:** engines, the MCPB manifest and the docs now say Node 22 (`undici` 8 and the Google libraries require it; Node 20 is EOL).
+- **Install size** (`npm install --omit=dev`): 208 packages / 862 MB → 180 / 588 MB. The remaining weight is **`onnxruntime-node` (548 MB)**, pulled by `@huggingface/transformers` for the local embeddings behind near-duplicate detection and passage scoring. It can't be dropped from the default install by moving it to `optionalDependencies` (npm installs those by default); trimming it means making those two features opt-in — convert `embeddings.ts` / `reranker.ts` to lazy `import()` and degrade gracefully when the module is absent (as `render.ts` does for Playwright), then document a manual `npm i @huggingface/transformers`. That is a feature decision, left for the owner.
 
 ### Swept and found sound
 - **No SQL injection:** no SQLite statement is built from user input. `query_data` whitelists columns from `PRAGMA table_info` and binds values; other interpolations are constants, schema-checked numbers or the database's own dates.
