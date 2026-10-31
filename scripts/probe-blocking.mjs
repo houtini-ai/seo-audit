@@ -10,6 +10,9 @@ import { AuditDatabase } from '../dist/core/AuditDatabase.js';
 import { dbPathFor } from '../dist/core/paths.js';
 import { checkExternal } from '../dist/core/externalLinks.js';
 import { probeUrls } from '../dist/core/probeUrls.js';
+import { allowPrivateAddressesForTests } from '../dist/core/netGuard.js';
+// Local 127.0.0.1 servers stand in for third-party hosts here; the SSRF guard (netGuard.ts) would refuse them.
+allowPrivateAddressesForTests(true);
 
 let pass = 0, fail = 0;
 const check = (name, cond, detail) => { if (cond) { pass++; console.log(`  ok  ${name}`); } else { fail++; console.log(`FAIL  ${name} :: ${detail}`); } };

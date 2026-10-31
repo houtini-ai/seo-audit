@@ -17,6 +17,9 @@ import { getDashboardData } from '../dist/core/dashboardData.js';
 import { dbPathFor } from '../dist/core/paths.js';
 import { DEFAULT_DFS_CACHE_DAYS, dfsCacheDaysFromEnv } from '../dist/core/DataForSeoClient.js';
 import { fetchCompetitorContent } from '../dist/core/reconResearch.js';
+import { allowPrivateAddressesForTests } from '../dist/core/netGuard.js';
+// Local 127.0.0.1 servers stand in for third-party hosts here; the SSRF guard (netGuard.ts) would refuse them.
+allowPrivateAddressesForTests(true);
 
 let pass = 0, fail = 0;
 const check = (name, cond, detail) => { if (cond) { pass++; console.log(`  ok  ${name}`); } else { fail++; console.log(`FAIL  ${name} :: ${detail}`); } };

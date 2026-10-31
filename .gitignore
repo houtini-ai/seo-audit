@@ -115,6 +115,7 @@ scripts/*
 !scripts/probe-a11y-rollup.mjs
 !scripts/probe-reply-latency.mjs
 !scripts/probe-regrouped-deltas.mjs
+!scripts/probe-ssrf.mjs
 
 # --- secrets hardening (never commit) ---
 *.pem

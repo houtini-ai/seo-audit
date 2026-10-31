@@ -1,8 +1,10 @@
-import { Agent, fetch as ufetch } from 'undici';
+import { fetch as ufetch } from 'undici';
+import { publicOnlyAgent } from './netGuard.js';
 import { hostOf } from './serpRecon.js';
 import { extractPage, decodeHtmlBody } from './extract.js';
 
-const httpAgent = new Agent({ allowH2: true, connections: 6, keepAliveTimeout: 30_000 });
+// Competitor URLs come from SERPs (third parties) and so do their redirects: public addresses only (netGuard.ts).
+const httpAgent = publicOnlyAgent({ allowH2: true, connections: 6, keepAliveTimeout: 30_000 });
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const GOOGLEBOT_UA = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/131.0.0.0 Safari/537.36';
 
@@ -126,6 +128,8 @@ export async function fetchCompetitorContent(
     const p = await fetchPlainPage(url, max, ua);
     return { url, kind, via: 'plain-fetch', title: p.title, content: p.content, cached: false };
   } catch (e) {
-    return { url, kind, via: 'none', title: null, content: '', cached: false, error: e instanceof Error ? e.message : String(e) };
+    // undici reports "fetch failed" and keeps the reason (DNS, refused, the SSRF guard) in `cause`.
+    const cause = (e as { cause?: { message?: string } })?.cause?.message;
+    return { url, kind, via: 'none', title: null, content: '', cached: false, error: `${e instanceof Error ? e.message : String(e)}${cause ? `: ${cause}` : ''}` };
   }
 }

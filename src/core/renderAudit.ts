@@ -3,7 +3,7 @@ import * as cheerio from 'cheerio';
 import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
 import { hostFormForProperty } from './url-key.js';
-import { extractPage, decodeHtmlBody, type ExtractedPage } from './extract.js';
+import { extractPage, decodeHtmlBody, isInternalHost, type ExtractedPage } from './extract.js';
 import { renderHtml, closeRenderer, rendererAvailable, RendererUnavailableError } from './render.js';
 
 const DEFAULT_UA = 'Mozilla/5.0 (compatible; seo-audit-console/0.1; +https://github.com/houtini-ai/seo-audit-console)';
@@ -95,6 +95,8 @@ export interface RenderAuditResult {
   audited: number;
   dependsOnJs: number;             // pages where content/links appear only after render
   rows: (RenderDiff & { urlKey: string })[];
+  /** Passed URLs not on the property's own host (or not http/https): not fetched or rendered. */
+  skipped?: string[];
 }
 
 /**
@@ -121,8 +123,12 @@ export async function auditRender(
     const keyOpts = { hostForm } as Parameters<typeof extractPage>[3];
     const limit = opts.limit ? Math.floor(opts.limit) : 10;
 
+    // Only the property's own pages: a passed URL on another host (or an internal-network address)
+    // is never fetched or rendered, and is listed as skipped.
+    const ownUrl = (u: string): boolean => { try { const x = new URL(u); return (x.protocol === 'http:' || x.protocol === 'https:') && isInternalHost(x.hostname, baseHost); } catch { return false; } };
+    const skipped = (opts.urls ?? []).filter(u => !ownUrl(u));
     const pages = opts.urls?.length
-      ? opts.urls.map(u => ({ url: u })).slice(0, limit)
+      ? opts.urls.filter(ownUrl).map(u => ({ url: u })).slice(0, limit)
       : db.db.prepare(`SELECT url FROM pages WHERE status_code=200 AND indexable=1 AND url LIKE 'http%' ORDER BY word_count ASC LIMIT ${limit}`).all() as { url: string }[];
 
     const dispatcher = new Agent({ allowH2: true, connections: 2 });
@@ -199,7 +205,7 @@ export async function auditRender(
     const note = failed
       ? `${failed} of ${pages.length} page(s) could not be rendered and were skipped (first: ${firstFailure}).`
       : undefined;
-    return { available: true, audited: rows.length, dependsOnJs, rows, ...(note ? { note, failed } : {}) };
+    return { available: true, audited: rows.length, dependsOnJs, rows, ...(note ? { note, failed } : {}), ...(skipped.length ? { skipped } : {}) };
   } finally {
     db.close();
   }

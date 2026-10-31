@@ -35,7 +35,8 @@ Compiled layout: `dist/core/…`, `dist/audit/…` from `tsc`; `dist/src/ui/*.ht
 - **Crawler** (`Crawler.ts`, `extract.ts`, `robots.ts`): hand-rolled fetch + cheerio, not Crawlee (Crawlee logs to stdout, which corrupts the MCP's stdio channel). Discovery is links + sitemap + GSC-known URLs. Redirects that leave the property are recorded, never followed into off-site pages. robots.txt follows RFC 9309 (the most specific user-agent group replaces `*`). Rate limits back off (AIMD, `rateLimit.ts`); a 429 is never stored as a page status. After the crawl: link graph (internal PageRank, click depth, in-degree, `linkGraph.ts`), the snapshot, outbound-link checks and site probes.
 - **User agents** (`userAgents.ts`): the honest bot UA first; one Chrome retry only on a bot-block signature (403, 999, a WAF challenge), never on plain rate limiting. Every result records which UA produced it.
 - **URL Inspection** (`UrlInspector.ts`), **CrUX** (`CruxClient.ts`), **DataForSEO** (`DataForSeoClient.ts`: serialised, cached 20 days by default), **Majestic** (`MajesticClient.ts`), **Wikidata** (`WikidataClient.ts`).
-- **Live probes of the user's own site** (`probeUrls.ts`): the own-host guard applies at every redirect hop.
+- **Live probes of the user's own site** (`probeUrls.ts`): the own-host guard applies at every redirect hop. `probe_urls` accepts only a property with local data as that own host.
+- **Third-party URLs** (competitor pages from a SERP, outbound link targets, and their redirects) are fetched through `publicOnlyAgent` (`netGuard.ts`), which refuses to connect to a loopback, private, link-local or otherwise reserved address, checked on the address actually connected to (so a redirect or a DNS name can't reach 169.254.169.254 or 10.x). `render_pages` only renders URLs on the property's host. The user's own site is not guarded this way: a local or intranet property is legitimate.
 
 ## Audit
 
