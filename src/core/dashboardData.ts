@@ -1236,8 +1236,8 @@ function reconcileRanges(
   const dfs = rankHistory.length
     ? { start: rankHistory[0].period, end: rankHistory[rankHistory.length - 1].period }
     : null;
-  if (!dfs) return { gsc, dataforseo: null, overlap: null, note: 'No DataForSEO rank history yet — run track_ranks to add the over-time sequence.' };
-  if (!gsc) return { gsc: null, dataforseo: dfs, overlap: null, note: 'No GSC data — run sync_gsc.' };
+  if (!dfs) return { gsc, dataforseo: null, overlap: null, note: 'No DataForSEO rank history yet — ask Claude to track rankings to add the over-time sequence.' };
+  if (!gsc) return { gsc: null, dataforseo: dfs, overlap: null, note: 'No Search Console data yet — click Sync GSC in Actions.' };
   const gsM = gsc.start.slice(0, 7);
   const geM = gsc.end.slice(0, 7);
   const oStart = gsM > dfs.start ? gsM : dfs.start;

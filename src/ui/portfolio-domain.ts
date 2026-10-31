@@ -3,6 +3,7 @@
 // "no"; no AI visibility score.
 import { esc, fmtNum, fmtCompact, fmtDate, fmtMonth } from './lib/h.js';
 import { EChartWrapper, chartPalette, axisDefaults, tooltipDefaults, monoFont } from './lib/echart.js';
+import { askText, askClaudePrompt } from './askClaude.js';
 
 type Change = { from: string; to: string; mode: 'pct' | 'abs'; value: number; diff: number };
 type Metric = { value: number | null; source: 'snapshot' | 'history' | null; asOf: string | null; month: Change | null; year: Change | null; spark: (number | null)[]; partial: number | null; empty?: string };
@@ -257,7 +258,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
           ${isOwned ? '<span class="pf-badge pf-badge-owned">GSC</span>' : '<span class="pf-badge pf-badge-watched">Watched</span>'}
           ${data.row.group ? `<span class="pf-group">${esc(data.row.group)}</span>` : ''}
           <span class="pf-header-spacer"></span>
-          <div class="pf-meta"><span>Data captured ${esc(capturedStr)}</span>${dashLink}</div>
+          <div class="pf-meta"><span>${capturedStr === 'never' ? 'No data captured yet' : `Data captured ${esc(capturedStr)}`}</span>${dashLink}</div>
         </div>
         ${attentionHtml}
       </header>
@@ -366,7 +367,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
 
     const rc = data.rankCitation;
     const rankHtml = !isOwned || !rc.length
-      ? '<div class="pf-muted">Content recon data exists for owned sites after recon_targets runs.</div>'
+      ? '<div class="pf-muted">Content recon data appears for owned sites once Claude runs content recon.</div>'
       : `<table class="pf-table"><thead><tr><th>Keyword</th><th>AI Overview shown</th><th>Our page cited</th><th class="n">Organic rank</th><th class="n">Impressions, 28 days</th></tr></thead>
         <tbody>${rc.slice(0, 12).map(r => `<tr><td>${esc(r.keyword)}</td><td>${yesNoUnknownPill(r.aioPresent)}</td><td>${yesNoUnknownPill(r.aioCitesUs)}</td>
           <td class="n">${r.organicRank === null ? '<span class="pf-null">not in top results</span>' : fmtNum(r.organicRank)}</td><td class="n">${n(r.impressions)}</td></tr>`).join('')}</tbody></table>`;
@@ -399,7 +400,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
     const combo = addChart(body.querySelector<HTMLElement>('#pf-ai-combo'), st.ai);
     if (combo) {
       if (!data.series.some(s => getM(s) !== null || getV(s) !== null)) {
-        combo.setEmpty('No AI mention history yet. Ask in chat to refresh the portfolio.', pal);
+        combo.setEmpty(askText(askClaudePrompt.portfolioRefresh(), 'No AI mention history yet.'), pal);
       } else {
         const months = data.series.map(s => (s.partial ? `${fmtMonth(s.month)} (to date)` : fmtMonth(s.month)));
         combo.setOption({
@@ -469,7 +470,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
     const chart = addChart(rootEl.querySelector<HTMLElement>('#pf-traffic-trend'), st.charts);
     if (!chart) return;
     const rows = data.series;
-    if (!rows.some(s => s.organicEtv !== null || s.paidEtv !== null || s.gscClicks !== null)) { chart.setEmpty('No traffic history yet. Ask in chat to refresh the portfolio.', pal); return; }
+    if (!rows.some(s => s.organicEtv !== null || s.paidEtv !== null || s.gscClicks !== null)) { chart.setEmpty(askText(askClaudePrompt.portfolioRefresh(), 'No traffic history yet.'), pal); return; }
     const pts = (get: (s: DomainSeries) => number | null) => rows.map(s => { const v = get(s); return v === null ? null : s.partial ? { value: v, symbol: 'emptyCircle', symbolSize: 7 } : v; });
     const series: any[] = [
       { name: 'Organic traffic (estimated)', type: 'line', showSymbol: false, data: pts(s => s.organicEtv), lineStyle: { color: pal.accent, width: 2 }, itemStyle: { color: pal.accent } },

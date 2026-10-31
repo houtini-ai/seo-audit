@@ -374,6 +374,19 @@ body {
 .empty-state { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 12.5px; padding: 10px 0; }
 .empty-state code { font-family: var(--font-mono); font-size: 11.5px; background: var(--bg-inset); padding: 1px 6px; border-radius: 4px; }
 
+/* "Ask Claude" prompt chip: a ready-to-paste prompt for work the dashboard can't do itself. */
+.ask-claude { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 9px 11px; border: 1px dashed var(--border-standard); border-radius: var(--radius-sm); background: var(--bg-surface); font-size: 12.5px; }
+.ask-claude .ask-lead { color: var(--text-muted); }
+.ask-claude .ask-prompt { flex: 1 1 200px; min-width: 0; color: var(--text-primary); }
+.ask-claude .ask-prompt::before { content: '\201C'; } .ask-claude .ask-prompt::after { content: '\201D'; }
+.ask-copy { font: inherit; font-size: 11.5px; font-weight: 500; white-space: nowrap; padding: 4px 10px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent-bg); color: var(--accent); cursor: pointer; }
+.ask-copy:hover { background: var(--accent); color: #fff; }
+/* "…Click <Run audit> in Actions" — a link-style button that jumps to the real Actions button. */
+.cta-act { font: inherit; font-size: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.cta-act:hover { text-decoration: none; }
+.cta-pulse { animation: cta-pulse 1.5s ease-out; }
+@keyframes cta-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 15% { box-shadow: 0 0 0 3px var(--accent-bg); border-color: var(--accent); } }
+
 /* Site Health Score (Overview headline) */
 
 /* Content architecture (topic clusters) */
@@ -395,7 +408,8 @@ body {
 .ca-gaps { margin-top: var(--space-compact-2); font-size: 12px; color: var(--text-muted); }
 .ca-gaps-lbl { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--intent-danger); margin-right: 4px; }
 .ca-gap-impr { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
-.ca-foot { margin-top: var(--space-compact-2); }
+.ca-foot { margin-top: var(--space-compact-2); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ca-foot .ask-copy { font-size: 11px; padding: 3px 9px; }
 .ca-links { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
 
 

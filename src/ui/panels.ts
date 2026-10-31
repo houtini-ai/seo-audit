@@ -9,6 +9,7 @@ import { shareText, sharePct, sourceFreshness, freshnessDot } from '../core/disp
 
 const fmt = fmtNum;
 import type { DashboardData } from './dashboard.js';
+import { clickCta, clickText } from './askClaude.js';
 // The payload type lives in dashboard.ts (local view types, so core's node-only deps stay out of
 // the bundle). Fields this module reads that the view type doesn't declare are accessed via `x`.
 type Dash = DashboardData;
@@ -63,7 +64,7 @@ export function freshVerdict(d: Dash, kind: string, s: { state: string; at: stri
   }
   if (kind === 'audit' && x(d).freshness?.auditVsCrawl?.predatesCrawl) {
     flag = 'older than crawl';
-    rule += ' The latest audit ran before the latest completed crawl, so its findings describe the previous crawl: run run_audit.';
+    rule += ' The latest audit ran before the latest completed crawl, so its findings describe the previous crawl: click Run audit in Actions.';
   }
   return { dot: freshnessDot(s.state, !!flag), flag, rule };
 }
@@ -81,7 +82,7 @@ function trendMultiples(d: Dash, ctx: OverviewCtx): void {
   const { col } = ctx;
   const t = d.rankTrend ?? [];
   if (!document.getElementById('spTrendChart')) return;
-  if (!t.length) { ctx.wrap('spTrendChart').setEmpty('No Search Console data yet - run sync_gsc', col); return; }
+  if (!t.length) { ctx.wrap('spTrendChart').setEmpty(clickText('sync', 'No Search Console data yet.'), col); return; }
   const dates = t.map((x: any) => x.date);
   const series = [
     { name: 'Clicks', data: t.map((x: any) => x.clicks), color: col.accent, inverse: false, fmtV: (v: number) => fmtCompact(v) },
@@ -125,7 +126,7 @@ function trendMultiples(d: Dash, ctx: OverviewCtx): void {
 // ── Crawl health summary: 100% status mix + leak rows ──
 function crawlCard(d: Dash): string {
   const ch = d.crawlHealth;
-  if (!ch?.totalPages) return '<div class="empty-state">No crawl yet - run <code>start_crawl</code> or <code>refresh_property</code>.</div>';
+  if (!ch?.totalPages) return `<div class="empty-state">${clickCta('crawl', 'No crawl yet.')}</div>`;
   const rc: { label: string; count: number }[] = ch.responseCodes ?? [];
   const byCls = (re: RegExp) => rc.filter(r => re.test(r.label)).reduce((s, r) => s + r.count, 0);
   const mix = [
@@ -165,7 +166,7 @@ export const isolatedText = (n: { inlinks: number; bodyInlinks: number }): strin
 export function drawNetwork(d: Dash, ctx: OverviewCtx, id: string, opts: { compact: boolean }): boolean {
   const sg = d.structureGraph;
   const { col } = ctx;
-  if (!sg?.nodes?.length) { ctx.wrap(id).setEmpty('Run a crawl to map the internal link network', col); return false; }
+  if (!sg?.nodes?.length) { ctx.wrap(id).setEmpty('Click Crawl in Actions to map the internal link network', col); return false; }
   const nodes = opts.compact ? [...sg.nodes].sort((a: any, b: any) => b.ipr - a.ipr).slice(0, 90) : sg.nodes;
   const keep = new Set(nodes.map((n: any) => n.id));
   const catOf = (n: any): number => ((n.status == null || n.status >= 300) ? 2 : (n.indexable ? 0 : 1));
@@ -218,7 +219,7 @@ export function drawNetwork(d: Dash, ctx: OverviewCtx, id: string, opts: { compa
 // ── Top keywords / pages ──
 function kwTable(d: Dash): string {
   const kw = (d.topKeywords ?? []).slice().sort((a: any, b: any) => b.clicks - a.clicks).slice(0, 8);
-  if (!kw.length) return `<div class="empty-state">${d.summary ? `No query appears in Search Console in the last ${d.dateRange?.days ?? 28} days.` : 'No keyword data yet - run <code>sync_gsc</code>.'}</div>`;
+  if (!kw.length) return `<div class="empty-state">${d.summary ? `No query appears in Search Console in the last ${d.dateRange?.days ?? 28} days.` : clickCta('sync', 'No keyword data yet.')}</div>`;
   const rows = kw.map((k: any) => {
     return `<tr><td class="q" title="${esc(k.query)}">${esc(k.query)}</td><td class="num">${fmt(k.clicks)}</td><td class="num">${countDelta(k.clicks, k.prevClicks)}</td><td class="num">${Number(k.position).toFixed(1)}</td></tr>`;
   }).join('');
@@ -226,7 +227,7 @@ function kwTable(d: Dash): string {
 }
 function pageTable(d: Dash, ctx: OverviewCtx): string {
   const pp = (d.pagePerformance ?? []).slice().sort((a: any, b: any) => b.clicks - a.clicks).slice(0, 8);
-  if (!pp.length) return `<div class="empty-state">${d.summary ? `No page appears in Search Console in the last ${d.dateRange?.days ?? 28} days.` : 'No page data yet - run <code>sync_gsc</code>.'}</div>`;
+  if (!pp.length) return `<div class="empty-state">${d.summary ? `No page appears in Search Console in the last ${d.dateRange?.days ?? 28} days.` : clickCta('sync', 'No page data yet.')}</div>`;
   const rows = pp.map((p: any) =>
     `<tr><td class="url" title="${esc(p.urlKey)}">${esc(ctx.shortPath(p.urlKey, 40))}</td><td class="num">${fmt(p.clicks)}</td><td class="num">${countDelta(p.clicks, p.prevClicks)}</td><td class="num">${Number(p.position).toFixed(1)}</td></tr>`).join('');
   return `<table><thead><tr><th>Page</th><th class="num">Clicks</th><th class="num">Change</th><th class="num">Pos</th></tr></thead><tbody>${rows}</tbody></table>`;

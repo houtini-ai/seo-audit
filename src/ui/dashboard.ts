@@ -10,6 +10,7 @@ import { renderSearchTop, renderHealthTop, renderSideFreshness, drawNetwork, iso
 import { renderSummary, aiSignalsHtml, type SummaryCtx } from './summary.js';
 import { renderFieldCwv } from './cwv.js';
 import { buildDomainPicker, showDomainsView, showWatchedDomain, setupOverviewTabs, setupActions, repaintDomainViews, type WebBoot } from './shell.js';
+import { clickCta, askChip, askText, askButton, askClaudePrompt, promptTarget } from './askClaude.js';
 
 // Local view types (avoid importing core, which pulls node-only deps into the bundle).
 interface Totals { clicks: number; impressions: number; ctr: number; position: number }
@@ -205,7 +206,7 @@ async function loadDashboard(siteUrl: string): Promise<void> {
     $('loading').style.display = 'none';
     const empty = $('empty');
     empty.style.display = 'flex';
-    empty.textContent = `Couldn’t load dashboard data${e instanceof Error ? ` (${e.message})` : ''}. Run refresh_property, then reopen.`;
+    empty.textContent = `Couldn’t load dashboard data${e instanceof Error ? ` (${e.message})` : ''}. Reload, or run a crawl and sync from the Actions panel.`;
   }
 }
 
@@ -286,7 +287,7 @@ function findingDetailHtml(f: any): string {
     (rec.text ? `<button type="button" class="fi-btn primary" data-copy-fix>Copy fix</button>` : '') +
     (canVerify ? `<button type="button" class="fi-btn" data-verify="${esc(String(f.url_key))}">Verify live URL</button>` : '') +
     `</div><div class="fi-verify" aria-live="polite"></div>` +
-    `<div class="fi-hint">Generated fixes (JSON-LD, redirect rules, internal links): ask Claude to run <code>fix_finding</code> for this check and URL.</div>`;
+    `<div class="fi-hint">Generated fixes (JSON-LD, redirect rules, internal links): ask Claude for a ready-to-apply fix for this check and URL.</div>`;
   return `<div class="fi-detail fi-split" data-fix-text="${esc([rec.title, rec.text, f.url_key].filter(Boolean).join('\n'))}">` +
     `<div class="fi-col"><div class="fi-col-h">Evidence</div>${evidence || '<p class="muted">No evidence fields.</p>'}</div>` +
     `<div class="fi-col"><div class="fi-col-h">Fix</div>${fix}</div>` +
@@ -360,6 +361,7 @@ function renderTopicClusters(d: DashboardData): void {
     const gaps = c.gaps.length ? `<div class="ca-gaps"><span class="ca-gaps-lbl">Gaps</span> ${c.gaps.map(g => `${esc(g.topic)} <span class="ca-gap-impr">${fmt(g.impressions)}</span>`).join(' · ')}</div>` : '';
     const fn = funnelLabel[c.funnel] ?? c.funnel;
     const links = c.linkSuggestions.length ? `<span class="ca-links">${c.linkSuggestions.length} internal-link suggestion${c.linkSuggestions.length === 1 ? '' : 's'}</span>` : '';
+    const brief = askButton(askClaudePrompt.articleBrief(c.pillar.label, promptTarget(d.siteUrl)), 'Research a better article →');
     return `<div class="ca-cluster">`
       + `<div class="ca-chead"><span class="ca-pillar">${esc(c.pillar.label)}</span>`
       + (fn ? `<span class="ca-funnel">${esc(fn)}</span>` : '')
@@ -367,7 +369,7 @@ function renderTopicClusters(d: DashboardData): void {
       + `<span class="ca-impr">${fmt(c.totalImpressions)} impr</span></div>`
       + `<div class="ca-members">${members}</div>`
       + gaps
-      + (links ? `<div class="ca-foot">${links}</div>` : '')
+      + `<div class="ca-foot">${links}${brief}</div>`
       + `</div>`;
   }).join('');
   const list = $('topicClustersList');
@@ -391,7 +393,7 @@ function renderTopicClusters(d: DashboardData): void {
 // Audit-deliverable view: issues grouped by category, each sub-headed with a real example + fix.
 function renderRecommendations(fc: DashboardData['findings']): void {
   const el = $('recs');
-  if (!fc || !fc.recommendations?.length) { el.innerHTML = `<p class="muted">${fc ? 'The latest audit found nothing to fix.' : 'No audit yet - run run_audit.'}</p>`; return; }
+  if (!fc || !fc.recommendations?.length) { el.innerHTML = `<p class="muted">${fc ? 'The latest audit found nothing to fix.' : clickCta('audit', 'No audit yet.')}</p>`; return; }
   const exampleRow = (ex: { urlKey: string | null; evidence: Record<string, unknown>; clicks: number; impressions: number }): string => {
     const fullPath = ex?.urlKey ? (ex.urlKey.replace(/^https?:\/\/[^/]+/, '') || '/') : '';
     const path = esc(ex?.urlKey ? shortPath(ex.urlKey) : '');
@@ -428,7 +430,7 @@ let issuesFilter: ((f: { area?: string; check?: string }) => void) | null = null
 function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof palette>): void {
   const chipsEl = $('sevChips'), tableEl = $('findingsTable');
   if (!fc || !fc.byCheck.length) {
-    chipsEl.innerHTML = `<span class="muted">${fc ? 'The latest audit found nothing to fix.' : 'No audit yet - run run_audit.'}</span>`;
+    chipsEl.innerHTML = `<span class="muted">${fc ? 'The latest audit found nothing to fix.' : clickCta('audit', 'No audit yet.')}</span>`;
     tableEl.innerHTML = '';
     $('findingsSummary').textContent = fc ? 'The latest audit found nothing to fix.' : 'No audit findings yet.';
     return;
@@ -683,8 +685,8 @@ function render(data: DashboardData): void {
       ? `/${sink.template}/ absorbs ${sink.iprPct}% of internal equity but drives ${sink.trafficPct}% of traffic - equity flowing into a dead end.`
       : 'Internal equity share vs organic traffic share, by template.';
   } else {
-    wrap('mismatchChart').setEmpty(crawled ? 'No indexable 200 page in the crawl to group by template' : 'Run a crawl to map equity flow', col);
-    $('mismatchSummary').textContent = 'Run a crawl (refresh_property) to see equity flow by template.';
+    wrap('mismatchChart').setEmpty(crawled ? 'No indexable 200 page in the crawl to group by template' : 'Click Crawl in Actions to map equity flow', col);
+    $('mismatchSummary').textContent = 'Click Crawl in Actions to see equity flow by template.';
   }
 
   // 0b) Internal link explorer - folder-to-folder iPR flow as a bipartite Sankey.
@@ -735,8 +737,8 @@ function render(data: DashboardData): void {
     wrap('scatterChart').on('click', (p: any) => { if (p?.data?.id) window.open(p.data.id, '_blank', 'noopener'); });
     $('scatterSummary').textContent = `${sc.length} URLs by internal PageRank and impressions; bottom-right = high-authority pages earning no traffic. Scroll to zoom, click a point to open the page.`;
   } else {
-    wrap('scatterChart').setEmpty(crawled ? `No page has iPR 15+ or 5+ impressions in the last ${winDays} days to plot` : 'Run a crawl to map equity vs traffic', col);
-    $('scatterSummary').textContent = 'Run a crawl (refresh_property) to see the equity map.';
+    wrap('scatterChart').setEmpty(crawled ? `No page has iPR 15+ or 5+ impressions in the last ${winDays} days to plot` : 'Click Crawl in Actions to map equity vs traffic', col);
+    $('scatterSummary').textContent = 'Click Crawl in Actions to see the equity map.';
   }
 
   // 0c) Crawl network (the signature visual): the internal link skeleton of the highest-equity
@@ -763,7 +765,7 @@ function render(data: DashboardData): void {
   } else {
     pendingNetworkDraw = null;
     $('structureNote').innerHTML = '';
-    $('structureSummary').textContent = 'Run a crawl (refresh_property) to map your internal link structure.';
+    $('structureSummary').textContent = 'Click Crawl in Actions to map your internal link structure.';
   }
 
   // 0d) Security / HTTPS coverage (V2) - header coverage bars, status-coloured (grey the context,
@@ -917,7 +919,7 @@ function render(data: DashboardData): void {
       `<div class="ar-top">${ring}<div class="ar-meta"><div class="ar-level">${esc(ar.level)}</div><div class="ar-cats">${cats}</div></div></div>
       <div class="ar-checks">${items}</div>`;
   } else {
-    $('agentPanel').innerHTML = '<p class="muted">Run <code>check_agent_readiness</code> for this site to populate the agent-readiness score.</p>';
+    $('agentPanel').innerHTML = '<p class="muted">Click Agent in Actions to populate the agent-readiness score.</p>';
   }
 
   // 0b) Cannibalisation braids - per contested query, competing URLs' weekly position over time
@@ -981,7 +983,7 @@ function render(data: DashboardData): void {
   $('topLinkedTable').innerHTML = tlp.length
     ? tableHtml(['URL', 'Internal links in', 'Status', 'Indexable'], tlp.map(p =>
       `<tr><td class="url" title="${esc(p.url)}">${esc(shortPath(p.url))}</td><td class="num">${fmt(p.inlinks)}</td><td>${statusBadge(p.status)}</td><td>${p.indexable ? icons.check : `${icons.x} ${esc(p.reason || '')}`}</td></tr>`))
-    : (crawled ? '<p class="muted">No internal page in the crawl has an internal link in.</p>' : emptyState('Run a crawl to see the internal-link hierarchy.', 'refresh_property'));
+    : (crawled ? '<p class="muted">No internal page in the crawl has an internal link in.</p>' : emptyState('Click Crawl in Actions to see the internal-link hierarchy.'));
   // status null = not fetched (rate limited, #54) or robots-blocked: unknown, not a broken page.
   const tlpBroken = tlp.filter(p => p.status != null && p.status !== 200).length;
   $('topLinkedSummary').textContent = `Top ${tlp.length} internally-linked pages by inlink count; ${tlpBroken} return a non-200 status.`;
@@ -998,7 +1000,7 @@ function render(data: DashboardData): void {
       if (!rows?.length || base <= 0) {
         chartsReg.get(id)?.dispose(); chartsReg.delete(id);
         el.style.height = '';
-        el.innerHTML = `<div class="sf-empty">${base > 0 ? none : 'Nothing to show - run a crawl first.'}</div>`;
+        el.innerHTML = `<div class="sf-empty">${base > 0 ? none : clickCta('crawl', 'Nothing to show yet.')}</div>`;
         return;
       }
       if (el.querySelector('.sf-empty')) el.innerHTML = '';
@@ -1121,15 +1123,17 @@ function render(data: DashboardData): void {
     });
     $('rankHistSummary').textContent = `DataForSEO ranking keywords by position bucket across ${rh.length} months, with estimated traffic volume.`;
   } else {
-    wrap('rankHistChart').setEmpty('No rank history yet - run track_ranks', col);
-    $('rankHistSummary').textContent = 'No DataForSEO rank history yet.';
+    wrap('rankHistChart').setEmpty(askText(askClaudePrompt.ranks(promptTarget(data.siteUrl)), 'No rank history yet.'), col);
+    $('rankHistSummary').innerHTML = askChip(askClaudePrompt.ranks(promptTarget(data.siteUrl)), 'No DataForSEO rank history yet.');
   }
   const al: any = data.dateAlignment;
+  // Only the reconciliation note needs words here; the "no rank history" case is covered by the
+  // copy-a-prompt chip in the summary above, so don't repeat the payload note as plain text.
   $('alignNote').textContent = al?.gsc && al?.dataforseo
     ? (al.overlap
       ? `Search Console holds ${fmtDate(al.gsc.start)} to ${fmtDate(al.gsc.end)} (daily) and DataForSEO ${fmtMonth(al.dataforseo.start)} to ${fmtMonth(al.dataforseo.end)} (monthly); they overlap from ${fmtMonth(al.overlap.start)} to ${fmtMonth(al.overlap.end)}.`
       : `No overlap: Search Console ends ${fmtDate(al.gsc.end)}, DataForSEO covers ${fmtMonth(al.dataforseo.start)} to ${fmtMonth(al.dataforseo.end)}.`)
-    : (al?.note ?? '');
+    : '';
 
   // 2) Rank + clicks over time - two small multiples on one shared x (dataviz: never dual-axis).
   const trend = data.rankTrend ?? [];
@@ -1407,7 +1411,7 @@ function renderCrawlOnly(data: DashboardData): void {
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(b => {
     const on = usable.has(b.dataset.panel ?? '');
     b.disabled = !on;
-    if (on) b.removeAttribute('title'); else b.title = 'Needs Search Console data - run sync_gsc';
+    if (on) b.removeAttribute('title'); else b.title = 'Needs Search Console data - click Sync GSC in Actions';
   });
   setupTabs();
   openDeepLinkedTab();
@@ -1478,7 +1482,35 @@ function setupRangeControl(): void {
   });
 }
 
+// Copy an "Ask Claude" prompt chip, and jump an "in Actions" CTA to its real button. One
+// document-level listener, attached once, so it survives every panel re-render.
+let askClaudeWired = false;
+function wireAskClaude(): void {
+  if (askClaudeWired) return;
+  askClaudeWired = true;
+  document.addEventListener('click', ev => {
+    const el = ev.target as HTMLElement;
+    const copy = el.closest<HTMLElement>('[data-ask-copy]');
+    if (copy) {
+      void copyText(copy.getAttribute('data-ask-copy') || '').then(ok =>
+        toast(ok ? 'Copied - paste into Claude' : 'Copy failed - select the text instead', ok ? 'ok' : 'warn'));
+      return;
+    }
+    const cta = el.closest<HTMLElement>('[data-cta-act]');
+    if (cta) {
+      const target = document.querySelector<HTMLButtonElement>(`[data-act="${cta.getAttribute('data-cta-act')}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('cta-pulse');
+        setTimeout(() => target.classList.remove('cta-pulse'), 1600);
+        try { target.focus({ preventScroll: true }); } catch { /* focus is a nicety */ }
+      }
+    }
+  });
+}
+
 function setupTabs(): void {
+  wireAskClaude();
   const resizeVisible = (): void => { for (const w of chartsReg.values()) w.resizeIfVisible(); };
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
     btn.onclick = (ev: MouseEvent): void => {
@@ -1583,15 +1615,15 @@ function renderBacklinkProfile(data: DashboardData): void {
   if (!top || !trendCard || !detail) return;
   const bp = data.backlinkProfile;
   const noKey = data.apiKeys && !data.apiKeys.dataforseo;
-  const runHint = `Ask Claude to run <code>pull_backlinks for ${esc(data.siteUrl)}</code> (DataForSEO Backlinks subscription; cached 20 days).`;
   if (!bp) {
-    top.innerHTML = `<div class="chart-card"><h3>Backlink profile</h3><div class="hint">${noKey ? 'Not collected — DataForSEO isn’t connected, so your own backlink profile hasn’t been pulled.' : `Not collected yet. ${runHint} It stores the summary, the backlinked pages with their live status, the referring domains, the anchor mix and twelve months of new/lost history.`}</div></div>`;
+    const lead = 'Not collected yet. Pull your backlink profile - it stores the summary, the backlinked pages with their live status, the referring domains, the anchor mix and twelve months of new/lost history.';
+    top.innerHTML = `<div class="chart-card"><h3>Backlink profile</h3>${noKey ? '<div class="hint">Not collected — DataForSEO isn’t connected, so your own backlink profile hasn’t been pulled.</div>' : askChip(askClaudePrompt.backlinks(promptTarget(data.siteUrl)), lead)}</div>`;
     trendCard.hidden = true; detail.innerHTML = '';
     return;
   }
   const s = bp.summary;
   const when = (iso: string | null | undefined): string => iso ? esc(String(iso).slice(0, 10)) : 'unknown date';
-  const nc = (what: string): string => `<div class="empty-state">${what} not collected: this profile was pulled before the dashboard stored it. Re-run <code>pull_backlinks</code> to add it.</div>`;
+  const nc = (what: string): string => `<div class="empty-state">${what} not collected: this profile was pulled before the dashboard stored it. Re-pull your backlink profile to add it.</div>`;
   const kpis = s ? kpiGrid([
     { label: 'Backlinks', value: fmtNum(s.backlinks) },
     { label: 'Referring domains', value: fmtNum(s.referringDomains) },
@@ -1600,7 +1632,7 @@ function renderBacklinkProfile(data: DashboardData): void {
     { label: 'Nofollow share', value: s.nofollowPct == null ? '–' : `${Math.round(s.nofollowPct * 100)}%` },
   ]).replace('<div class="metrics">', '<div class="metrics metrics-5">') : nc('Summary');
   top.innerHTML = `<div class="chart-card"><h3>Backlink profile — your own links</h3>
-    <div class="hint">From <code>pull_backlinks</code>${s ? `, summary pulled ${when(s.fetchedAt)}` : ''}: ${fmtNum(bp.pagesTotal)} backlinked pages stored${bp.pagesUnchecked ? `, ${fmtNum(bp.pagesUnchecked)} without a live status check` : ''}. Domain Rank is DataForSEO’s 0–1000 authority score.</div>
+    <div class="hint">Your backlink profile${s ? `, summary pulled ${when(s.fetchedAt)}` : ''}: ${fmtNum(bp.pagesTotal)} backlinked pages stored${bp.pagesUnchecked ? `, ${fmtNum(bp.pagesUnchecked)} without a live status check` : ''}. Domain Rank is DataForSEO’s 0–1000 authority score.</div>
     ${kpis}</div>`;
 
   // Trend: new vs lost referring domains per month (DataForSEO monthly history).
@@ -1648,13 +1680,13 @@ function renderBacklinkProfile(data: DashboardData): void {
         bp.topPages.map(p => `<tr><td class="url">${esc(p.url)}</td><td class="num">${fmtNum(p.referringDomains)}</td><td class="num">${fmtNum(p.backlinks)}</td><td class="num">${fmtNum(p.dofollow)}</td><td class="num">${p.status == null ? 'unchecked' : statusBadge(p.status)}</td>${bp.topPages.some(q => q.trustFlow != null) ? `<td class="num">${p.trustFlow ?? '–'}</td>` : ''}</tr>`).join(''))
     : nc('Backlinked pages');
   const brokenHtml = bp.brokenPages.length
-    ? `<div class="hint">${bp.brokenPages.length} backlinked page${bp.brokenPages.length === 1 ? '' : 's'} answer${bp.brokenPages.length === 1 ? 's' : ''} 4xx/5xx — equity arriving at a dead end. <code>triage_404s</code> proposes the 301 map; the audit reports <code>backlinks-to-404</code>.</div>` +
+    ? `<div class="hint">${bp.brokenPages.length} backlinked page${bp.brokenPages.length === 1 ? '' : 's'} answer${bp.brokenPages.length === 1 ? 's' : ''} 4xx/5xx — equity arriving at a dead end. Ask Claude to map the 301 redirects; the audit flags these as broken backlinks.</div>` +
       tbl('<tr><th>Page</th><th class="num">Status</th><th class="num">Ref. domains</th><th class="num">Backlinks</th></tr>',
         bp.brokenPages.map(p => `<tr><td class="url">${esc(p.url)}</td><td class="num">${statusBadge(p.status)}</td><td class="num">${fmtNum(p.referringDomains)}</td><td class="num">${fmtNum(p.backlinks)}</td></tr>`).join(''))
     : `<div class="hint">${bp.pagesTotal ? `No backlinked page answers 4xx/5xx${bp.pagesUnchecked ? ` (${fmtNum(bp.pagesUnchecked)} unchecked)` : ''}.` : 'Not collected.'}</div>`;
   detail.innerHTML = `<div class="chart-card"><h3>Top referring domains</h3>${rdHtml}</div>
     <div class="chart-card"><h3>Anchor mix</h3>${anHtml}</div>
-    <div class="chart-card"><h3>Most-linked pages</h3><div class="hint">Your pages by referring domains, with the live HTTP status pull_backlinks resolved.</div>${pagesHtml}</div>
+    <div class="chart-card"><h3>Most-linked pages</h3><div class="hint">Your pages by referring domains, with the live HTTP status the backlink pull resolved.</div>${pagesHtml}</div>
     <div class="chart-card"><h3>Broken backlinked pages</h3>${brokenHtml}</div>`;
 }
 
@@ -1670,7 +1702,7 @@ function renderLinks(data: DashboardData): void {
   }
   const rows = data.linkProspects ?? [];
   if (!rows.length) {
-    el.innerHTML = `<div class="chart-card"><h3>Link intersect</h3><div class="hint">No prospects captured yet. Ask Claude to run <code>link_intersect for ${esc(data.siteUrl)} vs your competitors</code> — it finds domains linking to your rivals but not you, sorted followed-first then by domain trust (or Majestic Trust Flow when a key is set).</div></div>`;
+    el.innerHTML = `<div class="chart-card"><h3>Link intersect</h3>${askChip(askClaudePrompt.linkIntersect(promptTarget(data.siteUrl)), 'No prospects captured yet. Finds domains linking to your rivals but not you, sorted followed-first then by domain trust (or Majestic Trust Flow when a key is set):')}</div>`;
     return;
   }
   const enriched = rows.some(r => r.trustFlow != null);
@@ -1690,7 +1722,7 @@ function renderResearch(data: DashboardData): void {
   // they start from chat, where paid work is quoted first; the server doesn't offer them here.
   if (__sacWeb) {
     el.innerHTML = `<div class="chart-card"><h3>Content research</h3>
-      <div class="hint">News from Google News (free). Videos, Google Trends and the DataForSEO news results are paid lookups, so they run from chat: ask Claude for <code>youtube_discovery</code>, <code>topic_trend</code> or <code>news_discovery</code> on a topic.</div>
+      <div class="hint">News search runs right here, free (Google News). Videos and Google Trends are paid DataForSEO lookups, so ask Claude to run those for a topic.</div>
       <div class="research-bar"><input id="researchKw" type="text" placeholder="Enter a topic or keyword…" aria-label="Research keyword" /><button class="btn" data-research="news">News</button></div>
       <div id="researchOut" class="research-out"></div></div>`;
     const out = document.getElementById('researchOut') as HTMLElement;
@@ -1709,7 +1741,7 @@ function renderResearch(data: DashboardData): void {
     <div id="researchOut" class="research-out"></div></div>`;
   const out = document.getElementById('researchOut') as HTMLElement;
   const kw = document.getElementById('researchKw') as HTMLInputElement;
-  if ((window as any).__DASH_FIXTURE__ && !__sacWeb) out.innerHTML = `<div class="empty-state">This is a static export — open the live dashboard (<code>get_dashboard</code> or <code>serve_dashboard</code>) to run research.</div>`;
+  if ((window as any).__DASH_FIXTURE__ && !__sacWeb) out.innerHTML = `<div class="empty-state">This is a static export — open the live dashboard to run research.</div>`;
   el.querySelectorAll<HTMLButtonElement>('[data-research]').forEach(b => { b.onclick = (): void => { void runResearch(b.dataset.research!, kw.value.trim(), out); }; });
   kw.addEventListener('keydown', e => { if (e.key === 'Enter') void runResearch('news', kw.value.trim(), out); });
 }
@@ -1764,7 +1796,7 @@ async function loadRelated(keyword: string): Promise<void> {
   const el = $('related');
   // Related terms and search volume are paid DataForSEO lookups: not offered in the browser.
   if (__sacWeb) {
-    el.innerHTML = `<div class="group-label">“${esc(keyword)}”</div><div class="hint">Related searches and search volume are paid DataForSEO lookups, so they run from chat: ask Claude for <code>related_terms</code> or <code>keyword_volume</code> for this keyword.</div>`;
+    el.innerHTML = `<div class="group-label">“${esc(keyword)}”</div>${askChip(askClaudePrompt.relatedTerms(keyword), 'Related searches and search volume are paid DataForSEO lookups:')}`;
     return;
   }
   el.innerHTML = `<div class="group-label">Looking up “${esc(keyword)}”…</div>`;
