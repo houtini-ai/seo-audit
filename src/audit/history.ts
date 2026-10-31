@@ -33,11 +33,16 @@ export function computeHealth(db: Database.Database, runId: string, crawlId?: st
   const totalPages = (db.prepare(`SELECT COUNT(*) n FROM (${set.sql})`).get(...set.args) as { n: number }).n;
   if (totalPages <= 0) return null;
   // Only findings on a page IN the set count, so a check whose url_key is not a crawled page
-  // (ghost-pages, backlinks-to-404) can't push errorPages past the total.
+  // (ghost-pages, backlinks-to-404) can't push errorPages past the total. Pages a crit/high check
+  // found past the per-check findings cap are in audit_error_pages: counting stored findings alone
+  // made 1,200 pages sharing one title score 58 instead of 0.
+  const overflow = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'audit_error_pages'`).get()
+    ? ` UNION SELECT url_key FROM audit_error_pages WHERE run_id = @run` : '';
   const errorPages = (db.prepare(
-    `SELECT COUNT(DISTINCT f.url_key) n FROM findings f JOIN (${set.sql}) p ON p.url_key = f.url_key
-     WHERE f.run_id = ? AND f.severity IN ('crit','high') AND f.url_key IS NOT NULL`,
-  ).get(...set.args, runId) as { n: number }).n;
+    `SELECT COUNT(DISTINCT e.k) n FROM (
+       SELECT url_key k FROM findings WHERE run_id = @run AND severity IN ('crit','high') AND url_key IS NOT NULL${overflow}
+     ) e JOIN (${set.sql.replace('?', '@crawl')}) p ON p.url_key = e.k`,
+  ).get({ run: runId, ...(crawlId ? { crawl: crawlId } : {}) }) as { n: number }).n;
   // Never 100 while any page carries a crit/high finding (1 of 495 rounds to 100 otherwise):
   // capHealth is the one display rule the dashboard applies to stored scores too.
   const score = capHealth(Math.max(0, Math.min(100, Math.round((1 - errorPages / totalPages) * 100))), errorPages);

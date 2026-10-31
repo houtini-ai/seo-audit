@@ -182,6 +182,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
        VALUES (@run_id,@check_id,@category,@severity,@labels,@certainty,@url_key,@evidence,@traffic_at_risk,@effort,@priority,@recommendation)`,
     );
 
+    const insertErrorPage = db.db.prepare(`INSERT OR IGNORE INTO audit_error_pages (run_id, url_key) VALUES (?, ?)`);
     db.db.prepare(`INSERT INTO audit_runs (run_id, scope, gsc_window_end, integrity_ok, started_at, status) VALUES (?,?,?,?,datetime('now'),'running')`)
       .run(runId, opts.scope ?? 'core', maxDate, pageCount > 0 ? 1 : 0);
     startedRunId = runId;
@@ -203,7 +204,13 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
         // priority = (T×Y×C)/E on exactly the biggest checks — the cap was reordering the report.
         const scale = effortScale(chk.fixType, all.length);
         const findings = all.slice(0, MAX_PER_CHECK);
-        if (all.length > MAX_PER_CHECK) truncated.set(chk.id, all.length);
+        if (all.length > MAX_PER_CHECK) {
+          truncated.set(chk.id, all.length);
+          // The pages past the cap still carry a crit/high issue: keep their keys for the health score.
+          if (chk.severity === 'crit' || chk.severity === 'high') {
+            for (const f of all.slice(MAX_PER_CHECK)) if (f.urlKey) insertErrorPage.run(runId, f.urlKey);
+          }
+        }
         const E = Math.max(chk.effortBase * scale, 0.0001); // effort in ~hours
         const Y = yieldOf(chk);
         const share = stakeShareOf(chk);

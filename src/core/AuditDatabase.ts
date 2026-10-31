@@ -341,6 +341,13 @@ export class AuditDatabase {
       CREATE INDEX IF NOT EXISTS idx_findings_run      ON findings(run_id);
       CREATE INDEX IF NOT EXISTS idx_findings_priority ON findings(priority DESC);
       CREATE INDEX IF NOT EXISTS idx_findings_check    ON findings(check_id);
+      -- Pages a crit/high check found BEYOND the per-check findings cap (engine MAX_PER_CHECK): not
+      -- stored as findings, but still pages with a crit/high issue, so the health score counts them.
+      CREATE TABLE IF NOT EXISTS audit_error_pages (
+        run_id TEXT NOT NULL,
+        url_key TEXT NOT NULL,
+        PRIMARY KEY (run_id, url_key)
+      ) WITHOUT ROWID;
     `);
 
     // ── Backlinks (DataForSEO, on-demand) — page-level counts + live HTTP status ──
