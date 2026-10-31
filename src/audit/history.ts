@@ -44,6 +44,13 @@ export function computeHealth(db: Database.Database, runId: string, crawlId?: st
   return { score, errorPages, totalPages };
 }
 
+/**
+ * The latest audit run that finished. A failed run has its findings rolled back and a running one
+ * has none yet, so taking the latest STARTED run made a site read 100 / "0 critical" while a run
+ * was failing or in progress. Rows from before `status` existed count when they have a finish time.
+ */
+export const LATEST_COMPLETED_RUN_WHERE = `(status = 'completed' OR (status IS NULL AND finished_at IS NOT NULL))`;
+
 /** Canonical form of a run's check set: sorted, de-duplicated ids as a JSON array. An id may carry
  *  its finding grain as `id@N` (see REGROUPED_CHECKS); two sets are the same check set when their
  *  ids match with the grains stripped. */

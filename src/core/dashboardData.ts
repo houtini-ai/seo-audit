@@ -14,7 +14,7 @@ import { gscMixedShape, segmentsMaxDate } from './gscRows.js';
 import { latestSerpFootprint, ensureFootprintTable, type SerpFootprint } from './serpFootprint.js';
 import { latestMarketSizing, ensureMarketTable, type MarketSizing } from './marketSizing.js';
 import { contentArchitecture, type TopicCluster } from '../audit/contentArchitecture.js';
-import { auditHistory, backfillAuditHealth, computeHealth, healthBand, HEALTH_DEFINITION, type AuditHistory } from '../audit/history.js';
+import { auditHistory, backfillAuditHealth, computeHealth, healthBand, HEALTH_DEFINITION, LATEST_COMPLETED_RUN_WHERE, type AuditHistory } from '../audit/history.js';
 import {
   monthlyClicks, yearOnYear, summaryEvents, driftSummary, findingsByCategory, clicksAtRiskByCheck, aiOverviewSummary, pageMovers, coverage,
   clickWindows,
@@ -1069,8 +1069,8 @@ function crawlSide(db: Database.Database, maxDate: string | null): Pick<Dashboar
   const totalInternalPages = cov.crawlPages;
   const history = auditHistory(db);
 
-  // Latest audit findings (if run_audit has run for this property)
-  const lastRun = db.prepare('SELECT run_id, finding_count, finished_at FROM audit_runs ORDER BY started_at DESC LIMIT 1').get() as
+  // Latest COMPLETED audit's findings (a failed or still-running run has none to show)
+  const lastRun = db.prepare(`SELECT run_id, finding_count, finished_at FROM audit_runs WHERE ${LATEST_COMPLETED_RUN_WHERE} ORDER BY started_at DESC, rowid DESC LIMIT 1`).get() as
     | { run_id: string; finding_count: number; finished_at: string | null }
     | undefined;
   let findings: DashboardData['findings'] = null;
