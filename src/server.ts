@@ -1594,7 +1594,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
           action: z.string(),
           type: z.string().optional(),
           rationale: z.string().optional(),
-          evidence: z.record(z.any()).optional(),
+          evidence: z.record(z.string(), z.any()).optional(),
           priority: z.number().optional(),
         })).min(1),
       },

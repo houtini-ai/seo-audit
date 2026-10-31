@@ -1,4 +1,5 @@
-import { google } from 'googleapis';
+import { searchconsole, type searchconsole_v1 } from '@googleapis/searchconsole';
+import { GoogleAuth } from 'google-auth-library';
 import type { GscProperty, GscApiRow, FetchOptions } from './types.js';
 
 const ROW_LIMIT = 25000; // GSC API max per request
@@ -35,15 +36,15 @@ export interface PageResult {
 
 /** Thin googleapis wrapper for Search Console (ported from better-search-console). */
 export class GscClient {
-  private auth: any;
-  private searchconsole: any;
+  private auth: GoogleAuth;
+  private searchconsole: searchconsole_v1.Searchconsole;
 
   constructor(credentialsPath: string) {
-    this.auth = new google.auth.GoogleAuth({
+    this.auth = new GoogleAuth({
       keyFile: credentialsPath,
       scopes: ['https://www.googleapis.com/auth/webmasters.readonly'],
     });
-    this.searchconsole = google.searchconsole({ version: 'v1', auth: this.auth });
+    this.searchconsole = searchconsole({ version: 'v1', auth: this.auth });
   }
 
   async listProperties(): Promise<GscProperty[]> {
