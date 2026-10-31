@@ -18,6 +18,7 @@ import { loadBrandQueries, spacedIsUncertain } from '../dist/core/brand.js';
 import { getDashboardData } from '../dist/core/dashboardData.js';
 import { listFindings } from '../dist/core/findingsQuery.js';
 import { runSingleCheck } from '../dist/audit/engine.js';
+import { domainPickerOptions, currentPickerValue } from '../dist/core/domainPicker.js';
 import { META_DESC_MAX_CHARS } from '../dist/core/onPageLimits.js';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
 import { computeHealth } from '../dist/audit/history.js';
@@ -287,6 +288,25 @@ console.log('run labels');
   ok(dd.segmentsLastDate === '2026-09-05' && dd.breakdownWindowStart === '2026-09-18', `payload: segmentsLastDate and the window start (${dd.segmentsLastDate}, ${dd.breakdownWindowStart})`);
   ok(dd.countryBreakdown.length === 0 && dd.deviceBreakdown.length === 0, 'payload: the window has no country or device rows');
   ok(/up to 5 Sep/.test(breakdownsEmptyReason({ devices: 0, countries: 0, segmentsLastDate: dd.segmentsLastDate, windowStart: dd.breakdownWindowStart }) ?? ''), 'the panel shows the empty state for that payload');
+}
+
+// ── Domain picker: the open property is always a selected option, hidden or not ──────────────────
+// Opening /dashboard?siteUrl=<hidden> showed "All domains" in the dropdown (the hidden property is
+// left out of properties/others, so nothing matched and the <select> fell back to its first option).
+console.log('domain picker');
+{
+  const lists = { properties: ['sc-domain:owned.test'], others: ['rival.test'], hidden: ['sc-domain:hidden.test'], watched: [{ domain: 'watch.test', group: 'A' }] };
+  const sel = (ctx) => { const o = domainPickerOptions(ctx, lists); return o.find(x => x.selected); };
+  const owned = sel({ siteUrl: 'sc-domain:owned.test' });
+  ok(owned?.value === 'p:sc-domain:owned.test' && owned.label === 'sc-domain:owned.test', `an owned property is selected (${JSON.stringify(owned)})`);
+  const hidden = sel({ siteUrl: 'sc-domain:hidden.test' });
+  ok(hidden?.value === 'p:sc-domain:hidden.test' && /hidden/.test(hidden?.label ?? ''), `a hidden property opened by URL is a selected option, labelled hidden (${JSON.stringify(hidden)})`);
+  ok(domainPickerOptions({ siteUrl: 'sc-domain:hidden.test' }, lists).filter(o => o.selected).length === 1, 'exactly one option is selected');
+  ok(sel({ view: 'domains', siteUrl: '' })?.value === '__all', 'the All-domains view selects All domains');
+  ok(sel({ siteUrl: '', domain: 'watch.test' })?.value === 'd:watch.test', 'an open watched domain is selected');
+  const absent = sel({ siteUrl: 'sc-domain:never-seen.test' });
+  ok(absent?.value === 'p:sc-domain:never-seen.test', 'a property in no list (not even hidden) is still shown and selected, never falling back to All domains');
+  ok(currentPickerValue({ siteUrl: 'sc-domain:owned.test' }) === 'p:sc-domain:owned.test', 'currentPickerValue keys a property by p:<siteUrl>');
 }
 
 rmSync(dataDir, { recursive: true, force: true });

@@ -1,4 +1,4 @@
-import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
+import { App, applyDocumentTheme, applyHostStyleVariables, type McpUiStyles } from '@modelcontextprotocol/ext-apps';
 import {
   esc, fmtNum, fmtCompact, fmtDate, fmtMonth, fmtWeek, icons, sevBadge, statusBadge, badge, kpiGrid, filterGroup,
   attachSort, accordionItem, accordionSection, accordionControls,
@@ -13,58 +13,9 @@ import { buildDomainPicker, showDomainsView, showWatchedDomain, setupOverviewTab
 
 // Local view types (avoid importing core, which pulls node-only deps into the bundle).
 interface Totals { clicks: number; impressions: number; ctr: number; position: number }
-export interface DashboardData {
-  siteUrl: string;
-  freshness?: { sources: { kind: string; state: string; at: string | null; detail: string; error?: string | null }[]; crawlRuns: unknown[]; shownCrawl?: { crawlId: string; status: string; at: string | null; partial: boolean } };
-  empty?: boolean;
-  linkProspects?: { domain: string; intersections: number; linkedTargets: string[]; domainTrust: number | null; spamScore: number | null; dofollow: boolean; trustFlow: number | null; citationFlow: number | null; topTopic: string | null; competitors: string[]; fetchedAt: string | null }[];
-  apiKeys?: { dataforseo: boolean; majestic: boolean };
-  trappedAuthority?: { url: string; referringDomains: number; backlinks: number; clickDepth: number | null; ipr: number; trustFlow: number | null; topTopic: string | null }[];
-  backlinkProfile?: {
-    summary: { backlinks: number; referringDomains: number; domainRank: number | null; brokenBacklinks: number; brokenPages: number; nofollowPct: number | null; fetchedAt: string | null } | null;
-    topPages: { url: string; backlinks: number; referringDomains: number; dofollow: number; status: number | null; trustFlow: number | null }[];
-    brokenPages: { url: string; backlinks: number; referringDomains: number; status: number }[];
-    pagesTotal: number; pagesUnchecked: number;
-    referringDomains: { snapshotAt: string; live: number; lost: number; top: { domain: string; rank: number | null; backlinks: number; referringPages: number; nofollowPages: number; spamScore: number | null; firstSeen: string | null }[] } | null;
-    anchors: { snapshotAt: string; mix: { kind: string; anchors: number; backlinks: number; referringDomains: number }[]; top: { anchor: string; kind: string; backlinks: number; referringDomains: number }[] } | null;
-    history: { fetchedAt: string | null; months: { month: string; newDomains: number; lostDomains: number; referringDomains: number | null; backlinks: number | null; days: number }[] } | null;
-  } | null;
-  dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number; days?: number; minDate?: string | null };
-  summary?: { current: Totals; prior: Totals | null }; // prior null = the prior window is not held
-  rankTrend?: { date: string; clicks: number; impressions: number; position: number }[];
-  rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
-  strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
-  quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
-  contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
-  cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; crossType: boolean; urls: { url: string; impressions: number; clicks: number; position: number; template: string }[] }[];
-  brandedSplit?: { brand: string; variants?: string[]; uncertain?: { spellings: string[]; queries: number; impressions: number; clicks: number; joinedImpressions: number; joinedClicks: number } | null; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number | null; priorNonBrandedClicks: number | null };
-  topKeywords?: { query: string; clicks: number; prevClicks: number | null; clicksChange: number | null; position: number; prevPosition: number | null }[];
-  rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
-  dateAlignment?: { note: string };
-  deviceBreakdown?: { device: string; clicks: number; prevClicks: number; impressions: number; ctr: number; position: number }[];
-  countryBreakdown?: { country: string; clicks: number; prevClicks: number; impressions: number }[];
-  segmentsLastDate?: string | null;
-  breakdownWindowStart?: string;
-  pagePerformance?: { urlKey: string; clicks: number; prevClicks: number; clicksChangePct: number | null; impressions: number; position: number; category: string }[];
-  keywordMovement?: { query: string; firstPos: number; lastPos: number; delta: number; firstDate: string; lastDate: string; category: string }[];
-  findings?: { runId: string; total: number; finishedAt: string | null; byCheck: any[]; top: any[]; recommendations?: any[] } | null;
-  topLinkedPages?: { url: string; inlinks: number; status: number | null; indexable: boolean; reason: string | null }[];
-  crawlHealth?: {
-    responseCodes: { label: string; count: number }[];
-    indexability: { label: string; count: number }[];
-    speed: { label: string; count: number }[];
-    htmlSize: { label: string; count: number }[];
-    depth: { label: string; count: number }[];
-    titles: { label: string; count: number }[];
-    metas: { label: string; count: number }[];
-    onPage: { label: string; count: number }[];
-    serverErrors: { url: string; status: number }[];
-    slowPages: { url: string; ms: number }[];
-    largeImages: { url: string; kb: number; usedOn: number }[];
-    imageStats: { sampled: number; over100kb: number; over300kb: number } | null;
-    totalPages: number;
-  };
-}
+// The dashboard payload's type is the server's own (src/core/dashboardData.ts), not a copy here -
+// a local partial drifted and silently dropped fields (topicClusters, structureGraph, urlFlow, ...).
+export type DashboardData = import('../core/dashboardData.js').DashboardData;
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 const fmt = fmtNum;
@@ -208,7 +159,7 @@ async function callServer(name: string, args: Record<string, unknown>): Promise<
   return app.callServerTool({ name, arguments: args });
 }
 
-function applyHostContext(ctx: { theme?: 'light' | 'dark'; styles?: { variables?: Record<string, string> } } | undefined) {
+function applyHostContext(ctx: { theme?: 'light' | 'dark'; styles?: { variables?: McpUiStyles } } | undefined) {
   if (!ctx) return;
   if (ctx.theme) {
     applyDocumentTheme(ctx.theme);

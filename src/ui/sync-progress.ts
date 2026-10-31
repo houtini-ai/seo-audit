@@ -1,4 +1,4 @@
-import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
+import { App, applyDocumentTheme, applyHostStyleVariables, type McpUiStyles } from '@modelcontextprotocol/ext-apps';
 
 // seo-audit-console refresh is phase-based: gsc → crawl → inspect → ranks → done.
 // check_sync_status returns { id, state, startedAt, progress:{phase, rowsFetched, crawled,
@@ -10,6 +10,7 @@ interface JobProgress {
   phase?: string; siteUrl?: string; rowsFetched?: number;
   crawled?: number; discovered?: number; failed?: number; skipped?: number;
   inspected?: number; periods?: number;
+  done?: number; total?: number; // CrUX phase (CruxSync emits these)
 }
 interface Job {
   id?: string; jobId?: string; state?: string; status?: string;
@@ -34,7 +35,7 @@ let ticker: ReturnType<typeof setInterval> | null = null;
 
 const app = new App({ name: 'SEO Audit - Sync Progress', version: '0.1.0' });
 
-function applyHostContext(ctx: { theme?: 'light' | 'dark'; styles?: { variables?: Record<string, string> } } | undefined): void {
+function applyHostContext(ctx: { theme?: 'light' | 'dark'; styles?: { variables?: McpUiStyles } } | undefined): void {
   if (!ctx) return;
   if (ctx.theme) { applyDocumentTheme(ctx.theme); document.documentElement.classList.toggle('dark', ctx.theme === 'dark'); }
   if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
