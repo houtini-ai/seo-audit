@@ -5,7 +5,7 @@ This page takes you from nothing to your first audit: install, connect Google Se
 ## What you need
 
 - **Node.js 20 or newer** (never installed it? Step 0 below walks you through it)
-- **Git** - or not; you can skip it entirely with the ZIP download in step 1
+- **Git** - only if you build from source; the npx route below doesn't need it (and even the source route has a ZIP download)
 - **Claude Desktop** or **Claude Code** (any MCP client works; these are the two I test on)
 - A **Google Search Console property you own**. If your site isn't verified there yet, do that first - it's free, takes ten minutes, and you should have it regardless of this tool.
 - *Optional:* a **DataForSEO** account, for keyword volumes, competitor data and backlinks. Everything else works without it. See [competitive.md](competitive.md) for what it adds and what it costs.
@@ -40,9 +40,9 @@ There's also a packaged Claude Desktop extension - a `.mcpb` bundle you double-c
 
 Honest status: the bundle on our [GitHub releases](https://github.com/houtini-ai/seo-audit/releases) page **lags the npm package** - the newest one there is v0.5.1, many releases behind - and it's still pending review for the Claude extension directory. Until a current bundle is published, **use the npx route above**: it always runs the latest release. If you do try a bundle, you still need the Search Console service account from step 2 below (the extension only removes the JSON-editing steps), and note it's built per platform (native SQLite/ONNX modules) - the bundle is built for Windows.
 
-## 0. Install the tools this tool is built with
+## 0. Install Node.js (and Git, for the source route)
 
-If you're an SEO rather than a developer, your machine probably doesn't have Node.js or Git yet. Both are free, both install in a couple of minutes, and neither will bother you again afterwards.
+If you're an SEO rather than a developer, your machine probably doesn't have Node.js yet. It's free, installs in a couple of minutes and won't bother you again afterwards. Git is only needed if you build from source (step 1).
 
 **Node.js** is the runtime the server runs on - it's what Claude actually starts when it loads the tool.
 
@@ -57,16 +57,16 @@ node --version
 
 Anything starting `v20` or higher and you're set. `npm` (the package installer used below) comes bundled with it - nothing extra to do.
 
-**Git** is how you download the code and, later, pull updates with one command.
+**Git** (source route only) is how you download the code and, later, pull updates with one command.
 
 - **Windows:** download from [git-scm.com](https://git-scm.com/download/win), run the installer, accept the defaults (there are a lot of option screens; the defaults are all fine).
 - **Mac:** type `git --version` in Terminal - macOS offers to install its command-line tools if Git isn't there yet. Say yes.
 
 **Don't fancy Git at all?** You don't strictly need it. On the [GitHub page](https://github.com/houtini-ai/seo-audit), click the green **Code** button, then **Download ZIP**, and unzip it somewhere sensible (not your Downloads folder - you'll be pointing Claude at this location permanently). The trade-off: updating later means downloading a fresh ZIP rather than typing `git pull`.
 
-## 1. Build it
+## 1. Build it (source route only)
 
-In your terminal, in the folder where you want the tool to live:
+Using npx? Skip to step 2: there's nothing to build. Otherwise, in your terminal, in the folder where you want the tool to live:
 
 ```bash
 git clone https://github.com/houtini-ai/seo-audit.git
@@ -136,8 +136,8 @@ Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config
 {
   "mcpServers": {
     "seo-audit-console": {
-      "command": "node",
-      "args": ["C:/path/to/seo-audit/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@houtini/seo-audit-console"],
       "env": {
         "GOOGLE_APPLICATION_CREDENTIALS": "C:/path/to/service-account.json",
         "SAC_DATA_DIR": "",
@@ -152,6 +152,8 @@ Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config
   }
 }
 ```
+
+Built from source? Use `"command": "node"` and `"args": ["C:/path/to/seo-audit/dist/index.js"]` instead of the npx pair.
 
 That's the everything block - every variable most people will ever set, so you can see the shape (the rarely needed ones are listed under [Environment variables](#environment-variables)). `CRUX_API_KEY` is optional: field Core Web Vitals, from a free Google API key restricted to the Chrome UX Report API ([setup below](#crux-key-optional)); an empty string leaves it off. Delete the lines for services you don't have, or leave their values blank to disable them; only `GOOGLE_APPLICATION_CREDENTIALS` is required, and each optional key just switches its own tier on (`MAJESTIC_API_KEY`, for instance, only ever does anything when you run `link_intersect` or `pull_backlinks`). Then **fully restart Claude Desktop** - quit it from the system tray, not just the window. Claude Desktop keeps the old server process running until you do, which catches people out constantly.
 
@@ -322,7 +324,8 @@ If the catalog entry still runs `npx`, the server logs a warning at start-up (in
 
 ## Troubleshooting
 
-- **`list_properties` is empty or errors.** Either the client isn't connected to the server yet, `GOOGLE_APPLICATION_CREDENTIALS` isn't set (the error says so), or the service account hasn't been added to your property (step 2.3 above - the classic). Fix the config, then fully restart Claude Desktop from the tray.
+- **Not sure what's set up?** Ask *"run seo_audit_help"*. It starts with **Setup on this machine**: whether the Search Console key file is set, exists and is a service-account key (with its email), which optional keys are on, how many properties have local data, and how to fix each gap. It makes no API call. Claude is also told to run it first, and every missing-credentials error points to it.
+- **`list_properties` is empty or errors.** Either the client isn't connected to the server yet, `GOOGLE_APPLICATION_CREDENTIALS` isn't set or points at a file that doesn't exist (the error says so), or the service account hasn't been added to your property (step 2.3 above - the classic). An empty list now names the service account's email to add. Fix the config, then fully restart Claude Desktop from the tray.
 - **The audit comes back with 0 findings, or the dashboard says there's no synced data.** Run the refresh first and let it finish. The audit reads the local database; it doesn't fetch anything itself.
 - **A large site feels slow.** That's the crawl, and it's normal. It backs off when your server rate-limits, so it stays gentle. Carry on when the progress panel says it's done.
 - **A keyword or competitor tool says it needs credentials.** Those are the optional DataForSEO tools. Everything in the core flow works without them.
@@ -333,12 +336,12 @@ If the catalog entry still runs `npx`, the server logs a warning at start-up (in
 - **A tool from the new release is missing after an upgrade** (`sync_crux`, say). The client cached the tool list when it connected. Fully restart Claude Desktop or Claude Code so it fetches the new list.
 - **Under the Docker MCP gateway, the first call times out or several workers appear.** A fresh worker spends about a minute in `npx` installing the package. Pin the version and pre-warm the npm cache, or use a preinstalled image: [Running under the Docker MCP gateway](#running-under-the-docker-mcp-gateway).
 
-Forget what's possible at any point? Ask *"run seo_audit_help"* - it returns the full menu with an example prompt for every feature.
+Forget what's possible at any point? Ask *"run seo_audit_help"* - after the setup status it returns the full menu with an example prompt for every feature.
 
 ## Where your data lives
 
-One SQLite database per property, under `SAC_DATA_DIR` (default `~/Documents/seo-audit-console`), alongside a small cache database per external service (`dataforseo-cache.db`, `majestic-cache.db`, `wikidata-cache.db`) - that's what stops the same question being paid for twice - the job registry (`_jobs.db`) and a `reports` folder for exports. `data_storage` shows you the lot with sizes.
+One SQLite database per property, under `SAC_DATA_DIR` (default `~/Documents/seo-audit-console`; a Domain property is `example.com.db`, a URL-prefix one `example.com_https.db`, and a Domain property gets `example.com_domain.db` if an older URL-prefix database already holds `example.com.db`), alongside a small cache database per external service (`dataforseo-cache.db`, `majestic-cache.db`, `wikidata-cache.db`) - that's what stops the same question being paid for twice - the job registry (`_jobs.db`), the hidden-properties list (`_dashboard.json`), a `.dashboard-secret` file the dashboard uses to recognise its own standing server, and a `reports` folder for exports. `data_storage` shows you the lot with sizes.
 
-Your Search Console history and crawl stay on your machine; the passage-scoring model runs locally too. Nothing leaves except the API calls you trigger yourself - Google (your own GSC) and, if configured, DataForSEO and Majestic (`link_intersect` sends prospect domain names; `pull_backlinks` sends your backlinked page URLs). Content recon's competitor fetch requests those public pages directly, with no service in between. After each crawl the tool also checks the outbound links on your pages (one request to each linked URL; `checkExternal:false` skips it), and the free extras fetch from public sources: the local models download once from Hugging Face, `resolve_entities` queries Wikidata and `news_discovery` reads the Google News feed. No telemetry.
+Your Search Console history and crawl stay on your machine; the passage-scoring model runs locally too. Nothing leaves except the API calls you trigger yourself - Google (your own GSC) and, if configured, DataForSEO and Majestic (`link_intersect` sends prospect domain names; `pull_backlinks` sends your backlinked page URLs). Content recon's competitor fetch requests those public pages directly, with no service in between. After each crawl the tool also checks the outbound links on your pages (one request to each linked URL; `checkExternal:false` skips it). Neither ever connects to a private or local network address, even through a redirect: those are reported, not fetched, and the free extras fetch from public sources: the local models download once from Hugging Face, `resolve_entities` queries Wikidata and `news_discovery` reads the Google News feed. No telemetry.
 
 Next: [tools.md](tools.md) for the full tool reference, or [composition.md](composition.md) for asking your own bespoke questions across the data.

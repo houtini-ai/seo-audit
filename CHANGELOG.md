@@ -10,6 +10,13 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 
 ## [Unreleased]
 
+### Security (code review, PRs #87-#104)
+- **The crawler never requests a redirect target off your site or in a robots-disallowed path.** It used to follow any `Location` header and check the final URL afterwards, so an open redirect could make it request an internal address.
+- **Third-party URLs never reach a private or local address.** Competitor pages (content recon) and outbound link checks connect only to public addresses, checked at every redirect hop; `probe_urls` only accepts one of your properties as the own host, and `render_pages` only renders URLs on it.
+- **No paid action is reachable from the browser dashboard.** Related terms, search volume, the YouTube and news SERPs and Trends were callable from the page with no quote; the browser's Content research now runs Google News (free), and the rest run from chat. The page also refuses foreign origins and framing.
+- **A standing dashboard on `SAC_DASHBOARD_PORT` is adopted only when it proves it serves the same data dir** (any service answering on the port used to be adopted), and a dead one is no longer handed out.
+- **Response bodies are read with a cap** (pages 5 MB, sitemaps 50 MB inflated, robots.txt 500 KiB): one huge page or gzip sitemap used to exhaust memory and take the server down.
+
 ### Changed
 - **One dashboard for every domain.** The browser dashboard and the portfolio were two separate apps; they are now one. A domain dropdown at the top of the sidebar lists All domains (the domains table, and the landing page once there is more than one property), your Search Console properties, watched domains, and databases held for sites that aren't yours. A property's dashboard gains a **Market & AI** tab with its DataForSEO overview. `/portfolio` and `/portfolio/domain?d=` redirect. The sidebar carries the Houtini mark.
 
@@ -39,6 +46,8 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 - **The dashboard sidecar logged every `docker stop` as an npm error.** It now exits 0 on SIGTERM / SIGINT, and its printed command adds `--init`.
 - **The first dashboard load after a sync stalled the whole server.** The payload build (about 20 GROUP BY scans; 18 s cold on a 1.8 GB property) ran on the server's main thread, so every other request, the job-status poll included, queued behind it. It now runs on a worker thread (identical concurrent requests share one build), and while it runs `list_domains` answered in 34 ms. A data job, a dashboard-run audit or an agent-readiness check also rebuilds the cache in the background when it finishes, so the next load is instant, and a slow cold load now says what it's doing.
 - **Sites you don't own counted as owned.** `pull_backlinks`, `link_intersect` and `track_ranks` create a database named by a bare domain (`rival.net`), and the portfolio counted every database as an owned domain, at the US location. Only Search Console property names (`sc-domain:` or a URL prefix) are owned now; the rest are listed as backlink data only.
+- **Code review fixes (numbers, data and rules):** average position is impression-weighted on the dashboard (it was a plain mean); the dashboard reads the latest *completed* audit (a failed or running one read as health 100); a prior period your history doesn't cover shows "no prior" instead of a comparison with zero or a partial window, and year-on-year needs the prior-year window held; the health score counts pages past the 500 findings a check stores; a Search Console sync writes all or nothing (a failed or cancelled one used to leave days truncated, or wipe history on a search-type change); a Domain property never shares an older URL-prefix property's database file; default audits run every deterministic check (three were silently skipped); `position-slipping` compares the same page with a real baseline; robots.txt follows RFC 9309 (wildcards, query strings, exact user-agent tokens, and an unreachable robots.txt stops the crawl); a Cloudflare rate limit is no longer read as a bot wall; `scripts/probe-web-unified.mjs` is committed, so `npm test` runs on a clean clone.
+- **Claude finds setup problems on its own:** the server instructions carry what's configured on this machine and say to run `seo_audit_help` first; `seo_audit_help` starts with *Setup on this machine*; credentials errors and an empty `list_properties` point to the fix.
 
 ## [0.17.0] — 2026-10-25
 
