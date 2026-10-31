@@ -310,7 +310,7 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
         : `date > date(?, '${start}') AND ${UB}`;
       const args = end ? [maxDate, maxDate] : [maxDate];
       const r = db.db
-        .prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position FROM gsc_rows WHERE ${where}`)
+        .prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0),0) position FROM gsc_rows WHERE ${where}`)
         .get(...args) as Totals;
       return r;
     };
@@ -352,21 +352,21 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
 
     const rankTrend = db.db
       .prepare(
-        `SELECT date, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(AVG(position),0) position
+        `SELECT date, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0),0) position
          FROM gsc_rows WHERE ${UB} AND date > date(?, '-90 days') GROUP BY date ORDER BY date`,
       )
       .all(maxDate) as { date: string; clicks: number; impressions: number; position: number }[];
 
     const curKw = db.db
       .prepare(
-        `SELECT query, SUM(clicks) clicks, AVG(position) position
+        `SELECT query, SUM(clicks) clicks, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position
          FROM gsc_rows WHERE query IS NOT NULL AND ${UB} AND date > date(?, '${W1}')
          GROUP BY query ORDER BY clicks DESC LIMIT 15`,
       )
       .all(maxDate) as { query: string; clicks: number; position: number }[];
     const priorKw = db.db
       .prepare(
-        `SELECT query, SUM(clicks) clicks, AVG(position) position
+        `SELECT query, SUM(clicks) clicks, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position
          FROM gsc_rows WHERE query IS NOT NULL AND date > date(?, '${W2}') AND date <= date(?, '${W1}')
          GROUP BY query`,
       )
@@ -400,9 +400,9 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     // Striking-distance queries (avg position 11–20, current period) — flagship #2
     const strikingDistance = (db.db
       .prepare(
-        `SELECT query, AVG(position) position, SUM(impressions) impressions, SUM(clicks) clicks
+        `SELECT query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position, SUM(impressions) impressions, SUM(clicks) clicks
          FROM gsc_rows WHERE query IS NOT NULL AND ${UB} AND date > date(?, '${W1}')
-         GROUP BY query HAVING AVG(position) > 10 AND AVG(position) <= 20 AND SUM(impressions) > 0
+         GROUP BY query HAVING position > 10 AND position <= 20 AND SUM(impressions) > 0
          ORDER BY SUM(impressions) DESC LIMIT 40`,
       )
       .all(maxDate) as { query: string; position: number; impressions: number; clicks: number }[])
@@ -441,7 +441,7 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     const dateAlignment = reconcileRanges(gscMin, maxDate, rankHistory ?? []);
 
     // Device breakdown (current vs prior 28d)
-    const devCur = db.db.prepare(`SELECT device, SUM(clicks) clicks, SUM(impressions) impressions, AVG(position) position FROM gsc_device_rows WHERE device <> '' AND ${UB} AND date > date(?, '${W1}') GROUP BY device`).all(maxDate) as any[];
+    const devCur = db.db.prepare(`SELECT device, SUM(clicks) clicks, SUM(impressions) impressions, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position FROM gsc_device_rows WHERE device <> '' AND ${UB} AND date > date(?, '${W1}') GROUP BY device`).all(maxDate) as any[];
     const devPrior = new Map((db.db.prepare(`SELECT device, SUM(clicks) clicks FROM gsc_device_rows WHERE device <> '' AND date > date(?, '${W2}') AND date <= date(?, '${W1}') GROUP BY device`).all(maxDate, maxDate) as any[]).map(d => [d.device, d.clicks]));
     const deviceBreakdown = devCur.map(d => ({ device: d.device, clicks: d.clicks, prevClicks: (devPrior.get(d.device) as number) ?? 0, impressions: d.impressions, ctr: d.impressions ? d.clicks / d.impressions : 0, position: Math.round(d.position * 10) / 10 }));
 
@@ -451,7 +451,7 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
 
     // Page performance + categorisation (current vs prior 28d)
     const pagePrior = new Map((db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions FROM gsc_rows WHERE page_key IS NOT NULL AND date > date(?, '${W2}') AND date <= date(?, '${W1}') GROUP BY page_key`).all(maxDate, maxDate) as any[]).map(p => [p.page_key, p]));
-    const pagePerformance = (db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions, AVG(position) position FROM gsc_rows WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '${W1}') GROUP BY page_key ORDER BY clicks DESC LIMIT 40`).all(maxDate) as any[]).map(p => {
+    const pagePerformance = (db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position FROM gsc_rows WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '${W1}') GROUP BY page_key ORDER BY clicks DESC LIMIT 40`).all(maxDate) as any[]).map(p => {
       const prev = (pagePrior.get(p.page_key) as any) ?? { clicks: 0, impressions: 0 };
       // The small-base rule (displayRules): no % on a prior under SMALL_BASE_MIN clicks (0 -> 1 is not +100%).
       const pct = prev.clicks >= SMALL_BASE_MIN ? Math.round(((p.clicks - prev.clicks) / prev.clicks) * 100) : null;
@@ -475,8 +475,8 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     const keywordMovement = (db.db.prepare(
       `WITH q AS (SELECT query, MIN(date) fd, MAX(date) ld FROM gsc_rows WHERE query IS NOT NULL AND ${UB} AND date > date(?, '-90 days') GROUP BY query HAVING SUM(impressions) >= 50 AND MIN(date) < MAX(date))
        SELECT q.query,
-         (SELECT AVG(position) FROM gsc_rows s WHERE s.query=q.query AND s.date=q.fd AND s.impressions>0) firstPos,
-         (SELECT AVG(position) FROM gsc_rows s WHERE s.query=q.query AND s.date=q.ld AND s.impressions>0) lastPos,
+         (SELECT SUM(s.position*s.impressions)*1.0/NULLIF(SUM(s.impressions),0) FROM gsc_rows s WHERE s.query=q.query AND s.date=q.fd AND s.impressions>0) firstPos,
+         (SELECT SUM(s.position*s.impressions)*1.0/NULLIF(SUM(s.impressions),0) FROM gsc_rows s WHERE s.query=q.query AND s.date=q.ld AND s.impressions>0) lastPos,
          q.fd firstDate, q.ld lastDate
        FROM q`,
     ).all(maxDate) as any[])

@@ -237,6 +237,39 @@ function audit(db, runId, at, crawlId, findings, checkIds = CHECKS) {
   ok(d.pageMovers.gaining.length === 0 && d.pageMovers.losing.length === 0, 'pageMovers: no phantom loser from doubled prior clicks');
 }
 
+// ── 5c. Average position is weighted by impressions, never a plain mean of rows ─────────────────
+// One query, two pages: page A 1,000 impressions at #2, page B 1 impression at #50. The true
+// average position is (1000×2 + 1×50) / 1001 = 2.05; a plain mean of rows says 26.
+{
+  const { site, adb, db } = property('weighted');
+  const max = '2026-10-10';
+  const ins = db.prepare(`INSERT INTO search_analytics (date,query,page,page_key,device,country,clicks,impressions,ctr,position) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  const seg = db.prepare(`INSERT INTO search_analytics_segments (date,query,page,page_key,device,country,clicks,impressions,ctr,position) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  db.transaction(() => {
+    for (let i = 0; i < 60; i++) {
+      const d = iso(Date.parse(max) - i * DAY);
+      ins.run(d, 'widgets', 'https://x.test/a', 'https://x.test/a', '', '', 50, 1000, 0.05, 2);
+      ins.run(d, 'widgets', 'https://x.test/b', 'https://x.test/b', '', '', 0, 1, 0, 50);
+      // Device segments: desktop 900 impressions at #2 plus 1 at #50 (weighted 2.05), mobile 1 at #40.
+      seg.run(d, 'widgets', 'https://x.test/a', 'https://x.test/a', 'DESKTOP', '', 45, 900, 0.05, 2);
+      seg.run(d, 'widgets', 'https://x.test/b', 'https://x.test/b', 'DESKTOP', '', 0, 1, 0, 50);
+      seg.run(d, 'widgets', 'https://x.test/a', 'https://x.test/a', 'MOBILE', '', 0, 1, 0, 40);
+    }
+  })();
+  adb.close();
+  const p = getDashboardData(dataDir, site);
+  const near = (v, want) => v != null && Math.abs(v - want) < 0.06;
+  ok(near(p.summary.current.position, 2.05), `weighted: Summary average position is impression-weighted (${p.summary.current.position})`);
+  ok(near(p.topKeywords[0]?.position, 2.05), `weighted: top keyword position is impression-weighted (${p.topKeywords[0]?.position})`);
+  ok(near(p.rankTrend.at(-1)?.position, 2.05), `weighted: daily rank trend position is impression-weighted (${p.rankTrend.at(-1)?.position})`);
+  ok(!p.strikingDistance.some(r => r.query === 'widgets'), 'weighted: a query averaging #2 is not listed as striking distance (11-20)');
+  ok(p.quickWins.find(r => r.query === 'widgets')?.position === p.topKeywords[0]?.position, 'weighted: the quick-wins and top-keyword positions agree');
+  const a = p.pagePerformance.find(r => r.urlKey === 'https://x.test/a');
+  ok(a && a.position < 3, `weighted: page position is impression-weighted (${a?.position})`);
+  const mobile = p.deviceBreakdown.find(d => d.device === 'MOBILE'), desktop = p.deviceBreakdown.find(d => d.device === 'DESKTOP');
+  ok(desktop?.position === 2.1 && mobile?.position === 40, `weighted: device positions are impression-weighted per device (${desktop?.position}, ${mobile?.position})`);
+}
+
 // ── 6. AI bots: one list, robots verdicts per RFC 9309 group matching ─────────────────────────
 {
   const robots = 'User-agent: *\nDisallow: /cart\n\nUser-agent: GPTBot\nAllow: /\n\nUser-agent: CCBot\nDisallow: /\n';
