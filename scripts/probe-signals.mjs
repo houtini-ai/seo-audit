@@ -19,6 +19,7 @@ import { storeRobotsTxt } from '../dist/core/robotsStore.js';
 import { snippetRestrictions } from '../dist/audit/checks-signals.js';
 import { getDashboardData } from '../dist/core/dashboardData.js';
 import { Crawler } from '../dist/core/Crawler.js';
+import { ensureExternalSchema } from '../dist/core/externalLinks.js';
 
 process.env.SAC_AUTOSERVE = '0';
 let pass = 0, fail = 0;
@@ -321,6 +322,31 @@ try {
       check('crawl -> snippet-restricted: the nosnippet homepage', sn.length === 1 && sn[0].evidence.directives[0].directive === 'nosnippet', JSON.stringify(sn));
       adb.close();
     } finally { server.close(); }
+  }
+
+  // ── Default audits run every deterministic check; only judgement (N) checks need the flag ──────────
+  // The gate was `certainty >= 1`, so three D checks with certainty 0.9 (external-broken,
+  // external-redirected, duplicate-article-entities) never ran without includeJudgement and a
+  // broken outbound link read as a pass.
+  {
+    const dirG = tmp('sac-gate-');
+    const SITE_G = 'sc-domain:gate.test';
+    const adb = new AuditDatabase(dbPathFor(dirG, SITE_G));
+    adb.upsertProperty(SITE_G, 'apex');
+    const db = adb.db;
+    db.prepare(`INSERT INTO crawl_metadata (crawl_id,base_url,base_domain,status,urls_crawled,started_at,finished_at) VALUES ('c1','https://gate.test','gate.test','completed',1,'2026-10-01T00:00:00Z','2026-10-01T00:10:00Z')`).run();
+    db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,content_type,is_internal,indexable,title) VALUES ('c1','https://gate.test/a','https://gate.test/a',200,'text/html',1,1,'A')`).run();
+    ensureExternalSchema(db);
+    db.prepare(`INSERT INTO links (crawl_id,source_url,source_key,target_url,target_key,is_internal) VALUES ('c1','https://gate.test/a','https://gate.test/a','https://dead.example/x','https://dead.example/x',0)`).run();
+    db.prepare(`INSERT INTO external_link_status (url_key,url,status,verdict) VALUES ('https://dead.example/x','https://dead.example/x',404,'broken')`).run();
+    adb.close();
+    const def = runAudit(dirG, SITE_G, {});
+    check('a default audit runs external-broken (a D check with certainty 0.9)', def.byCheck.some(b => b.checkId === 'external-broken'), JSON.stringify(def.byCheck.map(b => b.checkId)));
+    const ran = new Set(JSON.parse((() => { const a = new AuditDatabase(dbPathFor(dirG, SITE_G)); try { return a.db.prepare(`SELECT check_ids FROM audit_runs WHERE run_id=?`).get(def.runId).check_ids; } finally { a.close(); } })()).map(id => id.replace(/@\d+$/, '')));
+    const dChecks = CHECKS.filter(c => !c.labels.includes('N')).map(c => c.id);
+    const nChecks = CHECKS.filter(c => c.labels.includes('N')).map(c => c.id);
+    check('a default audit runs every check without the N label', dChecks.every(id => ran.has(id)), dChecks.filter(id => !ran.has(id)).join(','));
+    check('a default audit runs no N check', nChecks.every(id => !ran.has(id)), nChecks.filter(id => ran.has(id)).join(','));
   }
 } catch (e) {
   fail++;

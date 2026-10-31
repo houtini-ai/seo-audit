@@ -75,7 +75,7 @@ export interface AuditResult {
 export interface AuditOptions {
   scope?: 'core' | 'full';
   categories?: string[];
-  includeJudgement?: boolean; // run N (certainty < 1) checks too
+  includeJudgement?: boolean; // run judgement (N-labelled) checks too
   topLimit?: number; // findings returned in `top` (default 10, max 50); query_audit is the drill-down
 }
 
@@ -159,7 +159,10 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
 
     let checks = CHECKS;
     if (opts.categories?.length) checks = checks.filter(c => opts.categories!.includes(c.category));
-    if (!opts.includeJudgement) checks = checks.filter(c => c.certainty >= 1);
+    // Judgement (N) checks need includeJudgement. Gate on the label, not on certainty: three D checks
+    // carry certainty 0.9 (external-broken, external-redirected, duplicate-article-entities) and were
+    // silently left out of every default audit, so a broken outbound link read as a pass.
+    if (!opts.includeJudgement) checks = checks.filter(c => !c.labels.includes('N'));
 
     // Precompute per-page traffic for the window in ONE covering scan, instead of a query per
     // finding (which was hundreds of windowed aggregations on a 1.8M-row GSC table — seconds).
