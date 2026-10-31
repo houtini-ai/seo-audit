@@ -14,7 +14,7 @@
 
 Almost every technical SEO audit I've been handed in twenty years is a crawler's opinion, and a crawler only ever sees half the picture. It tells you what your site *says*. It has nothing to say about what Google *did* about it: which queries you rank for, which pages earn the impressions, where the clicks land.
 
-This one brings the other half. SEO Audit Console runs inside Claude, pulls your **Google Search Console** history, crawls your site properly, and joins the two so every finding carries the traffic at stake. A hundred and eleven checks, ranked by the clicks the fix could recover rather than how alarming the check sounds, and it writes the fix for you: the 301 rule, the JSON-LD, the internal links. The core audit needs nothing but your own Search Console; **DataForSEO** and **Majestic** slot in later, when your questions grow into competitors and link building. Your data stays on your machine.
+This one brings the other half. SEO Audit Console runs inside Claude, pulls your **Google Search Console** history, crawls your site properly, and joins the two so every finding carries the traffic at stake. A hundred and forty-three checks, ranked by the clicks the fix could recover rather than how alarming the check sounds, and it writes the fix for you: the 301 rule, the JSON-LD, the internal links. The core audit needs nothing but your own Search Console; **DataForSEO** and **Majestic** slot in later, when your questions grow into competitors and link building. Your data stays on your machine.
 
 **Built by [Houtini](https://houtini.com).** We build automation for the grunt work of digital marketing - the data collection, the crawling, the merging, the checking - so your team's time goes on the thinking, the strategy and the client work that needs a human. This plugin is that idea applied to the technical SEO audit.
 
@@ -112,7 +112,7 @@ This README is the story and the quick start. The detail lives in the manual:
 | [DataForSEO functions](manual/dataforseo.md) | Every DataForSEO-backed tool grouped by API module - Keywords, SERP, Labs, Backlinks, OnPage - each with its endpoint and cost |
 | [Majestic functions](manual/majestic.md) | The optional Trust Flow tier - what it adds, and how `link_intersect` and `pull_backlinks` use it |
 | [The portfolio](manual/portfolio.md) | Every domain you look after on one page (owned + watched): measured vs estimated, Domain Rank, AI mentions, needs-attention, the domain overview, and quoted, budget-capped refreshes |
-| [Dashboard & reports](manual/dashboard.md) | The eight tabs, what each chart shows, the browser dashboard (and its standalone version for Docker), and the shareable export |
+| [Dashboard & reports](manual/dashboard.md) | The ten tabs, what each chart shows, the browser dashboard (and its standalone version for Docker), and the shareable export |
 
 ## Surprisingly little has changed in twenty years
 
@@ -265,7 +265,7 @@ Three steps - the [quick start](#quick-start) above is the short version, and th
 2. **Connect Search Console:** create a Google Cloud service account, download its JSON key, and - the step everyone misses - **add the service account's email as a user on your property** in Search Console. Prefer a walkthrough with pictures? [Setting it up from scratch](https://houtini.com/articles/better-search-console/#setting-it-up-from-scratch) covers the whole flow.
 3. **Point your MCP client at it** with `GOOGLE_APPLICATION_CREDENTIALS` set: `npx -y @houtini/seo-audit-console` for the published package, or `node /path/to/seo-audit-console/dist/index.js` if you built from source. Works in Claude Desktop and Claude Code; only the one env var is required.
 
-Every environment variable the server reads, in one block. The first is required and everything below it is optional: fill in the ones you use and leave the rest as empty strings (or delete them). An empty value switches that service off, and so does leftover template text such as `your-key-here` (with one line in the server's log saying so).
+The environment variables an MCP client config usually sets, in one block (the dashboard, job-runner and tuning ones are in the [getting-started table](manual/getting-started.md)). The first is required and everything below it is optional: fill in the ones you use and leave the rest as empty strings (or delete them). An empty value switches that service off, and so does leftover template text such as `your-key-here` (with one line in the server's log saying so).
 
 ```json
 {
@@ -401,7 +401,7 @@ The one-line version - full descriptions, inputs and example prompts for every t
 | `recon_targets` · `save_recon_todo` · `recon_todos` | **Content recon:** why a page is losing (live SERP + AI Overview) → a tracked, annotatable to-do board |
 | `portfolio` · `refresh_portfolio` · `schedule_portfolio_refresh` · `get_portfolio` | **The portfolio:** every domain you look after (owned + watched) in one table, measured vs estimated · refresh it (quotes first) · schedule it under a monthly budget cap · see it in chat |
 | `get_dashboard` · `serve_dashboard` · `export_report` | In-chat dashboard · the same in a local browser tab · shareable HTML |
-| `get_dashboard_data` · `get_portfolio_data` · `get_domain_overview` | Internal: the dashboard widgets fetch their data through these; not for direct use |
+| `get_dashboard_data` · `list_findings` · `get_portfolio_data` · `get_domain_overview` | Internal: the dashboard widgets fetch their data through these; not for direct use |
 | `composition_cookbook` | The data-surface map and recipes for bespoke analyses |
 | `data_storage` | Per-property disk usage and row counts, confirm-gated pruning, and an integrity check with index repair |
 | `normalize_url` · `data_location` · `list_properties` · `seo_audit_help` | Utilities and the help menu |

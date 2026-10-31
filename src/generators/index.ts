@@ -127,8 +127,8 @@ export function suggestInternalLinks(db: Database.Database, receiverUrlKey: stri
   const alreadyLinking = new Set(
     (db.prepare('SELECT DISTINCT source_key FROM links WHERE target_key = ?').all(receiverUrlKey) as { source_key: string }[]).map(r => r.source_key),
   );
-  // Prefer high-authority donors (iPR) — the "money move" is link equity flowing from
-  // strong pages to the under-linked receiver; topical relevance breaks ties.
+  // Donors come from the 80 highest-iPR pages (link equity flowing from strong pages to the
+  // under-linked receiver), then the most topically related of those win; iPR breaks ties.
   // HTML pages only — never suggest linking from a non-HTML resource (RSS feed, image, PDF).
   // Match the MIME type before any charset parameter (mirrors isHtmlContentType).
   const candidates = db.prepare(

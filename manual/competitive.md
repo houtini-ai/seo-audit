@@ -41,7 +41,7 @@ My own usage across several properties runs to a few dollars a month. Your milea
 
 ### The organic overview: `domain_visibility`
 
-Monthly ranking-keyword counts, position distribution (1-3 / 4-10 / 11-20 / 21-100) and estimated traffic value for **any domain or subdomain** - yours or a competitor's, no Search Console access needed. Comes back as a month-by-month table with a trend verdict.
+Monthly ranking-keyword counts, position distribution (1-3 / 4-10 / 11-20 / 21-100) and estimated traffic volume for **any domain or subdomain** - yours or a competitor's, no Search Console access needed. Comes back as a month-by-month table with a trend verdict.
 
 > Show visibility over time for competitor.com
 > Is rival.co.uk growing or declining in the UK market?
