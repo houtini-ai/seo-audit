@@ -30,7 +30,11 @@ export function sparkline(series: number[], lowerIsBetter = false, domain?: [num
  * A count's change under the small-base rule (core/displayRules.ts): a % on a prior of
  * SMALL_BASE_MIN or more, else the signed difference ("+1 click"), so 0 -> 1 never reads +100%.
  */
-export function countDelta(current: number, prior: number, unit = 'click', lowerIsBetter = false): string {
+/** The change cell when the prior period isn't held (the payload sends null): no comparison, never "up from 0". */
+export const NO_PRIOR_HTML = `<span class="chg flat" title="The prior period is not fully held in the synced Search Console history, so there is nothing to compare with.">no prior</span>`;
+
+export function countDelta(current: number, prior: number | null, unit = 'click', lowerIsBetter = false): string {
+  if (prior == null) return NO_PRIOR_HTML;
   const c = countChange(current, prior);
   if (c.mode === 'pct') return delta(c.value, lowerIsBetter);
   if (!c.diff) return `<span class="chg flat" title="${fmtNum(prior)} → ${fmtNum(current)}">flat</span>`;
@@ -44,7 +48,8 @@ export function countDelta(current: number, prior: number, unit = 'click', lower
  * An average-position change in positions, never a % of a rank. The arrow points the way the RANK
  * moved (up = better, the position number fell), and the colour says better or worse.
  */
-export function rankDelta(current: number, prior: number, opts: { short?: boolean } = {}): string {
+export function rankDelta(current: number, prior: number | null, opts: { short?: boolean } = {}): string {
+  if (prior == null) return NO_PRIOR_HTML;
   const r = rankChange(current, prior);
   const title = `Average position ${prior.toFixed(1)} → ${current.toFixed(1)}: ${r.flat ? 'no change' : `${r.positions.toFixed(1)} position${r.positions === 1 ? '' : 's'} ${r.better ? 'better' : 'worse'}`} (lower is better).`;
   if (r.flat) return `<span class="chg flat" title="${title}">flat</span>`;

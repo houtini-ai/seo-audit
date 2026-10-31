@@ -2,7 +2,7 @@ import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextp
 import {
   esc, fmtNum, fmtCompact, fmtDate, fmtMonth, fmtWeek, icons, sevBadge, statusBadge, badge, kpiGrid, filterGroup,
   attachSort, accordionItem, accordionSection, accordionControls,
-  EChartWrapper, chartPalette, axisDefaults, tooltipDefaults, emptyState, countDelta, rankDelta,
+  EChartWrapper, chartPalette, axisDefaults, tooltipDefaults, emptyState, countDelta, rankDelta, NO_PRIOR_HTML,
 } from './lib/index.js';
 import { shareText, sharePct, quickWinsEmptyReason, trappedEmptyReason, CATEGORY_LABEL, categoryLabel, breakdownsEmptyReason as emptyBreakdowns } from '../core/displayRules.js';
 import { TITLE_MAX_CHARS, META_DESC_MAX_CHARS } from '../core/onPageLimits.js';
@@ -30,15 +30,15 @@ export interface DashboardData {
     history: { fetchedAt: string | null; months: { month: string; newDomains: number; lostDomains: number; referringDomains: number | null; backlinks: number | null; days: number }[] } | null;
   } | null;
   dateRange?: { current: string; prior?: string; maxDate: string; rawMaxDate?: string; trimmedDays?: number; days?: number; minDate?: string | null };
-  summary?: { current: Totals; prior: Totals };
+  summary?: { current: Totals; prior: Totals | null }; // prior null = the prior window is not held
   rankTrend?: { date: string; clicks: number; impressions: number; position: number }[];
   rankingDistribution?: { date: string; b1: number; b2: number; b3: number; b4: number }[];
   strikingDistance?: { query: string; position: number; impressions: number; clicks: number }[];
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
   cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; crossType: boolean; urls: { url: string; impressions: number; clicks: number; position: number; template: string }[] }[];
-  brandedSplit?: { brand: string; variants?: string[]; uncertain?: { spellings: string[]; queries: number; impressions: number; clicks: number; joinedImpressions: number; joinedClicks: number } | null; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number; priorNonBrandedClicks: number };
-  topKeywords?: { query: string; clicks: number; prevClicks: number; clicksChange: number; position: number; prevPosition: number }[];
+  brandedSplit?: { brand: string; variants?: string[]; uncertain?: { spellings: string[]; queries: number; impressions: number; clicks: number; joinedImpressions: number; joinedClicks: number } | null; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number | null; priorNonBrandedClicks: number | null };
+  topKeywords?: { query: string; clicks: number; prevClicks: number | null; clicksChange: number | null; position: number; prevPosition: number | null }[];
   rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
   dateAlignment?: { note: string };
   deviceBreakdown?: { device: string; clicks: number; prevClicks: number; impressions: number; ctr: number; position: number }[];
@@ -682,11 +682,12 @@ function render(data: DashboardData): void {
   const sCtr = spark.map(d => d.impressions ? d.clicks / d.impressions : 0);
   const sPos = spark.map(d => d.position).filter(v => v > 0);
   $('metrics').outerHTML = kpiGrid([
-    { label: 'Clicks', value: fmtCompact(c.clicks), changeHtml: countDelta(c.clicks, p.clicks), spark: sClicks },
-    { label: 'Impressions', value: fmtCompact(c.impressions), changeHtml: countDelta(c.impressions, p.impressions, 'impression'), spark: sImpr },
-    { label: 'CTR', value: `${(c.ctr * 100).toFixed(1)}%`, change: pctChg(c.ctr, p.ctr), spark: sCtr },
+    // p is null when the prior window isn't held: each tile then says "no prior", never a change from 0.
+    { label: 'Clicks', value: fmtCompact(c.clicks), changeHtml: countDelta(c.clicks, p?.clicks ?? null), spark: sClicks },
+    { label: 'Impressions', value: fmtCompact(c.impressions), changeHtml: countDelta(c.impressions, p?.impressions ?? null, 'impression'), spark: sImpr },
+    p ? { label: 'CTR', value: `${(c.ctr * 100).toFixed(1)}%`, change: pctChg(c.ctr, p.ctr), spark: sCtr } : { label: 'CTR', value: `${(c.ctr * 100).toFixed(1)}%`, changeHtml: NO_PRIOR_HTML, spark: sCtr },
     // A rank's change is shown in positions, never as a % of the rank (#68 real-data fix).
-    { label: 'Avg position', value: c.position.toFixed(1), changeHtml: rankDelta(c.position, p.position), lowerIsBetter: true, spark: sPos },
+    { label: 'Avg position', value: c.position.toFixed(1), changeHtml: rankDelta(c.position, p?.position ?? null), lowerIsBetter: true, spark: sPos },
   ]).replace('<div class="metrics">', '<div class="metrics" id="metrics">');
 
   const col = palette();
@@ -1354,12 +1355,14 @@ function render(data: DashboardData): void {
     series: [{
       type: 'bar',
       label: { show: true, position: 'right', color: col.muted, fontSize: 11, formatter: (p: any) => (p.value > 0 ? '+' : '') + p.value },
-      data: kw.map(k => ({ value: k.clicksChange, itemStyle: { color: k.clicksChange >= 0 ? col.green : col.red } })),
+      data: kw.map(k => ({ value: k.clicksChange, itemStyle: { color: (k.clicksChange ?? 0) >= 0 ? col.green : col.red } })),
     }],
   });
   kwWrap.on('click', (pa: any) => { void loadRelated(kw[pa.dataIndex].query); });
-  const up = kw.filter(k => k.clicksChange > 0).length, down = kw.filter(k => k.clicksChange < 0).length;
-  $('kwSummary').textContent = `${kw.length} top keywords; ${up} improved and ${down} declined versus the prior period (signed click change shown on each bar).`;
+  const up = kw.filter(k => (k.clicksChange ?? 0) > 0).length, down = kw.filter(k => (k.clicksChange ?? 0) < 0).length;
+  $('kwSummary').textContent = kw.some(k => k.clicksChange == null)
+    ? `${kw.length} top keywords. The prior period is not fully held in the synced history, so there is no click change to show.`
+    : `${kw.length} top keywords; ${up} improved and ${down} declined versus the prior period (signed click change shown on each bar).`;
 
   // Report tables (agency-style)
   const pp = data.pagePerformance ?? [];

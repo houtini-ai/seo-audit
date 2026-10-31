@@ -17,7 +17,7 @@ import { contentArchitecture, type TopicCluster } from '../audit/contentArchitec
 import { auditHistory, backfillAuditHealth, computeHealth, healthBand, HEALTH_DEFINITION, LATEST_COMPLETED_RUN_WHERE, type AuditHistory } from '../audit/history.js';
 import {
   monthlyClicks, yearOnYear, summaryEvents, driftSummary, findingsByCategory, clicksAtRiskByCheck, aiOverviewSummary, pageMovers, coverage,
-  clickWindows,
+  clickWindows, priorHeld,
   type MonthlyClicks, type YearOnYear, type SummaryEvent, type DriftSummary, type CategoryRow, type AiOverviewSummary, type PageMovers, type Coverage,
   type GscShape, type ClickWindows,
 } from './summaryData.js';
@@ -43,7 +43,8 @@ export interface DashboardData {
   dateRange?: { current: string; prior: string; maxDate: string; rawMaxDate: string; trimmedDays: number; days: number; minDate: string | null };
   summary?: {
     current: { clicks: number; impressions: number; ctr: number; position: number };
-    prior: { clicks: number; impressions: number; ctr: number; position: number };
+    /** null when the prior window isn't held (summaryData.priorHeld): missing, never zeros. */
+    prior: { clicks: number; impressions: number; ctr: number; position: number } | null;
   };
   rankTrend?: { date: string; clicks: number; impressions: number; position: number }[];
   rankHistory?: { period: string; pos_1_3: number; pos_4_10: number; pos_11_20: number; pos_21_100: number; etv: number; keyword_count: number }[];
@@ -58,14 +59,14 @@ export interface DashboardData {
   quickWins?: { query: string; position: number; impressions: number; clicks: number; ctr: number; expectedCtr: number; type: 'striking' | 'snippet' | 'serp' | 'ok'; potential: number }[];
   contentDecay?: { urlKey: string; prevClicks: number; clicks: number; lost: number; dropPct: number; impressions: number; position: number }[];
   cannibalisationTable?: { query: string; urlCount: number; totalImpressions: number; totalClicks: number; verdict: 'split' | 'dominant'; crossType: boolean; urls: { url: string; impressions: number; clicks: number; position: number; template: string }[] }[];
-  brandedSplit?: { brand: string; variants: string[]; brandedQueries: number; uncertain: import('./brand.js').UncertainBrand | null; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number; priorNonBrandedClicks: number };
+  brandedSplit?: { brand: string; variants: string[]; brandedQueries: number; uncertain: import('./brand.js').UncertainBrand | null; branded: { clicks: number; impressions: number }; nonBranded: { clicks: number; impressions: number }; priorBrandedClicks: number | null; priorNonBrandedClicks: number | null };
   topKeywords?: {
     query: string;
     clicks: number;
-    prevClicks: number;
-    clicksChange: number;
+    prevClicks: number | null;
+    clicksChange: number | null;
     position: number;
-    prevPosition: number;
+    prevPosition: number | null;
   }[];
   deviceBreakdown?: { device: string; clicks: number; prevClicks: number; impressions: number; ctr: number; position: number }[];
   countryBreakdown?: { country: string; clicks: number; prevClicks: number; impressions: number }[];
@@ -314,8 +315,20 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
         .get(...args) as Totals;
       return r;
     };
+
+    // Days with data in each window: the prior compares only when it is held (priorHeld).
+    const daysWithData = (start: string, end?: string): number => (db.db
+      .prepare(`SELECT COUNT(DISTINCT date) n FROM gsc_rows WHERE ${end ? `date > date(?, '${start}') AND date <= date(?, '${end}')` : `date > date(?, '${start}') AND ${UB}`}`)
+      .get(...(end ? [maxDate, maxDate] : [maxDate])) as { n: number }).n;
+    const curDays = daysWithData(W1), priorDays = daysWithData(W2, W1);
     const cur = totals(W1);
-    const prior = totals(W2, W1);
+    const priorAll = totals(W2, W1);
+    // The prior window compares only when it is held (the history reaches it, and it isn't mostly
+    // gaps): otherwise it is null, never a row of zeros that reads as "up from none".
+    const heldFrom = (db.db.prepare('SELECT MIN(date) d FROM gsc_rows').get() as { d: string | null }).d;
+    const priorStart = new Date(Date.parse(`${maxDate}T00:00:00Z`) - (days * 2 - 1) * 86_400_000).toISOString().slice(0, 10);
+    const hasPrior = priorHeld(heldFrom, priorStart, curDays, priorDays);
+    const prior = hasPrior ? priorAll : null;
     const ctr = (t: Totals): number => (t.impressions ? t.clicks / t.impressions : 0);
 
     // Branded vs non-branded. The brand is the domain stem; a query is branded when a run of its
@@ -345,8 +358,8 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
         uncertain: brand.uncertain,
         branded: { clicks: splitRow.bClk, impressions: splitRow.bImp },
         nonBranded: { clicks: splitRow.tClk - splitRow.bClk, impressions: splitRow.tImp - splitRow.bImp },
-        priorBrandedClicks: priorRow.bClk,
-        priorNonBrandedClicks: priorRow.tClk - priorRow.bClk,
+        priorBrandedClicks: hasPrior ? priorRow.bClk : null,
+        priorNonBrandedClicks: hasPrior ? priorRow.tClk - priorRow.bClk : null,
       };
     }
 
@@ -378,10 +391,11 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
       return {
         query: k.query,
         clicks: k.clicks,
-        prevClicks: p?.clicks ?? 0,
-        clicksChange: k.clicks - (p?.clicks ?? 0),
+        // Unheld prior window: null. A query with no prior rows had 0 clicks but NO position (null, not 0).
+        prevClicks: hasPrior ? p?.clicks ?? 0 : null,
+        clicksChange: hasPrior ? k.clicks - (p?.clicks ?? 0) : null,
         position: Math.round(k.position * 10) / 10,
-        prevPosition: p ? Math.round(p.position * 10) / 10 : 0,
+        prevPosition: hasPrior && p ? Math.round(p.position * 10) / 10 : null,
       };
     });
 
@@ -1024,7 +1038,7 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
       contentDecay,
       summary: {
         current: { ...cur, ctr: ctr(cur) },
-        prior: { ...prior, ctr: ctr(prior) },
+        prior: prior ? { ...prior, ctr: ctr(prior) } : null,
       },
       rankTrend,
       topKeywords,

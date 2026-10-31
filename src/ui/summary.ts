@@ -44,9 +44,10 @@ const dayLabel = (at: string | null | undefined): string => {
 };
 const SEV_BAR: Record<string, string> = { crit: 'var(--intent-danger)', high: 'var(--intent-warning)', med: 'var(--intent-info)', low: 'var(--text-faint)', info: 'var(--text-faint)' };
 
-/** Clicks, last 28 days vs the prior 28, each day counted once (clickWindows), else the older totals. */
-const clicks28 = (d: any): { current: number; prior: number } | null =>
-  d.clickWindows ? { current: d.clickWindows.current, prior: d.clickWindows.prior } : d.summary ? { current: d.summary.current.clicks, prior: d.summary.prior.clicks } : null;
+/** Clicks, last 28 days vs the prior 28, each day counted once (clickWindows), else the older totals.
+ *  `prior` is null when the prior 28 days aren't held: no comparison is made. */
+const clicks28 = (d: any): { current: number; prior: number | null } | null =>
+  d.clickWindows ? { current: d.clickWindows.current, prior: d.clickWindows.prior ?? null } : d.summary ? { current: d.summary.current.clicks, prior: d.summary.prior?.clicks ?? null } : null;
 
 // ── Panel 0: freshness strip ──────────────────────────────────────────────────────────────────
 function freshness(d: any): string {
@@ -115,10 +116,11 @@ function tiles(d: any): string {
     if (yoy?.available) {
       const yp = direction(yoy.clicks, yoy.priorYearClicks).pct;
       yoyTxt = yp == null ? 'no clicks a year ago' : `<span class="n">${yp >= 0 ? '+' : '−'}${Math.abs(Math.round(yp))}%</span> on a year ago`;
-    } else if (yoy) yoyTxt = 'year-on-year needs 13 months';
+    } else if (yoy?.reason === 'prior-year-gaps') yoyTxt = `year-on-year: the prior-year window holds ${yoy.priorYearDays} of ${yoy.currentDays} days`;
+    else if (yoy) yoyTxt = 'year-on-year needs 13 months';
     out.push(tile({
       label: 'Organic clicks · 28d', value: `<span class="n">${fmtCompact(c)}</span>`,
-      foot: `${p ? `<span class="n">${countDelta(c, p)}</span>` : '<span class="chg flat">no prior clicks</span>'}${months.length >= 2 ? sparkline(months) : ''}`,
+      foot: `${p == null ? '<span class="chg flat" title="The prior 28 days are not fully held in the synced Search Console history.">no prior 28 days held</span>' : p ? `<span class="n">${countDelta(c, p)}</span>` : '<span class="chg flat">no prior clicks</span>'}${months.length >= 2 ? sparkline(months) : ''}`,
       sub: yoyTxt, title: `Last 28 days to ${d.dateRange?.maxDate ?? ''} vs the prior 28.${yoy?.available ? ` Year-on-year: the same 28 days 52 weeks earlier (${yoy.priorWindow.start} to ${yoy.priorWindow.end}).` : ''}${months.length >= 2 ? ` Sparkline: ${months.length} complete months.` : ''}`,
     }));
     const bs = d.brandedSplit;

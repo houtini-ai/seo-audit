@@ -44,7 +44,8 @@ export interface PortfolioRow {
   group: string | null;
   siteUrls: string[];
   /** Owned only: GSC clicks, 28 days (measured), vs the prior 28. */
-  clicks28: { value: number; prior: number; change: Change; window: { start: string; end: string } } | null;
+  /** `prior` / `change` null when the prior 28 days aren't held (clickWindows): no comparison. */
+  clicks28: { value: number; prior: number | null; change: Change | null; window: { start: string; end: string } } | null;
   audit: { score: number; prior: number | null; at: string } | null;
   organicKeywords: Metric;
   organicTraffic: Metric;
@@ -281,8 +282,8 @@ function readOwned(dataDir: string, files: Map<string, string>, siteUrls: string
       const end = gscWindowEnd(db);
       if (end) {
         const w = clickWindows(db, end);
-        const c = countChange(w.current, w.prior);
-        clicks28 = { value: w.current, prior: w.prior, change: { from: w.priorWindow.start, to: w.window.end, mode: c.mode, value: c.value, diff: c.diff }, window: w.window };
+        const c = w.prior == null ? null : countChange(w.current, w.prior);
+        clicks28 = { value: w.current, prior: w.prior, change: c ? { from: w.priorWindow.start, to: w.window.end, mode: c.mode, value: c.value, diff: c.diff } : null, window: w.window };
       }
       let audit: OwnedReads['audit'] = null;
       try {
@@ -314,7 +315,7 @@ export function attentionRules(
   const out: string[] = [];
   // Each rule compares the series' own latest complete month (see seriesEnd).
   const ends = (ser: Map<string, MonthRow> | undefined, col: string) => { const e = seriesEnd(ser, m.L, col); return { e, p: addMonths(e, -1), p2: addMonths(e, -2) }; };
-  if (r.clicks28 && r.clicks28.prior >= 200) {
+  if (r.clicks28 && r.clicks28.prior != null && r.clicks28.prior >= 200) {
     const down = pctDown(r.clicks28.value, r.clicks28.prior);
     if (down != null && down >= 20) out.push(`Search Console clicks down ${Math.round(down)}% (28 days: ${fmt(r.clicks28.value)} vs ${fmt(r.clicks28.prior)})`);
   }
