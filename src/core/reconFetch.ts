@@ -1,4 +1,5 @@
-import { extractPage } from './extract.js';
+import { readCapped, MAX_HTML_BYTES } from './cappedBody.js';
+import { extractPage, decodeHtmlBody } from './extract.js';
 
 /**
  * Owned-page access path for content recon: fetch one of OUR pages live and run the
@@ -25,7 +26,7 @@ export async function fetchOwnPage(url: string, hostForm: 'apex' | 'www' | 'asis
     headers: { 'user-agent': 'seo-audit-console recon (+https://github.com/houtini-ai/seo-audit)' },
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const html = await res.text();
+  const html = decodeHtmlBody((await readCapped(res, MAX_HTML_BYTES)).buf, res.headers.get('content-type'));
   const ex = extractPage(html, url, host, { hostForm }, res.headers.get('x-robots-tag'));
 
   const chunks = ex.bodyChunks ?? [];

@@ -21,6 +21,7 @@ export interface AgentReadiness {
   commerceNote: string;
 }
 
+import { readCappedText } from './cappedBody.js';
 import { AI_BOTS, AI_BOT_PATTERN, type AiBotGroup } from './aiBots.js';
 import { robotsVerdict } from './robots.js';
 
@@ -33,7 +34,8 @@ async function probe(url: string, accept = '*/*'): Promise<Probe> {
   try {
     const res = await fetch(url, { headers: { 'user-agent': UA, accept }, redirect: 'follow', signal: AbortSignal.timeout(8000) });
     const ct = (res.headers.get('content-type') ?? '').toLowerCase();
-    const text = res.ok ? (await res.text()).slice(0, 20000) : '';
+    const text = res.ok ? (await readCappedText(res, 20000)).text : '';
+    if (!res.ok) { try { await res.body?.cancel(); } catch { /* no body */ } }
     return { ok: res.ok, status: res.status, ct, text, link: res.headers.get('link') };
   } catch { return { ok: false, status: 0, ct: '', text: '', link: null }; }
 }

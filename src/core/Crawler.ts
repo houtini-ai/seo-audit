@@ -1,3 +1,4 @@
+import { readCapped, MAX_HTML_BYTES } from './cappedBody.js';
 import { randomUUID } from 'node:crypto';
 import { Agent, fetch as ufetch } from 'undici';
 import { AuditDatabase } from './AuditDatabase.js';
@@ -81,7 +82,7 @@ export interface CrawlResult {
   failed: number;
   skipped: number;
   /** Sitemaps found: declared in robots.txt, plus conventional locations robots.txt didn't declare (#25). */
-  sitemaps?: { declared: string[]; undeclared: string[]; fetched: number; urls: number };
+  sitemaps?: { declared: string[]; undeclared: string[]; fetched: number; urls: number; /** Sitemaps over 50 MB uncompressed: not parsed. */ oversized?: string[] };
   /** Outbound link status pass (#36). */
   external?: ExternalSummary;
   /** Soft-404 and host-variant probes (#55 group D): what was probed and each verdict. */
@@ -132,6 +133,8 @@ interface FetchOutcome {
   redirects: RedirectHop[];
   xRobotsTag: string | null;
   bytes: number | null;
+  /** The HTML body was longer than MAX_HTML_BYTES and was read only up to it. */
+  truncated?: boolean;
   timeMs: number;
   throttled: boolean; // saw a plain 503 or a network error (after retries) — signal for adaptive pacing
   fetchedAs: FetchedAs; // which user agent produced this response
@@ -291,7 +294,9 @@ async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, ga
     // Decode ONCE, honouring the response charset (Content-Type → <meta charset> → UTF-8). Using
     // res.text() would force UTF-8 regardless of the declared charset — fine for a UTF-8 site, but
     // it mojibakes a page served as Latin-1/Windows-1252. decodeHtmlBody reads the declared charset.
-    if (isHtml) body = decodeHtmlBody(Buffer.from(await res.arrayBuffer()), contentType);
+    // Bounded (cappedBody.ts): a page over MAX_HTML_BYTES is read up to it and flagged, never buffered whole.
+    let truncated = false;
+    if (isHtml) { const got = await readCapped(res as unknown as { body: ReadableStream<Uint8Array> | null }, MAX_HTML_BYTES); truncated = got.truncated; body = decodeHtmlBody(got.buf, contentType); }
     else { try { await res.body?.cancel(); } catch { /* already closed */ } }
     const h = (name: string): string | null => res.headers.get(name);
     const sec: Record<string, string> = {};
@@ -327,6 +332,7 @@ async function fetchWithRedirects(url: string, ua: string, dispatcher: Agent, ga
       rateLimited: null,
       sentAt,
       shopify,
+      ...(truncated ? { truncated } : {}),
     };
   }
 }
@@ -491,7 +497,7 @@ export class Crawler {
     if (!signal.aborted) {
       try {
         const sm = await fetchSitemapUrls(origin, ua, keyOpts);
-        sitemaps = { declared: sm.sources, undeclared: sm.undeclared, fetched: sm.sitemapsFetched, urls: sm.urls.length };
+        sitemaps = { declared: sm.sources, undeclared: sm.undeclared, fetched: sm.sitemapsFetched, urls: sm.urls.length, ...(sm.oversized.length ? { oversized: sm.oversized } : {}) };
         const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, lastmod, fetched_at) VALUES (?,?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
         db.db.transaction(() => { db.db.exec('DELETE FROM sitemap_urls'); for (const u of sm.urls) smInsert.run(u.urlKey, u.url, u.lastmod); })();
         for (const u of sm.urls) {
@@ -643,6 +649,7 @@ export class Crawler {
         // its outlinks AGAIN, inflating inlink_count/iPR weights — so skip re-processing.
         if (emitted.has(finalKey)) { crawled++; flush(); return; }
         emitted.add(finalKey);
+        if (r.truncated) errorInsert.run(crawlId, r.finalUrl, 'body-truncated', `HTML body over ${MAX_HTML_BYTES / 1024 / 1024} MB: read and extracted up to that size only`);
         const status = offsite ? (r.redirects[0]?.status ?? r.status) : r.status;
         const isHtml = !offsite && isHtmlContentType(r.contentType);
         const ex = isHtml && r.status === 200 ? extractPage(r.body, r.finalUrl, baseHost, keyOpts, r.xRobotsTag) : null;
