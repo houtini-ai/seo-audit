@@ -118,6 +118,7 @@ scripts/*
 !scripts/probe-reply-latency.mjs
 !scripts/probe-regrouped-deltas.mjs
 !scripts/probe-web-unified.mjs
+!scripts/probe-schema-parsing.mjs
 
 # --- secrets hardening (never commit) ---
 *.pem
