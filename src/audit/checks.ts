@@ -4,6 +4,9 @@ import { TITLE_MAX_CHARS, META_DESC_MAX_CHARS } from '../core/onPageLimits.js';
 import type { FindingLabel, Severity } from '../core/AuditDatabase.js';
 import { validateJsonLdColumn, type SchemaIssueKind } from './schema-validate.js';
 import { parseJsonLdNodes, nodeType } from './templates.js';
+import { collectTypedNodes, typesOf, ORGANIZATION_TYPES, WEBSITE_TYPES, hasSchemaType } from './schemaTypes.js';
+
+const BREADCRUMB_TYPES = new Set(['breadcrumblist']);
 import { expectedCtr } from '../core/ctrModel.js';
 import { latestTwoCrawls } from './drift.js';
 import { HTML_CT } from '../core/sql.js';
@@ -843,9 +846,14 @@ export const CHECKS: CheckDef[] = [
       const hp = (rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND click_depth=0 LIMIT 1`)[0]
         ?? rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 ORDER BY inlink_count DESC LIMIT 1`)[0]);
       if (!hp) return [];
-      const types = new Set(parseJsonLdNodes(hp.jsonLd).map(nodeType).filter(Boolean));
-      const ok = ['Organization', 'LocalBusiness', 'Corporation', 'OnlineStore', 'WebSite'].some(t => types.has(t));
-      return ok ? [] : [{ urlKey: hp.urlKey, evidence: { found: [...types].join(', ') || 'none', note: 'no Organization/WebSite node on the homepage' } }];
+      // Collect EVERY typed node, however deeply nested (WebPage > mainEntity > Corporation,
+      // WebPage > isPartOf > WebSite), and match the whole Organization subtree case-insensitively
+      // (Corporation / LocalBusiness / LegalService / Store..., and "Website" for "WebSite").
+      const nodes = collectTypedNodes(hp.jsonLd);
+      const lcTypes = new Set(nodes.flatMap(typesOf));
+      const ok = [...lcTypes].some(t => ORGANIZATION_TYPES.has(t) || WEBSITE_TYPES.has(t));
+      const found = [...new Set(nodes.map(nodeType).filter(Boolean))].join(', ') || 'none';
+      return ok ? [] : [{ urlKey: hp.urlKey, evidence: { found, note: 'no Organization-family or WebSite node on the homepage (nested nodes and subtypes checked)' } }];
     },
   },
   {
@@ -855,7 +863,7 @@ export const CHECKS: CheckDef[] = [
       const pages = rows(c, `SELECT url_key urlKey, json_ld jsonLd, click_depth cd FROM pages WHERE status_code=200 AND indexable=1`);
       let withBc = 0; const without: string[] = [];
       for (const p of pages) {
-        if (parseJsonLdNodes(p.jsonLd).some(n => nodeType(n) === 'BreadcrumbList')) withBc++;
+        if (hasSchemaType(p.jsonLd, BREADCRUMB_TYPES)) withBc++;
         else if ((p.cd ?? 0) >= 2) without.push(p.urlKey);
       }
       if (pages.length === 0 || withBc / pages.length < 0.4) return []; // site doesn't use breadcrumbs → design choice, not a bug
