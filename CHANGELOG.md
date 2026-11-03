@@ -8,6 +8,11 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [1.0.1] — 2026-11-03
+
+### Fixed
+- **`homepage-missing-org-schema` no longer false-flags nested or subtype schema.** On a homepage whose Organization and WebSite are real but **nested** (e.g. `WebPage > mainEntity > Corporation`, `WebPage > isPartOf > WebSite`) or a **subtype** (LegalService, Store, Restaurant…), the check wrongly reported them missing: it read only top-level / `@graph` nodes against a five-type, exact-case list. New `src/audit/schemaTypes.ts` walks the whole JSON-LD tree (`collectTypedNodes`), matches the full Organization + LocalBusiness subtree, and compares case-insensitively (so `"Website"` matches `"WebSite"`). `breadcrumb-schema-inconsistent` uses it too. Regression probe `scripts/probe-schema-parsing.mjs` (in `npm test`). Reported from live use on rowlinsons.co.uk.
+
 ## [1.0.0] — 2026-10-31
 
 Version 1.0. The core has been stable for months; this is the release that makes it defensible end to end: a security pass over the crawler and the browser dashboard, the portfolio and the dashboard merged into one app, a working date range, an AI-visibility tab, a dependency and vulnerability cleanup, and a dashboard that never asks you to run a tool by name. The audit engine, the `url_key` join and the D/N honesty rules are unchanged.
