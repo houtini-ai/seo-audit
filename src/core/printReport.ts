@@ -89,7 +89,7 @@ tr.hl td { background: var(--wash); }
 .sev.crit { color: var(--crit); } .sev.high { color: var(--warn); }
 .note { background: var(--wash); border-left: 3px solid var(--accent); padding: 8px 10px; font-size: 9.5pt; break-inside: avoid; }
 ul.att { margin: 4px 0 0; padding-left: 16px; } ul.att li { margin: 2px 0; }
-footer.colophon { margin-top: 26px; border-top: 1px solid var(--hair); padding-top: 8px; font: 7.5pt 'JetBrains Mono', ui-monospace, monospace; color: var(--muted); }
+footer.colophon { margin: -6px 0 0; padding: 0; font: 7.5pt 'JetBrains Mono', ui-monospace, monospace; color: var(--muted); }
 @media screen { body { background: #ECEBE6; } .wrap { background: #fff; padding: 16mm 15mm; margin: 24px auto; box-shadow: 0 1px 3px rgba(0,0,0,.08); } }
 `;
 
@@ -176,7 +176,7 @@ function fixes(d: DashboardData): string {
       byCat.map(c => `<tr><td>${clean(AREA[c.category] ?? c.category)}${c.capped ? ' <span class="src">(at least)</span>' : ''}</td><td class="n">${num(c.crit)}</td><td class="n">${num(c.high)}</td><td class="n">${num(c.med)}</td><td class="n">${num(c.low)}</td><td class="n">${c.opened == null ? '-' : num(c.opened)}</td><td class="n">${c.resolved == null ? '-' : num(c.resolved)}</td></tr>`).join('')
     }</tbody></table><div class="src">Counts are affected pages per severity. New and resolved compare with the previous comparable audit; a dash means there isn't one.</div></div>`);
   }
-  return parts.length ? `<section class="page"><h2>02. What to fix first</h2>${parts.join('')}</section>` : '';
+  return parts.length ? `<section class="page first"><h2>02. What to fix first</h2>${parts.join('')}</section>` : '';
 }
 
 function portfolioSection(p: PortfolioPayload | null, domain: string): string {
@@ -205,9 +205,11 @@ function portfolioSection(p: PortfolioPayload | null, domain: string): string {
   parts.push(`<div class="block"><h3>All domains</h3><table><thead><tr><th>Domain</th><th>Type</th><th class="n">Clicks 28d</th><th class="n">Organic traffic (est.)</th><th class="n">Referring domains</th><th class="n">AI mentions</th><th class="n">Alerts</th></tr></thead><tbody>${
     rows.map(r => `<tr${r.domain === domain ? ' class="hl"' : ''}><td>${clean(r.domain)} <span class="src">${esc(r.country)}</span></td><td>${r.kind === 'owned' ? 'Owned' : 'Watched'}</td><td class="n">${r.clicks28 ? num(r.clicks28.value) : '-'}</td><td class="n">${num(r.organicTraffic.value)}</td><td class="n">${num(r.referringDomains.value)}</td><td class="n">${num(r.aiMentions.value)}</td><td class="n">${r.attention.length || '-'}</td></tr>`).join('')
   }</tbody></table><div class="src">${num(p.counts.owned)} owned, ${num(p.counts.watched)} watched.${more > 0 ? ` Showing ${rows.length} of ${p.rows.length} domains; the dashboard lists them all.` : ''} Clicks are measured by Search Console; traffic, links and mentions are DataForSEO estimates for each row's country.</div></div>`);
-  return `<section class="page"><h2>03. Portfolio</h2>${parts.join('')}</section>`;
+  return `<section class="page first"><h2>03. Portfolio</h2>${parts.join('')}</section>`;
 }
 
+// On the cover, under the headline numbers: provenance belongs with the numbers, and a footer at the
+// end of the document was pushed onto a page of its own whenever the portfolio filled the last page.
 function colophon(d: DashboardData, version: string, now: Date): string {
   const LABEL: Record<string, string> = { sync: 'Search Console', crawl: 'Crawl', audit: 'Audit', inspect: 'URL inspection', ranks: 'Ranks', sitemap: 'Sitemap' };
   const list = (d.freshness?.sources ?? []).filter(s => s.at && s.state === 'completed').map(s => `${LABEL[s.kind] ?? clean(s.kind)} ${dateLabel(s.at)}`).join(', ');
@@ -225,12 +227,13 @@ export function buildPrintReport(input: PrintReportInput): string {
     <h1>${clean(domain)}</h1>
     ${verdictLine(d)}
     <div class="meta">${clean(d.siteUrl)}${d.dateRange ? `, Search Console to ${dateLabel(d.dateRange.maxDate)}` : ''}</div>
-    ${tiles(d, row)}`;
+    ${tiles(d, row)}
+    ${colophon(d, version, now)}`;
   const body = [performance(d), fixes(d), portfolioSection(portfolio, domain)].filter(Boolean).join('');
   const empty = body ? '' : '<p class="note">No Search Console, audit or portfolio data yet for this property. Sync it, crawl it and run an audit, then export again.</p>';
   return `<!DOCTYPE html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${clean(domain)} SEO report</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
-<style>${CSS}</style></head><body><div class="wrap">${cover}${empty}${body}${colophon(d, version, now)}</div></body></html>`;
+<style>${CSS}</style></head><body><div class="wrap">${cover}${empty}${body}</div></body></html>`;
 }
