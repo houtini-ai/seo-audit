@@ -18,6 +18,10 @@ import { buildPrintReport, PRINT_PORTFOLIO_ROWS } from '../dist/core/printReport
 import { isOwnedGscProperty } from '../dist/core/webServer.js';
 import { selectEvidenceColumns } from '../dist/core/evidenceColumns.js';
 import { ensureExternalSchema } from '../dist/core/externalLinks.js';
+import { isAffiliateRedirect } from '../dist/core/affiliate.js';
+import { suggestPages, liveCrawl } from '../dist/audit/opportunities.js';
+import { versionInfo, versionLine } from '../dist/core/versionInfo.js';
+import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
 const t = (name, cond) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`); cond ? pass++ : fail++; };
@@ -310,6 +314,48 @@ withDb(db => {
   t('OBS-1: a network failure moves to external-unreachable, with its error', unreach.length === 1 && unreach[0].evidence.examples[0].error === 'fetch failed');
   t('OBS-1: a single-label LAN host (http://umbrel/) is in neither', !JSON.stringify([broken, unreach]).includes('umbrel'));
 });
+
+// OBS-4: affiliate-network redirects are left out of external-redirected, and counted
+t('OBS-4: an Impact sjv.io link is an affiliate redirect', isAffiliateRedirect('https://fanatec.sjv.io/c/1/2/3?u=https%3A%2F%2Fwww.corsair.com%2Fp%2Fx', 'https://www.corsair.com/p/x?utm_medium=Affiliate'));
+t('OBS-4: a subdomain match is exact-or-subdomain, not substring (notsjv.io)', !isAffiliateRedirect('https://notsjv.io/c/1', 'https://notsjv.io/d'));
+t('OBS-4: a u= parameter naming the landing page marks a tracking hop on an unknown network', isAffiliateRedirect('https://track.example/c?u=https%3A%2F%2Fshop.test%2Fitem%2F', 'https://www.shop.test/item?ref=1'));
+t('OBS-4: an ordinary moved page is not an affiliate redirect', !isAffiliateRedirect('https://braiins.com/os', 'https://braiins.com/os-firmware'));
+t('OBS-4: a same-site /go/ path is not an affiliate redirect', !isAffiliateRedirect('https://docs.test/go/start', 'https://docs.test/start'));
+withDb(db => {
+  ensureExternalSchema(db);
+  page(db, 'https://x.test/a'); page(db, 'https://x.test/b');
+  const red = (src, url, final) => {
+    db.prepare(`INSERT INTO links (crawl_id,source_url,source_key,target_url,target_key,is_internal,placement,rel) VALUES ('c1',?,?,?,?,0,'body',NULL)`).run(src, src, url, url);
+    db.prepare(`INSERT INTO external_link_status (url_key,url,status,final_url,verdict,permanent,method,fetched_as,checked_at) VALUES (?,?,200,?,'redirected',1,'HEAD','bot',datetime('now'))`).run(url, url, final);
+  };
+  red('https://x.test/a', 'https://fanatec.sjv.io/c/1?u=https%3A%2F%2Fcorsair.com%2Fp', 'https://www.corsair.com/p');
+  red('https://x.test/a', 'https://braiins.com/os', 'https://braiins.com/os-firmware');
+  red('https://x.test/b', 'https://go.skimresources.com/?id=1&url=https%3A%2F%2Fshop.test%2F', 'https://shop.test/');
+}, db => {
+  const f = run(db, 'external-redirected');
+  t('OBS-4: a page keeps its real redirect and notes the affiliate link left out', f.length === 1 && f[0].urlKey === 'https://x.test/a' && f[0].evidence.redirected === 1 && f[0].evidence.affiliateLinksNotReported === 1);
+  t('OBS-4: a page whose only redirect is an affiliate link has no finding', !f.some(x => x.urlKey === 'https://x.test/b'));
+});
+
+// BUG-3: suggest_pages withholds proposals while a crawl is refilling the page list
+withDb(db => {
+  db.prepare(`INSERT INTO crawl_metadata (crawl_id,base_url,base_domain,status,started_at) VALUES ('c9','https://x.test/','x.test','running',?)`).run(new Date().toISOString());
+}, db => {
+  const r = suggestPages(db, {});
+  t('BUG-3: a live crawl withholds new-page proposals and says why', r.proposals.length === 0 && r.crawlInProgress?.crawlId === 'c9');
+});
+withDb(db => {
+  db.prepare(`INSERT INTO crawl_metadata (crawl_id,base_url,base_domain,status,started_at) VALUES ('c8','https://x.test/','x.test','running','2026-01-01T00:00:00Z')`).run();
+}, db => t('BUG-3: a crawl stuck "running" for hours (killed process) does not block proposals', liveCrawl(db) === null));
+
+// BUG-4: seo_audit_help reports the running version, and a newer build on disk
+{
+  const pkg = new URL('../package.json', import.meta.url), me = new URL(import.meta.url);
+  const same = versionInfo(JSON.parse(readFileSync(pkg, 'utf8')).version, pkg, me);
+  t('BUG-4: the version line names the running version', versionLine(same).startsWith(`Version: ${same.running} (build `));
+  const stale = versionInfo('0.0.1', pkg, me);
+  t('BUG-4: a different version on disk says RESTART NEEDED', stale.restartNeeded && /RESTART NEEDED: version /.test(versionLine(stale)));
+}
 
 // OBS-3: canonical-conflict marks a twin canonical that the site has since fixed
 const seedConflict = (db, { twinVerdict, declared }) => {

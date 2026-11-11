@@ -89,10 +89,15 @@ import { PortfolioStore, PORTFOLIO_JOB_SCOPE, resolveLocation, LOCATION_LABEL } 
 import { normaliseDomain, targetForProperty } from './core/portfolioTarget.js';
 import { buildPrintReport } from './core/printReport.js';
 import { selectEvidenceColumns } from './core/evidenceColumns.js';
+import { versionInfo, versionLine } from './core/versionInfo.js';
 import { pdfFromHtml, RendererUnavailableError } from './core/render.js';
 import { quotePortfolioRefresh } from './core/PortfolioRefresh.js';
 import { getPortfolioData, getDomainOverview, readSchedule } from './core/portfolioData.js';
 import { previewSchedule, saveSchedule, disableSchedule, startPortfolioScheduler } from './core/portfolioSchedule.js';
+
+/** suggest_pages / content_opportunities while a crawl is refilling `pages` (BUG-3). */
+const crawlInProgressText = (c: { crawlId: string; startedAt: string }): string =>
+  `A crawl is in progress (${c.crawlId}, started ${c.startedAt}), so the page list holds only part of the site. New-page proposals are withheld until it finishes: mid-crawl, the "a page already covers this query" check can't see pages that haven't been re-crawled yet and would propose pages you already have. Check with check_crawl_status, then run this again.`;
 
 const SERVER_NAME = 'seo-audit-console';
 const SERVER_VERSION = (
@@ -402,7 +407,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       description: 'Start here on first use, or after a "not set" / credentials / permission error: what is configured on this machine (Search Console key, DataForSEO, Majestic, CrUX, local data) and how to fix the rest, then every feature with an example prompt. Free, local, no API calls.',
       inputSchema: {},
     },
-    async () => ({ content: [{ type: 'text', text: `${setupStatusText(setupStatus(dataDir()))}\n${HELP_TEXT}` }] }), // text-only: a structuredContent stub eclipses the text in hosts that prefer structured output
+    async () => ({ content: [{ type: 'text', text: `${versionLine(versionInfo(SERVER_VERSION, new URL('../package.json', import.meta.url), new URL(import.meta.url)))}\n${setupStatusText(setupStatus(dataDir()))}\n${HELP_TEXT}` }] }), // text-only: a structuredContent stub eclipses the text in hosts that prefer structured output
   );
 
   server.registerTool(
@@ -1511,6 +1516,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         const r = suggestPages(db.db, { ...(minImpressions != null ? { minImpressions } : {}), ...(maxProposals != null ? { maxProposals } : {}) });
         const top = r.proposals.slice(0, 15).map(p => `• "${p.headTerm}" — ${p.totalImpressions} impr, currently pos ${p.bestPosition}${p.intent ? `, ${p.intent}` : ''} (${p.queries.length} queries)`).join('\n');
         const intentTip = r.proposals.length && r.proposals.every(p => !p.intent) ? `\n\nTip: run \`search_intent\` for this property first to rank these by search intent (currently unweighted).` : '';
+        if (r.crawlInProgress) return {
+          content: [{ type: 'text', text: crawlInProgressText(r.crawlInProgress) }],
+          structuredContent: r as unknown as Record<string, unknown>,
+        };
         return {
           content: [{ type: 'text', text: r.proposals.length ? `${r.proposals.length} new-page opportunities (from ${r.consideredQueries} queries, ${r.afterDedup} after dedup):\n${top}${intentTip}` : `No new-page gaps found (${r.consideredQueries} queries considered). Needs synced GSC data.` }],
           structuredContent: r as unknown as Record<string, unknown>,
@@ -1533,8 +1542,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
       let proposals: ReturnType<typeof suggestPages>['proposals'];
       let weak: ReturnType<typeof clusterKeywordList>['clusters'];
+      let crawling: ReturnType<typeof suggestPages>['crawlInProgress'];
       try {
-        proposals = suggestPages(db.db, { maxProposals: n }).proposals;
+        const sp = suggestPages(db.db, { maxProposals: n });
+        proposals = sp.proposals; crawling = sp.crawlInProgress;
         const fresh = gscFreshness(db.db);
         weak = clusterKeywordList(db.db, undefined, { maxDate: fresh.effectiveMax }).clusters
           .filter(c => c.verdict === 'weak' && c.bestPosition != null && c.bestPosition >= 4).slice(0, n);
@@ -1543,7 +1554,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const decay = (dash.contentDecay ?? []).slice(0, n);
       const snippets = (dash.quickWins ?? []).filter(q => q.type === 'snippet').sort((a, b) => b.potential - a.potential).slice(0, n);
       const sect: string[] = [];
-      sect.push(`## 1. Write next - demand you already have, no winning page\n` + (proposals.length
+      sect.push(`## 1. Write next - demand you already have, no winning page\n` + (crawling ? `_${crawlInProgressText(crawling)}_` : proposals.length
         ? `| Proposed page (head term) | Impressions/mo | Best pos today | Queries |\n|---|---|---|---|\n` +
           proposals.map(p => `| ${p.headTerm.replace(/\|/g, '\\|')} | ${fmtNum(p.totalImpressions)} | ${p.bestPosition} | ${p.queries.length} |`).join('\n')
         : '_No unserved-demand gaps found._'));
@@ -1567,7 +1578,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         content: [{ type: 'text', text: md }],
         structuredContent: {
           siteUrl,
-          writeNext: proposals, refreshNow: decay, rewriteSnippets: snippets,
+          writeNext: proposals, ...(crawling ? { writeNextWithheld: crawlInProgressText(crawling) } : {}), refreshNow: decay, rewriteSnippets: snippets,
           strengthen: weak.map(c => ({ head: c.head, bestPosition: c.bestPosition, impressions: c.impressions, url: c.url, keywords: c.keywords.length })),
         } as unknown as Record<string, unknown>,
       };

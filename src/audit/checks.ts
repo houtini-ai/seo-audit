@@ -19,6 +19,7 @@ import { RENDER_CHECKS } from './checks-render.js';
 import { HYGIENE_CHECKS } from './checks-hygiene.js';
 import { urlKey } from '../core/url-key.js';
 import { SITE_PROBE_SOURCE, HOST_FAIL } from '../core/siteProbes.js';
+import { isAffiliateRedirect } from '../core/affiliate.js';
 
 /**
  * Check registry. Each check is a pure read over the AuditDatabase (crawl + GSC +
@@ -268,9 +269,15 @@ export const CHECKS: CheckDef[] = [
     // #36: permanent redirects on outbound links ("update the link"). A deep link that now 301s to
     // the target site's HOMEPAGE usually means the product or doc was removed — flagged per item.
     id: 'external-redirected', category: 'onpage', severity: 'low', labels: ['D'], certainty: 0.9, effortBase: 1, fixType: 'per-page',
-    title: 'Outbound links that permanently redirect', fix: 'Update each link to its final URL. Where a deep link now lands on the site\'s homepage, the page it pointed at is probably gone: find the replacement or remove the link.',
-    run: (c) => externalByPage(c, `s.verdict = 'redirected' AND s.permanent = 1`).map(p => ({ urlKey: p.urlKey, evidence: {
+    title: 'Outbound links that permanently redirect', fix: 'Update each link to its final URL. Where a deep link now lands on the site\'s homepage, the page it pointed at is probably gone: find the replacement or remove the link. Affiliate tracking links (an affiliate-network host such as sjv.io or awin1.com, or a link carrying its destination in u= or url=) redirect by design and are not reported; each page notes how many were left out.',
+    // OBS-4 (myminingrig dev channel): affiliate hops must stay, so they are left out, and counted.
+    run: (c) => externalByPage(c, `s.verdict = 'redirected' AND s.permanent = 1`).map(p => {
+      const items = p.items.filter(i => !isAffiliateRedirect(i.target, i.finalUrl));
+      const affiliate = p.items.length - items.length;
+      return { urlKey: p.urlKey, items, affiliate };
+    }).filter(p => p.items.length).map(p => ({ urlKey: p.urlKey, evidence: {
       redirected: p.items.length, toHomepage: p.items.filter(i => i.toHomepage).length,
+      ...(p.affiliate ? { affiliateLinksNotReported: p.affiliate } : {}),
       examples: p.items.slice(0, 10).map(i => ({ target: i.target, finalUrl: i.finalUrl, ...(i.toHomepage ? { note: 'deep link now redirects to the homepage: likely removed' } : {}), anchor: i.anchor })),
     } })),
   },

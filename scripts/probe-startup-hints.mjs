@@ -60,7 +60,7 @@ check('a path merely containing "npx" does not warn', npxInContainerWarning('/sr
     check('refresh_property states its one paid step', /paid DataForSEO Labs rank call/.test(tool('refresh_property')?.description ?? ''), '');
     const help = await a.rpc('tools/call', { name: 'seo_audit_help', arguments: {} });
     const text = help.result?.content?.[0]?.text ?? '';
-    check('seo_audit_help leads with the setup on this machine', text.startsWith('## Setup on this machine') && /\*\*Search Console: off\*\*/.test(text) && /client_email/.test(text), text.slice(0, 300));
+    check('seo_audit_help leads with the running version, then the setup on this machine', /^Version: \d+\.\d+\.\d+ \(build /.test(text) && /^## Setup on this machine/m.test(text) && text.indexOf('Version:') < text.indexOf('## Setup on this machine') && /\*\*Search Console: off\*\*/.test(text) && /client_email/.test(text), text.slice(0, 300));
     const lp = await a.rpc('tools/call', { name: 'list_properties', arguments: {} });
     check('a missing-credentials error points to seo_audit_help', /seo_audit_help/.test(JSON.stringify(lp)), JSON.stringify(lp).slice(0, 300));
     a.close();

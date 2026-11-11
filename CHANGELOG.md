@@ -8,6 +8,17 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [Unreleased]
+
+More fixes from the MyMiningRig dev channel.
+
+### Fixed
+- **`suggest_pages` and `content_opportunities` no longer propose pages that exist while a crawl is running.** A crawl clears the page list and refills it as it goes, so mid-crawl the "a page already covers this query" step couldn't see pages not yet re-crawled: "avalon nano 3" was proposed with no nearest page while its own page existed. Both tools now withhold new-page proposals during a live crawl and say why (`crawlInProgress`, `writeNextWithheld`). A crawl still marked running after 3 hours is treated as killed.
+- **`external-redirected` leaves out affiliate tracking links.** A link through an affiliate network (Impact `sjv.io`, Awin, CJ, Skimlinks, Rakuten, ShareASale, Amazon short links and others), or one carrying its destination in `u=` or `url=`, redirects by design, and pointing it at the final URL would break attribution. Each finding counts what it left out in `affiliateLinksNotReported`. Host matching is exact-or-subdomain.
+
+### Added
+- **`seo_audit_help` reports the running version**, when it was built and when the process started, and says RESTART NEEDED when a newer build or version is on disk than the code the process is running.
+
 ## [1.0.3] — 2026-11-11
 
 Fixes from the first live user report (the MyMiningRig dev channel, 2026-11-11), plus layout fixes to the new A4 report. The reporter verified about 13 checks against the live site and raw tables and found no false positives in detection; the fixes below cover what it did find.

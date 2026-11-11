@@ -113,7 +113,7 @@ Checks without a generator return their deterministic fix guidance instead, so t
 ## Growth and content
 
 ### `suggest_pages`
-Proposes new pages from demand Google has already shown you: queries where you get impressions at rank 11+ with no winning page, after subtracting everything you already cover. Survivors are clustered into one proposed page per intent, scored by impressions × intent, each with the nearest existing page to link the new one from so nothing launches as an orphan. Works entirely from your synced data - no paid calls. (Run `search_intent` with your `siteUrl` first if you want the intent weighting.)
+Proposes new pages from demand Google has already shown you: queries where you get impressions at rank 11+ with no winning page, after subtracting everything you already cover. Survivors are clustered into one proposed page per intent, scored by impressions × intent, each with the nearest existing page to link the new one from so nothing launches as an orphan. Works entirely from your synced data - no paid calls. (Run `search_intent` with your `siteUrl` first if you want the intent weighting.) While a crawl is running it proposes nothing and says so: the page list is being refilled, so it can't yet tell which pages already exist.
 > Suggest new pages for mysite.com
 
 ### `resolve_entities`
@@ -308,7 +308,7 @@ With `format: "a4"` it writes a printable report instead: the Summary (the verdi
 ## Utilities
 
 ### `seo_audit_help`
-Starts with **Setup on this machine** - whether the Search Console key file is set, exists and is a service-account key (with its email), which optional keys (DataForSEO, Majestic, CrUX) are on, the local properties and the job mode, and how to fix each gap - then the full feature menu with an example prompt for each. Free and local. The thing to ask on first use, after any credentials error, or when you've forgotten what's possible.
+Opens with the running version, when it was built and when this process started; if a newer build or version is on disk, it says to restart so the new code loads. Then **Setup on this machine** - whether the Search Console key file is set, exists and is a service-account key (with its email), which optional keys (DataForSEO, Majestic, CrUX) are on, the local properties and the job mode, and how to fix each gap - then the full feature menu with an example prompt for each. Free and local. The thing to ask on first use, after any credentials error, or when you've forgotten what's possible.
 > run seo_audit_help
 
 ### `composition_cookbook`

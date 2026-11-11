@@ -28,7 +28,28 @@ export interface PageProposal {
 
 interface Opts { minImpressions?: number; maxProposals?: number; clusterThreshold?: number }
 
-export function suggestPages(db: Database.Database, opts: Opts = {}): { proposals: PageProposal[]; consideredQueries: number; afterDedup: number } {
+/** Hours after which a crawl still marked 'running' is treated as a killed process, not a live crawl. */
+const LIVE_CRAWL_HOURS = 3;
+
+/**
+ * The crawl that is filling `pages` right now, if any. A crawl clears `pages` at its first write
+ * and refills it as it goes, so mid-crawl the table holds part of the site and the "a page already
+ * covers this query" subtraction fails OPEN: it proposes pages that exist (myminingrig dev
+ * channel, BUG-3: "avalon nano 3" proposed with nearestExistingPage null while its page existed).
+ */
+export function liveCrawl(db: Database.Database): { crawlId: string; startedAt: string } | null {
+  try {
+    const r = db.prepare(`SELECT crawl_id crawlId, started_at startedAt FROM crawl_metadata WHERE status = 'running' ORDER BY started_at DESC LIMIT 1`).get() as { crawlId: string; startedAt: string } | undefined;
+    if (!r) return null;
+    const ageH = (Date.now() - Date.parse(r.startedAt)) / 3_600_000;
+    return Number.isFinite(ageH) && ageH < LIVE_CRAWL_HOURS ? r : null;
+  } catch { return null; }
+}
+
+export function suggestPages(db: Database.Database, opts: Opts = {}): { proposals: PageProposal[]; consideredQueries: number; afterDedup: number; crawlInProgress?: { crawlId: string; startedAt: string } } {
+  // Fail closed during a crawl: proposing a page that exists is worse than proposing nothing.
+  const live = liveCrawl(db);
+  if (live) return { proposals: [], consideredQueries: 0, afterDedup: 0, crawlInProgress: live };
   const minImpr = opts.minImpressions ?? 50;
   const clusterT = opts.clusterThreshold ?? 0.5;
   // Window off the FINALISED max date (raw MAX(date) includes 1–3 unfinalised, systematically
