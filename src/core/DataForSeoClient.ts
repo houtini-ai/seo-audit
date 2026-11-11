@@ -457,8 +457,8 @@ export class DataForSeoClient {
     ]);
   }
 
-  /** Backlinks (#47) — daily backlink / referring-domain history (new and lost) for a target since `dateFrom` (YYYY-MM-DD). */
-  /** Backlinks history is MONTHLY (one item per month), not daily. `rankScale` defaults to the API's
+  /** Backlinks (#47): monthly backlink / referring-domain history (new and lost) for a target since `dateFrom` (YYYY-MM-DD),
+   * one item per month, not daily. `rankScale` defaults to the API's
    * 0-1000; the portfolio asks for 'one_hundred' so it matches bulk_ranks. */
   async backlinksHistory(target: string, dateFrom: string, dateTo?: string, rankScale?: 'one_hundred' | 'one_thousand', opts: DfsCallOptions = {}): Promise<DfsResponse> {
     return this.call('/v3/backlinks/history/live', [{ target, date_from: dateFrom, ...(dateTo ? { date_to: dateTo } : {}), ...(rankScale ? { rank_scale: rankScale } : {}) }], opts);

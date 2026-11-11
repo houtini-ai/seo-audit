@@ -1,6 +1,6 @@
 # The check registry
 
-All 143 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
+All 150 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
 
 ## Reading the labels
 
@@ -25,7 +25,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `render-blocking-head-resources` | 3 or more render-blocking stylesheets in `<head>` (any parser-blocking script fires on its own) | A styled page needs its own stylesheet, and a font or plugin sheet beside it is the usual floor, so 1-2 aren't reported. |
 | `hydration-content-loss` | The rendered main content keeps 50% or less of the raw main content's words, where the raw had at least 200 | Below 200 words the ratio is noise (a short page swings on one block); losing more than half is past any template difference. |
 
-## Crawlability (21)
+## Crawlability (24)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -50,8 +50,11 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `ai-search-bot-blocked` | D | robots.txt (as the latest crawl fetched it) blocks an AI **search** crawler - OAI-SearchBot, ChatGPT-User, Claude-SearchBot, Claude-User, PerplexityBot, Perplexity-User, DuckAssistBot - from the whole site or from any of your top 50 pages by clicks. One site-level finding listing each bot and the group that blocks it. Training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended, Bytespider...) are listed for context only: blocking them is a choice, not an issue | Allow the search bots so assistants can cite you; keep the training-bot Disallow lines if you want to opt out of training. |
 | `discover-crawl-waste` | D | Too much of the crawl going to redirects and non-indexable URLs (site-level - Discover leans on fast discovery) | Aim for almost everything Google crawls to be an indexable 200 - repoint links off redirects/404s and prune faceted/parameter URLs. |
 | `entity-internal-link-gap` | N (0.5) | Topically related pages (per Wikidata) with no link between them | Link the broader page to the more specific one - after verifying the entity match. Needs `resolve_entities`. |
+| `internal-nofollow` | D | Internal links carrying `rel=nofollow` (alone or with `sponsored`/`ugc`) into a live, indexable page, one finding per target page with the linking pages and how many internal links to it are still followed. Self-anchors (`#`) and links to cart, login and account pages are not reported | Remove nofollow from links between your own pages - usually an affiliate-link plugin or template default. |
+| `robots-txt-unreachable` | D (0.8) | robots.txt answered 5xx, 429 or nothing when the crawl fetched it. Google then pauses crawling for 12 hours and keeps retrying. Fetched with the crawler's user agent, so a firewall challenge Googlebot would pass can cause it | Make robots.txt answer 200 (or 404 with no rules); confirm in Search Console's robots.txt report. |
+| `robots-txt-health` | D | One site-level finding listing robots.txt problems with line numbers: at or over Google's 500 KiB limit, lines that aren't `field: value`, unknown or misspelt directives (`Content-Signal` is known), `noindex` (unsupported since 2019), rules before any User-agent, an empty User-agent, a user-agent split across groups, a path both allowed and disallowed, a relative or missing `Sitemap:` line | Fix the listed lines and declare the sitemap with its full URL. |
 
-## Indexation (29)
+## Indexation (32)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -84,6 +87,9 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `sitemap-lastmod-untrustworthy` | D | lastmod dates that are generator stamps, future-dated, or claim changes that didn't happen | Make lastmod reflect genuine content changes, or drop it - dishonest dates teach Google to ignore yours. |
 | `redirect-to-homepage` | D | A deep URL redirected to the bare homepage, which Google treats as a soft 404. `/index.html`-style aliases and locale roots (`/en`, `/en-au`) don't count; URLs with clicks or links are listed first | Redirect to the closest equivalent page, or let it 404/410. |
 | `product-gone-404` | D+G | A store product (Shopify `/products/`, WooCommerce `/product/`, or Product schema in the earlier snapshot) that answered 200 in an earlier crawl and now answers 404/410, with equity (GSC clicks >= 1 or impressions >= 10 over the history held, a backlink, or an internal link). Ranked by the clicks it earned. A product the latest crawl didn't reach, or a rate-limited fetch, is not reported | 301 to the replacement or parent category; keep an out-of-stock product live at 200 marked OutOfStock. |
+| `sitemap-invalid` | D | A sitemap declared in robots.txt or listed by a sitemap index that fails (HTTP error, no response), isn't sitemap XML (often an HTML page), or lists `<loc>` values that aren't full http(s) URLs. Conventional `/sitemap.xml` probes that don't exist are not reported. Reads `sitemap_files`, recorded by crawls from 1.0.2 on: until a re-crawl it's listed under **Not collected** | Fix the URL or the generator, then resubmit in Search Console. |
+| `sitemap-too-large` | D | A sitemap file over 50,000 URLs (an index: 50,000 child sitemaps) or 50 MB uncompressed, which Google ignores. Entries are counted in full even past the crawl's own 100,000-URL collection cap, and a capped walk is noted in the evidence | Split it into several sitemaps under a sitemap index. |
+| `hreflang-missing-x-default` | D | A real language cluster (two or more alternates besides the page) with no `x-default`. One site-level finding when no cluster on the site uses x-default; per-page findings only when the site uses it on some sets and not others. Low severity: Google recommends x-default but doesn't require it | Add an x-default pointing at the page for unmatched languages (a picker or the main market). |
 
 ## On-page (24)
 
@@ -126,7 +132,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `content-bloat` | D+N (0.6) | Very long unbroken sections | Split into focused, headed passages - AI grounding has sharp diminishing returns past a certain length, and density beats length. |
 | `ai-slop-signals` | N (0.5) | Copy tripping statistical tells of generic AI text (stock filler, uniform sentence lengths, identical section openers) | Rewrite the flagged sections with specifics only you can supply - and verify by reading first; competent human writing can trip these tells. |
 
-## Structured data (14)
+## Structured data (15)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -135,7 +141,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `missing-required-fields` | D | Schema missing Google-required properties for its type | Add the cited properties - the validator covers ~30 rich-result types and flags required fields only, never optional noise. |
 | `schema-value-errors` | D | Relative URLs, malformed dates, bad currency or price values in JSON-LD | Use absolute URLs, ISO-8601 dates and ISO-4217 currency codes. |
 | `forbidden-schema` | D+N (0.7) | FAQPage/HowTo markup on pages that no longer qualify | Remove it unless the page fits the narrow remaining eligibility - it risks no benefit or a manual action. |
-| `homepage-missing-org-schema` | D | Homepage without Organization/WebSite schema | Add it - it underpins the knowledge panel, logo and sitelinks search box. |
+| `homepage-missing-org-schema` | D | Homepage (the root URL) without its own Organization-family or WebSite schema. Nested entities (`mainEntity`, `isPartOf`, `publisher`...), subtypes and full-IRI types count; another company's Organization under `offers`, `brand` or `review` doesn't | Add it - it underpins the knowledge panel, logo and sitelinks search box. |
 | `breadcrumb-schema-inconsistent` | D | Breadcrumb schema on most of the site but missing from some pages | Add BreadcrumbList to the stragglers. |
 | `rich-result-issues` | D+G | Rich-result issues Google itself reports via URL Inspection | Fix the listed issues - this is Google's own validation, not ours, so it's authoritative. |
 | `article-date-illogical` | D | Article dateModified earlier than datePublished | Fix the dates - an impossible pair undermines trust in the markup. |
@@ -144,6 +150,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `duplicate-article-entities` | D (0.9) | More than one Article entity on one URL, typically an SEO plugin's graph plus a theme- or block-embedded Article | Emit one Article per page: remove the second source or merge it into the graph with the same `@id`. |
 | `discover-generic-article-type` | D+N (0.5) | Article schema using only the generic `Article` type where a more specific one fits | Use `NewsArticle` / `LiveBlogPosting` / `ProfilePage` where it genuinely applies - it unlocks richer Discover/News treatment. |
 | `discover-image-schema` | D | Article schema that declares no `image` (Discover cards need a large image) | Add an `image` (≥1200px wide, ideally 16:9 / 4:3 / 1:1 crops), matching the main visible image. |
+| `org-entity-incomplete` | D | The homepage's own Organization (any subtype, nested included) has no `logo`, no `sameAs`, or no contact route (`contactPoint`, `telephone` or `email`). A field counts if any of its own Organization nodes carries it, so a Yoast-style `@id` reference plus full declaration is fine. Silent when there's no Organization at all (`homepage-missing-org-schema` covers that) | Add the missing fields to the homepage Organization. |
 
 ## Security (3)
 
