@@ -486,6 +486,19 @@ export class AuditDatabase {
         lastmod TEXT,                    -- the sitemap's <lastmod> claim (freshness-honesty check)
         fetched_at TEXT DEFAULT (datetime('now'))
       );
+      -- One row per sitemap DOCUMENT the latest crawl requested (sitemap-invalid / sitemap-too-large, #79).
+      CREATE TABLE IF NOT EXISTS sitemap_files (
+        url TEXT PRIMARY KEY,
+        source TEXT NOT NULL,            -- robots | conventional | index
+        outcome TEXT NOT NULL,           -- ok | http-error | no-response | not-sitemap | oversized
+        http_status INTEGER,
+        kind TEXT,                       -- urlset | sitemapindex
+        entries INTEGER,                 -- <url> entries, or child sitemaps in an index (counted in full)
+        bytes INTEGER,                   -- uncompressed size
+        invalid_locs INTEGER NOT NULL DEFAULT 0,
+        walk_capped INTEGER NOT NULL DEFAULT 0, -- the crawl's sitemap/URL cap stopped the walk with sitemaps unread
+        fetched_at TEXT DEFAULT (datetime('now'))
+      );
     `);
 
     // ── Image weights (post-crawl sample: distinct <img> srcs + content-length) ─

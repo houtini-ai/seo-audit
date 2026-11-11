@@ -22,6 +22,8 @@ interface PortfolioPayload {
   months: { lastComplete: string; previous: string; yearAgo: string; current: string };
   counts: { owned: number; watched: number; attention: number };
   groups: string[];
+  /** Countries a watched domain can be set to. Optional: an older server doesn't send it, and the form falls back to free text. */
+  locations?: { code: number; iso: string; name: string }[];
   refresh: { weeklyCapturedAt: string | null; monthlyCapturedAt: string | null; schedule: ScheduleView | null; spentThisMonth: number;
     lastRuns: { id: number; startedAt: string; tier: string; trigger: string; status: string; spent: number; quoted: number | null; note: string | null }[] };
   rows: PortfolioRow[]; empty: boolean; notes: string[];
@@ -188,6 +190,20 @@ export function domainHref(row: { kind: string; domain: string; siteUrls: string
     : `/dashboard?domain=${encodeURIComponent(row.domain)}`;
 }
 
+/** Country options for a select, with `selected` marked. US first when it's the default. */
+function locationOptions(selected: number | null): string {
+  return (payload?.locations ?? []).map(l => `<option value="${l.code}"${l.code === selected ? ' selected' : ''}>${esc(l.name)}${l.iso ? ` (${esc(l.iso)})` : ''}</option>`).join('');
+}
+
+/** On a watched row in the browser, a picker that moves the domain to another country (#79). */
+function countryPicker(row: PortfolioRow): string {
+  if (!host!.web || row.kind !== 'watched' || !payload?.locations?.length) return '';
+  const known = payload.locations.some(l => l.code === row.locationCode);
+  return `<select class="country-select" data-move="${attr(row.domain)}" data-loc="${row.locationCode}" title="Country for ${attr(row.domain)}: data is estimated for this market" aria-label="Country for ${attr(row.domain)}">
+    ${known ? '' : `<option value="${row.locationCode}" selected>${esc(row.countryName)}</option>`}${locationOptions(row.locationCode)}
+  </select>`;
+}
+
 function domainCell(row: PortfolioRow): string {
   const label = attr(`${row.domain} (${row.countryName})`);
   const name = host!.web
@@ -203,6 +219,7 @@ function domainCell(row: PortfolioRow): string {
     <div class="domain-badges">
       <span class="badge ${row.kind === 'owned' ? 'gsc' : 'watched'}">${row.kind === 'owned' ? 'GSC' : 'Watched'}</span>
       ${row.group ? `<span class="group-label">${esc(clean(row.group))}</span>` : ''}
+      ${countryPicker(row)}
       ${remove}
     </div>
   </td>`;
@@ -237,7 +254,9 @@ function addForm(): string {
     <label><span>Domain</span><input name="domain" required placeholder="rival.com" spellcheck="false"></label>
     <label><span>Group</span><input name="group" list="pf-groups" placeholder="competitors"></label>
     <datalist id="pf-groups">${groups.map(g => `<option value="${attr(g)}">`).join('')}</datalist>
-    <label><span>Country</span><input name="location" placeholder="United States"></label>
+    ${payload?.locations?.length
+      ? `<label><span>Country</span><select name="location">${locationOptions(2840)}</select></label>`
+      : '<label><span>Country</span><input name="location" placeholder="United States"></label>'}
     <button class="btn primary" type="submit" ${adding ? 'disabled' : ''}>${adding ? 'Adding...' : 'Watch domain'}</button>
     <span class="add-note">${addError ? `<span class="add-error">${esc(clean(addError))}</span>` : 'Free to add. Its numbers arrive with the next portfolio refresh.'}</span>
   </form>`;
@@ -413,6 +432,16 @@ function renderTable(el: HTMLElement): void {
     void callServer('portfolio_remove_domain', { domain: d, locationCode: Number(x.dataset.loc) || undefined })
       .then(() => reload())
       .catch(e => { x.disabled = false; window.alert(e instanceof Error ? e.message : String(e)); });
+  }));
+  el.querySelectorAll<HTMLSelectElement>('[data-move]').forEach(x => x.addEventListener('change', () => {
+    const d = x.dataset.move!, from = Number(x.dataset.loc), to = Number(x.value);
+    if (!to || to === from) return;
+    const name = x.selectedOptions[0]?.textContent ?? String(to);
+    if (!window.confirm(`Watch ${d} in ${name} instead? Its history for the current country is kept, and the new country's numbers arrive with the next portfolio refresh.`)) { x.value = String(from); return; }
+    x.disabled = true;
+    void callServer('portfolio_move_domain', { domain: d, locationCode: from, to })
+      .then(() => reload())
+      .catch(e => { x.disabled = false; x.value = String(from); window.alert(e instanceof Error ? e.message : String(e)); });
   }));
   el.querySelector<HTMLFormElement>('#add-domain')?.addEventListener('submit', ev => {
     ev.preventDefault();

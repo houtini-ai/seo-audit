@@ -68,6 +68,8 @@ scripts/*
 !scripts/probe-gsc.mjs
 !scripts/probe-fixfinding.mjs
 !scripts/probe-schema.mjs
+!scripts/probe-schema-parsing.mjs
+!scripts/probe-quick-wins.mjs
 !scripts/probe-schema-rules.mjs
 !scripts/probe-drift-fixes.mjs
 !scripts/probe-extract.mjs
