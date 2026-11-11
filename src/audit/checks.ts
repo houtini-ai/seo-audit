@@ -4,9 +4,7 @@ import { TITLE_MAX_CHARS, META_DESC_MAX_CHARS } from '../core/onPageLimits.js';
 import type { FindingLabel, Severity } from '../core/AuditDatabase.js';
 import { validateJsonLdColumn, type SchemaIssueKind } from './schema-validate.js';
 import { parseJsonLdNodes, nodeType } from './templates.js';
-import { collectTypedNodes, typesOf, ORGANIZATION_TYPES, WEBSITE_TYPES, hasSchemaType } from './schemaTypes.js';
-
-const BREADCRUMB_TYPES = new Set(['breadcrumblist']);
+import { collectTypedNodes, typesOf, hasSchemaType, orgOrWebSitePresence, ownOrganizationNodes, BREADCRUMB_TYPES } from './schemaTypes.js';
 import { expectedCtr } from '../core/ctrModel.js';
 import { latestTwoCrawls } from './drift.js';
 import { HTML_CT } from '../core/sql.js';
@@ -846,14 +844,39 @@ export const CHECKS: CheckDef[] = [
       const hp = (rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND click_depth=0 LIMIT 1`)[0]
         ?? rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 ORDER BY inlink_count DESC LIMIT 1`)[0]);
       if (!hp) return [];
-      // Collect EVERY typed node, however deeply nested (WebPage > mainEntity > Corporation,
-      // WebPage > isPartOf > WebSite), and match the whole Organization subtree case-insensitively
-      // (Corporation / LocalBusiness / LegalService / Store..., and "Website" for "WebSite").
-      const nodes = collectTypedNodes(hp.jsonLd);
-      const lcTypes = new Set(nodes.flatMap(typesOf));
-      const ok = [...lcTypes].some(t => ORGANIZATION_TYPES.has(t) || WEBSITE_TYPES.has(t));
-      const found = [...new Set(nodes.map(nodeType).filter(Boolean))].join(', ') || 'none';
-      return ok ? [] : [{ urlKey: hp.urlKey, evidence: { found, note: 'no Organization-family or WebSite node on the homepage (nested nodes and subtypes checked)' } }];
+      // Owned typed nodes, nested included (WebPage > mainEntity > Corporation, WebPage > isPartOf > WebSite),
+      // matched across the whole Organization subtree case-insensitively. Third-party entities under
+      // offers/brand/manufacturer/review don't count (schemaTypes.IDENTITY_EDGES).
+      const presence = orgOrWebSitePresence(hp.jsonLd);
+      if (presence === 'present') return [];
+      const found = [...new Set(collectTypedNodes(hp.jsonLd).flatMap(typesOf))].join(', ') || 'none';
+      return [{ urlKey: hp.urlKey, evidence: presence === 'unknown'
+        ? { found, truncated: true, note: 'the JSON-LD is too large to scan fully; no Organization-family or WebSite node in the part that was scanned - verify by hand' }
+        : { found, note: 'no Organization-family or WebSite node owned by the homepage (nested nodes and subtypes checked; entities under offers/brand/review are third-party and not counted)' } }];
+    },
+  },
+  {
+    id: 'org-entity-incomplete', category: 'schema', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
+    title: 'Organization schema missing logo, sameAs or contact details',
+    fix: 'Complete the homepage Organization: add `logo` (an image URL), `sameAs` (the official social and directory profiles) and a contact route (`contactPoint`, `telephone` or `email`). These are what tie the markup to the brand entity and its knowledge panel.',
+    run: (c) => {
+      const hp = (rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND click_depth=0 LIMIT 1`)[0]
+        ?? rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 ORDER BY inlink_count DESC LIMIT 1`)[0]);
+      if (!hp) return [];
+      const { nodes } = ownOrganizationNodes(hp.jsonLd);
+      if (!nodes.length) return []; // no Organization at all: homepage-missing-org-schema covers it
+      // A field counts if ANY own Organization node carries it - Yoast-style graphs split one entity
+      // across an @id reference and its full declaration.
+      const has = (k: string): boolean => nodes.some(n => {
+        const v = n[k];
+        return Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim().length > 0 : !!v && typeof v === 'object';
+      });
+      const missing: string[] = [];
+      if (!has('logo')) missing.push('logo');
+      if (!has('sameAs')) missing.push('sameAs');
+      if (!has('contactPoint') && !has('telephone') && !has('email')) missing.push('contactPoint / telephone / email');
+      if (!missing.length) return [];
+      return [{ urlKey: hp.urlKey, evidence: { organizationTypes: [...new Set(nodes.flatMap(typesOf))].join(', '), missing } }];
     },
   },
   {
@@ -1093,7 +1116,8 @@ export const CHECKS: CheckDef[] = [
         WHERE s.rn = 1 AND p.status_code = 200 AND p.json_ld IS NOT NULL AND p.json_ld != ''`);
       const out: RawFinding[] = [];
       for (const x of r) {
-        const types = parseJsonLdNodes(x.jsonLd).map(n => (nodeType(n) ?? '').toLowerCase());
+        // Owned typed nodes, nested and array @types included (WebPage > mainEntity > Product).
+        const types = collectTypedNodes(x.jsonLd).flatMap(typesOf);
         const productish = types.some(t => t === 'product' || t === 'offer');
         const articleish = types.some(t => /article|blogposting|newsarticle/.test(t));
         const intent = (x.intent || '').toLowerCase();
@@ -1478,7 +1502,7 @@ export const CHECKS: CheckDef[] = [
         });
         if (entities.size < 2) continue;
         out.push({ urlKey: r.urlKey, evidence: {
-          entities: [...entities].map(([id, n]) => ({ id: id.startsWith('#anon-') ? null : id, types: nodeTypeList(n), hasAuthor: named(n.author), headline: typeof n.headline === 'string' ? n.headline.slice(0, 80) : null })),
+          entities: [...entities].map(([id, n]) => ({ id: id.startsWith('#anon-') ? null : id, types: typesOf(n), hasAuthor: named(n.author), headline: typeof n.headline === 'string' ? n.headline.slice(0, 80) : null })),
         } });
       }
       return out;
@@ -1544,11 +1568,11 @@ export const CHECKS: CheckDef[] = [
     id: 'discover-generic-article-type', category: 'schema', severity: 'low', labels: ['D', 'N'], certainty: 0.5, effortBase: 1, fixType: 'global',
     title: 'Generic Article type where a more specific one fits',
     fix: 'The page’s Article markup uses only the generic `Article` type. Google recommends the most specific applicable type — `NewsArticle` for news, `LiveBlogPosting` for live coverage, `ProfilePage` for a person/creator profile — which unlocks richer Discover/News treatment. Usually one template/plugin setting. Only change it if the more specific type genuinely fits (judgement).',
-    // Reads the FULL @type set of each article-family node (nodeTypeList — array-@type aware). Fires
+    // Reads the FULL @type set of each article-family node (typesOf — array-@type aware). Fires
     // only when the article family present is exactly {article}, i.e. no more-specific subtype is
     // declared anywhere. A page typed ["Article","BlogPosting"] is NOT flagged (BlogPosting IS specific).
     run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND json_ld LIKE '%Article%'`)
-      .map(r => { const present = new Set<string>(); for (const n of discoverArticleNodes(r.jsonLd)) for (const t of nodeTypeList(n)) if (DISCOVER_TYPES.includes(t)) present.add(t); return { urlKey: r.urlKey, present }; })
+      .map(r => { const present = new Set<string>(); for (const n of discoverArticleNodes(r.jsonLd)) for (const t of typesOf(n)) if (DISCOVER_TYPES.includes(t)) present.add(t); return { urlKey: r.urlKey, present }; })
       .filter(x => x.present.has('article') && x.present.size === 1)
       .map(x => ({ urlKey: x.urlKey, evidence: { articleTypesDeclared: ['Article'], note: 'the Article schema declares only the generic Article type — no more specific subtype' } })),
   },
@@ -1590,8 +1614,8 @@ const DISCOVER_TYPES = ['article', 'newsarticle', 'blogposting', 'liveblogpostin
 // Coarse SQL prefilter — narrows rows before the precise isDiscoverEligible() JSON parse (a slightly
 // wide net on the raw JSON, always confirmed in JS). Keeps every discover-* check off a full scan.
 const DISCOVER_PREFILTER = `status_code=200 AND indexable=1 AND ${HTML_CT} AND (json_ld LIKE '%Article%' OR json_ld LIKE '%BlogPosting%' OR json_ld LIKE '%ProfilePage%' OR og_tags LIKE '%article%')`;
-// Every @type a node declares. A node's @type may be a STRING or an ARRAY (e.g. ["Article","BlogPosting"]);
-// templates.nodeType() returns only the first entry, which misreads array types — so read them all here.
+// Every @type a node declares (string or array, e.g. ["Article","BlogPosting"]) comes from schemaTypes.typesOf;
+// templates.nodeType() returns only the first entry, which misreads array types.
 // SQL prefilter for the article family. 'BlogPosting' / 'SocialMediaPosting' don't contain the word
 // 'Article', so a LIKE '%Article%' prefilter silently skipped BlogPosting-only pages.
 // Outbound links joined to their checked status (#36), grouped by linking page.
@@ -1612,7 +1636,7 @@ function externalByPage(c: CheckContext, where: string): { urlKey: string; outbo
 const ARTICLE_LIKE = `(json_ld LIKE '%Article%' OR json_ld LIKE '%Posting%')`;
 const ARTICLE_TYPES = /^(article|blogposting|newsarticle|techarticle|scholarlyarticle|reportagenewsarticle|analysisnewsarticle|opinionnewsarticle|reviewnewsarticle|backgroundnewsarticle|socialmediaposting|liveblogposting)$/;
 // Array-@type aware: Yoast emits @type ["Article","BlogPosting"].
-function isArticleNode(n: unknown): boolean { return nodeTypeList(n).some(t => ARTICLE_TYPES.test(t)); }
+function isArticleNode(n: unknown): boolean { return typesOf(n).some(t => ARTICLE_TYPES.test(t)); }
 // True when an author value carries a real name, directly or via an @id reference to a node in the
 // same page graph (Yoast: "author": {"@id": "…#/schema/person/…"} with the Person declared once).
 function authorNamer(nodes: unknown[]): (v: unknown) => boolean {
@@ -1629,15 +1653,9 @@ function authorNamer(nodes: unknown[]): (v: unknown) => boolean {
   };
   return (v: unknown) => named(v);
 }
-function nodeTypeList(n: unknown): string[] {
-  const t = (n as { '@type'?: unknown } | null)?.['@type'];
-  if (typeof t === 'string') return [t.toLowerCase()];
-  if (Array.isArray(t)) return t.filter((x): x is string => typeof x === 'string').map(x => x.toLowerCase());
-  return [];
-}
 // JSON-LD nodes whose @type set intersects the article family (array-@type aware).
 function discoverArticleNodes(jsonLd: string | null): unknown[] {
-  return parseJsonLdNodes(jsonLd).filter(n => nodeTypeList(n).some(t => DISCOVER_TYPES.includes(t)));
+  return parseJsonLdNodes(jsonLd).filter(n => typesOf(n).some(t => DISCOVER_TYPES.includes(t)));
 }
 function parseOg(ogTags: string | null): Record<string, string> {
   if (!ogTags) return {};
@@ -1649,7 +1667,7 @@ function parseOg(ogTags: string | null): Record<string, string> {
 // og:type is the fallback ONLY when there is no typed JSON-LD to judge from.
 function isDiscoverEligible(jsonLd: string | null, ogTags: string | null): boolean {
   if (discoverArticleNodes(jsonLd).length) return true;
-  if (parseJsonLdNodes(jsonLd).some(n => nodeTypeList(n).length)) return false;
+  if (parseJsonLdNodes(jsonLd).some(n => typesOf(n).length)) return false;
   return (parseOg(ogTags)['og:type'] ?? '').toLowerCase() === 'article';
 }
 // max-image-preview:large can be set via the robots meta OR the X-Robots-Tag header; either counts.
