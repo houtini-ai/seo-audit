@@ -84,6 +84,11 @@
   font-family: var(--font-mono); font-size: 10.5px; border: 1px solid var(--border-subtle); background: var(--bg-surface);
   border-radius: var(--radius-pill); padding: 0 6px; color: var(--text-secondary); white-space: nowrap;
 }
+.pf-root .country-select {
+  font-family: var(--font-mono); font-size: 10.5px; border: 1px solid var(--border-subtle); background: var(--bg-surface);
+  border-radius: var(--radius-pill); padding: 0 4px; color: var(--text-secondary); max-width: 120px; cursor: pointer;
+}
+.pf-root .country-select:hover, .pf-root .country-select:focus { border-color: var(--border-standard); color: var(--text-primary); }
 .pf-root .domain-badges { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
 .pf-root .badge { padding: 0 6px; border-radius: var(--radius-pill); font-size: 10.5px; white-space: nowrap; }
 .pf-root .badge.gsc { background: color-mix(in srgb, var(--intent-success) 12%, transparent); color: var(--intent-success); }
@@ -126,7 +131,7 @@
 .pf-root a.domain-link { text-decoration: none; }
 .pf-root .add-domain { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; border: 1px solid var(--border-standard); border-radius: var(--radius); background: var(--bg-card); padding: 12px 14px; }
 .pf-root .add-domain label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
-.pf-root .add-domain input { font: inherit; font-size: 13px; padding: 6px 9px; border: 1px solid var(--border-standard); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); min-width: 150px; }
+.pf-root .add-domain input, .pf-root .add-domain select { font: inherit; font-size: 13px; padding: 6px 9px; border: 1px solid var(--border-standard); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); min-width: 150px; }
 .pf-root .add-note { font-size: 12px; color: var(--text-muted); flex: 1 1 220px; padding-bottom: 7px; }
 .pf-root .add-error { color: var(--intent-danger); }
 

@@ -11,6 +11,7 @@ import { fetchSitemapUrls } from '../dist/core/sitemap.js';
 import { storeRobotsTxt } from '../dist/core/robotsStore.js';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
 import { newCriticalFindings } from '../dist/core/portfolioData.js';
+import { PortfolioStore } from '../dist/core/PortfolioStore.js';
 
 let pass = 0, fail = 0;
 const t = (name, cond) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`); cond ? pass++ : fail++; };
@@ -125,6 +126,24 @@ t('new critical: carried over from the last run -> not new', withDb(db => { twoR
 t('new critical: a check the previous run lacked (an upgrade) -> not new', withDb(db => { twoRuns(db); finding(db, 'r2', 'robots-txt-unreachable', null); }, newCriticalFindings).length === 0);
 t('new critical: high severity ignored', withDb(db => { twoRuns(db); finding(db, 'r2', 'broken-internal-links', 'https://x.test/a', 'high'); }, newCriticalFindings).length === 0);
 t('new critical: different scopes not compared', withDb(db => { auditRun(db, 'r1', 'full', ['site-wide-indexing-alarm'], '2026-11-01'); auditRun(db, 'r2', 'core', ['site-wide-indexing-alarm'], '2026-11-08'); finding(db, 'r2', 'site-wide-indexing-alarm', null); }, newCriticalFindings).length === 0);
+
+// ── portfolio: move a watched domain to another country (browser picker) ────────────────────
+{
+  const dir = path.join(tmpdir(), `sac-pf-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  mkdirSync(dir, { recursive: true });
+  const store = new PortfolioStore(dir);
+  try {
+    store.addWatched('rival.com', { locationCode: 2826, group: 'rivals' });
+    const moved = store.moveWatched('rival.com', 2826, 2036);
+    const active = store.list().filter(d => d.domain === 'rival.com');
+    t('move: domain now watched in the new country only, group kept', moved.locationCode === 2036 && active.length === 1 && active[0].groupLabel === 'rivals');
+    store.addWatched('rival.com', { locationCode: 2840 });
+    let msg = ''; try { store.moveWatched('rival.com', 2036, 2840); } catch (e) { msg = e.message; }
+    t('move: onto a country it is already watched in -> clear error, nothing changed', /already in the portfolio for United States/.test(msg) && store.list().filter(d => d.domain === 'rival.com').length === 2);
+    msg = ''; try { store.moveWatched('rival.com', 2124, 2250); } catch (e) { msg = e.message; }
+    t('move: from a country it is not watched in -> error', /not watched at that location/.test(msg));
+  } finally { store.close(); try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* temp */ } }
+}
 
 // ── fetchSitemapUrls per-file record, against a local server ────────────────────────────────
 const urlset = (n, rel = 0) => `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${

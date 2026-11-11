@@ -100,6 +100,14 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
       return { added: d, note: loc?.note ?? null } as unknown as Record<string, unknown>;
     }),
     portfolio_remove_domain: async (a) => withStore(store => ({ removed: store.removeWatched(String(a.domain ?? ''), locationArg(a)) })),
+    // Change a watched domain's country (#79): free, no API call. Data for the new country arrives
+    // with the next portfolio refresh; the old country's history is kept.
+    portfolio_move_domain: async (a) => withStore(store => {
+      const from = locationArg(a);
+      const to = typeof a.to === 'number' ? a.to : Number(a.to);
+      if (from == null || !Number.isFinite(to)) throw new Error('portfolio_move_domain needs locationCode (current) and to (new location code).');
+      return { moved: store.moveWatched(String(a.domain ?? ''), from, to) } as unknown as Record<string, unknown>;
+    }),
     portfolio_group_domain: async (a) => withStore(store => {
       const group = typeof a.group === 'string' && a.group.trim() ? a.group.trim() : null;
       return { updated: store.setGroup(String(a.domain ?? ''), group, locationArg(a)) };

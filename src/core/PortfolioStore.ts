@@ -238,6 +238,26 @@ export class PortfolioStore {
     return r.changes;
   }
 
+  /**
+   * Move a watched domain to another country. Its row at the old location is soft-removed (that
+   * location's history is kept) and it is watched at the new one, with the same group. Done in one
+   * transaction, remove first, so a move never trips the watched-domain limit and a failed add
+   * leaves the original row in place.
+   */
+  moveWatched(input: string, fromCode: number, toCode: number): PortfolioDomain {
+    const domain = normaliseDomain(input);
+    const cur = this.db.prepare(`SELECT group_label g, language_code l FROM portfolio_domain WHERE domain = ? AND location_code = ? AND kind = 'watched' AND removed_at IS NULL`)
+      .get(domain, fromCode) as { g: string | null; l: string | null } | undefined;
+    if (!cur) throw new Error(`${domain} is not watched at that location.`);
+    if (fromCode === toCode) return this.list().find(d => d.domain === domain && d.locationCode === toCode)!;
+    const taken = this.db.prepare(`SELECT 1 FROM portfolio_domain WHERE domain = ? AND location_code = ? AND removed_at IS NULL`).get(domain, toCode);
+    if (taken) throw new Error(`${domain} is already in the portfolio for ${LOCATION_LABEL[toCode] ?? `location ${toCode}`}.`);
+    return this.db.transaction(() => {
+      this.removeWatched(domain, fromCode);
+      return this.addWatched(domain, { locationCode: toCode, group: cur.g, languageCode: cur.l ?? undefined });
+    })();
+  }
+
   setGroup(input: string, group: string | null, locationCode?: number): number {
     const domain = normaliseDomain(input);
     const g = group?.trim() ? group.trim().slice(0, 60) : null;

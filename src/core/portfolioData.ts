@@ -71,6 +71,8 @@ export interface PortfolioPayload {
   months: { lastComplete: string; previous: string; yearAgo: string; current: string };
   counts: { owned: number; watched: number; attention: number };
   groups: string[];
+  /** The countries a watched domain can be set to (the add form and per-row picker), sorted by name. */
+  locations: { code: number; iso: string; name: string }[];
   refresh: {
     weeklyCapturedAt: string | null;
     monthlyCapturedAt: string | null;
@@ -99,6 +101,10 @@ const change = (cur: number | null | undefined, prior: number | null | undefined
 type Fetches = ReturnType<PortfolioStore['fetchState']>;
 type MonthRow = Record<string, any>;
 
+const PORTFOLIO_LOCATIONS = Object.entries(LOCATION_LABEL)
+  .map(([code, name]) => ({ code: Number(code), iso: LOCATION_ISO[Number(code)] ?? '', name }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
 export function getPortfolioData(dataDir: string, now: Date = new Date()): PortfolioPayload {
   const L = lastCompleteMonth(now), P = addMonths(L, -1), Y = addMonths(L, -12), C = addMonths(L, 1);
   const store = new PortfolioStore(dataDir);
@@ -121,6 +127,7 @@ export function getPortfolioData(dataDir: string, now: Date = new Date()): Portf
       months: { lastComplete: L, previous: P, yearAgo: Y, current: C },
       counts: { owned: rows.filter(r => r.kind === 'owned').length, watched: rows.filter(r => r.kind === 'watched').length, attention: rows.filter(r => r.attention.length).length },
       groups: [...new Set(rows.map(r => r.group).filter((g): g is string => !!g))].sort(),
+      locations: PORTFOLIO_LOCATIONS,
       refresh: {
         weeklyCapturedAt: weekly, monthlyCapturedAt: monthly,
         schedule: readSchedule(store.db), spentThisMonth: round2(store.spentThisMonth(now)),
