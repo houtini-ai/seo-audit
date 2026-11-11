@@ -8,7 +8,7 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
-## [Unreleased]
+## [1.0.4] — 2026-11-11
 
 More fixes from the MyMiningRig dev channel.
 
