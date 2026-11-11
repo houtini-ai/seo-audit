@@ -160,4 +160,8 @@ On-demand topic research: type a keyword and pull recent **News** (free Google N
 
 Writes the whole dashboard - data and charts inlined - to a single self-contained HTML file in your reports folder (under the data directory, path returned by the tool). Open it in any browser, attach it to an email, hand it to a client; the recipient needs nothing installed and nothing running. It's a snapshot of the moment you exported, so re-export after a refresh when you want current numbers. A `theme` option gives you light or dark.
 
+> Export an A4 report for mysite.com
+
+`format: "a4"` writes a printable report rather than the interactive dashboard: the Summary and the portfolio on A4 pages, as HTML plus a PDF when Playwright is installed (otherwise print the HTML to PDF from any browser). Every number names its source and window, and estimates are labelled as estimates.
+
 One honest limitation: the in-chat widget and the export are the same dashboard, so anything the widget can't show (because you haven't synced or run the relevant tool), the export can't either. The export tells you the finding count it shipped with, which is a decent staleness check.

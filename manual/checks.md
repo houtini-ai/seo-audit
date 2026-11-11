@@ -1,6 +1,6 @@
 # The check registry
 
-All 150 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
+All 153 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
 
 ## Reading the labels
 
@@ -25,7 +25,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `render-blocking-head-resources` | 3 or more render-blocking stylesheets in `<head>` (any parser-blocking script fires on its own) | A styled page needs its own stylesheet, and a font or plugin sheet beside it is the usual floor, so 1-2 aren't reported. |
 | `hydration-content-loss` | The rendered main content keeps 50% or less of the raw main content's words, where the raw had at least 200 | Below 200 words the ratio is noise (a short page swings on one block); losing more than half is past any template difference. |
 
-## Crawlability (24)
+## Crawlability (25)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -52,9 +52,10 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `entity-internal-link-gap` | N (0.5) | Topically related pages (per Wikidata) with no link between them | Link the broader page to the more specific one - after verifying the entity match. Needs `resolve_entities`. |
 | `internal-nofollow` | D | Internal links carrying `rel=nofollow` (alone or with `sponsored`/`ugc`) into a live, indexable page, one finding per target page with the linking pages and how many internal links to it are still followed. Self-anchors (`#`) and links to cart, login and account pages are not reported | Remove nofollow from links between your own pages - usually an affiliate-link plugin or template default. |
 | `robots-txt-unreachable` | D (0.8) | robots.txt answered 5xx, 429 or nothing when the crawl fetched it. Google then pauses crawling for 12 hours and keeps retrying. Fetched with the crawler's user agent, so a firewall challenge Googlebot would pass can cause it | Make robots.txt answer 200 (or 404 with no rules); confirm in Search Console's robots.txt report. |
+| `non-crawlable-links` | D | Navigation Google can't follow: an internal target reached only through `onclick`, a `javascript:` href, a `#` href plus script, `routerLink` on an `<a>` without href, or `data-href` on a `<div>`/`<span>`/`<button>`. One finding per template element with the pages it's on; targets with no ordinary link anywhere on the site are named. Only counted when a target is evident and on your site (a `#` button that opens a modal, a share widget pointing at the page itself, or a wrapper around a real link isn't). Recorded by crawls from 1.0.2 on | Render a real `<a href="/path">`; the framework can still intercept the click. |
 | `robots-txt-health` | D | One site-level finding listing robots.txt problems with line numbers: at or over Google's 500 KiB limit, lines that aren't `field: value`, unknown or misspelt directives (`Content-Signal` is known), `noindex` (unsupported since 2019), rules before any User-agent, an empty User-agent, a user-agent split across groups, a path both allowed and disallowed, a relative or missing `Sitemap:` line | Fix the listed lines and declare the sitemap with its full URL. |
 
-## Indexation (32)
+## Indexation (33)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -89,6 +90,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `product-gone-404` | D+G | A store product (Shopify `/products/`, WooCommerce `/product/`, or Product schema in the earlier snapshot) that answered 200 in an earlier crawl and now answers 404/410, with equity (GSC clicks >= 1 or impressions >= 10 over the history held, a backlink, or an internal link). Ranked by the clicks it earned. A product the latest crawl didn't reach, or a rate-limited fetch, is not reported | 301 to the replacement or parent category; keep an out-of-stock product live at 200 marked OutOfStock. |
 | `sitemap-invalid` | D | A sitemap declared in robots.txt or listed by a sitemap index that fails (HTTP error, no response), isn't sitemap XML (often an HTML page), or lists `<loc>` values that aren't full http(s) URLs. Conventional `/sitemap.xml` probes that don't exist are not reported. Reads `sitemap_files`, recorded by crawls from 1.0.2 on: until a re-crawl it's listed under **Not collected** | Fix the URL or the generator, then resubmit in Search Console. |
 | `sitemap-too-large` | D | A sitemap file over 50,000 URLs (an index: 50,000 child sitemaps) or 50 MB uncompressed, which Google ignores. Entries are counted in full even past the crawl's own 100,000-URL collection cap, and a capped walk is noted in the evidence | Split it into several sitemaps under a sitemap index. |
+| `data-nosnippet-on-main` | D | A `data-nosnippet` element (on a span, div or section, the only tags Google honours it on) that contains `<main>`, or contains an `<article>`/`<h1>` while holding a quarter or more of the page's text, or holds half or more of it: the page's own content can't appear in a snippet or AI Overview. Recorded by crawls from 1.0.2 on | Keep `data-nosnippet` for the passages you don't want quoted and take it off the main wrapper. |
 | `hreflang-missing-x-default` | D | A real language cluster (two or more alternates besides the page) with no `x-default`. One site-level finding when no cluster on the site uses x-default; per-page findings only when the site uses it on some sets and not others. Low severity: Google recommends x-default but doesn't require it | Add an x-default pointing at the page for unmatched languages (a picker or the main market). |
 
 ## On-page (24)
@@ -152,13 +154,14 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `discover-image-schema` | D | Article schema that declares no `image` (Discover cards need a large image) | Add an `image` (≥1200px wide, ideally 16:9 / 4:3 / 1:1 crops), matching the main visible image. |
 | `org-entity-incomplete` | D | The homepage's own Organization (any subtype, nested included) has no `logo`, no `sameAs`, or no contact route (`contactPoint`, `telephone` or `email`). A field counts if any of its own Organization nodes carries it, so a Yoast-style `@id` reference plus full declaration is fine. Silent when there's no Organization at all (`homepage-missing-org-schema` covers that) | Add the missing fields to the homepage Organization. |
 
-## Security (3)
+## Security (4)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
 | `mixed-content` | D | http subresources on https pages | Serve every subresource over https. |
 | `non-https` | D | Pages served over HTTP | Serve over HTTPS and 301 the HTTP version. |
 | `missing-hsts` | D | No Strict-Transport-Security header | Add it with a sensible max-age. |
+| `tls-expiring` | D | The site's TLS certificate expires within 21 days (automatic renewal usually runs at 30, so this close usually means it failed), has expired, doesn't cover the host, is self-signed, or the server doesn't send the intermediate certificate. Read by one TLS handshake per host when the crawl starts (the crawl host and its www/apex twin); days are counted from when the audit runs | Renew, or fix the renewal; send the full chain. |
 
 ## Performance (14)
 

@@ -84,7 +84,7 @@ One named check, with every affected URL and its full evidence. The drill-down a
 > Run the keyword-cannibalisation check on mysite.com with evidence
 
 ### `list_checks`
-The whole check catalogue - all 150, with categories and labels; `category` narrows it to one. The same list, annotated, is [checks.md](checks.md).
+The whole check catalogue - all 153, with categories and labels; `category` narrows it to one. The same list, annotated, is [checks.md](checks.md).
 > What does the audit check for?
 
 ### `list_templates`
@@ -301,6 +301,9 @@ Internal - the widget fetches its own dataset through this (and pages the Issues
 ### `export_report`
 The same dashboard as one self-contained HTML file, written to your reports folder. Open it in any browser, email it to a client - nothing to install at their end.
 > Export the report for mysite.com
+
+With `format: "a4"` it writes a printable report instead: the Summary (the verdict, headline numbers, clicks by month, page movers, the ten highest-priority fixes and findings by area) and the portfolio (this domain in its market, then every domain), laid out for A4. You get the HTML, and a PDF when the optional Playwright browser is installed (`npm i playwright && npx playwright install chromium`, the same one `render_pages` uses). Without it, open the HTML and use Print > Save as PDF.
+> Export an A4 report for mysite.com
 
 ## Utilities
 

@@ -2,7 +2,7 @@
 
 One table for every site you look after, and the competitors you watch, built on data you already hold plus a few cents of DataForSEO. **Every number says whether it was measured or estimated.**
 
-- **Owned domains** come from your synced Search Console properties, automatically. A database made by `pull_backlinks` or `link_intersect` for someone else's site is not one of them.
+- **Owned domains** come from your Search Console properties, automatically: a Domain property (`sc-domain:`) as soon as it exists, a URL-prefix property (`https://…/`) once it has been synced. A database made by crawling a site that isn't in your Search Console (a competitor or research site), or by `pull_backlinks` or `link_intersect` for someone else's site, is not one of them.
 - **Watched domains** are added by you: competitors, prospects, clients without Search Console access.
 
 In the browser it's **All domains**, the first entry in the dashboard's domain dropdown, and the page the dashboard opens on once you have more than one property. In chat it's `get_portfolio`.
@@ -31,6 +31,8 @@ In the browser it's **All domains**, the first entry in the dashboard's domain d
 - Domain Rank down 5 points or more.
 - AI mentions down 30% or more, from at least 20.
 - Audit health down 5 points or more.
+- A critical issue that is new in the latest audit, named (compared with the previous audit at the same scope; a check added by an upgrade doesn't count as new).
+- The TLS certificate expiring within 21 days, expired, or not trusted.
 - Stale Search Console data or an old crawl.
 
 ## The domain overview
@@ -65,7 +67,7 @@ The dashboard never spends. Adding or removing a watched domain is free and work
 
 ## Managing the list
 
-In the browser, use the form above the All domains table to watch a domain (domain, optional group and country), and a row's Remove link to stop. In chat:
+In the browser, use the form above the All domains table to watch a domain (domain, optional group, and a country picked from the list), a watched row's country picker to move it to another market (its history for the old one is kept; the new one's numbers arrive with the next refresh), and a row's Remove link to stop. In chat:
 
 ```text
 portfolio                                   list everything (free)

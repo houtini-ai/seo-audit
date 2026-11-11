@@ -8,6 +8,50 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [1.0.2] — 2026-11-11
+
+Ten new checks (153 in all), a printable A4 report, and fixes from a full code review of the crawl path. Several new checks read data the crawler only records from this version on: re-crawl a property to populate them. Until then they are listed under **Not collected**, never as passing.
+
+### Added
+- **Ten checks** (#79):
+  - `internal-nofollow`: internal links carrying `rel=nofollow` into live, indexable pages.
+  - `robots-txt-unreachable` (high): robots.txt answered 5xx, 429 or nothing, which pauses Google's crawling.
+  - `robots-txt-health`: robots.txt lint, with line numbers.
+  - `sitemap-invalid`: a declared or indexed sitemap that fails, isn't sitemap XML, or lists relative URLs.
+  - `sitemap-too-large`: over 50,000 entries or 50 MB.
+  - `hreflang-missing-x-default` (low): a language cluster with no x-default.
+  - `org-entity-incomplete`: the homepage Organization lacks a logo, `sameAs` or a contact route.
+  - `tls-expiring` (high): the certificate expires within 21 days, has expired, or isn't trusted.
+  - `non-crawlable-links`: script-only navigation to pages on the site.
+  - `data-nosnippet-on-main` (high): `data-nosnippet` wrapping the main content.
+- **Printable A4 report:** `export_report` with `format: "a4"` writes the Summary and the portfolio as A4 HTML. It also writes a PDF when the optional Playwright browser is installed; otherwise print the HTML from any browser.
+- **Portfolio:**
+  - "Needs attention" names a critical issue that is new in the latest audit, and a TLS certificate problem.
+  - The browser has a country picker when adding a watched domain, and on each watched row to move it to another market.
+- **Crawl data:** the crawler now records each sitemap document (`sitemap_files`), the TLS certificate of the crawl host and its www/apex twin (`tls_certs`), script-only links, and `data-nosnippet` coverage.
+
+### Fixed
+- **Schema (review of 1.0.1):**
+  - Another company's Organization nested under `offers.seller`, `brand`, `manufacturer` or `review` no longer counts as the homepage's own.
+  - Full-IRI types (`https://schema.org/Organization`) match.
+  - A schema scan that hits its bound reports "unknown" instead of "missing".
+  - The Organization type list was corrected.
+  - `intent-vs-pagetype-mismatch` now sees nested and array types.
+- **The homepage lookup prefers the root URL.** When a crawl's link graph was empty, it used to pick an arbitrary page (`/agents.md` on one site) and report the real homepage's Organization as missing.
+- **Portfolio "owned" means yours.** A site you only crawled (a competitor or research site) was listed as an owned domain. Now an `sc-domain:` property counts at once, and a URL-prefix property counts once it has been synced.
+- **Crawl path (code review):**
+  - Sitemap index children and redirects on other hosts go through the public-address guard, so a sitemap can't make the crawler request an internal address.
+  - Cancelling a crawl stops the sitemap walk.
+  - An `<header>` inside `<article>` or `<main>` is content, not site navigation, for link placement and body text.
+  - The robots linter groups User-agent lines exactly as the crawl gate does.
+- **Dashboard:**
+  - The AI visibility tab shows full bot names (they were cut to one letter).
+  - The domain overview charts keep their legend on one row, clear of the axis name.
+
+### Notes
+- The check counts in the README, `manual/checks.md` and `manual/tools.md` are 153; the manual lists every registry check.
+- `npm test` adds `probe:quick-wins` (81 assertions).
+
 ## [1.0.1] — 2026-11-03
 
 ### Fixed
