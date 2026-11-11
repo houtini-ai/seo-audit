@@ -105,6 +105,14 @@ const CACHE_DBS = new Set(['dataforseo-cache.db', '_portfolio.db', '_jobs.db']);
  * it is not one of the user's properties.
  */
 export const isGscProperty = (siteUrl: string): boolean => /^(sc-domain:|https?:\/\/)/i.test(siteUrl.trim());
+/**
+ * A property that is really in the user's Search Console. An sc-domain: name only ever comes from
+ * Search Console, so it counts as soon as it exists. A URL-prefix name (https://x/) is also what
+ * start_crawl creates for any site, ours or not, so it counts only once it has been synced: a
+ * crawled competitor or research site (reed.co.uk, adzuna.co.uk) was listed as an owned domain.
+ */
+export const isOwnedGscProperty = (siteUrl: string, lastSyncedAt: string | null): boolean =>
+  /^sc-domain:/i.test(siteUrl.trim()) || (isGscProperty(siteUrl) && !!lastSyncedAt);
 
 /** Enumerate properties that have a local DB (property_meta.site_url is the source of truth).
  * `gsc` is false for a database named by a bare domain (see isGscProperty); `hidden` is the user's
@@ -121,9 +129,9 @@ export function listLocalProperties(dataDir: string): { siteUrl: string; file: s
       // Legacy collided databases hold a row per property; the ACTIVE one (most recently synced)
       // owns the data, so ordering by id would name the wrong property in the switcher.
       const meta = db.prepare(
-        `SELECT site_url FROM property_meta ORDER BY COALESCE(last_synced_at,'') DESC, id ASC LIMIT 1`,
-      ).get() as { site_url: string } | undefined;
-      if (meta?.site_url) out.push({ siteUrl: meta.site_url, file, gsc: isGscProperty(meta.site_url), hidden: hidden.has(meta.site_url) });
+        `SELECT site_url, last_synced_at FROM property_meta ORDER BY COALESCE(last_synced_at,'') DESC, id ASC LIMIT 1`,
+      ).get() as { site_url: string; last_synced_at: string | null } | undefined;
+      if (meta?.site_url) out.push({ siteUrl: meta.site_url, file, gsc: isOwnedGscProperty(meta.site_url, meta.last_synced_at), hidden: hidden.has(meta.site_url) });
     } catch { /* not a property DB */ } finally { db?.close(); }
   }
   return out;

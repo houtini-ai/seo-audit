@@ -45,6 +45,8 @@ for (const p of PROPS) {
   const path = join(DIR, p + '.db');
   if (!existsSync(path)) { console.log(`\n=== ${p} === (skipped: no database)`); continue; }
   const db = new Database(path, { readonly: true });
+  // The data folder also holds non-property databases (_jobs, _portfolio, the API caches): no crawl tables.
+  if (!db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='crawl_metadata'`).get()) { db.close(); console.log(`\n=== ${p} === (skipped: not a property database)`); continue; }
   console.log(`\n=== ${p} ===`);
 
   // ---- 1. staleness ----

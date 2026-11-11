@@ -12,6 +12,10 @@ import { storeRobotsTxt } from '../dist/core/robotsStore.js';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
 import { newCriticalFindings } from '../dist/core/portfolioData.js';
 import { PortfolioStore } from '../dist/core/PortfolioStore.js';
+import { extractPage } from '../dist/core/extract.js';
+import { storeTls, tlsTwin } from '../dist/core/tlsProbe.js';
+import { buildPrintReport, PRINT_PORTFOLIO_ROWS } from '../dist/core/printReport.js';
+import { isOwnedGscProperty } from '../dist/core/webServer.js';
 
 let pass = 0, fail = 0;
 const t = (name, cond) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`); cond ? pass++ : fail++; };
@@ -145,6 +149,138 @@ t('new critical: different scopes not compared', withDb(db => { auditRun(db, 'r1
   } finally { store.close(); try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* temp */ } }
 }
 
+// ── Medium items: non-crawlable links + data-nosnippet extraction ───────────────────────────
+const EX = (body) => extractPage(`<!doctype html><html><head><title>t</title></head><body>${body}</body></html>`, 'https://x.test/page', 'x.test', { hostForm: 'asis' });
+const ncx = EX(`<nav><a onclick="location.href='/pricing'">Pricing</a><span data-href="/about">About</span></nav>
+  <a href="javascript:window.location='/blog'">Blog</a>
+  <a href="#" onclick="openModal()">Open modal</a>
+  <button onclick="window.open('https://other.example/x')">External</button>
+  <div class="share" data-href="https://x.test/page">Share</div>
+  <a href="/real">Real link</a>`).nonCrawlableLinks;
+const ncKinds = (ncx?.items ?? []).map(i => `${i.kind}:${new URL(i.target).pathname}`).sort();
+t('non-crawlable: onclick <a>, data-href <span>, javascript: href are recorded', JSON.stringify(ncKinds) === JSON.stringify(['javascript-href:/blog', 'no-href:/pricing', 'non-link-element:/about']));
+t('non-crawlable: modal "#" button, external target, share-to-self and real links are not', ncx?.total === 3);
+t('non-crawlable: nav placement captured', (ncx?.items ?? []).find(i => i.target.endsWith('/pricing'))?.placement === 'navigation');
+t('non-crawlable: a clean page -> null', EX('<a href="/a">a</a>').nonCrawlableLinks === null);
+
+const wrap = EX(`<div data-nosnippet><main><h1>Title</h1><p>${'word '.repeat(200)}</p></main></div><footer>small footer</footer>`).nosnippet;
+t('nosnippet: wrapper holding <main> -> wrapsMain, high share', wrap?.wrapsMain === true && wrap.textShare > 0.9);
+const small = EX(`<main><h1>Title</h1><p>${'word '.repeat(200)}</p><span data-nosnippet>Price: 10</span></main>`).nosnippet;
+t('nosnippet: one small span -> recorded, not main, low share', small?.elements === 1 && small.wrapsMain === false && small.textShare < 0.1);
+const ignored = EX(`<main data-nosnippet><p>${'word '.repeat(50)}</p></main>`).nosnippet;
+t('nosnippet: on <main> itself Google ignores it -> not counted', ignored === null);
+
+withDb(db => {
+  db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,nosnippet) VALUES ('c1','https://x.test/a','https://x.test/a',200,1,?)`).run(JSON.stringify(wrap));
+  db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,nosnippet) VALUES ('c1','https://x.test/b','https://x.test/b',200,1,?)`).run(JSON.stringify(small));
+  db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,nosnippet) VALUES ('c1','https://x.test/c','https://x.test/c',200,1,'{"elements":0}')`).run();
+}, db => {
+  const f = run(db, 'data-nosnippet-on-main');
+  t('data-nosnippet-on-main: only the page whose main content is wrapped', f.length === 1 && f[0].urlKey === 'https://x.test/a');
+});
+withDb(() => {}, db => t('data-nosnippet-on-main: pre-1.0.2 crawl -> collected() asks for a re-crawl', /Re-crawl/.test(collected(db, 'data-nosnippet-on-main') ?? '')));
+
+withDb(db => {
+  const ins = db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,non_crawlable_links) VALUES ('c1',?,?,200,1,?)`);
+  const item = (target) => ({ kind: 'no-href', selector: 'a.menu-item', target, placement: 'navigation' });
+  ins.run('https://x.test/1', 'https://x.test/1', JSON.stringify({ total: 2, items: [item('https://x.test/pricing'), item('https://x.test/hidden')] }));
+  ins.run('https://x.test/2', 'https://x.test/2', JSON.stringify({ total: 1, items: [item('https://x.test/pricing')] }));
+  ins.run('https://x.test/pricing', 'https://x.test/pricing', JSON.stringify({ total: 0, items: [] }));
+  link(db, 'https://x.test/2', 'https://x.test/pricing', null); // pricing also has an ordinary link; /hidden has none
+}, db => {
+  const f = run(db, 'non-crawlable-links');
+  t('non-crawlable-links: one finding per template element, with page count', f.length === 1 && f[0].evidence.pages === 2 && f[0].evidence.targetCount === 2);
+  t('non-crawlable-links: names the target reachable only by script', JSON.stringify(f[0]?.evidence.reachableOnlyByScript) === '["https://x.test/hidden"]');
+});
+
+// ── tls-expiring over stored certificates (days counted from audit time) ─────────────────────
+const inDays = (d) => new Date(Date.now() + d * 86400000).toISOString();
+withDb(db => {
+  storeTls(db, { host: 'ok.x.test', reached: true, validFrom: inDays(-30), validTo: inDays(60), issuer: 'CA', altNames: null, authError: null, error: null });
+  storeTls(db, { host: 'soon.x.test', reached: true, validFrom: inDays(-80), validTo: inDays(10), issuer: 'CA', altNames: null, authError: null, error: null });
+  storeTls(db, { host: 'old.x.test', reached: true, validFrom: inDays(-400), validTo: inDays(-3), issuer: 'CA', altNames: null, authError: 'CERT_HAS_EXPIRED', error: null });
+  storeTls(db, { host: 'www.x.test', reached: true, validFrom: inDays(-10), validTo: inDays(80), issuer: 'CA', altNames: 'DNS:x.test', authError: 'ERR_TLS_CERT_ALTNAME_INVALID', error: null });
+  storeTls(db, { host: 'chain.x.test', reached: true, validFrom: inDays(-10), validTo: inDays(80), issuer: 'CA', altNames: null, authError: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', error: null });
+  storeTls(db, { host: 'down.x.test', reached: false, validFrom: null, validTo: null, issuer: null, altNames: null, authError: null, error: 'ECONNREFUSED' });
+}, db => {
+  const by = Object.fromEntries(run(db, 'tls-expiring').map(f => [f.evidence.host, f.evidence.problem]));
+  t('tls: 60 days left -> silent; unreachable host -> silent', !('ok.x.test' in by) && !('down.x.test' in by));
+  t('tls: 10 days left -> "expires in 10 day(s)"', /expires in (9|10) day/.test(by['soon.x.test'] ?? ''));
+  t('tls: expired -> "expired 3 day(s) ago"', /expired (3|4) day/.test(by['old.x.test'] ?? ''));
+  t('tls: hostname mismatch named', /does not cover www\.x\.test/.test(by['www.x.test'] ?? ''));
+  t('tls: missing intermediate explained', /intermediate/.test(by['chain.x.test'] ?? ''));
+});
+withDb(() => {}, db => t('tls: never probed -> collected() asks for a re-crawl', /Re-crawl/.test(collected(db, 'tls-expiring') ?? '')));
+
+// ── printable A4 report (pure builder) ──────────────────────────────────────────────────────
+{
+  const metric = (value) => ({ value, source: 'history', asOf: null, month: null, year: null, spark: [], partial: null });
+  const pfRow = (domain, kind = 'watched') => ({ domain, locationCode: 2840, country: 'US', countryName: 'United States', kind, group: null, siteUrls: [], clicks28: null, audit: null,
+    organicKeywords: metric(null), organicTraffic: metric(null), paidKeywords: metric(null), paidTraffic: metric(null), referringDomains: metric(null), domainRank: metric(null),
+    aiMentions: { ...metric(null), platforms: { google: null, chat_gpt: null }, chatgptUsOnly: false }, attention: [] });
+  const portfolio = { version: '1', generatedAt: '', months: { lastComplete: '2026-10', previous: '2026-09', yearAgo: '2025-10', current: '2026-11' }, counts: { owned: 1, watched: 34 }, groups: [], locations: [],
+    refresh: { weeklyCapturedAt: null, monthlyCapturedAt: null, schedule: null, spentThisMonth: 0, lastRuns: [] },
+    rows: [pfRow('x.test', 'owned'), ...Array.from({ length: 34 }, (_, i) => pfRow(`rival${i}.test`))], empty: false, notes: [] };
+  const empty = buildPrintReport({ data: { siteUrl: 'sc-domain:x.test' }, portfolio: null, domain: 'x.test', version: '9.9.9', now: new Date('2026-11-11T00:00:00Z') });
+  t('print: no data -> says what to do, no sections', /No Search Console, audit or portfolio data yet/.test(empty) && !/<h2>01\./.test(empty));
+  const evil = buildPrintReport({ data: { siteUrl: 'sc-domain:<b>x</b>' }, portfolio: null, domain: '<script>x</script>', version: '1', now: new Date('2026-11-11T00:00:00Z') });
+  t('print: domain and siteUrl are escaped', !evil.includes('<script>x') && evil.includes('&lt;script&gt;'));
+  const withPf = buildPrintReport({ data: { siteUrl: 'sc-domain:x.test', clickWindows: { current: 120, prior: 100 } }, portfolio, domain: 'x.test', version: '1', now: new Date('2026-11-11T00:00:00Z') });
+  t('print: portfolio capped with the cap stated', new RegExp(`Showing ${PRINT_PORTFOLIO_ROWS} of 35 domains`).test(withPf) && (withPf.match(/rival\d+\.test/g) ?? []).length === PRINT_PORTFOLIO_ROWS - 1);
+  t('print: own row highlighted, click change with its window', /class="hl"><td>x\.test/.test(withPf) && /\+20% vs the prior 28/.test(withPf));
+  t('print: no en or em dashes', !/[–—]/.test(withPf + empty));
+}
+
+// ── 1.0.2 code-review fixes ──────────────────────────────────────────────────────────────────
+t('tls twin: www <-> apex only', tlsTwin('www.example.com') === 'example.com' && tlsTwin('example.com') === 'www.example.com' && tlsTwin('example.co.uk') === 'www.example.co.uk');
+t('tls twin: a subdomain has none (no false wildcard mismatch)', tlsTwin('blog.example.com') === null && tlsTwin('shop.example.co.uk') === null);
+
+t('robots lint groups like the crawl gate: Crawl-delay between User-agent lines splits them',
+  kinds('User-agent: a\nCrawl-delay: 5\nUser-agent: a\nDisallow: /x\nSitemap: https://x.test/s.xml').includes('split-groups'));
+
+const widget = EX(`<main><h1>Title</h1><p>${'word '.repeat(300)}</p></main><div data-nosnippet class="related"><article class="card"><h2>Other</h2><p>teaser</p></article></div>`).nosnippet;
+t('nosnippet: related-posts block of <article> cards is not "main content"', widget?.wrapsMain === false);
+const brand = EX(`<div data-nosnippet class="branding"><h1 class="site-title">Brand</h1></div><main><p>${'word '.repeat(300)}</p></main>`).nosnippet;
+t('nosnippet: branding div holding the site-title <h1> is not "main content"', brand?.wrapsMain === false);
+
+const ncShare = extractPage('<html><body><div class="fb" data-href="https://www.x.test/page/">Share</div><li onclick="location.href=\'/p\'"><a href="/p">P</a></li></body></html>',
+  'https://x.test/page', 'x.test', { hostForm: 'apex' }).nonCrawlableLinks;
+t('non-crawlable: share-to-self matched by url_key (www, trailing slash) and a wrapper around a real link -> not flagged', ncShare === null);
+
+const art = extractPage(`<html><body><header class="site"><a href="/home">Home</a></header><main><article><header class="entry-header"><h1>Post title</h1><a href="/author/x">Author</a></header><p>${'word '.repeat(80)}</p></article></main></body></html>`,
+  'https://x.test/post', 'x.test', { hostForm: 'asis' });
+t('article <header>: its links are body, the site header stays navigation',
+  art.links.find(l => l.targetUrl.endsWith('/author/x'))?.placement === 'body' && art.links.find(l => l.targetUrl.endsWith('/home'))?.placement === 'navigation');
+t('article <header>: its H1 stays in body_chunks', art.bodyChunks.some(c => c.heading === 'Post title'));
+
+withDb(db => {
+  for (let i = 0; i < 30; i++) db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,non_crawlable_links) VALUES ('c1',?,?,200,1,?)`)
+    .run(`https://x.test/m${i}`, `https://x.test/m${i}`, JSON.stringify({ total: 120, items: [{ kind: 'no-href', selector: 'a.mega', target: 'https://x.test/t', placement: 'navigation' }] }));
+}, db => {
+  const f = run(db, 'non-crawlable-links');
+  t('non-crawlable-links: links beyond the per-page cap are counted and stated, not dropped', f[0]?.evidence.notItemised === 30 * 119 && /counted but not itemised/.test(f[0]?.evidence.capNote ?? ''));
+});
+
+withDb(db => {
+  twoRuns(db);
+  for (let i = 0; i < 500; i++) { finding(db, 'r1', 'site-wide-indexing-alarm', `https://x.test/a${i}`); finding(db, 'r2', 'site-wide-indexing-alarm', `https://x.test/b${i}`); }
+}, db => t('new critical: a check at the 500-per-run cap is not diffed (no false "new")', newCriticalFindings(db).length === 0));
+
+t('owned GSC: sc-domain counts unsynced; a crawled URL-prefix site does not until synced',
+  isOwnedGscProperty('sc-domain:richardbaxter.co', null) && !isOwnedGscProperty('https://www.reed.co.uk/', null) && isOwnedGscProperty('https://x.test/', '2026-11-01') && !isOwnedGscProperty('reed.co.uk', '2026-11-01'));
+
+{
+  const dir = path.join(tmpdir(), `sac-pf2-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  mkdirSync(dir, { recursive: true });
+  const store = new PortfolioStore(dir);
+  try {
+    store.db.prepare(`INSERT INTO portfolio_domain (domain, location_code, kind, removed_at) VALUES ('old.test', 2036, 'owned', datetime('now'))`).run();
+    store.addWatched('old.test', { locationCode: 2826 });
+    const moved = store.moveWatched('old.test', 2826, 2036);
+    t('move onto a retired owned row revives it as watched, not owned', moved.kind === 'watched');
+  } finally { store.close(); try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* temp */ } }
+}
+
 // ── fetchSitemapUrls per-file record, against a local server ────────────────────────────────
 const urlset = (n, rel = 0) => `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${
   Array.from({ length: n }, (_, i) => `<url><loc>${i < rel ? `/rel-${i}` : `ORIGIN/p-${i}`}</loc></url>`).join('')}</urlset>`;
@@ -171,6 +307,14 @@ try {
   t('fetch: declared 404 recorded as http-error 404', f['/missing.xml']?.outcome === 'http-error' && f['/missing.xml'].httpStatus === 404);
   t('fetch: conventional probes recorded with source=conventional', f['/sitemap.xml']?.source === 'conventional');
   t('fetch: nothing was capped', sm.capped === false);
+  // SSRF guard: from origin "localhost", a sitemap declared on 127.0.0.1 is another host, so it goes
+  // through the public-only agent and is refused at connect time (loopback), never fetched.
+  const guarded = await fetchSitemapUrls(`http://localhost:${server.address().port}`, 'probe', { hostForm: 'asis' });
+  const leak = guarded.files.find(x => x.url.includes('127.0.0.1') && x.url.endsWith('/index.xml'));
+  t('fetch: a declared sitemap on another, private host is refused (no-response), its URLs not collected', leak?.outcome === 'no-response' && guarded.urls.length === 0);
+  const ac = new AbortController(); ac.abort();
+  const cancelled = await fetchSitemapUrls(origin, 'probe', { hostForm: 'asis' }, { signal: ac.signal });
+  t('fetch: an aborted crawl stops the sitemap walk', cancelled.sitemapsFetched === 0);
 } finally { server.close(); }
 
 console.log(`\n${pass} passed, ${fail} failed`);

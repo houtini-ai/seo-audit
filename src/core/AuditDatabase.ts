@@ -176,6 +176,8 @@ export class AuditDatabase {
         has_rdfa INTEGER DEFAULT 0,
         has_favicon INTEGER,             -- link rel icon present (NULL = crawled before this was captured)
         has_analytics INTEGER,           -- client-side analytics/tag-manager snippet detected (NULL = pre-feature crawl)
+        non_crawlable_links TEXT,        -- JSON {total, items:[{kind,selector,target,placement}]} (#79); NULL = not measured (pre-1.0.2 crawl or not HTML)
+        nosnippet TEXT,                  -- JSON {elements, textShare, wrapsMain, largest, ignoredOn} (#79); NULL = not measured
         body_chunks TEXT,                -- JSON [{heading,level,text}] — content segmented by heading (RAG layer)
         max_passage_score REAL,          -- cross-encoder best-passage relevance vs top GSC query (score_passages)
         max_passage_query TEXT,          -- the query that best-passage score was computed against
@@ -705,6 +707,8 @@ export class AuditDatabase {
     ensure('pages', 'body_chunks', 'body_chunks TEXT');
     ensure('pages', 'has_favicon', 'has_favicon INTEGER');
     ensure('pages', 'has_analytics', 'has_analytics INTEGER');
+    ensure('pages', 'non_crawlable_links', 'non_crawlable_links TEXT');
+    ensure('pages', 'nosnippet', 'nosnippet TEXT');
     ensure('pages', 'conditional_304', 'conditional_304 INTEGER'); // 1 = honoured If-Modified-Since/If-None-Match with a 304; 0 = returned 200 anyway; NULL = not probed
     // Accessibility (static axe subset) — NULL on crawls before this feature, so checks treat NULL as "not measured".
     ensure('pages', 'a11y_links_no_name', 'a11y_links_no_name INTEGER');

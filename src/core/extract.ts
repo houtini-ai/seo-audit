@@ -130,15 +130,25 @@ export interface ExtractedPage {
   /** 0.16.1: WHICH elements failed (signature -> occurrences, up to A11Y_SAMPLE_MAX each), so the audit
    * can roll a theme's shared nameless links/buttons up into one finding per template. */
   a11ySamples: A11ySamples;
+  /** Navigation Google can't follow (#79): internal targets reached only by script, or null when none. */
+  nonCrawlableLinks: { total: number; items: NonCrawlableLink[] } | null;
+  /** data-nosnippet coverage (#79), or null when the page has none on span/div/section. */
+  nosnippet: NosnippetSummary | null;
   bodyChunks: { heading: string; level: number; text: string }[]; // content segmented by heading (RAG layer)
   links: ExtractedLink[];
   imageSrcs: string[];             // distinct absolute <img> src URLs (capped) — image-weight sampling
   resources: ExtractedResource[];  // subresources the page loads (css/js/fonts/images), capped at 200 (#37)
 }
 
+/** A <header> that belongs to the site chrome. One inside <article> or <main> is the content's own
+ * header (title, standfirst, byline links), so it is not navigation. */
+const isSiteHeader = ($: cheerio.CheerioAPI, h: any): boolean => $(h).parents('article, main').length === 0;
+
 function placementOf($: cheerio.CheerioAPI, el: any): 'navigation' | 'footer' | 'body' {
   const $el = $(el);
-  if ($el.closest('nav, header').length) return 'navigation';
+  if ($el.closest('nav').length) return 'navigation';
+  const header = $el.closest('header');
+  if (header.length && isSiteHeader($, header[0])) return 'navigation';
   if ($el.closest('footer').length) return 'footer';
   return 'body';
 }
@@ -151,6 +161,30 @@ function placementOf($: cheerio.CheerioAPI, el: any): 'navigation' | 'footer' | 
 /** Signatures of the elements behind the a11y counts: `a.icon[href="/cart"]`, `button.menu-toggle`, `#main`. */
 export interface A11ySamples { links: Record<string, number>; buttons: Record<string, number>; dupIds: Record<string, number> }
 export const A11Y_SAMPLE_MAX = 25;
+
+/** A link Google can't follow: the kind of construct, a template-stable selector, the internal target it names. */
+export interface NonCrawlableLink {
+  kind: 'javascript-href' | 'placeholder-href' | 'no-href' | 'non-link-element';
+  selector: string;
+  target: string;
+  placement: 'navigation' | 'footer' | 'body';
+}
+/** Share of the page's text an element holding an <article>/<h1> must carry to count as wrapping the main content. */
+const NOSNIPPET_WRAP_SHARE = 0.25;
+/** Items kept per page; `total` always carries the full count. */
+export const NON_CRAWLABLE_MAX = 25;
+export interface NosnippetSummary {
+  /** Outermost span/div/section elements carrying data-nosnippet. */
+  elements: number;
+  /** Share of the visible body text inside them (0-1). */
+  textShare: number;
+  /** One of them contains <main>, <article> or the <h1>. */
+  wrapsMain: boolean;
+  /** Selector of the element holding the most text. */
+  largest: string | null;
+  /** data-nosnippet on other tags (main, article, p...), which Google ignores. */
+  ignoredOn: number;
+}
 const SIG_MAX = 120;
 
 export function extractPage(
@@ -207,7 +241,9 @@ export function extractPage(
   const bodyChunks: { heading: string; level: number; text: string }[] = [];
   {
     const $c = cheerio.load(html);
-    $c('script, style, noscript, template, nav, header, footer, aside').remove();
+    $c('script, style, noscript, template, nav, footer, aside').remove();
+    // Site headers go; an article's own <header> (its H1, standfirst, byline) stays in the content.
+    $c('header').filter((_, h) => isSiteHeader($c, h)).remove();
     const root = ($c('main').first()[0] ?? $c('article').first()[0] ?? $c('body')[0]) as any;
     const ws = collapseWs; // local alias — the whitespace rule lives once, in collapseWs
     let cur: { heading: string; level: number; parts: string[] } = { heading: '', level: 0, parts: [] };
@@ -390,6 +426,80 @@ export function extractPage(
   let a11yDuplicateIds = 0;
   for (const [id, n] of idCounts) if (n > 1) { a11yDuplicateIds++; sample(a11ySamples.dupIds, `#${id}`); if (`#${id}` in a11ySamples.dupIds) a11ySamples.dupIds[`#${id}`] = n; }
 
+  // Non-crawlable navigation (#79): Google follows only <a> elements with a resolvable href. Counted
+  // only when a navigation TARGET is evident (a URL in onclick / data-href / routerLink, or a
+  // javascript: href that names one) and that target is on this site: a "#" button opening a modal,
+  // or a share widget whose data-href is the page itself, is not navigation and isn't counted.
+  const nonCrawlableItems: NonCrawlableLink[] = [];
+  let nonCrawlableTotal = 0;
+  const URL_IN_JS = /(?:location(?:\.href)?|window\.open|navigate(?:ByUrl)?|router\.push|href)\s*(?:=|\()\s*['"`]([^'"`\s]+)['"`]/i;
+  const internalTarget = (raw: string | undefined | null): string | null => {
+    if (!raw || !raw.trim()) return null;
+    try {
+      const u = new URL(raw.trim(), docBase);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      if (!isInternalHost(u.hostname, baseHost) || sameKey(u.href, pageUrl)) return null;
+      return u.toString();
+    } catch { return null; }
+  };
+  // Compared as url_keys: https://example.com/post/ and https://www.example.com/post are one page.
+  const sameKey = (a: string, b: string): boolean => { try { return urlKey(a, keyOpts) === urlKey(b, keyOpts); } catch { return false; } };
+  // A clickable wrapper (<li onclick>) around a real <a href> to the same place is fine: Google follows the link.
+  const wrapsRealLink = (el: any, target: string): boolean =>
+    $(el).find('a[href]').toArray().some(a => { try { return sameKey(new URL(($(a).attr('href') ?? '').trim(), docBase).toString(), target); } catch { return false; } });
+  const recordNc = (el: any, kind: NonCrawlableLink['kind'], target: string): void => {
+    nonCrawlableTotal++;
+    if (nonCrawlableItems.length < NON_CRAWLABLE_MAX) nonCrawlableItems.push({ kind, selector: elSelector(el).slice(0, SIG_MAX), target, placement: placementOf($, el) });
+  };
+  $('a[href]').each((_, el) => {
+    const href = ($(el).attr('href') ?? '').trim();
+    const onclick = $(el).attr('onclick') ?? '';
+    if (/^javascript:/i.test(href)) {
+      const t = internalTarget(href.match(URL_IN_JS)?.[1] ?? onclick.match(URL_IN_JS)?.[1]);
+      if (t) recordNc(el, 'javascript-href', t);
+    } else if (href === '#' || href === '') {
+      const t = internalTarget(onclick.match(URL_IN_JS)?.[1] ?? $(el).attr('data-href'));
+      if (t) recordNc(el, 'placeholder-href', t);
+    }
+  });
+  $('a:not([href])').each((_, el) => {
+    const $e = $(el);
+    const t = internalTarget($e.attr('routerlink') ?? $e.attr('ng-href') ?? $e.attr('data-href') ?? $e.attr('onclick')?.match(URL_IN_JS)?.[1]);
+    if (t) recordNc(el, 'no-href', t);
+  });
+  $('[onclick], [data-href], [routerlink]').not('a').each((_, el) => {
+    const $e = $(el);
+    const t = internalTarget($e.attr('routerlink') ?? $e.attr('data-href') ?? $e.attr('onclick')?.match(URL_IN_JS)?.[1]);
+    if (t && !wrapsRealLink(el, t)) recordNc(el, 'non-link-element', t);
+  });
+
+  // data-nosnippet (#79): Google honours it on span, div and section only. Measure how much of the
+  // visible body text sits inside the outermost such elements, and whether one wraps the main
+  // content (contains <main>, <article> or the <h1>): then the page's own text can't be shown in a
+  // snippet. On other tags the attribute is ignored, which is counted separately.
+  const NS_TAGS = 'span[data-nosnippet], div[data-nosnippet], section[data-nosnippet]';
+  const nsOuter = $body(NS_TAGS).filter((_, el) => $body(el).parents(NS_TAGS).length === 0);
+  let nosnippet: NosnippetSummary | null = null;
+  if (nsOuter.length) {
+    let chars = 0, wrapsMain = false, biggest = { chars: -1, el: null as any };
+    nsOuter.each((_, el) => {
+      const c = collapseWs($body(el).text()).length;
+      chars += c;
+      // Containing <main> is enough. An <article> or <h1> inside only counts when the element also
+      // holds a real share of the text: a related-posts block of <article> cards, or a branding div
+      // holding the site-title <h1>, is not the main content.
+      if ($body(el).find('main').length || ($body(el).find('article, h1').length && bodyText.length > 0 && c / bodyText.length >= NOSNIPPET_WRAP_SHARE)) wrapsMain = true;
+      if (c > biggest.chars) biggest = { chars: c, el };
+    });
+    nosnippet = {
+      elements: nsOuter.length,
+      textShare: bodyText.length ? Math.min(1, Math.round((chars / bodyText.length) * 100) / 100) : 0,
+      wrapsMain,
+      largest: biggest.el ? elSelector(biggest.el).slice(0, SIG_MAX) : null,
+      ignoredOn: $('[data-nosnippet]').not('span, div, section').length,
+    };
+  }
+
   // Images: count those lacking a non-empty alt (decorative alt="" is intentional, not flagged),
   // and those lacking both width & height attributes (a deterministic CLS signal).
   const imgEls = $('img');
@@ -544,6 +654,8 @@ export function extractPage(
     a11yPositiveTabindex,
     a11yDuplicateIds,
     a11ySamples,
+    nonCrawlableLinks: nonCrawlableTotal ? { total: nonCrawlableTotal, items: nonCrawlableItems } : null,
+    nosnippet,
     bodyChunks,
     links,
     imageSrcs: [...imageSrcSet],

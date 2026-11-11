@@ -86,7 +86,9 @@ import type { FetchOptions } from './core/types.js';
 import { dataForSeoCredentials, optionalSecret, cruxApiKey } from './core/secrets.js';
 import { CruxSync, CRUX_DEFAULT_URL_LIMIT } from './core/CruxSync.js';
 import { PortfolioStore, PORTFOLIO_JOB_SCOPE, resolveLocation, LOCATION_LABEL } from './core/PortfolioStore.js';
-import { normaliseDomain } from './core/portfolioTarget.js';
+import { normaliseDomain, targetForProperty } from './core/portfolioTarget.js';
+import { buildPrintReport } from './core/printReport.js';
+import { pdfFromHtml, RendererUnavailableError } from './core/render.js';
 import { quotePortfolioRefresh } from './core/PortfolioRefresh.js';
 import { getPortfolioData, getDomainOverview, readSchedule } from './core/portfolioData.js';
 import { previewSchedule, saveSchedule, disableSchedule, startPortfolioScheduler } from './core/portfolioSchedule.js';
@@ -2633,14 +2635,38 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   server.registerTool(
     'export_report',
     {
-      title: 'Export a shareable dashboard report (HTML)',
-      description: 'Write a self-contained, interactive dashboard HTML for a property (all data + charts inlined) to the reports folder, and return the file path. Open it in any browser or send it to a client — no server, no MCP-App host support needed. Run refresh_property (+ run_audit for findings) first.',
-      inputSchema: { siteUrl: z.string(), theme: z.enum(['light', 'dark']).optional() },
+      title: 'Export a shareable report (interactive HTML, or a printable A4 PDF)',
+      description: 'Write a report for a property to the reports folder and return the file path. format "interactive" (default): a self-contained dashboard HTML (all data and charts inlined) to open in any browser or send to a client. format "a4": a printable A4 report - the Summary (verdict, headline numbers, monthly clicks, page movers, the top fixes, findings by area) plus the portfolio (this domain in its market, and every domain) - as HTML and, when the optional Playwright browser is installed, a PDF. Without Playwright, open the HTML and use Print > Save as PDF. Run refresh_property (and run_audit for findings) first.',
+      inputSchema: { siteUrl: z.string(), theme: z.enum(['light', 'dark']).optional(), format: z.enum(['interactive', 'a4']).optional() },
     },
-    async ({ siteUrl, theme }) => {
+    async ({ siteUrl, theme, format }) => {
       const data = { ...(await getDashboardDataAsync(dataDir(), siteUrl)), apiKeys: apiKeysStatus() };
       if (data.empty) {
         return { content: [{ type: 'text', text: `No synced data for ${siteUrl} — run refresh_property first.` }], structuredContent: { error: 'empty', siteUrl } };
+      }
+      if (format === 'a4') {
+        let portfolio: ReturnType<typeof getPortfolioData> | null = null;
+        try { portfolio = getPortfolioData(dataDir()); } catch (e) { console.error('[export_report] portfolio left out:', e instanceof Error ? e.message : String(e)); }
+        const domain = targetForProperty(siteUrl);
+        const html = buildPrintReport({ data, portfolio, domain, version: SERVER_VERSION });
+        const dir = path.join(dataDir(), 'reports');
+        mkdirSync(dir, { recursive: true });
+        const htmlFile = path.join(dir, `${sanitizeProperty(siteUrl)}-report-a4.html`);
+        writeFileSync(htmlFile, html);
+        const pdfFile = htmlFile.replace(/\.html$/, '.pdf');
+        let pdf: string | null = null, pdfNote: string;
+        try {
+          await pdfFromHtml(html, pdfFile, `${domain} SEO report`);
+          pdf = pdfFile; pdfNote = `PDF saved: ${pdfFile}`;
+        } catch (e) {
+          pdfNote = e instanceof RendererUnavailableError
+            ? `No PDF: ${e.message} Until then, open the HTML in a browser and use Print > Save as PDF (it is laid out for A4).`
+            : `No PDF (${e instanceof Error ? e.message.slice(0, 160) : String(e)}). Open the HTML and use Print > Save as PDF.`;
+        }
+        return {
+          content: [{ type: 'text', text: `A4 report saved: ${htmlFile}\n${pdfNote}` + browserLink(siteUrl) }],
+          structuredContent: { path: htmlFile, pdf, siteUrl, format: 'a4', findings: data.findings?.total ?? 0, portfolioDomains: portfolio?.rows.length ?? 0 },
+        };
       }
       const tpl = readFileSync(path.join(__dirname, 'src', 'ui', 'dashboard.html'), 'utf8');
       const json = JSON.stringify(data).replace(/</g, '\\u003c'); // prevent </script> breakout

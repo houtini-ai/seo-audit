@@ -223,7 +223,7 @@ export class PortfolioStore {
     const group = opts.group?.trim() ? opts.group.trim().slice(0, 60) : null;
     this.db.prepare(
       `INSERT INTO portfolio_domain (domain, location_code, kind, language_code, group_label) VALUES (?, ?, 'watched', ?, ?)
-       ON CONFLICT(domain, location_code) DO UPDATE SET removed_at=NULL, group_label=excluded.group_label, language_code=excluded.language_code`,
+       ON CONFLICT(domain, location_code) DO UPDATE SET kind='watched', removed_at=NULL, group_label=excluded.group_label, language_code=excluded.language_code`,
     ).run(domain, locationCode, opts.languageCode ?? 'en', group);
     return this.list().find(d => d.domain === domain && d.locationCode === locationCode)!;
   }
@@ -246,15 +246,16 @@ export class PortfolioStore {
    */
   moveWatched(input: string, fromCode: number, toCode: number): PortfolioDomain {
     const domain = normaliseDomain(input);
-    const cur = this.db.prepare(`SELECT group_label g, language_code l FROM portfolio_domain WHERE domain = ? AND location_code = ? AND kind = 'watched' AND removed_at IS NULL`)
-      .get(domain, fromCode) as { g: string | null; l: string | null } | undefined;
+    const cur = this.db.prepare(`SELECT group_label g FROM portfolio_domain WHERE domain = ? AND location_code = ? AND kind = 'watched' AND removed_at IS NULL`)
+      .get(domain, fromCode) as { g: string | null } | undefined;
     if (!cur) throw new Error(`${domain} is not watched at that location.`);
     if (fromCode === toCode) return this.list().find(d => d.domain === domain && d.locationCode === toCode)!;
     const taken = this.db.prepare(`SELECT 1 FROM portfolio_domain WHERE domain = ? AND location_code = ? AND removed_at IS NULL`).get(domain, toCode);
     if (taken) throw new Error(`${domain} is already in the portfolio for ${LOCATION_LABEL[toCode] ?? `location ${toCode}`}.`);
     return this.db.transaction(() => {
       this.removeWatched(domain, fromCode);
-      return this.addWatched(domain, { locationCode: toCode, group: cur.g, languageCode: cur.l ?? undefined });
+      // Language as for a fresh add at that location: the old row's language belonged to the old country.
+      return this.addWatched(domain, { locationCode: toCode, group: cur.g });
     })();
   }
 

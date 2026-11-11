@@ -405,7 +405,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
         const months = data.series.map(s => (s.partial ? `${fmtMonth(s.month)} (to date)` : fmtMonth(s.month)));
         combo.setOption({
           tooltip: tooltipDefaults(pal, 'axis'),
-          legend: { top: 0, left: 0, itemGap: 14, textStyle: { color: pal.text, fontFamily: monoFont(), fontSize: 11 } },
+          legend: { type: 'scroll', top: 0, left: 0, itemGap: 14, textStyle: { color: pal.text, fontFamily: monoFont(), fontSize: 11 } },
           grid: { left: 52, right: 60, top: 58, bottom: 28 },
           xAxis: { type: 'category', data: months, ...(axisDefaults(pal) as any) },
           yAxis: [
@@ -480,7 +480,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
     if (hasGsc) series.push({ name: 'Search Console clicks (measured)', type: 'line', yAxisIndex: 1, showSymbol: false, data: pts(s => s.gscClicks), lineStyle: { color: pal.categorical[1], width: 1.5, type: 'dashed' }, itemStyle: { color: pal.categorical[1] } });
     chart.setOption({
       tooltip: tooltipDefaults(pal, 'axis'),
-      legend: { top: 0, left: 0, itemGap: 14, textStyle: { color: pal.text, fontFamily: monoFont(), fontSize: 11 } },
+      legend: { type: 'scroll', top: 0, left: 0, itemGap: 14, textStyle: { color: pal.text, fontFamily: monoFont(), fontSize: 11 } },
       grid: { left: 56, right: hasGsc ? 64 : 24, top: 62, bottom: 28 },
       xAxis: { type: 'category', data: rows.map(s => (s.partial ? `${fmtMonth(s.month)} (to date)` : fmtMonth(s.month))), ...(axisDefaults(pal) as any) },
       yAxis: [
@@ -502,7 +502,8 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
     ] as const;
     chart.setOption({
       tooltip: tooltipDefaults(pal, 'axis'),
-      legend: { top: 0, textStyle: { color: pal.text, fontFamily: monoFont(), fontSize: 11 } },
+      // One row (scrolls when narrow): a wrapped second row landed on the y-axis name.
+      legend: { type: 'scroll', top: 0, left: 0, itemGap: 14, textStyle: { color: pal.text, fontFamily: monoFont(), fontSize: 11 } },
       grid: { left: 52, right: 20, top: 62, bottom: 28 },
       xAxis: { type: 'category', data: rows.map(r => fmtMonth(r.month)), ...(axisDefaults(pal) as any) },
       yAxis: { type: 'value', name: 'keywords', ...(axisDefaults(pal, { numeric: true }) as any) },
@@ -548,7 +549,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
     if (!rows.length) { chart.setEmpty('No backlinks history yet.', pal); return; }
     chart.setOption({
       tooltip: { ...(tooltipDefaults(pal, 'axis') as any), valueFormatter: (v: number) => (v == null ? '-' : fmtNum(Math.abs(v))) },
-      legend: { top: 0, left: 0, itemGap: 14, textStyle: { color: pal.text, fontFamily: monoFont(), fontSize: 11 } },
+      legend: { type: 'scroll', top: 0, left: 0, itemGap: 14, textStyle: { color: pal.text, fontFamily: monoFont(), fontSize: 11 } },
       grid: { left: 52, right: 64, top: 62, bottom: 28 },
       xAxis: { type: 'category', data: rows.map(s => fmtMonth(s.month)), ...(axisDefaults(pal) as any) },
       yAxis: [

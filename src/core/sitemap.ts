@@ -1,6 +1,8 @@
 import { gunzipSync } from 'node:zlib';
 import { readCapped, MAX_SITEMAP_BYTES } from './cappedBody.js';
 import { urlKey, type UrlKeyOptions } from './url-key.js';
+import { isInternalHost } from './extract.js';
+import { publicOnlyAgent } from './netGuard.js';
 
 /**
  * Sitemap discovery + parse for reconciliation against the crawl. Finds sitemaps via robots.txt
@@ -28,12 +30,35 @@ const decodeXmlEntities = (s: string): string => s
 // there and a .gz is inflated with the same output limit. Unbounded, a 1 MB gzip bomb declared in
 // robots.txt cost about 1 GB of memory. A document over the limit is reported, not parsed in part.
 type Fetched = { text: string; finalUrl: string; oversized?: boolean };
+// SSRF (review, 1.0.2): a sitemap index, a robots.txt Sitemap: line or a redirect can name any URL,
+// including 169.254.169.254 or an intranet host. The property's OWN host may be local or private (a
+// dev or intranet property is legitimate), so it's fetched as before; every other host goes through
+// publicOnlyAgent, which refuses private, loopback and metadata addresses at connect time. Redirects
+// are followed by hand so each hop is judged on its own host.
+let guardAgent: ReturnType<typeof publicOnlyAgent> | null = null;
+const MAX_HOPS = 5;
 // `failedStatus` carries the HTTP status of a failed fetch (0 = no response) for the per-file record.
-async function fetchText(url: string, ua: string, failedStatus?: { status: number }): Promise<Fetched | null> {
+async function fetchText(url: string, ua: string, ownHost: string, failedStatus?: { status: number }, signal?: AbortSignal): Promise<Fetched | null> {
   try {
-    const res = await fetch(url, { headers: { 'user-agent': ua }, signal: AbortSignal.timeout(15000) });
+    let current = url;
+    let res: Response | null = null;
+    for (let hop = 0; hop <= MAX_HOPS; hop++) {
+      const own = isInternalHost(new URL(current).hostname, ownHost);
+      const timeout = AbortSignal.timeout(15000);
+      res = await fetch(current, {
+        headers: { 'user-agent': ua }, redirect: 'manual',
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+        ...(own ? {} : { dispatcher: (guardAgent ??= publicOnlyAgent()) }),
+      } as RequestInit);
+      const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!loc) break;
+      try { await res.body?.cancel(); } catch { /* no body */ }
+      current = new URL(loc, current).toString();
+      if (hop === MAX_HOPS) { if (failedStatus) failedStatus.status = res.status; return null; }
+    }
+    if (!res) return null;
     if (!res.ok) { if (failedStatus) failedStatus.status = res.status; try { await res.body?.cancel(); } catch { /* no body */ } return null; }
-    const finalUrl = res.url || url;
+    const finalUrl = current;
     const { buf, truncated } = await readCapped(res, MAX_SITEMAP_BYTES);
     if (truncated) return { text: '', finalUrl, oversized: true };
     const ct = (res.headers.get('content-type') ?? '').toLowerCase();
@@ -87,14 +112,16 @@ export interface SitemapResult {
 const CONVENTIONAL = ['/sitemap_index.xml', '/sitemap.xml', '/wp-sitemap.xml'];
 
 export async function fetchSitemapUrls(
-  origin: string, ua: string, keyOpts: UrlKeyOptions, opts: { maxSitemaps?: number; maxUrls?: number } = {},
+  origin: string, ua: string, keyOpts: UrlKeyOptions, opts: { maxSitemaps?: number; maxUrls?: number; signal?: AbortSignal } = {},
 ): Promise<SitemapResult> {
+  const ownHost = new URL(origin).hostname;
+  const signal = opts.signal;
   const maxSitemaps = opts.maxSitemaps ?? 60;
   const maxUrls = opts.maxUrls ?? 100000;
 
   // Discover sitemap locations from robots.txt; fall back to /sitemap.xml.
   const sources: string[] = [];
-  const robots = (await fetchText(new URL('/robots.txt', origin).toString(), ua))?.text;
+  const robots = (await fetchText(new URL('/robots.txt', origin).toString(), ua, ownHost, undefined, signal))?.text;
   if (robots) for (const m of robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)) sources.push(m[1].trim());
   const conventional = CONVENTIONAL.map(p => new URL(p, origin).toString());
   const undeclared: string[] = [];
@@ -131,12 +158,12 @@ export async function fetchSitemapUrls(
   const add = (loc: string, lastmod: string | null): void => {
     try { const k = urlKey(loc, keyOpts); if (!out.has(k)) out.set(k, { url: loc, lastmod }); } catch { /* skip bad loc */ }
   };
-  while (queue.length && fetched < maxSitemaps && out.size < maxUrls) {
+  while (queue.length && fetched < maxSitemaps && out.size < maxUrls && !signal?.aborted) {
     const sm = queue.shift()!;
     const smKey = keyOf(sm);
     if (parsed.has(smKey)) continue; // this document was already parsed (another spelling, or a redirect target): no fetch
     const failed = { status: 0 };
-    const got = await fetchText(sm, ua, failed);
+    const got = await fetchText(sm, ua, ownHost, failed, signal);
     fetched++;
     const file: SitemapFile = { url: sm, source: sourceOf.get(sm) ?? 'index', outcome: 'ok', httpStatus: null, kind: null, entries: null, bytes: null, invalidLocs: 0 };
     if (!got) { files.push({ ...file, outcome: failed.status ? 'http-error' : 'no-response', httpStatus: failed.status || null }); continue; }

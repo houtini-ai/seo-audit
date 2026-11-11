@@ -3,7 +3,7 @@ import { listLocalProperties } from './webServer.js';
 import { getDashboardDataAsync } from './dashboardAsync.js';
 import { listFindings } from './findingsQuery.js';
 import { getPortfolioData, getDomainOverview } from './portfolioData.js';
-import { PortfolioStore, resolveLocation } from './PortfolioStore.js';
+import { PortfolioStore, resolveLocation, LOCATION_LABEL } from './PortfolioStore.js';
 import { targetForProperty } from './portfolioTarget.js';
 import { fetchGoogleNews } from './googleNews.js';
 import { liveJobTypes, runnerAlive, type JobManager, type Job } from './JobManager.js';
@@ -104,9 +104,11 @@ export function buildWebCallHandlers(deps: WebHandlerDeps): WebCallHandlers {
     // with the next portfolio refresh; the old country's history is kept.
     portfolio_move_domain: async (a) => withStore(store => {
       const from = locationArg(a);
-      const to = typeof a.to === 'number' ? a.to : Number(a.to);
-      if (from == null || !Number.isFinite(to)) throw new Error('portfolio_move_domain needs locationCode (current) and to (new location code).');
-      return { moved: store.moveWatched(String(a.domain ?? ''), from, to) } as unknown as Record<string, unknown>;
+      if (from == null || a.to == null || a.to === '') throw new Error('portfolio_move_domain needs locationCode (current) and to (the new location).');
+      // Resolved exactly as the add form's location is: an unknown name is refused, never coerced to a code.
+      const loc = resolveLocation(a.to as string | number);
+      if (loc.note || !LOCATION_LABEL[loc.code]) throw new Error(`"${String(a.to)}" is not one of the portfolio's countries.`);
+      return { moved: store.moveWatched(String(a.domain ?? ''), from, loc.code) } as unknown as Record<string, unknown>;
     }),
     portfolio_group_domain: async (a) => withStore(store => {
       const group = typeof a.group === 'string' && a.group.trim() ? a.group.trim() : null;

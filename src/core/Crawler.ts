@@ -7,6 +7,7 @@ import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
 import { extractPage, isInternalHost, decodeHtmlBody } from './extract.js';
 import { fetchRobotsTxt, rulesFromText, robotsUnreachable } from './robots.js';
 import { storeRobotsTxt } from './robotsStore.js';
+import { probeTls, storeTls, ensureTlsSchema, tlsTwin } from './tlsProbe.js';
 import { finalizeLinkGraph } from './linkGraph.js';
 import { crawlRate, type CrawlStage } from './crawlProgress.js';
 import { fetchSitemapUrls } from './sitemap.js';
@@ -413,6 +414,22 @@ export class Crawler {
     // (failed, with the reason) before it writes anything.
     const robotsTxt = await fetchRobotsTxt(origin, ua);
     try { storeRobotsTxt(db.db, origin, robotsTxt); } catch (err) { console.error('[crawl] robots.txt not stored:', err instanceof Error ? err.message : String(err)); }
+    // TLS certificate (#79 tls-expiring): one handshake each for the crawl host and its www/apex twin,
+    // https sites only, in parallel and bounded (8 s each). Never fails the crawl. The table holds
+    // THIS crawl's view only (cleared first), so a host that is no longer probed, or a property moved
+    // to http, can't keep reporting an old certificate. The twin is probed only between www.<apex>
+    // and <apex>: www.blog.example.com isn't a twin of blog.example.com, and a *.example.com
+    // wildcard can't cover it, so probing it reported a false mismatch.
+    try {
+      ensureTlsSchema(db.db);
+      db.db.exec('DELETE FROM tls_certs');
+      if (new URL(origin).protocol === 'https:') {
+        const h = new URL(origin).hostname;
+        const twin = tlsTwin(h);
+        const certs = await Promise.all([probeTls(h), ...(twin ? [probeTls(twin)] : [])]);
+        for (const c of certs) if (c.reached || c.host === h) storeTls(db.db, c); // an absent twin is not stored
+      }
+    } catch (err) { console.error('[crawl] TLS probe skipped:', err instanceof Error ? err.message : String(err)); }
     const robotsDown = robotsUnreachable(robotsTxt.status);
     const robots = rulesFromText(robotsTxt.body ?? '', 'seo-audit-console');
     const robotsNote = `robots.txt was unreachable (${robotsTxt.status ? `HTTP ${robotsTxt.status}` : 'no response'}): RFC 9309 treats that as "disallow everything", as Google does, so nothing was crawled. Fix robots.txt (it should answer 200, or 404 for none) and crawl again.`;
@@ -425,7 +442,7 @@ export class Crawler {
          json_ld, og_tags, hreflang, redirects, internal_links, external_links,
          image_count, images_without_alt, images_empty_alt, images_empty_alt_content, fetched_as, images_missing_dimensions, canonical_count, canonical_relative,
          h2_count, heading_skips, rel_next, rel_prev, rel_amphtml, mixed_content_count, twitter_tags,
-         has_microdata, has_rdfa, has_favicon, has_analytics, body_chunks, security_headers,
+         has_microdata, has_rdfa, has_favicon, has_analytics, non_crawlable_links, nosnippet, body_chunks, security_headers,
          a11y_links_no_name, a11y_buttons_no_name, a11y_inputs_no_label, a11y_viewport_zoom_disabled, a11y_positive_tabindex, a11y_duplicate_ids, a11y_samples)
        VALUES (@crawl_id,@url,@url_key,@status_code,@content_type,@content_encoding,@cache_control,
          @last_modified,@etag,@vary,@bytes,@response_time_ms,@depth,
@@ -434,7 +451,7 @@ export class Crawler {
          @json_ld,@og_tags,@hreflang,@redirects,@internal_links,@external_links,
          @image_count,@images_without_alt,@images_empty_alt,@images_empty_alt_content,@fetched_as,@images_missing_dimensions,@canonical_count,@canonical_relative,
          @h2_count,@heading_skips,@rel_next,@rel_prev,@rel_amphtml,@mixed_content_count,@twitter_tags,
-         @has_microdata,@has_rdfa,@has_favicon,@has_analytics,@body_chunks,@security_headers,
+         @has_microdata,@has_rdfa,@has_favicon,@has_analytics,@non_crawlable_links,@nosnippet,@body_chunks,@security_headers,
          @a11y_links_no_name,@a11y_buttons_no_name,@a11y_inputs_no_label,@a11y_viewport_zoom_disabled,@a11y_positive_tabindex,@a11y_duplicate_ids,@a11y_samples)
        ON CONFLICT(url_key) DO NOTHING`,
     );
@@ -496,7 +513,7 @@ export class Crawler {
     let sitemaps: CrawlResult['sitemaps'];
     if (!signal.aborted) {
       try {
-        const sm = await fetchSitemapUrls(origin, ua, keyOpts);
+        const sm = await fetchSitemapUrls(origin, ua, keyOpts, { signal });
         sitemaps = { declared: sm.sources, undeclared: sm.undeclared, fetched: sm.sitemapsFetched, urls: sm.urls.length, ...(sm.oversized.length ? { oversized: sm.oversized } : {}) };
         const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, lastmod, fetched_at) VALUES (?,?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
         const smFile = db.db.prepare(`INSERT OR REPLACE INTO sitemap_files (url, source, outcome, http_status, kind, entries, bytes, invalid_locs, walk_capped, fetched_at)
@@ -691,6 +708,9 @@ export class Crawler {
           mixed_content_count: ex?.mixedContentCount ?? 0, twitter_tags: ex?.twitterTags ?? null,
           has_microdata: ex?.hasMicrodata ? 1 : 0, has_rdfa: ex?.hasRdfa ? 1 : 0,
           has_favicon: ex ? (ex.hasFavicon ? 1 : 0) : null, has_analytics: ex ? (ex.hasAnalytics ? 1 : 0) : null,
+          // Always written for an extracted page (an empty summary when none), so NULL means "not measured".
+          non_crawlable_links: ex ? JSON.stringify(ex.nonCrawlableLinks ?? { total: 0, items: [] }) : null,
+          nosnippet: ex ? JSON.stringify(ex.nosnippet ?? { elements: 0 }) : null,
           body_chunks: ex?.bodyChunks?.length ? JSON.stringify(ex.bodyChunks) : null,
           security_headers: r.securityHeaders,
           // Accessibility (static axe subset) — NULL when the page wasn't HTML-extracted, so checks skip it.

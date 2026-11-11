@@ -8,6 +8,7 @@ import { listLocalProperties } from './webServer.js';
 import { urlKey, hostFormForProperty } from './url-key.js';
 import { LATEST_COMPLETED_RUN_WHERE, baseCheckIds } from '../audit/history.js';
 import { CHECKS } from '../audit/checks.js';
+import { tlsProblems } from '../audit/checks-hygiene.js';
 
 /**
  * The portfolio payloads. Pure reads: `_portfolio.db` plus, for owned
@@ -272,6 +273,8 @@ interface OwnedReads {
   lastCrawl: string | null;
   /** Critical-severity checks with findings in the latest completed audit that the previous one didn't have. */
   newCritical: { checkId: string; title: string; findings: number }[];
+  /** TLS certificate problems on the property's hosts (tls-expiring), as plain sentences. */
+  tls: string[];
 }
 
 /** GSC finalises ~2-3 days late: windows end 3 days before the newest stored day (indexed MAX, cheap). */
@@ -302,9 +305,11 @@ function readOwned(dataDir: string, files: Map<string, string>, siteUrls: string
         if (runs[0]) audit = { score: runs[0].s, prior: runs[1]?.s ?? null, at: runs[0].f };
       } catch { /* pre-0.16 DB: no health columns */ }
       const newCritical = newCriticalFindings(db);
+      let tlsNotes: string[] = [];
+      try { tlsNotes = tlsProblems({ db, gscMaxDate: null }).map(f => `TLS certificate for ${f.evidence.host}: ${f.evidence.problem}`); } catch { /* pre-1.0.2 DB */ }
       let lastCrawl: string | null = null;
       try { lastCrawl = (db.prepare(`SELECT MAX(COALESCE(finished_at, started_at)) f FROM crawl_metadata WHERE status = 'completed'`).get() as { f: string | null }).f; } catch { /* no crawl */ }
-      if (gscMax || audit || lastCrawl) return { clicks28, audit, gscMax, lastCrawl, newCritical };
+      if (gscMax || audit || lastCrawl) return { clicks28, audit, gscMax, lastCrawl, newCritical, tls: tlsNotes };
     } catch { /* unreadable */ } finally { db?.close(); }
   }
   return null;
@@ -316,6 +321,8 @@ function readOwned(dataDir: string, files: Map<string, string>, siteUrls: string
  * also ran: a check added by an upgrade would otherwise read as a brand-new critical problem. A
  * finding is new when its (check, page) key wasn't in the previous run.
  */
+/** engine.ts MAX_PER_CHECK: a check storing this many findings in a run was truncated. */
+const FINDINGS_CAP_PER_CHECK = 500;
 export function newCriticalFindings(db: Database.Database): OwnedReads['newCritical'] {
   try {
     const runs = db.prepare(`SELECT run_id, scope, check_ids FROM audit_runs WHERE ${LATEST_COMPLETED_RUN_WHERE}
@@ -328,7 +335,11 @@ export function newCriticalFindings(db: Database.Database): OwnedReads['newCriti
       WHERE f.run_id = ? AND f.severity = 'crit' AND NOT EXISTS (
         SELECT 1 FROM findings p WHERE p.run_id = ? AND p.check_id = f.check_id AND COALESCE(p.url_key, 'site') = COALESCE(f.url_key, 'site'))
       GROUP BY f.check_id ORDER BY n DESC, f.check_id`).all(runs[0].run_id, runs[1].run_id) as { id: string; n: number }[];
-    return rows.filter(r => ran.has(r.id)).map(r => ({ checkId: r.id, title: CHECKS.find(c => c.id === r.id)?.title ?? r.id, findings: r.n }));
+    // A check that stored the engine's per-check maximum in either run kept only its top findings, so
+    // a page moving into that top set would read as "new": such checks are left out, not guessed at.
+    const atCap = new Set((db.prepare(`SELECT check_id id FROM findings WHERE run_id IN (?, ?) GROUP BY run_id, check_id HAVING COUNT(*) >= ?`)
+      .all(runs[0].run_id, runs[1].run_id, FINDINGS_CAP_PER_CHECK) as { id: string }[]).map(r => r.id));
+    return rows.filter(r => ran.has(r.id) && !atCap.has(r.id)).map(r => ({ checkId: r.id, title: CHECKS.find(c => c.id === r.id)?.title ?? r.id, findings: r.n }));
   } catch { return []; } // pre-0.16 DB: no status / check_ids columns
 }
 
@@ -380,6 +391,7 @@ export function attentionRules(
     out.push(`New critical issue${owned.newCritical.length > 1 ? 's' : ''} in the latest audit: ${named}${more > 0 ? `; and ${more} more` : ''}`);
   }
   if (owned) {
+    out.push(...owned.tls);
     const g = ageDays(owned.gscMax, m.now);
     if (g != null && g > 10) out.push(`Search Console data is ${Math.floor(g)} days old: sync it`);
     const c = ageDays(owned.lastCrawl, m.now);
