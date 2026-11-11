@@ -68,9 +68,11 @@ h2 { font-size: 15pt; margin: 0 0 10px; letter-spacing: -0.01em; }
 h3 { font-size: 10.5pt; margin: 16px 0 6px; }
 .verdict { font-size: 12pt; color: var(--ink); max-width: 165mm; }
 .meta { font: 7.5pt 'JetBrains Mono', ui-monospace, monospace; color: var(--muted); margin-top: 8px; }
-.tiles { display: grid; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); margin: 18px 0; }
-.tile { padding: 12px 12px 12px 0; }
-.tile + .tile { border-left: 1px solid var(--hair); padding-left: 12px; }
+/* Stitch review (2026-11-11): the headline strip reads as one framed panel, and a passing CWV tile gets the wash. */
+.tiles { display: grid; border: 1px solid var(--hair); margin: 18px 0 10px; }
+.tile { padding: 12px; }
+.tile + .tile { border-left: 1px solid var(--hair); }
+.tile.ok { background: var(--wash); }
 .tile .v { font: 600 19pt 'JetBrains Mono', ui-monospace, monospace; line-height: 1.1; }
 .tile .l { font: 7.5pt 'JetBrains Mono', ui-monospace, monospace; color: var(--muted); margin-top: 4px; }
 .good { color: var(--accent); } .bad { color: var(--crit); } .warn { color: var(--warn); }
@@ -89,7 +91,7 @@ tr.hl td { background: var(--wash); }
 .sev.crit { color: var(--crit); } .sev.high { color: var(--warn); }
 .note { background: var(--wash); border-left: 3px solid var(--accent); padding: 8px 10px; font-size: 9.5pt; break-inside: avoid; }
 ul.att { margin: 4px 0 0; padding-left: 16px; } ul.att li { margin: 2px 0; }
-footer.colophon { margin: -6px 0 0; padding: 0; font: 7.5pt 'JetBrains Mono', ui-monospace, monospace; color: var(--muted); }
+footer.colophon { margin: 0; padding: 6px 9px; border: 1px solid var(--hair); background: #FAFAF8; font: 7.5pt 'JetBrains Mono', ui-monospace, monospace; color: var(--muted); }
 @media screen { body { background: #ECEBE6; } .wrap { background: #fff; padding: 16mm 15mm; margin: 24px auto; box-shadow: 0 1px 3px rgba(0,0,0,.08); } }
 `;
 
@@ -113,7 +115,7 @@ function tiles(d: DashboardData, row: Row | null): string {
     const bands = (['lcp', 'inp', 'cls'] as const).map(k => phone.metrics[k]?.band ?? null);
     const known = bands.filter(Boolean);
     const pass = known.length === 3 && known.every(b => b === 'good');
-    out.push(`<div class="tile"><div class="v ${pass ? 'good' : 'warn'}">${known.length < 3 ? 'Partial' : pass ? 'Pass' : 'Fail'}</div><div class="l">Core Web Vitals for real users on phones (CrUX, to ${dateLabel(phone.period.last)})</div></div>`);
+    out.push(`<div class="tile${pass && known.length === 3 ? ' ok' : ''}"><div class="v ${pass ? 'good' : 'warn'}">${known.length < 3 ? 'Partial' : pass ? 'Pass' : 'Fail'}</div><div class="l">Core Web Vitals for real users on phones (CrUX, to ${dateLabel(phone.period.last)})</div></div>`);
   } else if (row?.organicTraffic.value != null) {
     out.push(`<div class="tile"><div class="v">${num(row.organicTraffic.value)}</div><div class="l">Organic traffic, estimated by DataForSEO (${clean(row.countryName)})</div></div>`);
   }
@@ -147,7 +149,7 @@ function performance(d: DashboardData): string {
   }
   const pm = d.pageMovers;
   if (pm && (pm.gaining.length || pm.losing.length)) {
-    const rows = (xs: typeof pm.gaining, label: string): string => xs.map(x => `<tr><td>${label}</td><td>${clean(pathOf(x.urlKey))}</td><td class="n">${num(x.prevClicks)}</td><td class="n">${num(x.clicks)}</td><td class="n">${x.change >= 0 ? '+' : ''}${num(x.change)}</td></tr>`).join('');
+    const rows = (xs: typeof pm.gaining, label: string): string => xs.map(x => `<tr><td class="${x.change >= 0 ? 'good' : 'bad'}">${label}</td><td>${clean(pathOf(x.urlKey))}</td><td class="n">${num(x.prevClicks)}</td><td class="n">${num(x.clicks)}</td><td class="n ${x.change >= 0 ? 'good' : 'bad'}">${x.change >= 0 ? '+' : ''}${num(x.change)}</td></tr>`).join('');
     parts.push(`<div class="block"><h3>Biggest page movers</h3><table><thead><tr><th></th><th>Page</th><th class="n">Prior 28 days</th><th class="n">Last 28 days</th><th class="n">Change</th></tr></thead><tbody>${rows(pm.gaining, 'Up')}${rows(pm.losing, 'Down')}</tbody></table><div class="src">Clicks. Pages with at least ${num(pm.minPriorClicks)} clicks in the prior window (${num(pm.eligible)} eligible).</div></div>`);
   }
   const bs = d.brandedSplit;
