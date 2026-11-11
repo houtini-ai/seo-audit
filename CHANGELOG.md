@@ -8,9 +8,9 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
-## [Unreleased]
+## [1.0.3] — 2026-11-11
 
-Fixes from the first live user report (the MyMiningRig dev channel, 2026-11-11). The reporter verified about 13 checks against the live site and raw tables and found no false positives in detection; these are the four things it did find.
+Fixes from the first live user report (the MyMiningRig dev channel, 2026-11-11), plus layout fixes to the new A4 report. The reporter verified about 13 checks against the live site and raw tables and found no false positives in detection; the fixes below cover what it did find.
 
 ### Fixed
 - **`query_audit` no longer blanks evidence when `columns` matches no evidence key.** `external-broken` nests its detail under `examples[]`, so `columns:["target","status"]` returned every finding as `{}`, which read as missing data. Now it returns the full evidence with a `columnsNote` naming the check's real keys, and a partial match names the columns it left out.
@@ -18,6 +18,7 @@ Fixes from the first live user report (the MyMiningRig dev channel, 2026-11-11).
 - **`external-broken` reports only real HTTP failures.** A link that got no answer at all from this machine (timeout, refused connection, DNS, "fetch failed") moves to a new low-severity check, **`external-unreachable`**, which says to check the link in a browser before acting. amd.com and nasdaq.com were being reported dead. Single-label LAN hostnames such as `http://umbrel/` are reported by neither. 154 checks.
 - **`index-bloat` is worded as dormant, not as bloat to prune.** Detection is unchanged (it was correct). The fix now leads with refreshing or merging, and a page with high internal authority carries that advice in its evidence.
 - **`canonical-conflict` shows when Google last saw the page.** Google's canonical comes from URL Inspection and lags a fix until Google re-crawls. Each finding now carries `googleLastCrawled` and `inspectedAt`. When the latest crawl shows the page declaring the expected canonical, Google picked only the www/apex or http/https twin, and the site probes show that twin no longer serves a duplicate, it is marked `liveState: "fixed"`, with advice to request indexing rather than change the site again.
+- **A4 report layout** (`export_report format:"a4"`). The data-provenance line moved onto the cover, in a framed caption band; it used to land on a page of its own. Sections flow, so no page is left mostly empty. From a Google Stitch review of the template: the headline numbers form one framed panel, with the wash on a passing Core Web Vitals tile, and page movers are coloured (gains green, losses red).
 
 ## [1.0.2] — 2026-11-11
 
