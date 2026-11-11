@@ -10,6 +10,7 @@ import { lintRobotsTxt } from '../dist/audit/checks-hygiene.js';
 import { fetchSitemapUrls } from '../dist/core/sitemap.js';
 import { storeRobotsTxt } from '../dist/core/robotsStore.js';
 import { AuditDatabase } from '../dist/core/AuditDatabase.js';
+import { newCriticalFindings } from '../dist/core/portfolioData.js';
 
 let pass = 0, fail = 0;
 const t = (name, cond) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`); cond ? pass++ : fail++; };
@@ -113,6 +114,17 @@ withDb(db => {
   db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,inlink_count,json_ld) VALUES ('c1','https://x.test/','https://x.test/',200,1,0,?)`)
     .run(JSON.stringify([JSON.stringify({ '@type': 'Organization', name: 'X' })]));
 }, db => t('homepage lookup: root URL chosen with no click depth -> no false "missing Organization"', run(db, 'homepage-missing-org-schema').length === 0));
+
+// ── portfolio "needs attention": new critical findings, named ───────────────────────────────
+const auditRun = (db, id, scope, ids, at) => db.prepare(`INSERT INTO audit_runs (run_id,scope,status,started_at,finished_at,check_ids) VALUES (?,?,?,?,?,?)`).run(id, scope, 'completed', at, at, JSON.stringify(ids));
+const finding = (db, run, check, url, sev = 'crit') => db.prepare(`INSERT INTO findings (run_id,check_id,severity,url_key) VALUES (?,?,?,?)`).run(run, check, sev, url);
+const twoRuns = db => { auditRun(db, 'r1', 'core', ['site-wide-indexing-alarm', 'broken-internal-links'], '2026-11-01 10:00:00'); auditRun(db, 'r2', 'core', ['site-wide-indexing-alarm', 'broken-internal-links', 'robots-txt-unreachable'], '2026-11-08 10:00:00'); };
+let nc = withDb(db => { twoRuns(db); finding(db, 'r2', 'site-wide-indexing-alarm', null); }, newCriticalFindings);
+t('new critical: named with its check title and count', nc.length === 1 && nc[0].checkId === 'site-wide-indexing-alarm' && /indexing/i.test(nc[0].title) && nc[0].findings === 1);
+t('new critical: carried over from the last run -> not new', withDb(db => { twoRuns(db); finding(db, 'r1', 'site-wide-indexing-alarm', null); finding(db, 'r2', 'site-wide-indexing-alarm', null); }, newCriticalFindings).length === 0);
+t('new critical: a check the previous run lacked (an upgrade) -> not new', withDb(db => { twoRuns(db); finding(db, 'r2', 'robots-txt-unreachable', null); }, newCriticalFindings).length === 0);
+t('new critical: high severity ignored', withDb(db => { twoRuns(db); finding(db, 'r2', 'broken-internal-links', 'https://x.test/a', 'high'); }, newCriticalFindings).length === 0);
+t('new critical: different scopes not compared', withDb(db => { auditRun(db, 'r1', 'full', ['site-wide-indexing-alarm'], '2026-11-01'); auditRun(db, 'r2', 'core', ['site-wide-indexing-alarm'], '2026-11-08'); finding(db, 'r2', 'site-wide-indexing-alarm', null); }, newCriticalFindings).length === 0);
 
 // ── fetchSitemapUrls per-file record, against a local server ────────────────────────────────
 const urlset = (n, rel = 0) => `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${

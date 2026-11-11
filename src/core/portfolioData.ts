@@ -6,6 +6,8 @@ import { countChange } from './displayRules.js';
 import { clickWindows, monthlyClicks } from './summaryData.js';
 import { listLocalProperties } from './webServer.js';
 import { urlKey, hostFormForProperty } from './url-key.js';
+import { LATEST_COMPLETED_RUN_WHERE, baseCheckIds } from '../audit/history.js';
+import { CHECKS } from '../audit/checks.js';
 
 /**
  * The portfolio payloads. Pure reads: `_portfolio.db` plus, for owned
@@ -261,6 +263,8 @@ interface OwnedReads {
   audit: PortfolioRow['audit'];
   gscMax: string | null;
   lastCrawl: string | null;
+  /** Critical-severity checks with findings in the latest completed audit that the previous one didn't have. */
+  newCritical: { checkId: string; title: string; findings: number }[];
 }
 
 /** GSC finalises ~2-3 days late: windows end 3 days before the newest stored day (indexed MAX, cheap). */
@@ -290,12 +294,35 @@ function readOwned(dataDir: string, files: Map<string, string>, siteUrls: string
         const runs = db.prepare(`SELECT health_score s, finished_at f FROM audit_runs WHERE health_score IS NOT NULL AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 2`).all() as { s: number; f: string }[];
         if (runs[0]) audit = { score: runs[0].s, prior: runs[1]?.s ?? null, at: runs[0].f };
       } catch { /* pre-0.16 DB: no health columns */ }
+      const newCritical = newCriticalFindings(db);
       let lastCrawl: string | null = null;
       try { lastCrawl = (db.prepare(`SELECT MAX(COALESCE(finished_at, started_at)) f FROM crawl_metadata WHERE status = 'completed'`).get() as { f: string | null }).f; } catch { /* no crawl */ }
-      if (gscMax || audit || lastCrawl) return { clicks28, audit, gscMax, lastCrawl };
+      if (gscMax || audit || lastCrawl) return { clicks28, audit, gscMax, lastCrawl, newCritical };
     } catch { /* unreadable */ } finally { db?.close(); }
   }
   return null;
+}
+
+/**
+ * Critical findings that are new in the latest completed audit, grouped by check. Compared with the
+ * previous completed run only when both ran at the same scope, and only for checks the previous run
+ * also ran: a check added by an upgrade would otherwise read as a brand-new critical problem. A
+ * finding is new when its (check, page) key wasn't in the previous run.
+ */
+export function newCriticalFindings(db: Database.Database): OwnedReads['newCritical'] {
+  try {
+    const runs = db.prepare(`SELECT run_id, scope, check_ids FROM audit_runs WHERE ${LATEST_COMPLETED_RUN_WHERE}
+      ORDER BY COALESCE(finished_at, started_at) DESC, rowid DESC LIMIT 2`).all() as { run_id: string; scope: string | null; check_ids: string | null }[];
+    if (runs.length < 2 || (runs[0].scope ?? '') !== (runs[1].scope ?? '')) return [];
+    const prevChecks = baseCheckIds(runs[1].check_ids);
+    if (!prevChecks) return []; // previous run's check set unknown: can't tell new problems from new checks
+    const ran = new Set(prevChecks);
+    const rows = db.prepare(`SELECT f.check_id id, COUNT(*) n FROM findings f
+      WHERE f.run_id = ? AND f.severity = 'crit' AND NOT EXISTS (
+        SELECT 1 FROM findings p WHERE p.run_id = ? AND p.check_id = f.check_id AND COALESCE(p.url_key, 'site') = COALESCE(f.url_key, 'site'))
+      GROUP BY f.check_id ORDER BY n DESC, f.check_id`).all(runs[0].run_id, runs[1].run_id) as { id: string; n: number }[];
+    return rows.filter(r => ran.has(r.id)).map(r => ({ checkId: r.id, title: CHECKS.find(c => c.id === r.id)?.title ?? r.id, findings: r.n }));
+  } catch { return []; } // pre-0.16 DB: no status / check_ids columns
 }
 
 const pctDown = (cur: number | null | undefined, prior: number | null | undefined): number | null =>
@@ -340,6 +367,11 @@ export function attentionRules(
   const aiDown = pctDown(ai(ae.e), ai(ae.p));
   if ((ai(ae.p) ?? 0) >= 20 && aiDown != null && aiDown >= 30) out.push(`AI mentions down ${Math.round(aiDown)}% in ${ae.e} (AI Overviews + ChatGPT)`);
   if (r.audit && r.audit.prior != null && r.audit.prior - r.audit.score >= 5) out.push(`Audit health down ${r.audit.prior - r.audit.score} points to ${r.audit.score}`);
+  if (owned?.newCritical.length) {
+    const named = owned.newCritical.slice(0, 2).map(c => `${c.title} (${c.findings})`).join('; ');
+    const more = owned.newCritical.length - 2;
+    out.push(`New critical issue${owned.newCritical.length > 1 ? 's' : ''} in the latest audit: ${named}${more > 0 ? `; and ${more} more` : ''}`);
+  }
   if (owned) {
     const g = ageDays(owned.gscMax, m.now);
     if (g != null && g > 10) out.push(`Search Console data is ${Math.floor(g)} days old: sync it`);
