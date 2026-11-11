@@ -16,6 +16,7 @@ import { HREFLANG_CHECKS, HREFLANG_EXISTING_CHECKS } from './checks-hreflang.js'
 import { ASSET_CHECKS } from './checks-assets.js';
 import { PROBE_CHECKS } from './checks-probes.js';
 import { RENDER_CHECKS } from './checks-render.js';
+import { HYGIENE_CHECKS } from './checks-hygiene.js';
 
 /**
  * Check registry. Each check is a pure read over the AuditDatabase (crawl + GSC +
@@ -73,6 +74,18 @@ export interface CheckDef {
 }
 
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
+/**
+ * The homepage row, for the homepage schema checks. The root URL first (scheme://host/ with no path or
+ * query): click_depth can be empty when a crawl's link graph wasn't finalised, and the old fallback,
+ * the most-inlinked page, then picked an arbitrary 0-inlink page (/agents.md on one property) and
+ * reported the real homepage's Organization as missing. Then click depth 0, then the most-linked page.
+ */
+function homepageRow(c: CheckContext): { urlKey: string; jsonLd: string | null } | undefined {
+  return rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND url_key LIKE '%/' AND url_key NOT LIKE '%?%'
+      AND LENGTH(url_key) - LENGTH(REPLACE(url_key, '/', '')) = 3 ORDER BY COALESCE(inlink_count, 0) DESC, LENGTH(url_key) LIMIT 1`)[0]
+    ?? rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND click_depth=0 LIMIT 1`)[0]
+    ?? rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 ORDER BY inlink_count DESC LIMIT 1`)[0];
+}
 // Streaming variant — yields one row at a time instead of materialising the whole result set. Use for
 // checks that scan a large/fat column (e.g. body_chunks) and only need independent per-row work, so a
 // big content site doesn't load every page's body text into one array.
@@ -841,8 +854,7 @@ export const CHECKS: CheckDef[] = [
     id: 'homepage-missing-org-schema', category: 'schema', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
     title: 'Homepage missing Organization / WebSite schema', fix: 'Add Organization (or LocalBusiness) and WebSite JSON-LD to the homepage — it underpins the knowledge panel, logo and sitelinks search box.',
     run: (c) => {
-      const hp = (rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND click_depth=0 LIMIT 1`)[0]
-        ?? rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 ORDER BY inlink_count DESC LIMIT 1`)[0]);
+      const hp = homepageRow(c);
       if (!hp) return [];
       // Owned typed nodes, nested included (WebPage > mainEntity > Corporation, WebPage > isPartOf > WebSite),
       // matched across the whole Organization subtree case-insensitively. Third-party entities under
@@ -860,8 +872,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Organization schema missing logo, sameAs or contact details',
     fix: 'Complete the homepage Organization: add `logo` (an image URL), `sameAs` (the official social and directory profiles) and a contact route (`contactPoint`, `telephone` or `email`). These are what tie the markup to the brand entity and its knowledge panel.',
     run: (c) => {
-      const hp = (rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND click_depth=0 LIMIT 1`)[0]
-        ?? rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 ORDER BY inlink_count DESC LIMIT 1`)[0]);
+      const hp = homepageRow(c);
       if (!hp) return [];
       const { nodes } = ownOrganizationNodes(hp.jsonLd);
       if (!nodes.length) return []; // no Organization at all: homepage-missing-org-schema covers it
@@ -1606,6 +1617,8 @@ export const CHECKS: CheckDef[] = [
   ...PROBE_CHECKS,
   // #55 group E: JS-render divergence from render_audit (item 9).
   ...RENDER_CHECKS,
+  // #79 quick wins: internal nofollow, robots.txt reachability and lint, sitemap validity and size.
+  ...HYGIENE_CHECKS,
 ];
 
 // ── Google Discover helpers (article-eligibility + directive/schema parsing) ──

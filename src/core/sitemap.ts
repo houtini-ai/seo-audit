@@ -27,10 +27,12 @@ const decodeXmlEntities = (s: string): string => s
 // Bounded (cappedBody.ts): a sitemap is at most 50 MB uncompressed (sitemaps.org), so the read stops
 // there and a .gz is inflated with the same output limit. Unbounded, a 1 MB gzip bomb declared in
 // robots.txt cost about 1 GB of memory. A document over the limit is reported, not parsed in part.
-async function fetchText(url: string, ua: string): Promise<{ text: string; finalUrl: string; oversized?: boolean } | null> {
+type Fetched = { text: string; finalUrl: string; oversized?: boolean };
+// `failedStatus` carries the HTTP status of a failed fetch (0 = no response) for the per-file record.
+async function fetchText(url: string, ua: string, failedStatus?: { status: number }): Promise<Fetched | null> {
   try {
     const res = await fetch(url, { headers: { 'user-agent': ua }, signal: AbortSignal.timeout(15000) });
-    if (!res.ok) { try { await res.body?.cancel(); } catch { /* no body */ } return null; }
+    if (!res.ok) { if (failedStatus) failedStatus.status = res.status; try { await res.body?.cancel(); } catch { /* no body */ } return null; }
     const finalUrl = res.url || url;
     const { buf, truncated } = await readCapped(res, MAX_SITEMAP_BYTES);
     if (truncated) return { text: '', finalUrl, oversized: true };
@@ -42,7 +44,26 @@ async function fetchText(url: string, ua: string): Promise<{ text: string; final
       }
     }
     return { text: buf.toString('utf8'), finalUrl };
-  } catch { return null; }
+  } catch { if (failedStatus) failedStatus.status = 0; return null; }
+}
+
+/** sitemaps.org limits, per file: 50,000 URLs (or child sitemaps in an index) and 50 MB uncompressed. */
+export const SITEMAP_MAX_ENTRIES = 50000;
+
+/** One sitemap document the crawl requested, and what came back. */
+export interface SitemapFile {
+  url: string;
+  /** How it was found: declared in robots.txt, a conventional location probe, or listed by a sitemap index. */
+  source: 'robots' | 'conventional' | 'index';
+  outcome: 'ok' | 'http-error' | 'no-response' | 'not-sitemap' | 'oversized';
+  httpStatus: number | null;
+  kind: 'urlset' | 'sitemapindex' | null;
+  /** <url> entries in a urlset, or child <sitemap> entries in an index. Counted in full, independent of the crawl's URL cap. */
+  entries: number | null;
+  /** Uncompressed size in bytes. */
+  bytes: number | null;
+  /** <loc> values that are not absolute http(s) URLs. */
+  invalidLocs: number;
 }
 
 export interface SitemapResult {
@@ -54,6 +75,10 @@ export interface SitemapResult {
   undeclared: string[];
   /** Sitemaps over the 50 MB limit (after decompression): not parsed, so their URLs are missing here. */
   oversized: string[];
+  /** Every sitemap document requested, with its outcome and size (sitemap-invalid / sitemap-too-large). */
+  files: SitemapFile[];
+  /** True when the URL or sitemap cap stopped the walk with sitemaps still queued. */
+  capped: boolean;
 }
 
 // Probed on every crawl, not only when robots.txt is silent (#25): robots.txt often lists just a
@@ -92,7 +117,13 @@ export async function fetchSitemapUrls(
   const queue: string[] = [];
   const queuedKeys = new Set<string>();
   const parsed = new Set<string>();
+  const sourceOf = new Map<string, SitemapFile['source']>();
+  for (const u of sources) sourceOf.set(u, 'robots');
+  for (const u of conventional) if (!sourceOf.has(u)) sourceOf.set(u, 'conventional');
   for (const u of new Set([...sources, ...conventional])) { queue.push(u); queuedKeys.add(keyOf(u)); }
+  const files: SitemapFile[] = [];
+  let capped = false;
+  const isAbsoluteHttp = (u: string): boolean => { try { return /^https?:$/.test(new URL(u).protocol); } catch { return false; } };
   let fetched = 0;
   const URL_BLOCK = /<url>([\s\S]*?)<\/url>/gi;
   const LOC_ONE = /<loc>\s*([^<\s]+?)\s*<\/loc>/i;
@@ -104,44 +135,62 @@ export async function fetchSitemapUrls(
     const sm = queue.shift()!;
     const smKey = keyOf(sm);
     if (parsed.has(smKey)) continue; // this document was already parsed (another spelling, or a redirect target): no fetch
-    const got = await fetchText(sm, ua);
+    const failed = { status: 0 };
+    const got = await fetchText(sm, ua, failed);
     fetched++;
-    if (got?.oversized) { oversized.push(sm); continue; }
-    const txt = got?.text;
+    const file: SitemapFile = { url: sm, source: sourceOf.get(sm) ?? 'index', outcome: 'ok', httpStatus: null, kind: null, entries: null, bytes: null, invalidLocs: 0 };
+    if (!got) { files.push({ ...file, outcome: failed.status ? 'http-error' : 'no-response', httpStatus: failed.status || null }); continue; }
+    file.httpStatus = 200;
+    if (got.oversized) { oversized.push(sm); files.push({ ...file, outcome: 'oversized' }); continue; }
+    const txt = got.text;
     // A catch-all route can answer 200 with HTML for /sitemap.xml: only count real sitemap XML.
     // A failed fetch is NOT marked parsed, so another spelling of the same sitemap is still tried.
-    if (!got || !txt || !/<(urlset|sitemapindex)[\s>]/i.test(txt)) continue;
+    if (!txt || !/<(urlset|sitemapindex)[\s>]/i.test(txt)) { files.push({ ...file, outcome: 'not-sitemap', bytes: Buffer.byteLength(txt ?? '') }); continue; }
     const finalKey = keyOf(got.finalUrl);
     if (declaredKeys.has(smKey)) declaredKeys.add(finalKey);  // a declared sitemap's redirect target is declared too
     if (finalKey !== smKey && parsed.has(finalKey)) { parsed.add(smKey); continue; } // landed on a document already parsed
     parsed.add(smKey);
     parsed.add(finalKey);
     if (conventionalKeys.has(smKey) && !declaredKeys.has(smKey) && !declaredKeys.has(finalKey)) undeclared.push(sm);
+    file.bytes = Buffer.byteLength(txt);
     if (/<sitemapindex[\s>]/i.test(txt)) {
+      file.kind = 'sitemapindex';
+      let entries = 0;
       for (const m of txt.matchAll(LOC)) {
+        entries++;
         const child = decodeXmlEntities(m[1]);
+        if (!isAbsoluteHttp(child)) { file.invalidLocs++; continue; }
         const ck = keyOf(child);
         if (queuedKeys.has(ck) || parsed.has(ck)) continue;
-        if (queue.length + fetched < maxSitemaps) { queue.push(child); queuedKeys.add(ck); } // child sitemap (recursive: an index may list indexes)
+        if (queue.length + fetched < maxSitemaps) { queue.push(child); queuedKeys.add(ck); sourceOf.set(child, 'index'); } // child sitemap (recursive: an index may list indexes)
+        else capped = true;
       }
+      files.push({ ...file, entries });
       continue;
     }
-    // Parse per-<url> block so each <lastmod> claim stays paired with its <loc>.
-    let sawBlock = false;
+    // Parse per-<url> block so each <lastmod> claim stays paired with its <loc>. Entries are counted
+    // in full even once the crawl's URL cap stops collecting, so the 50,000 limit is judged on the file.
+    file.kind = 'urlset';
+    let entries = 0;
     for (const b of txt.matchAll(URL_BLOCK)) {
-      sawBlock = true;
+      entries++;
       const loc = b[1].match(LOC_ONE)?.[1];
-      if (!loc) continue;
-      add(decodeXmlEntities(loc), b[1].match(LASTMOD_ONE)?.[1] ?? null);
-      if (out.size >= maxUrls) break;
+      if (!loc) { file.invalidLocs++; continue; }
+      const u = decodeXmlEntities(loc);
+      if (!isAbsoluteHttp(u)) { file.invalidLocs++; continue; }
+      if (out.size < maxUrls) add(u, b[1].match(LASTMOD_ONE)?.[1] ?? null);
     }
     // Defensive fallback for malformed sitemaps that list bare <loc>s without <url> wrappers.
-    if (!sawBlock) {
+    if (entries === 0) {
       for (const m of txt.matchAll(LOC)) {
-        add(decodeXmlEntities(m[1]), null);
-        if (out.size >= maxUrls) break;
+        entries++;
+        const u = decodeXmlEntities(m[1]);
+        if (!isAbsoluteHttp(u)) { file.invalidLocs++; continue; }
+        if (out.size < maxUrls) add(u, null);
       }
     }
+    files.push({ ...file, entries });
   }
-  return { urls: [...out].map(([k, v]) => ({ urlKey: k, url: v.url, lastmod: v.lastmod })), sitemapsFetched: fetched, sources, undeclared, oversized };
+  if (queue.some(q => !parsed.has(keyOf(q)))) capped = true;
+  return { urls: [...out].map(([k, v]) => ({ urlKey: k, url: v.url, lastmod: v.lastmod })), sitemapsFetched: fetched, sources, undeclared, oversized, files, capped };
 }

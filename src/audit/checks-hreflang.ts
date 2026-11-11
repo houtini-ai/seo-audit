@@ -234,6 +234,25 @@ function hreflangMissingSelf(c: CheckContext): RawFinding[] {
   return out;
 }
 
+/**
+ * A real language cluster (2+ distinct alternates besides the page) with no x-default. Google RECOMMENDS
+ * x-default (it names the page for users whose language matches no listed locale); it isn't required,
+ * so this is low severity and reported without spamming:
+ *   - no cluster on the site uses x-default -> ONE site-level finding (a template decision), with a count and sample;
+ *   - some clusters use it and some don't -> per-page findings for the ones that don't (an inconsistency).
+ */
+function hreflangMissingXDefault(c: CheckContext): RawFinding[] {
+  const d = hreflangData(c);
+  const clusters = d.pages.filter(p => judgeable(d, p) && new Set(p.alts.filter(a => a.key && a.key !== p.key && a.lang.toLowerCase() !== 'x-default').map(a => a.key)).size >= 2);
+  if (!clusters.length) return [];
+  const hasX = (p: HreflangPage): boolean => p.alts.some(a => a.lang.trim().toLowerCase() === 'x-default');
+  const without = clusters.filter(p => !hasX(p));
+  if (!without.length) return [];
+  if (without.length === clusters.length)
+    return [{ urlKey: null, evidence: { scope: 'site', clusterPages: clusters.length, withXDefault: 0, sample: without.slice(0, 5).map(p => p.url), note: 'no hreflang set on the site declares x-default' } }];
+  return without.map(p => ({ urlKey: p.key, evidence: { url: p.url, annotations: p.alts.length, siteClustersWithXDefault: clusters.length - without.length, note: 'other hreflang sets on the site declare x-default; this one does not' } }));
+}
+
 /** Same value (case-insensitive) mapped to two different URLs in one page's set. The same URL twice is harmless. */
 function hreflangDuplicateLocale(c: CheckContext): RawFinding[] {
   const d = hreflangData(c);
@@ -316,6 +335,12 @@ export const HREFLANG_CHECKS: CheckDef[] = [
     title: 'hreflang set does not list the page itself',
     fix: `Each language version must list itself as well as its alternates. Add a self-referencing hreflang (with the page's own canonical URL) to this page's set; usually one template change. Pages canonicalised elsewhere are reported by hreflang-canonical-conflict instead. ${LOCALIZED_DOCS}`,
     run: hreflangMissingSelf,
+  },
+  {
+    id: 'hreflang-missing-x-default', category: 'indexation', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
+    title: 'hreflang set has no x-default',
+    fix: `Add an x-default alternate to each hreflang set, pointing at the page for users whose language matches none of your locales (usually a language picker or the main-market page). Google recommends it but does not require it, so this is low priority unless the site uses it on some sets and not others. ${LOCALIZED_DOCS}`,
+    run: hreflangMissingXDefault,
   },
   {
     id: 'hreflang-duplicate-locale', category: 'indexation', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',

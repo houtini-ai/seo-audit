@@ -499,7 +499,14 @@ export class Crawler {
         const sm = await fetchSitemapUrls(origin, ua, keyOpts);
         sitemaps = { declared: sm.sources, undeclared: sm.undeclared, fetched: sm.sitemapsFetched, urls: sm.urls.length, ...(sm.oversized.length ? { oversized: sm.oversized } : {}) };
         const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, lastmod, fetched_at) VALUES (?,?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
-        db.db.transaction(() => { db.db.exec('DELETE FROM sitemap_urls'); for (const u of sm.urls) smInsert.run(u.urlKey, u.url, u.lastmod); })();
+        const smFile = db.db.prepare(`INSERT OR REPLACE INTO sitemap_files (url, source, outcome, http_status, kind, entries, bytes, invalid_locs, walk_capped, fetched_at)
+          VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))`);
+        db.db.transaction(() => {
+          db.db.exec('DELETE FROM sitemap_urls');
+          for (const u of sm.urls) smInsert.run(u.urlKey, u.url, u.lastmod);
+          db.db.exec('DELETE FROM sitemap_files');
+          for (const f of sm.files) smFile.run(f.url, f.source, f.outcome, f.httpStatus, f.kind, f.entries, f.bytes, f.invalidLocs, sm.capped ? 1 : 0);
+        })();
         for (const u of sm.urls) {
           if (discovered >= maxPages) break;
           let host: string; try { host = new URL(u.url).hostname; } catch { continue; }
