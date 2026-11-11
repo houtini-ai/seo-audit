@@ -1,6 +1,6 @@
 # The check registry
 
-All 154 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
+All 157 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
 
 ## Reading the labels
 
@@ -93,7 +93,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `data-nosnippet-on-main` | D | A `data-nosnippet` element (on a span, div or section, the only tags Google honours it on) that contains `<main>`, or contains an `<article>`/`<h1>` while holding a quarter or more of the page's text, or holds half or more of it: the page's own content can't appear in a snippet or AI Overview. Recorded by crawls from 1.0.2 on | Keep `data-nosnippet` for the passages you don't want quoted and take it off the main wrapper. |
 | `hreflang-missing-x-default` | D | A real language cluster (two or more alternates besides the page) with no `x-default`. One site-level finding when no cluster on the site uses x-default; per-page findings only when the site uses it on some sets and not others. Low severity: Google recommends x-default but doesn't require it | Add an x-default pointing at the page for unmatched languages (a picker or the main market). |
 
-## On-page (25)
+## On-page (26)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -115,6 +115,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `images-missing-dimensions` | D | Images without width/height attributes | Add them (or CSS aspect-ratio) so the browser reserves space - but confirm with field CLS first; if your CSS already reserves space there's nothing to fix. |
 | `heading-hierarchy` | D | Skipped heading levels (h1 → h3) | Use headings in order - it keeps the outline accessible and parseable. |
 | `missing-social-tags` | D | No Open Graph or Twitter Card tags | Add them so shared links render a rich preview. |
+| `og-incomplete` | D | The page sets some Open Graph tags but not all of `og:title`, `og:description` and `og:image`. On an article, a missing `og:title` or `og:image` is left to `discover-missing-og` | Add the missing tags in the template for that page type. |
 | `missing-viewport` | D | No viewport meta | Add the standard width=device-width tag. |
 | `missing-lang` | D | No lang attribute on the html element | Declare it (e.g. lang="en-GB") - usually one template edit. |
 | `excessive-links` | D | Hundreds of links on one page | Trim the boilerplate link blocks so the links that matter stand out. |
@@ -135,7 +136,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `content-bloat` | D+N (0.6) | Very long unbroken sections | Split into focused, headed passages - AI grounding has sharp diminishing returns past a certain length, and density beats length. |
 | `ai-slop-signals` | N (0.5) | Copy tripping statistical tells of generic AI text (stock filler, uniform sentence lengths, identical section openers) | Rewrite the flagged sections with specifics only you can supply - and verify by reading first; competent human writing can trip these tells. |
 
-## Structured data (15)
+## Structured data (17)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -153,6 +154,8 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `duplicate-article-entities` | D (0.9) | More than one Article entity on one URL, typically an SEO plugin's graph plus a theme- or block-embedded Article | Emit one Article per page: remove the second source or merge it into the graph with the same `@id`. |
 | `discover-generic-article-type` | D+N (0.5) | Article schema using only the generic `Article` type where a more specific one fits | Use `NewsArticle` / `LiveBlogPosting` / `ProfilePage` where it genuinely applies - it unlocks richer Discover/News treatment. |
 | `discover-image-schema` | D | Article schema that declares no `image` (Discover cards need a large image) | Add an `image` (≥1200px wide, ideally 16:9 / 4:3 / 1:1 crops), matching the main visible image. |
+| `product-schema-missing` | D (0.8) | The page declares itself a product (`og:type=product` or a `product:price:amount` tag) but its JSON-LD has no Product. The crawl reads the HTML as served, so markup added by a script after load isn't seen | Add Product JSON-LD with offers to the template; confirm with `render_pages` first if a script may add it. |
+| `review-markup-opportunity` | N (0.6) | A page whose title or H1 calls it a review of one thing, with no Review, rating or `review` property in its JSON-LD. Roundups ("best", "top 10") and comparisons ("vs") are skipped. FAQPage and HowTo are not suggested, since Google retired those rich results for most sites in 2023 | Add a Review with `reviewRating` on the reviewed Product, using only a rating the page states. |
 | `org-entity-incomplete` | D | The homepage's own Organization (any subtype, nested included) has no `logo`, no `sameAs`, or no contact route (`contactPoint`, `telephone` or `email`). A field counts if any of its own Organization nodes carries it, so a Yoast-style `@id` reference plus full declaration is fine. Silent when there's no Organization at all (`homepage-missing-org-schema` covers that) | Add the missing fields to the homepage Organization. |
 
 ## Security (4)

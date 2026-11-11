@@ -357,6 +357,33 @@ withDb(db => {
   t('BUG-4: a different version on disk says RESTART NEEDED', stale.restartNeeded && /RESTART NEEDED: version /.test(versionLine(stale)));
 }
 
+// 1.0.5: og-incomplete, product-schema-missing, review-markup-opportunity
+{
+  const seedPage = (db, url, cols) => db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,title,h1,og_tags,json_ld) VALUES ('c1',?,?,200,1,?,?,?,?)`)
+    .run(url, url, cols.title ?? null, cols.h1 ?? null, cols.og ? JSON.stringify(cols.og) : null, cols.ld ? JSON.stringify(cols.ld.map(n => JSON.stringify(n))) : null);
+  const ids = (db, id) => run(db, id).map(f => f.urlKey);
+  withDb(db => {
+    seedPage(db, 'https://x.test/partial', { og: { 'og:title': 'T', 'og:image': 'https://x.test/i.png' } });
+    seedPage(db, 'https://x.test/full', { og: { 'og:title': 'T', 'og:description': 'D', 'og:image': 'https://x.test/i.png' } });
+    seedPage(db, 'https://x.test/none', {});
+    seedPage(db, 'https://x.test/shop', { og: { 'og:type': 'product', 'og:title': 'P', 'og:description': 'D', 'og:image': 'https://x.test/p.png' }, ld: [{ '@type': 'BreadcrumbList' }] });
+    seedPage(db, 'https://x.test/shop-ok', { og: { 'og:type': 'product', 'og:title': 'P', 'og:description': 'D', 'og:image': 'https://x.test/p.png' }, ld: [{ '@type': 'Product', name: 'P' }] });
+    seedPage(db, 'https://x.test/rev', { title: 'Acme Wheel Review', ld: [{ '@type': 'BlogPosting' }] });
+    seedPage(db, 'https://x.test/rev-ok', { title: 'Acme Pedals Review', ld: [{ '@type': 'Product', name: 'Pedals', review: { '@type': 'Review' } }] });
+    seedPage(db, 'https://x.test/best', { title: 'Best Wheels 2026: Our Reviews and Review Scores', ld: [{ '@type': 'Article' }] });
+    seedPage(db, 'https://x.test/vs', { title: 'Acme vs Bolt: Review', ld: [{ '@type': 'Article' }] });
+  }, db => {
+    const og = run(db, 'og-incomplete');
+    t('og-incomplete: partial Open Graph names what is missing', og.length === 1 && og[0].urlKey === 'https://x.test/partial' && og[0].evidence.missing.join() === 'og:description');
+    t('og-incomplete: a page with no Open Graph is left to missing-social-tags', !ids(db, 'og-incomplete').includes('https://x.test/none'));
+    t('product-schema-missing: og:type=product with only BreadcrumbList is flagged', ids(db, 'product-schema-missing').join() === 'https://x.test/shop');
+    const rev = ids(db, 'review-markup-opportunity');
+    t('review-markup-opportunity: a single-item review with no review markup is flagged', rev.includes('https://x.test/rev'));
+    t('review-markup-opportunity: a Product carrying review is not flagged', !rev.includes('https://x.test/rev-ok'));
+    t('review-markup-opportunity: roundups and comparisons are not flagged', !rev.includes('https://x.test/best') && !rev.includes('https://x.test/vs'));
+  });
+}
+
 // OBS-3: canonical-conflict marks a twin canonical that the site has since fixed
 const seedConflict = (db, { twinVerdict, declared }) => {
   db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,canonical_url,canonical_key) VALUES ('c1','https://x.test/p','https://x.test/p',200,1,?,?)`).run(declared, declared);

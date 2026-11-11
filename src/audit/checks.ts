@@ -362,6 +362,58 @@ export const CHECKS: CheckDef[] = [
     title: 'No social share tags', fix: 'Add Open Graph (og:title/og:image) and/or Twitter Card tags so shared links render a rich preview.',
     run: (c) => rows(c, `SELECT url_key urlKey FROM pages WHERE status_code=200 AND indexable=1 AND (og_tags IS NULL OR og_tags='') AND (twitter_tags IS NULL OR twitter_tags='')`).map(r => ({ urlKey: r.urlKey, evidence: {} })),
   },
+  {
+    // Partial Open Graph: the page sets some og: tags but not the three every share preview reads.
+    // A page with no social tags at all is missing-social-tags; an article missing og:title or
+    // og:image is discover-missing-og, so those two keys are left to it on Discover-eligible pages.
+    id: 'og-incomplete', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
+    title: 'Open Graph tags incomplete', fix: 'Add the missing og:title, og:description or og:image. Facebook, LinkedIn, Slack and most chat apps build the link preview from these three; without one the preview falls back to whatever the platform scrapes, or shows no image. Usually one template setting covers every page of a type.',
+    run: (c) => rows(c, `SELECT url_key urlKey, og_tags og, json_ld jsonLd FROM pages WHERE status_code=200 AND indexable=1 AND og_tags IS NOT NULL AND og_tags != ''`).flatMap(r => {
+      const og = parseOg(r.og);
+      if (!Object.keys(og).length) return [];
+      const discover = isDiscoverEligible(r.jsonLd, r.og);
+      const missing = OG_REQUIRED.filter(k => !String(og[k] ?? '').trim()).filter(k => !(discover && (k === 'og:title' || k === 'og:image')));
+      return missing.length ? [{ urlKey: r.urlKey, evidence: { missing, present: Object.keys(og).filter(k => /^og:/.test(k)).slice(0, 12) } }] : [];
+    }),
+  },
+  {
+    // The page tells social platforms it is a product (og:type=product, or a product:price tag), but
+    // its JSON-LD has no Product: no product snippet or merchant listing in Search. Seen live on
+    // ehi.com.au's special-order variant pages (BreadcrumbList only). HTTP-only crawl, so a Product
+    // added by script after load is not seen: hence certainty 0.8 and the render_pages pointer.
+    id: 'product-schema-missing', category: 'schema', severity: 'med', labels: ['D'], certainty: 0.8, effortBase: 3, fixType: 'per-page',
+    title: 'Product page without Product schema', fix: 'Add Product JSON-LD (name, image, offers with price and priceCurrency, availability) to this page type. The page declares itself a product in its Open Graph tags, but without Product markup it is not eligible for product snippets or merchant listings. If a script adds the markup after load, confirm with a rendered check (render_pages) before changing the template.',
+    run: (c) => rows(c, `SELECT url_key urlKey, og_tags og, json_ld jsonLd FROM pages WHERE status_code=200 AND indexable=1 AND og_tags IS NOT NULL AND og_tags != ''`).flatMap(r => {
+      const og = parseOg(r.og);
+      const signal = String(og['og:type'] ?? '').toLowerCase() === 'product' ? 'og:type=product'
+        : og['product:price:amount'] ? 'product:price:amount' : og['og:price:amount'] ? 'og:price:amount' : null;
+      if (!signal) return [];
+      const types = new Set(collectTypedNodes(r.jsonLd).flatMap(typesOf));
+      if (types.has('product') || types.has('productgroup') || types.has('individualproduct') || types.has('productmodel')) return [];
+      return [{ urlKey: r.urlKey, evidence: { signal, schemaTypesFound: [...types].slice(0, 10) } }];
+    }),
+  },
+  {
+    // Schema opportunity (roadmap #2), judgement: a page whose title or H1 calls it a review of one
+    // thing, with no Review or rating markup anywhere in its JSON-LD. Review snippets (stars) need a
+    // Review with reviewRating on the item reviewed. Roundups ("best", "top 10") and comparisons
+    // ("vs") are left out: review snippets are for a single item. Validated on simracingcockpit.gg
+    // (42 single-product reviews marked up as BlogPosting only) with myminingrig.com as the negative
+    // control (its review pages already carry Product.review). FAQPage and HowTo are deliberately
+    // not suggested: Google retired those rich results for most sites in 2023.
+    id: 'review-markup-opportunity', category: 'schema', severity: 'low', labels: ['N'], certainty: 0.6, effortBase: 3, fixType: 'per-page',
+    title: 'Review page without review markup', fix: 'If this page is your review of one product, add a Review (author, reviewRating with ratingValue and bestRating) on the Product it reviews, or as a Review with itemReviewed. That makes the page eligible for review snippets (star ratings). Only mark up a rating the page actually states, and skip pages that only collect other people\'s reviews.',
+    run: (c) => rows(c, `SELECT url_key urlKey, title, h1, json_ld jsonLd FROM pages WHERE status_code=200 AND indexable=1`).flatMap(r => {
+      const head = `${r.title ?? ''} ${r.h1 ?? ''}`;
+      if (!/\breview\b/i.test(head)) return [];
+      if (/^\s*(best|top\s*\d+|\d+\s+best)\b/i.test(r.title ?? '') || /\b(vs\.?|versus)\b/i.test(head)) return [];
+      const nodes = collectTypedNodes(r.jsonLd);
+      const types = new Set(nodes.flatMap(typesOf));
+      if (types.has('review') || types.has('aggregaterating') || types.has('criticreview') || types.has('employerreview')) return [];
+      if (nodes.some(n => n && typeof n === 'object' && ('review' in n || 'aggregateRating' in n))) return [];
+      return [{ urlKey: r.urlKey, evidence: { title: r.title, schemaTypesFound: [...types].slice(0, 10), suggest: 'Review with reviewRating on the reviewed Product' } }];
+    }),
+  },
   // ── Security / war-stories (headers now captured) ───────────────────────
   {
     id: 'missing-hsts', category: 'security', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global',
@@ -1721,6 +1773,7 @@ function authorNamer(nodes: unknown[]): (v: unknown) => boolean {
 function discoverArticleNodes(jsonLd: string | null): unknown[] {
   return parseJsonLdNodes(jsonLd).filter(n => typesOf(n).some(t => DISCOVER_TYPES.includes(t)));
 }
+const OG_REQUIRED = ['og:title', 'og:description', 'og:image'] as const;
 function parseOg(ogTags: string | null): Record<string, string> {
   if (!ogTags) return {};
   try { const o = JSON.parse(ogTags); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; }

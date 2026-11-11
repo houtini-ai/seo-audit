@@ -8,6 +8,15 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [1.0.5] — 2026-11-11
+
+Three checks for missing Open Graph and structured data (157 in all). They read data every crawl already stores, so a fresh audit picks them up with no re-crawl.
+
+### Added
+- **`og-incomplete`** (low): the page sets some Open Graph tags but is missing `og:title`, `og:description` or `og:image`, the three that link previews read. Pages with no social tags at all stay with `missing-social-tags`.
+- **`product-schema-missing`** (medium): the page declares itself a product in its Open Graph tags but has no Product JSON-LD, so it can't get product snippets or merchant listings. Found live on 36 ehi.com.au product pages carrying only BreadcrumbList.
+- **`review-markup-opportunity`** (low, judgement): a single-item review page with no Review or rating markup, so no review stars. Roundups and comparisons are skipped. Found on 42 simracingcockpit.gg reviews marked up as BlogPosting only. FAQPage and HowTo are deliberately not suggested.
+
 ## [1.0.4] — 2026-11-11
 
 More fixes from the MyMiningRig dev channel.
