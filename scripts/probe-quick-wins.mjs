@@ -311,6 +311,19 @@ withDb(db => {
   t('OBS-1: a single-label LAN host (http://umbrel/) is in neither', !JSON.stringify([broken, unreach]).includes('umbrel'));
 });
 
+// OBS-3: canonical-conflict marks a twin canonical that the site has since fixed
+const seedConflict = (db, { twinVerdict, declared }) => {
+  db.prepare(`INSERT INTO pages (crawl_id,url,url_key,status_code,indexable,canonical_url,canonical_key) VALUES ('c1','https://x.test/p','https://x.test/p',200,1,?,?)`).run(declared, declared);
+  db.prepare(`INSERT INTO url_inspection (url_key,url,google_canonical,user_canonical,last_crawl_time) VALUES ('https://x.test/p','https://x.test/p','https://www.x.test/p','https://x.test/p','2026-11-09T00:00:00Z')`).run();
+  if (twinVerdict) db.prepare(`INSERT INTO probes (url,variant_of,variant_type,verdict,source) VALUES ('https://www.x.test/','https://x.test/','host-home-host',?,'site-probe')`).run(twinVerdict);
+};
+let cc = withDb(db => seedConflict(db, { twinVerdict: 'ok', declared: 'https://x.test/p' }), db => run(db, 'canonical-conflict'));
+t('OBS-3: twin canonical, page declares apex, www twin now redirects -> liveState fixed, Google last crawl shown', cc.length === 1 && cc[0].evidence.liveState === 'fixed' && cc[0].evidence.googleLastCrawled === '2026-11-09T00:00:00Z');
+cc = withDb(db => seedConflict(db, { twinVerdict: 'serves-200', declared: 'https://x.test/p' }), db => run(db, 'canonical-conflict'));
+t('OBS-3: www twin still serves 200 -> not marked fixed', cc.length === 1 && !cc[0].evidence.liveState);
+cc = withDb(db => seedConflict(db, { twinVerdict: null, declared: 'https://x.test/p' }), db => run(db, 'canonical-conflict'));
+t('OBS-3: no site probe -> not marked fixed (never claimed without the evidence)', cc.length === 1 && !cc[0].evidence.liveState);
+
 // ── fetchSitemapUrls per-file record, against a local server ────────────────────────────────
 const urlset = (n, rel = 0) => `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${
   Array.from({ length: n }, (_, i) => `<url><loc>${i < rel ? `/rel-${i}` : `ORIGIN/p-${i}`}</loc></url>`).join('')}</urlset>`;

@@ -17,6 +17,7 @@ Fixes from the first live user report (the MyMiningRig dev channel, 2026-11-11).
 - **`discover-max-image-preview` fix text is platform-neutral.** It told an Astro site that "a WordPress plugin or theme has overridden it".
 - **`external-broken` reports only real HTTP failures.** A link that got no answer at all from this machine (timeout, refused connection, DNS, "fetch failed") moves to a new low-severity check, **`external-unreachable`**, which says to check the link in a browser before acting. amd.com and nasdaq.com were being reported dead. Single-label LAN hostnames such as `http://umbrel/` are reported by neither. 154 checks.
 - **`index-bloat` is worded as dormant, not as bloat to prune.** Detection is unchanged (it was correct). The fix now leads with refreshing or merging, and a page with high internal authority carries that advice in its evidence.
+- **`canonical-conflict` shows when Google last saw the page.** Google's canonical comes from URL Inspection and lags a fix until Google re-crawls. Each finding now carries `googleLastCrawled` and `inspectedAt`. When the latest crawl shows the page declaring the expected canonical, Google picked only the www/apex or http/https twin, and the site probes show that twin no longer serves a duplicate, it is marked `liveState: "fixed"`, with advice to request indexing rather than change the site again.
 
 ## [1.0.2] — 2026-11-11
 

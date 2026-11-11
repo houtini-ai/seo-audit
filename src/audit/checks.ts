@@ -17,6 +17,8 @@ import { ASSET_CHECKS } from './checks-assets.js';
 import { PROBE_CHECKS } from './checks-probes.js';
 import { RENDER_CHECKS } from './checks-render.js';
 import { HYGIENE_CHECKS } from './checks-hygiene.js';
+import { urlKey } from '../core/url-key.js';
+import { SITE_PROBE_SOURCE, HOST_FAIL } from '../core/siteProbes.js';
 
 /**
  * Check registry. Each check is a pure read over the AuditDatabase (crawl + GSC +
@@ -74,6 +76,7 @@ export interface CheckDef {
 }
 
 const rows = (ctx: CheckContext, sql: string, ...args: unknown[]): any[] => ctx.db.prepare(sql).all(...args);
+const hostFormOf = (c: CheckContext): 'apex' | 'www' | 'asis' => { try { return ((c.db.prepare(`SELECT host_form h FROM property_meta LIMIT 1`).get() as { h?: string } | undefined)?.h ?? 'asis') as 'apex' | 'www' | 'asis'; } catch { return 'asis'; } };
 /**
  * The homepage row, for the homepage schema checks. The root URL first (scheme://host/ with no path or
  * query): click_depth can be empty when a crawl's link graph wasn't finalised, and the old fallback,
@@ -397,8 +400,34 @@ export const CHECKS: CheckDef[] = [
   },
   {
     id: 'canonical-conflict', category: 'indexation', severity: 'high', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
-    title: 'Google chose a different canonical', fix: 'Align your declared canonical with the page Google actually indexes.',
-    run: (c) => rows(c, `SELECT url_key urlKey, google_canonical g, user_canonical u FROM url_inspection WHERE user_canonical IS NOT NULL AND google_canonical IS NOT NULL AND google_canonical != user_canonical`).map(r => ({ urlKey: r.urlKey, evidence: { googleCanonical: r.g, userCanonical: r.u } })),
+    title: 'Google chose a different canonical', fix: 'Align your declared canonical with the page Google actually indexes. Google\'s choice comes from URL Inspection and reflects its LAST crawl of the page (googleLastCrawled): after a fix it keeps showing until Google re-crawls, so where the evidence says liveState "fixed", request indexing in Search Console rather than changing the site again.',
+    // Google's canonical is its last-crawled view (URL Inspection), so it lags a fix on the site
+    // (myminingrig dev channel, OBS-3). Each finding says when Google last crawled the page, and
+    // when the latest crawl shows the page declaring the expected canonical while Google's choice
+    // is only its www/apex or http/https twin, and the twin host no longer serves a duplicate (the
+    // crawl's site probes), it is marked fixed-on-site, awaiting Google's re-crawl.
+    run: (c) => {
+      let twinProbe: { verdict: string } | undefined;
+      try { twinProbe = rows(c, `SELECT verdict FROM probes WHERE source = ? AND variant_type = 'host-home-host' ORDER BY id DESC LIMIT 1`, SITE_PROBE_SOURCE)[0]; } catch { /* no probes table: not judged */ }
+      const twinClean = !!twinProbe && !(HOST_FAIL as string[]).includes(twinProbe.verdict) && twinProbe.verdict !== 'unknown';
+      const declared = c.db.prepare(`SELECT canonical_key FROM pages WHERE url_key = ?`);
+      const twinOf = (a: string, b: string): boolean => {
+        try {
+          const x = new URL(a), y = new URL(b), h = (u: URL) => u.hostname.replace(/^www\./, '');
+          return h(x) === h(y) && x.pathname.replace(/\/$/, '') === y.pathname.replace(/\/$/, '') && x.search === y.search && x.href !== y.href;
+        } catch { return false; }
+      };
+      return rows(c, `SELECT url_key urlKey, google_canonical g, user_canonical u, last_crawl_time lc, inspected_at ia FROM url_inspection WHERE user_canonical IS NOT NULL AND google_canonical IS NOT NULL AND google_canonical != user_canonical`).map(r => {
+        const live = (declared.get(r.urlKey) as { canonical_key: string | null } | undefined)?.canonical_key ?? null;
+        let liveKey: string | null = null;
+        try { liveKey = urlKey(r.u, { hostForm: hostFormOf(c) }); } catch { /* unparseable */ }
+        const fixed = twinOf(r.g, r.u) && twinClean && !!live && live === liveKey;
+        return { urlKey: r.urlKey, evidence: {
+          googleCanonical: r.g, userCanonical: r.u, googleLastCrawled: r.lc ?? null, inspectedAt: r.ia ?? null,
+          ...(fixed ? { liveState: 'fixed', liveNote: 'the latest crawl shows this page declaring the expected canonical and the twin host no longer serving a duplicate; Google\'s choice dates from its last crawl and should clear when it re-crawls (request indexing to speed that up)' } : {}),
+        } };
+      });
+    },
   },
   {
     id: 'striking-distance', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page', stakeModel: 'rank-gap',
