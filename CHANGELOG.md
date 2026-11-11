@@ -8,6 +8,16 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [Unreleased]
+
+Fixes from the first live user report (the MyMiningRig dev channel, 2026-11-11). The reporter verified about 13 checks against the live site and raw tables and found no false positives in detection; these are the four things it did find.
+
+### Fixed
+- **`query_audit` no longer blanks evidence when `columns` matches no evidence key.** `external-broken` nests its detail under `examples[]`, so `columns:["target","status"]` returned every finding as `{}`, which read as missing data. Now it returns the full evidence with a `columnsNote` naming the check's real keys, and a partial match names the columns it left out.
+- **`discover-max-image-preview` fix text is platform-neutral.** It told an Astro site that "a WordPress plugin or theme has overridden it".
+- **`external-broken` reports only real HTTP failures.** A link that got no answer at all from this machine (timeout, refused connection, DNS, "fetch failed") moves to a new low-severity check, **`external-unreachable`**, which says to check the link in a browser before acting. amd.com and nasdaq.com were being reported dead. Single-label LAN hostnames such as `http://umbrel/` are reported by neither. 154 checks.
+- **`index-bloat` is worded as dormant, not as bloat to prune.** Detection is unchanged (it was correct). The fix now leads with refreshing or merging, and a page with high internal authority carries that advice in its evidence.
+
 ## [1.0.2] — 2026-11-11
 
 Ten new checks (153 in all), a printable A4 report, and fixes from a full code review of the crawl path. Several new checks read data the crawler only records from this version on: re-crawl a property to populate them. Until then they are listed under **Not collected**, never as passing.

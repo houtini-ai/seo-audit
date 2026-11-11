@@ -246,7 +246,20 @@ export const CHECKS: CheckDef[] = [
     // are 'unverifiable' and never counted here. Needs the post-crawl external-link pass.
     id: 'external-broken', category: 'onpage', severity: 'med', labels: ['D'], certainty: 0.9, effortBase: 2, fixType: 'per-page',
     title: 'Broken outbound links', fix: 'Replace or remove each dead external link: point it at the current page on that site, a better source, or drop it. Dead outbound links read as neglect to users and to quality raters.',
-    run: (c) => externalByPage(c, `s.verdict = 'broken'`).map(p => ({ urlKey: p.urlKey, evidence: { broken: p.items.length, outboundLinks: p.outbound, examples: p.items.slice(0, 10).map(i => ({ target: i.target, status: i.status ?? i.error, anchor: i.anchor })) } })),
+    // Only an HTTP answer proves a link dead (4xx/5xx, or a 3xx with no Location). A request that got
+    // no answer at all (timeout, refused, DNS, "fetch failed") is reported by external-unreachable:
+    // from one machine that can be its own network or a site refusing automated clients (amd.com,
+    // nasdaq.com on the first live report). Single-label hosts (http://umbrel/, a LAN example in an
+    // article) are not public URLs and are reported by neither.
+    run: (c) => externalByPage(c, `s.verdict = 'broken' AND s.status IS NOT NULL`).map(p => ({ ...p, items: p.items.filter(i => isPublicTarget(i.target)) })).filter(p => p.items.length)
+      .map(p => ({ urlKey: p.urlKey, evidence: { broken: p.items.length, outboundLinks: p.outbound, examples: p.items.slice(0, 10).map(i => ({ target: i.target, status: i.status ?? i.error, anchor: i.anchor })) } })),
+  },
+  {
+    id: 'external-unreachable', category: 'onpage', severity: 'low', labels: ['D'], certainty: 0.5, effortBase: 1, fixType: 'per-page',
+    title: 'Outbound links that could not be reached from this machine',
+    fix: 'Open each link in a browser before acting. These got no HTTP answer at all (a timeout, a refused connection, a DNS failure), which can be this machine\'s network or a site that refuses automated requests rather than a dead page. Replace or remove only the ones that also fail for you. Links that answered with an HTTP error are in external-broken.',
+    run: (c) => externalByPage(c, `s.verdict = 'broken' AND s.status IS NULL`).map(p => ({ ...p, items: p.items.filter(i => isPublicTarget(i.target)) })).filter(p => p.items.length)
+      .map(p => ({ urlKey: p.urlKey, evidence: { unreachable: p.items.length, outboundLinks: p.outbound, examples: p.items.slice(0, 10).map(i => ({ target: i.target, error: i.error, anchor: i.anchor })) } })),
   },
   {
     // #36: permanent redirects on outbound links ("update the link"). A deep link that now 301s to
@@ -591,8 +604,8 @@ export const CHECKS: CheckDef[] = [
   },
   {
     id: 'index-bloat', category: 'indexation', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
-    title: 'Indexable page with no search traffic', fix: 'No impressions in 90 days despite being indexable — consolidate, improve, or noindex/prune to concentrate crawl budget and internal authority (confirm it isn’t seasonal or brand-new first).',
-    run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT url_key urlKey, ipr FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND COALESCE(click_depth, 999) >= 1 AND url_key NOT IN (SELECT DISTINCT page_key FROM gsc_rows WHERE page_key IS NOT NULL AND date <= '${c.gscMaxDate}' AND date > date('${c.gscMaxDate}','-90 days') AND impressions > 0) ORDER BY ipr DESC LIMIT 100`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'indexable but zero impressions in 90 days', ipr: Math.round(r.ipr) } })),
+    title: 'Indexable page with no impressions in 90 days (dormant)', fix: 'This page is indexable but has earned no Search Console impressions in the last 90 days. Dormant is not the same as bad: first check whether it is seasonal, brand-new, or was visible before the window. Then choose: refresh and re-target it (the first choice when it carries internal authority, the ipr figure), merge it into a stronger page with a 301, or noindex it only if it has no purpose for readers. Pruning a published article on this signal alone is not recommended.',
+    run: (c) => (!c.gscMaxDate || spanDays(c) < 90) ? [] : rows(c, `SELECT url_key urlKey, ipr FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND COALESCE(click_depth, 999) >= 1 AND url_key NOT IN (SELECT DISTINCT page_key FROM gsc_rows WHERE page_key IS NOT NULL AND date <= '${c.gscMaxDate}' AND date > date('${c.gscMaxDate}','-90 days') AND impressions > 0) ORDER BY ipr DESC LIMIT 100`).map(r => ({ urlKey: r.urlKey, evidence: { note: 'indexable but zero impressions in 90 days', ipr: Math.round(r.ipr), ...(r.ipr >= 40 ? { advice: 'high internal authority: refresh or merge rather than prune' } : {}) } })),
   },
   // ── On-page parity (crawl-only, deterministic) ──
   {
@@ -1529,7 +1542,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'discover-max-image-preview', category: 'onpage', severity: 'med', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'global', yieldCoef: 0.15,
     title: 'Article missing max-image-preview:large (no large Discover card)',
-    fix: 'Add `<meta name="robots" content="max-image-preview:large">` (or the same directive in an X-Robots-Tag header). Without it Google cannot feature the article with the large, high-CTR image card in Google Discover and image search — you get a thumbnail or nothing. This is usually one site-wide template/config change (WordPress core already emits it; a plugin or theme has overridden it here).',
+    fix: 'Add `<meta name="robots" content="max-image-preview:large">` (or the same directive in an X-Robots-Tag header). Without it Google cannot feature the article with the large, high-CTR image card in Google Discover and image search — you get a thumbnail or nothing. This is usually one site-wide change to the page template or head settings. (Some platforms emit it by default, WordPress core among them; if yours does, a plugin or theme has overridden it.)',
     run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd, og_tags ogTags, robots, x_robots_tag xrt FROM pages WHERE ${DISCOVER_PREFILTER}`)
       .filter(r => isDiscoverEligible(r.jsonLd, r.ogTags) && !hasMaxImagePreviewLarge(r.robots, r.xrt) && !hasPreviewRestriction(r.robots, r.xrt))
       .map(r => ({ urlKey: r.urlKey, evidence: { robots: r.robots ?? null, xRobotsTag: r.xrt ?? null, note: 'article-type page without max-image-preview:large' } })),
@@ -1646,6 +1659,8 @@ function externalByPage(c: CheckContext, where: string): { urlKey: string; outbo
   }
   return [...byPage.values()];
 }
+/** A target on a public hostname: a single-label host (http://umbrel/, http://localhost/) is a LAN or example address, never a dead public link. */
+const isPublicTarget = (u: string): boolean => { try { const h = new URL(u).hostname; return h.includes('.') && !h.endsWith('.local') && !h.endsWith('.localhost'); } catch { return false; } };
 const ARTICLE_LIKE = `(json_ld LIKE '%Article%' OR json_ld LIKE '%Posting%')`;
 const ARTICLE_TYPES = /^(article|blogposting|newsarticle|techarticle|scholarlyarticle|reportagenewsarticle|analysisnewsarticle|opinionnewsarticle|reviewnewsarticle|backgroundnewsarticle|socialmediaposting|liveblogposting)$/;
 // Array-@type aware: Yoast emits @type ["Article","BlogPosting"].

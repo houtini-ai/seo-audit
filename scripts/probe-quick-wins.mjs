@@ -16,6 +16,8 @@ import { extractPage } from '../dist/core/extract.js';
 import { storeTls, tlsTwin } from '../dist/core/tlsProbe.js';
 import { buildPrintReport, PRINT_PORTFOLIO_ROWS } from '../dist/core/printReport.js';
 import { isOwnedGscProperty } from '../dist/core/webServer.js';
+import { selectEvidenceColumns } from '../dist/core/evidenceColumns.js';
+import { ensureExternalSchema } from '../dist/core/externalLinks.js';
 
 let pass = 0, fail = 0;
 const t = (name, cond) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`); cond ? pass++ : fail++; };
@@ -280,6 +282,34 @@ t('owned GSC: sc-domain counts unsynced; a crawled URL-prefix site does not unti
     t('move onto a retired owned row revives it as watched, not owned', moved.kind === 'watched');
   } finally { store.close(); try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* temp */ } }
 }
+
+// ── myminingrig dev channel, 2026-11-11 ─────────────────────────────────────────────────────
+{
+  const ev = [{ broken: 1, outboundLinks: 10, examples: [{ target: 'https://www.amd.com/x', status: 'fetch failed' }] }];
+  const none = selectEvidenceColumns('external-broken', ev, ['url', 'target', 'status']);
+  t('BUG-1: columns matching no evidence key -> full evidence, note names the real keys', none.keep === null && /broken, outboundLinks, examples/.test(none.note ?? ''));
+  const some = selectEvidenceColumns('external-broken', ev, ['examples', 'target']);
+  t('BUG-1: partly matching -> keep the matches, name the misses', JSON.stringify(some.keep) === '["examples"]' && /left out: target/.test(some.note ?? ''));
+  t('BUG-1: no columns -> no filter, no note', selectEvidenceColumns('x', ev, undefined).keep === null && selectEvidenceColumns('x', ev, undefined).note === null);
+}
+t('BUG-2: discover-max-image-preview fix is platform-neutral', !/a plugin or theme has overridden it here/.test(CHECKS.find(c => c.id === 'discover-max-image-preview').fix));
+t('OBS-2: index-bloat is worded as dormant, not as bloat to prune', /dormant/i.test(CHECKS.find(c => c.id === 'index-bloat').title) && /not recommended/.test(CHECKS.find(c => c.id === 'index-bloat').fix));
+withDb(db => {
+  ensureExternalSchema(db);
+  page(db, 'https://x.test/a');
+  const ext = (url, status, error) => {
+    db.prepare(`INSERT INTO links (crawl_id,source_url,source_key,target_url,target_key,is_internal,placement,rel) VALUES ('c1','https://x.test/a','https://x.test/a',?,?,0,'body',NULL)`).run(url, url);
+    db.prepare(`INSERT INTO external_link_status (url_key,url,status,verdict,permanent,method,error,fetched_as,checked_at) VALUES (?,?,?,'broken',0,'HEAD',?,'bot',datetime('now'))`).run(url, url, status, error);
+  };
+  ext('https://dead.example/gone', 404, null);
+  ext('https://www.amd.com/x', null, 'fetch failed');
+  ext('http://umbrel/', null, 'dns');
+}, db => {
+  const broken = run(db, 'external-broken'), unreach = run(db, 'external-unreachable');
+  t('OBS-1: an HTTP 404 stays in external-broken', broken.length === 1 && broken[0].evidence.examples[0].target === 'https://dead.example/gone');
+  t('OBS-1: a network failure moves to external-unreachable, with its error', unreach.length === 1 && unreach[0].evidence.examples[0].error === 'fetch failed');
+  t('OBS-1: a single-label LAN host (http://umbrel/) is in neither', !JSON.stringify([broken, unreach]).includes('umbrel'));
+});
 
 // ── fetchSitemapUrls per-file record, against a local server ────────────────────────────────
 const urlset = (n, rel = 0) => `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${

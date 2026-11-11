@@ -88,6 +88,7 @@ import { CruxSync, CRUX_DEFAULT_URL_LIMIT } from './core/CruxSync.js';
 import { PortfolioStore, PORTFOLIO_JOB_SCOPE, resolveLocation, LOCATION_LABEL } from './core/PortfolioStore.js';
 import { normaliseDomain, targetForProperty } from './core/portfolioTarget.js';
 import { buildPrintReport } from './core/printReport.js';
+import { selectEvidenceColumns } from './core/evidenceColumns.js';
 import { pdfFromHtml, RendererUnavailableError } from './core/render.js';
 import { quotePortfolioRefresh } from './core/PortfolioRefresh.js';
 import { getPortfolioData, getDomainOverview, readSchedule } from './core/portfolioData.js';
@@ -622,14 +623,18 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const r = runSingleCheck(dataDir(), siteUrl, check, limit, offset ?? 0);
       // Token discipline (mirrors query_data): optional evidence-column selection + loud
       // 120-char cell truncation, and an explicit offset/total footer.
+      // `columns` filter: if none of the requested keys exists in this check's evidence, return the
+      // full evidence with a note naming the keys that do (evidenceColumns.ts).
+      const sel = selectEvidenceColumns(check, r.findings.map((f: any) => (f.evidence ?? {}) as Record<string, unknown>), columns);
       const shape = (f: any): any => {
         const src = (f.evidence ?? {}) as Record<string, unknown>;
-        const keys = columns?.length ? columns.filter(k => k in src) : Object.keys(src);
+        const keys = sel.keep ? sel.keep.filter(k => k in src) : Object.keys(src);
         const evidence: Record<string, unknown> = {};
         for (const k of keys) evidence[k] = truncateCell(src[k]);
         return { ...f, evidence };
       };
       let sc: Record<string, unknown> = { ...r, findingsTotal: r.total };
+      if (sel.note) sc.columnsNote = sel.note;
       let findings = r.findings.map(shape);
       // Hosts cap the model-facing result (~60k chars). On evidence-heavy checks a large
       // `limit` can blow that ceiling and error the whole call — trim findings (keeping the

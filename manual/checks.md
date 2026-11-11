@@ -1,6 +1,6 @@
 # The check registry
 
-All 153 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
+All 154 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
 
 ## Reading the labels
 
@@ -68,7 +68,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `indexed-junk-url` | D+G | Internal-search / faceted / tracking-param URLs that got indexed and rank | noindex or block them, canonicalise filter URLs - the query footprint proves the accident. |
 | `coverage-not-indexed` | G | Pages Google crawled and chose not to index | Investigate quality and duplication - Google looked and declined. |
 | `canonical-conflict` | G | Google chose a different canonical than you declared | Align your declared canonical with the page Google indexes. |
-| `index-bloat` | D+G | Indexable pages with no impressions in 90 days | Consolidate, improve, or noindex/prune - after confirming it isn't seasonal or new. |
+| `index-bloat` | D+G | Indexable pages with no impressions in 90 days (dormant). A page with high internal authority (iPR 40+) carries advice to refresh or merge rather than prune | Check it isn't seasonal or new, then refresh and re-target it, merge it with a 301, or noindex it only if it has no purpose for readers. Pruning a published article on this signal alone isn't recommended. |
 | `broken-canonical-target` | D | Canonicals pointing at broken, redirecting, noindexed or chained targets | Point the canonical at a live, indexable, self-canonical HTTPS URL. |
 | `soft-404-shell` | D+G | Pages serving 200 that Google flags as soft 404 | Populate the page with real content, or return a true 404/410. |
 | `soft-404-handling` | D | The site answers 200 for URLs that don't exist, or redirects them to the homepage or another 200 page. At the end of every crawl two random URLs that can't exist are requested (one at the root, one under the busiest section): one site-level finding. Also each crawled 200 page whose title (any segment around a `|`/`-` separator) or H1 is wholly a not-found message ("404", "Page not found", "Nothing found"...; an article about 404s doesn't match), highest equity first. A probe that was rate limited or got no answer is unknown | Answer 404 (or 410) for unknown URLs, not 200 and not a homepage redirect; on a single-page app, have the server 404 unknown routes. |
@@ -93,7 +93,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `data-nosnippet-on-main` | D | A `data-nosnippet` element (on a span, div or section, the only tags Google honours it on) that contains `<main>`, or contains an `<article>`/`<h1>` while holding a quarter or more of the page's text, or holds half or more of it: the page's own content can't appear in a snippet or AI Overview. Recorded by crawls from 1.0.2 on | Keep `data-nosnippet` for the passages you don't want quoted and take it off the main wrapper. |
 | `hreflang-missing-x-default` | D | A real language cluster (two or more alternates besides the page) with no `x-default`. One site-level finding when no cluster on the site uses x-default; per-page findings only when the site uses it on some sets and not others. Low severity: Google recommends x-default but doesn't require it | Add an x-default pointing at the page for unmatched languages (a picker or the main market). |
 
-## On-page (24)
+## On-page (25)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -109,7 +109,8 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `title-h1-mismatch` | D | Title and H1 sharing no significant words | Align them - the mismatch blurs the page's topic signal. |
 | `image-alt` | D | Content images without alt text | Add descriptive alt text (empty alt only for decorative images). |
 | `broken-image` | D | An `<img>` src answering 4xx/5xx, or answering 200 with an HTML page (a redirect to the homepage, a soft 404). From `image_assets`, the 500 most-used images sampled after each crawl | Fix the src or restore the file. |
-| `external-broken` | D (0.9) | Outbound links whose target is dead (4xx/5xx, DNS, timeout, refused, TLS), per linking page. Bot walls (401/403/429, Cloudflare challenges) are "unverifiable" and never counted | Replace or remove each dead link: the current page on that site, a better source, or nothing. |
+| `external-broken` | D (0.9) | Outbound links whose target answered with an HTTP error (4xx/5xx, or a redirect with no Location), per linking page. Bot walls (401/403/429, Cloudflare challenges) are "unverifiable" and never counted; links that got no answer at all are `external-unreachable`; single-label LAN hosts (`http://umbrel/`) are in neither | Replace or remove each dead link: the current page on that site, a better source, or nothing. |
+| `external-unreachable` | D (0.5) | Outbound links that got no HTTP answer from this machine (timeout, refused connection, DNS failure, "fetch failed"), per linking page. That can be the machine's network or a site refusing automated clients, not a dead page | Check each in a browser first; replace or remove only the ones that fail for you too. |
 | `external-redirected` | D (0.9) | Outbound links that permanently redirect, per linking page; a deep link now landing on the site's homepage is flagged as likely removed | Update each link to its final URL; find a replacement where the target page is gone. |
 | `images-missing-dimensions` | D | Images without width/height attributes | Add them (or CSS aspect-ratio) so the browser reserves space - but confirm with field CLS first; if your CSS already reserves space there's nothing to fix. |
 | `heading-hierarchy` | D | Skipped heading levels (h1 → h3) | Use headings in order - it keeps the outline accessible and parseable. |
