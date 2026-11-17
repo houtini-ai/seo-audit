@@ -15,7 +15,10 @@ export interface SetupStatus {
   majestic: SourceStatus;
   crux: SourceStatus;
   dataDir: string;
+  /** Search Console properties synced into a local database (isOwnedGscProperty). */
   properties: number;
+  /** Other local databases: crawls and backlink / keyword lookups of sites that are not your properties. */
+  otherDomains: number;
   runner: 'in-process' | 'external';
 }
 
@@ -41,8 +44,12 @@ const optional = (on: boolean, names: string, what: string, fix: string): Source
   on ? { ok: true, detail: `${names} set` } : { ok: false, detail: `${names} not set (or a placeholder): ${what} off`, fix };
 
 export function setupStatus(dataDir: string, env: NodeJS.ProcessEnv = process.env): SetupStatus {
-  let properties = 0;
-  try { properties = listLocalProperties(dataDir).length; } catch { /* unreadable data dir */ }
+  let properties = 0, otherDomains = 0;
+  try {
+    const all = listLocalProperties(dataDir);
+    properties = all.filter(p => p.gsc).length;
+    otherDomains = all.length - properties;
+  } catch { /* unreadable data dir */ }
   return {
     gsc: gscStatus(env),
     dataforseo: optional(!!dataForSeoCredentials(env), 'DATAFORSEO_USERNAME / DATAFORSEO_PASSWORD', 'the paid keyword, SERP, competitor and backlink tools are', 'Optional, paid: a DataForSEO account (manual/dataforseo.md).'),
@@ -50,6 +57,7 @@ export function setupStatus(dataDir: string, env: NodeJS.ProcessEnv = process.en
     crux: optional(!!optionalSecret('CRUX_API_KEY', env), 'CRUX_API_KEY', 'real-user Core Web Vitals (sync_crux) are', 'Optional, free: a Google Cloud API key with the Chrome UX Report API (manual/getting-started.md, "CrUX key").'),
     dataDir,
     properties,
+    otherDomains,
     runner: jobRunnerModeFromEnv(env) === 'external' ? 'external' : 'in-process',
   };
 }
@@ -58,7 +66,7 @@ const mark = (s: SourceStatus): string => (s.ok ? 'on' : 'OFF');
 
 /** One line for the server instructions. */
 export function setupStatusLine(s: SetupStatus): string {
-  return `SETUP AT START: Search Console ${mark(s.gsc)}${s.gsc.ok ? '' : ` (${s.gsc.detail})`}; DataForSEO ${mark(s.dataforseo)}; Majestic ${mark(s.majestic)}; CrUX ${mark(s.crux)}; ${s.properties} propert${s.properties === 1 ? 'y' : 'ies'} with local data.`;
+  return `SETUP AT START: Search Console ${mark(s.gsc)}${s.gsc.ok ? '' : ` (${s.gsc.detail})`}; DataForSEO ${mark(s.dataforseo)}; Majestic ${mark(s.majestic)}; CrUX ${mark(s.crux)}; ${s.properties} Search Console propert${s.properties === 1 ? 'y' : 'ies'} with local data${s.otherDomains ? ` (plus ${s.otherDomains} other domain${s.otherDomains === 1 ? '' : 's'} from crawls or backlink lookups, not properties)` : ''}.`;
 }
 
 /** The block at the top of seo_audit_help. */
@@ -70,7 +78,7 @@ export function setupStatusText(s: SetupStatus): string {
     row('DataForSEO', s.dataforseo),
     row('Majestic', s.majestic),
     row('CrUX', s.crux),
-    `- **Data:** ${s.properties} propert${s.properties === 1 ? 'y' : 'ies'} with local data in ${s.dataDir}.${s.properties ? '' : ' Run refresh_property for a property list_properties shows.'}`,
+    `- **Data:** ${s.properties} Search Console propert${s.properties === 1 ? 'y' : 'ies'} with local data in ${s.dataDir}${s.otherDomains ? `, plus ${s.otherDomains} other domain${s.otherDomains === 1 ? '' : 's'} (crawls or backlink lookups of sites that are not your properties)` : ''}.${s.properties ? '' : ' Run refresh_property for a property list_properties shows.'}`,
     `- **Jobs:** ${s.runner === 'external' ? 'queued for a separate seo-audit-runner process (SAC_JOB_RUNNER=external)' : 'run inside this server'}.`,
     s.gsc.ok ? '- Next: `list_properties` (free) confirms the service account can see your properties; an empty list means its email is not yet a user on them.' : '- Search Console is required for most of this tool; everything that needs it fails until it is set.',
     '',

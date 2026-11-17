@@ -106,13 +106,15 @@ const CACHE_DBS = new Set(['dataforseo-cache.db', '_portfolio.db', '_jobs.db']);
  */
 export const isGscProperty = (siteUrl: string): boolean => /^(sc-domain:|https?:\/\/)/i.test(siteUrl.trim());
 /**
- * A property that is really in the user's Search Console. An sc-domain: name only ever comes from
- * Search Console, so it counts as soon as it exists. A URL-prefix name (https://x/) is also what
- * start_crawl creates for any site, ours or not, so it counts only once it has been synced: a
- * crawled competitor or research site (reed.co.uk, adzuna.co.uk) was listed as an owned domain.
+ * A property that is really in the user's Search Console: a GSC-form name that a Search Console
+ * sync has written to (last_synced_at). The name alone proves nothing. A URL-prefix name is what
+ * start_crawl creates for any site (a crawled competitor such as a job board was listed as owned),
+ * and an sc-domain: name is what pull_backlinks / link_intersect create when asked about a domain
+ * by that form: two backlink lookups on sites not in the account were listed as owned properties,
+ * in the dropdown and the portfolio, next to the real ones.
  */
 export const isOwnedGscProperty = (siteUrl: string, lastSyncedAt: string | null): boolean =>
-  /^sc-domain:/i.test(siteUrl.trim()) || (isGscProperty(siteUrl) && !!lastSyncedAt);
+  isGscProperty(siteUrl) && !!lastSyncedAt;
 
 /** Enumerate properties that have a local DB (property_meta.site_url is the source of truth).
  * `gsc` is false for a database named by a bare domain (see isGscProperty); `hidden` is the user's

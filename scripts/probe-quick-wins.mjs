@@ -272,8 +272,8 @@ withDb(db => {
   for (let i = 0; i < 500; i++) { finding(db, 'r1', 'site-wide-indexing-alarm', `https://x.test/a${i}`); finding(db, 'r2', 'site-wide-indexing-alarm', `https://x.test/b${i}`); }
 }, db => t('new critical: a check at the 500-per-run cap is not diffed (no false "new")', newCriticalFindings(db).length === 0));
 
-t('owned GSC: sc-domain counts unsynced; a crawled URL-prefix site does not until synced',
-  isOwnedGscProperty('sc-domain:richardbaxter.co', null) && !isOwnedGscProperty('https://www.reed.co.uk/', null) && isOwnedGscProperty('https://x.test/', '2026-11-01') && !isOwnedGscProperty('reed.co.uk', '2026-11-01'));
+t('owned GSC: only once synced, whatever the name form (a backlink lookup or a crawl is not ownership)',
+  !isOwnedGscProperty('sc-domain:other.test', null) && isOwnedGscProperty('sc-domain:x.test', '2026-11-01') && !isOwnedGscProperty('https://www.other.test/', null) && isOwnedGscProperty('https://x.test/', '2026-11-01') && !isOwnedGscProperty('reed.co.uk', '2026-11-01'));
 
 {
   const dir = path.join(tmpdir(), `sac-pf2-${Date.now()}-${Math.random().toString(16).slice(2)}`);

@@ -33,6 +33,8 @@ const XSS = 'sc-domain:x.test</script><script>alert(1)</script>';
 function property(site, findings = 0) {
   const adb = new AuditDatabase(dbPathFor(dataDir, site));
   adb.upsertProperty(site, 'apex');
+  // A Search Console property here is one a sync has written to (isOwnedGscProperty).
+  if (site.startsWith('sc-domain:')) adb.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(site);
   if (findings) {
     adb.db.prepare(`INSERT INTO audit_runs (run_id,scope,started_at,finished_at,finding_count,status) VALUES ('r1','core','2026-10-01 09:00:00','2026-10-01 09:01:00',?, 'completed')`).run(findings);
     const ins = adb.db.prepare(`INSERT INTO findings (run_id,check_id,category,severity,labels,certainty,url_key,evidence,traffic_at_risk,effort,priority,recommendation) VALUES ('r1',?,?,?,'["D"]',1,?,'{}','{}','{}',?,'{"title":"t","text":"f"}')`);
@@ -79,7 +81,7 @@ try {
   console.log('properties');
   {
     const props = listLocalProperties(dataDir);
-    ok(props.find(p => p.siteUrl === OWNED)?.gsc === true, 'a sc-domain: property is a GSC property');
+    ok(props.find(p => p.siteUrl === OWNED)?.gsc === true, 'a synced sc-domain: property is a GSC property');
     ok(props.find(p => p.siteUrl === OTHER)?.gsc === false, 'a bare-domain database is not one of the user\'s properties');
     ok(url === `http://127.0.0.1:${port}`, `the advertised URL is 127.0.0.1 (${url})`);
   }

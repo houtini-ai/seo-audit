@@ -71,6 +71,8 @@ function setup() {
   const sa = db.db.prepare(`INSERT INTO search_analytics (date,query,page,page_key,device,country,clicks,impressions,ctr,position) VALUES (?,?,?,?,'','',?,?,?,?)`);
   const day = (d) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
   for (let d = 4; d <= 60; d++) sa.run(day(d), 'sim rig', 'https://simracingcockpit.gg/a/', 'https://simracingcockpit.gg/a/', d <= 31 ? 10 : 30, 300, 0.03, 4);
+  // Owned = synced from Search Console (isOwnedGscProperty), as GscSync records it.
+  db.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(site);
   db.close();
   return { dir, site };
 }
