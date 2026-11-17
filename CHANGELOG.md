@@ -8,7 +8,9 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
-## [Unreleased]
+## [1.0.7] — 2026-11-17
+
+Page and site traffic now counts every click, including anonymised queries, so zero-traffic checks stop flagging pages that get traffic. Run one Search Console sync per property to backfill. Also: only synced Search Console properties count as yours, and deleting data needs your own yes.
 
 ### Fixed
 - **Page and site traffic now counts every click** (#118). The sync stored only date × query × page rows, and when you ask Search Console for the query dimension it leaves out anonymised queries: on two production sites the stored rows held 35-42% of the real clicks. Every sync now also fetches date × page totals into a new `gsc_page_totals` table. Page and site totals read it: audit priority and traffic at stake, the zero-traffic and trend checks, the dashboard tiles, daily trend, page tables, Summary and portfolio. Anything that needs the query (cannibalisation, striking distance, branded split, recon) still reads the query rows. The first sync after upgrading backfills page totals over the span the query rows already cover (up to Search Console's 16 months). Stored page totals match Search Console's own page figures exactly.
