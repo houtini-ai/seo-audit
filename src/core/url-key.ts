@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 /**
  * url-key — the single source of truth for the join between GSC data and crawl data.
  *
@@ -114,4 +115,27 @@ export function hostFormForProperty(siteUrl: string): UrlKeyOptions['hostForm'] 
   } catch {
     return 'asis';
   }
+}
+
+/**
+ * Validate a property identifier at a tool boundary (#117): `sc-domain:<host>`, an http(s)
+ * URL-prefix property, or a bare hostname (the crawl-only databases, e.g. a competitor crawled
+ * without GSC). Anything else (file://, javascript:, a word with no dot) is refused before it can
+ * create a job record or a database file. Returns the input unchanged.
+ */
+export function assertPropertyId(siteUrl: string): string {
+  const s = (siteUrl ?? '').trim();
+  const HOST = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/i;
+  const why = `"${siteUrl}" is not a website property. Pass it as list_properties shows it: sc-domain:example.com, https://example.com/ or example.com.`;
+  if (s.startsWith('sc-domain:')) {
+    if (!HOST.test(s.slice('sc-domain:'.length))) throw new Error(why);
+    return siteUrl;
+  }
+  if (HOST.test(s)) return siteUrl;
+  let u: URL;
+  try { u = new URL(s); } catch { throw new Error(why); }
+  if ((u.protocol !== 'https:' && u.protocol !== 'http:') || !u.hostname || u.username || u.password) throw new Error(why);
+  // Local/IP hosts stay crawlable over http(s) (a dev site, the test fixtures); never as sc-domain.
+  if (!HOST.test(u.hostname) && u.hostname !== 'localhost' && !isIP(u.hostname.replace(/^\[|\]$/g, ''))) throw new Error(why);
+  return siteUrl;
 }

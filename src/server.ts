@@ -61,7 +61,7 @@ import { scoreSitePassages } from './core/passageScore.js';
 import { buildDraftBrief } from './core/draftBrief.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks, collapseChainRules } from './generators/index.js';
 
-import { urlKey, hostFormForProperty } from './core/url-key.js';
+import { urlKey, hostFormForProperty, assertPropertyId } from './core/url-key.js';
 import { GscClient } from './core/GscClient.js';
 import { GscSync, FULL_DIMENSIONS } from './core/GscSync.js';
 import { UrlInspector } from './core/UrlInspector.js';
@@ -1106,6 +1106,20 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       _meta: { ui: { resourceUri: SYNC_PROGRESS_URI } },
     },
     async ({ siteUrl, gsc: doGsc, crawl, inspect, ranks, crux, segments, full, location, startDate, endDate, maxPages, inspectLimit }) => {
+      assertPropertyId(siteUrl);
+      // #117: a refresh with nothing to run is an explicit no-op, not a job that "completes" having
+      // done nothing. A phase counts only when it is on AND has what it needs (credentials/keys).
+      const runnable = {
+        gsc: doGsc !== false && !!sync, crawl: crawl !== false, inspect: inspect !== false && !!inspector,
+        ranks: ranks !== false && !!rankTracker, crux: crux !== false && !!cruxSync,
+      };
+      if (!Object.values(runnable).some(Boolean)) {
+        const off = Object.entries({ gsc: doGsc, crawl, inspect, ranks, crux }).filter(([, v]) => v === false).map(([k]) => k);
+        return {
+          content: [{ type: 'text' as const, text: `Nothing to refresh for ${siteUrl}: every phase is disabled${off.length < 5 ? ' or has no credentials configured (call seo_audit_help)' : ''}. No job was started. Enable at least one of gsc, crawl, inspect, ranks, crux.` }],
+          structuredContent: { status: 'noop', siteUrl, jobId: null, phases: runnable },
+        };
+      }
       // Property is now populated: the shared helper starts the browser dashboard and puts its link
       // on the finished job (polled via check_sync_status), and skips that if the job was cancelled.
       const jobId = startFor(siteUrl, 'refresh', { siteUrl, gsc: doGsc, crawl, inspect, ranks, crux, segments, full, location, startDate, endDate, maxPages, inspectLimit });
@@ -1129,6 +1143,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       },
     },
     async ({ siteUrl, startDate, endDate, dimensions, segments, full, searchType }) => {
+      assertPropertyId(siteUrl);
       const syncer = requireGsc(sync);
       const options: FetchOptions = {
         startDate: startDate ?? isoDaysAgo(90),
@@ -1165,6 +1180,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       inputSchema: { siteUrl: z.string(), limit: z.number().int().min(1).max(500).optional() },
     },
     async ({ siteUrl, limit }) => {
+      assertPropertyId(siteUrl);
       requireGsc(inspector); // fail fast, before queueing
       const jobId = startFor(siteUrl, 'inspect', { siteUrl, limit });
       return jobStarted({ jobId, status: 'running', siteUrl }, `Inspection started for ${siteUrl} (job ${jobId}). Poll check_sync_status.`);
@@ -1193,6 +1209,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       },
     },
     async ({ siteUrl, maxPages, maxDepth, maxConcurrency, delayMs, userAgent, excludePatterns, headResources, checkExternal, externalCacheDays, chromeFallback, siteProbes }) => {
+      assertPropertyId(siteUrl);
       const jobId = startFor(siteUrl, 'crawl', { siteUrl, maxPages, maxDepth, maxConcurrency, delayMs, userAgent, excludePatterns, headResources, checkExternal, externalCacheDays, chromeFallback, siteProbes });
       return jobStarted({ jobId, status: 'running', siteUrl }, `Crawl started for ${siteUrl} (job ${jobId}). Poll check_crawl_status.`);
     },
