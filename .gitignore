@@ -121,6 +121,17 @@ scripts/*
 !scripts/probe-regrouped-deltas.mjs
 !scripts/probe-web-unified.mjs
 !scripts/probe-schema-parsing.mjs
+!scripts/probe-page-totals.mjs
+!scripts/probe-destructive-confirm.mjs
+!scripts/probe-brand.mjs
+!scripts/probe-dfs-datefrom.mjs
+!scripts/probe-gsc-rows.mjs
+!scripts/probe-gsc-storage.mjs
+!scripts/probe-ratelimit.mjs
+!scripts/probe-render-divergence.mjs
+!scripts/probe-signals.mjs
+!scripts/probe-soft404.mjs
+!scripts/probe-summary.mjs
 
 # --- secrets hardening (never commit) ---
 *.pem
