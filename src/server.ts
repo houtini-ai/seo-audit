@@ -151,6 +151,7 @@ JOIN KEYS (memorise these):
 - domain — a bare host (no scheme, no www). Joins the Labs tools (ranked_keywords, domain_visibility, top_pages, competitors_domain, topic_gaps) ↔ backlinks summary.
 
 GRAIN (one line per source):
+- gsc_page_totals: date × page, every click (no query dimension, so anonymised queries are counted). The source for any page or site TOTAL; search_analytics misses the anonymised share (often half or more of clicks). Synced alongside search_analytics.
 - search_analytics: date × query × page, all-country totals rows only. Device/country rows (synced with segments) live in search_analytics_segments, the same columns. Rows are additive; position must be impression-weighted when aggregated. Totals read the gsc_rows view, breakdowns gsc_country_rows / gsc_device_rows (the segment rows); query_data on search_analytics picks the right one from the columns you name.
 - pages / links: the LATEST crawl only, one row per url_key (history lives in page_snapshots, diffed by detect_changes). Carries title/H1/meta, canonical, schema (json_ld), body_chunks, iPR, click_depth, inlink_count.
 - url_inspection: one row per inspected URL — Google's own view (coverage_state, google_canonical vs user_canonical, last_crawl_time, crawled_as, rich_results).
@@ -189,6 +190,7 @@ This server's value is composition: joining Search Console, the crawl, URL Inspe
 | Source (table) | Grain | Key dimensions | Join keys | Freshness | Cost |
 |---|---|---|---|---|---|
 | search_analytics (GSC) | date × query × page (+device/country with segments) | clicks, impressions, ctr, position | page_key (url_key), query, date | sync_gsc / refresh_property — incremental, GSC lags ~2–3 days | free |
+| gsc_page_totals (GSC) | date × page | clicks, impressions, ctr, position: every click, incl. anonymised queries (use for page/site totals and "does this page get traffic") | page_key (url_key), date | synced with search_analytics; first sync backfills up to 16 months | free |
 | pages + links (crawl) | one row per url_key, LATEST crawl | status, title, H1, meta (meta_description_length NULL = tag absent, 0 = empty), canonical_key, robots, json_ld, hreflang, redirects, body_chunks, word_count, ipr, click_depth, inlink_count, conditional_304, images_without_alt / images_empty_alt / images_empty_alt_content; links.href_form (absolute / protocol-relative / root-relative / relative, as written) | url_key | start_crawl / refresh_property (on demand) | free |
 | page_snapshots (drift) | url_key × crawl | field-level SEO snapshot per crawl | url_key, captured_at | every crawl, automatically | free |
 | url_inspection | one row per inspected URL (top pages by clicks, quota-limited) | coverage_state, page_fetch_state, google_canonical, user_canonical, last_crawl_time, crawled_as, rich_results | url_key | inspect_urls | free (GSC quota) |
@@ -605,7 +607,10 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       const result = runAudit(dataDir(), siteUrl, { scope, categories, includeJudgement, topLimit });
       await autoServeDashboard(); // spin up the browser dashboard so browserLink() hands over a live URL
       return {
-        content: [{ type: 'text', text: buildAuditMarkdown(result, siteUrl) + browserLink(siteUrl) }],
+        content: [{ type: 'text', text: buildAuditMarkdown(result, siteUrl)
+          // #118: say so when page traffic is the query rows only (missing anonymised clicks).
+          + (result.pageTotalsSource === 'query-attributed' ? '\n\nNote: page traffic here counts only clicks GSC attributes to a query (anonymised queries are missing, often half or more of all clicks), so traffic at stake is understated and zero-traffic checks can flag pages that do get traffic. Sync Search Console once (it backfills page totals), then run the audit again.' : '')
+          + browserLink(siteUrl) }],
         structuredContent: { ...result, ...dashboardFields(siteUrl) } as unknown as Record<string, unknown>,
       };
     },

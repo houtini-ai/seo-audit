@@ -10,7 +10,7 @@ import { matchPredicate, ftsIndexFor, ensureFtsSchema, ensureFtsBackfilled, type
 import { ensureGscRows, hasGscRows, GSC_ROWS, GSC_COUNTRY_ROWS, GSC_DEVICE_ROWS } from './gscRows.js';
 
 export const QUERYABLE_TABLES = [
-  'pages', 'links', 'search_analytics', 'url_inspection', 'sitemap_urls',
+  'pages', 'links', 'search_analytics', 'gsc_page_totals', 'url_inspection', 'sitemap_urls',
   'findings', 'image_assets', 'page_backlinks', 'redirect_sources', 'probes', 'page_resources', 'resource_assets', 'external_link_status',
   'referring_domains', 'backlink_anchors', 'backlink_history',
 ] as const;
@@ -52,6 +52,7 @@ const DEFAULT_ROW_COLUMNS: Record<QueryTable, string[]> = {
   pages: ['url', 'status_code', 'indexable', 'title', 'h1', 'word_count', 'ipr', 'click_depth', 'inlink_count', 'canonical_key'],
   links: ['source_key', 'target_key', 'anchor_text', 'is_internal', 'placement', 'rel', 'href_form'],
   search_analytics: ['date', 'query', 'page_key', 'clicks', 'impressions', 'ctr', 'position'],
+  gsc_page_totals: ['date', 'page_key', 'clicks', 'impressions', 'ctr', 'position'],
   url_inspection: ['url_key', 'verdict', 'coverage_state', 'google_canonical', 'user_canonical', 'last_crawl_time'],
   sitemap_urls: ['url', 'lastmod'],
   findings: ['id', 'run_id', 'check_id', 'category', 'severity', 'url_key', 'priority'],

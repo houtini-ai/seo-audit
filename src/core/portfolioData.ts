@@ -1,3 +1,4 @@
+import { pageRowsFor } from './gscPageTotals.js';
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { PortfolioStore, LOCATION_ISO, LOCATION_LABEL, type PortfolioDomain } from './PortfolioStore.js';
@@ -514,8 +515,9 @@ export function getDomainOverview(dataDir: string, domainIn: string, locationCod
         const end = gscWindowEnd(ownedDb.db);
         if (end) {
           const start = new Date(Date.parse(end) - 27 * 86400000).toISOString().slice(0, 10);
-          const t = ownedDb.db.prepare(`SELECT COALESCE(SUM(clicks),0) c, COALESCE(SUM(impressions),0) i FROM gsc_rows WHERE date >= ? AND date <= ?`).get(start, end) as { c: number; i: number };
-          const p = ownedDb.db.prepare(`SELECT COUNT(*) n FROM (SELECT page_key FROM gsc_rows WHERE date >= ? AND date <= ? GROUP BY page_key HAVING SUM(clicks) > 0)`).get(start, end) as { n: number };
+          const src = pageRowsFor(ownedDb.db, end, 28).table; // site totals (#118)
+          const t = ownedDb.db.prepare(`SELECT COALESCE(SUM(clicks),0) c, COALESCE(SUM(impressions),0) i FROM ${src} WHERE date >= ? AND date <= ?`).get(start, end) as { c: number; i: number };
+          const p = ownedDb.db.prepare(`SELECT COUNT(*) n FROM (SELECT page_key FROM ${src} WHERE date >= ? AND date <= ? GROUP BY page_key HAVING SUM(clicks) > 0)`).get(start, end) as { n: number };
           gsc = { clicks28: t.c, impressions28: t.i, pagesWithClicks: p.n, window: { start, end } };
         }
       } catch { /* no GSC */ }
@@ -553,7 +555,7 @@ function crawlJoin(owned: { db: Database.Database; siteUrl: string }): (url: str
     if (e) {
       end = e;
       start = new Date(Date.parse(end) - 27 * 86400000).toISOString().slice(0, 10);
-      clicksQ = owned.db.prepare(`SELECT COALESCE(SUM(clicks),0) c FROM gsc_rows WHERE page_key = ? AND date >= ? AND date <= ?`);
+      clicksQ = owned.db.prepare(`SELECT COALESCE(SUM(clicks),0) c FROM ${pageRowsFor(owned.db, end, 28).table} WHERE page_key = ? AND date >= ? AND date <= ?`);
     }
   } catch { /* no GSC */ }
   return (url: string) => {

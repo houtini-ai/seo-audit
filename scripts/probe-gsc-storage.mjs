@@ -255,7 +255,7 @@ async function migrate(file, opts = {}) {
     const ds = stub(rowsFor('full'));
     const r = await new GscSync(ds, dataDir, lowDisk).run(dsite, { startDate: '2026-07-01', endDate: '2026-07-12' }, (p) => progress.push(p), sig);
     ok(/^storage migration deferred: needs [\d.]+ GB free .*sync ran in the old layout, totals stay correct via the views/.test(r.storageMigrationDeferred ?? ''), `the result says the migration was deferred (${(r.storageMigrationDeferred ?? '').slice(0, 90)}...)`);
-    ok(r.migration?.refused && r.rowsFetched > 0 && ds.calls.length === 1, `...and the sync still ran (${r.rowsFetched} rows)`);
+    ok(r.migration?.refused && r.rowsFetched > 0 && ds.calls.filter(c => c.dimensions?.join(',') !== 'date,page').length === 1, `...and the sync still ran (${r.rowsFetched} rows)`);
     ok(progress.some(p => p.storageMigration?.phase === 'deferred'), 'the deferral is in the job progress');
     ok(stateOf(dfile).state === 'pending' && backups(dfile).length === 0 && r.table === 'search_analytics', 'nothing migrated, no backup: the old layout, all rows in search_analytics');
     const after = readerView(dfile);

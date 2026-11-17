@@ -1,3 +1,4 @@
+import { pageRowsFor } from '../core/gscPageTotals.js';
 import { randomUUID } from 'node:crypto';
 import { AuditDatabase, type Severity } from '../core/AuditDatabase.js';
 import { dbPathFor } from '../core/paths.js';
@@ -73,6 +74,12 @@ export interface AuditResult {
   checks: Record<string, { title: string; fix: string }>;
   elapsedMs?: number; // wall-clock for the audit run (performance instrumentation)
   indexability?: Record<string, number>; // reason → count (indexable, http-404, noindex-meta, robots-disallowed, …)
+  /**
+   * Where page traffic (traffic_at_risk, priority) came from (#118): 'page-totals' = GSC date × page,
+   * every click counted; 'query-attributed' = the query rows, missing anonymised traffic (a database
+   * not synced since 1.0.7: run sync_gsc once to backfill).
+   */
+  pageTotalsSource?: 'page-totals' | 'query-attributed';
 }
 
 export interface AuditOptions {
@@ -170,18 +177,20 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
     // Precompute per-page traffic for the window in ONE covering scan, instead of a query per
     // finding (which was hundreds of windowed aggregations on a 1.8M-row GSC table — seconds).
     const trafficMap = new Map<string, Traffic>();
+    // Page totals (#118): every click counted, not only the query-attributed ones.
+    const pageSrc = pageRowsFor(db.db, maxDate, 28);
     if (maxDate) {
       for (const row of db.db.prepare(
         `SELECT page_key, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions,
                 COALESCE(SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0), 0) position
-         FROM gsc_rows WHERE page_key IS NOT NULL AND date <= '${maxDate}' AND date > date(?, '-28 days') GROUP BY page_key`,
+         FROM ${pageSrc.table} WHERE page_key IS NOT NULL AND date <= '${maxDate}' AND date > date(?, '-28 days') GROUP BY page_key`,
       ).all(maxDate) as (Traffic & { page_key: string })[]) {
         trafficMap.set(row.page_key, { clicks: row.clicks, impressions: row.impressions, position: row.position });
       }
     }
     // Total site clicks in the window — the baseline for site-wide (null-url) findings (6e).
     const siteClicks = maxDate
-      ? (db.db.prepare(`SELECT COALESCE(SUM(clicks),0) c FROM gsc_rows WHERE date <= '${maxDate}' AND date > date(?, '-28 days')`).get(maxDate) as { c: number }).c
+      ? (db.db.prepare(`SELECT COALESCE(SUM(clicks),0) c FROM ${pageSrc.table} WHERE date <= '${maxDate}' AND date > date(?, '-28 days')`).get(maxDate) as { c: number }).c
       : 0;
     const insert = db.db.prepare(
       `INSERT INTO findings (run_id, check_id, category, severity, labels, certainty, url_key, evidence, traffic_at_risk, effort, priority, recommendation)
@@ -296,7 +305,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
          health_score=?, health_error_pages=?, health_total_pages=?, health_basis=?, check_ids=?, server_version=?
        WHERE run_id=?`,
     ).run(total, crawlId, health?.score ?? null, health?.errorPages ?? null, health?.totalPages ?? null,
-      health ? 'audit' : 'none:no-pages', checkIdsWithGrain(db.db, runId, checks.map(c => c.id)), serverVersion(), runId);
+      health ? 'audit' : 'none:no-pages', checkIdsWithGrain(db.db, runId, checks.map(c => c.id), { pageTotals: pageSrc.source === 'page-totals' }), serverVersion(), runId);
     startedRunId = null;
 
     // Stored counts, annotated with the true total wherever the per-check cap bit — a bare
@@ -340,6 +349,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       ...(truncatedChecks.length ? { truncatedChecks } : {}),
       ...(notCollected.length ? { notCollected } : {}),
       elapsedMs: Date.now() - t0, indexability,
+      ...(maxDate ? { pageTotalsSource: pageSrc.source } : {}),
     };
   } catch (err) {
     // A run that threw must not read as 'running' forever on the dashboard: mark it failed.

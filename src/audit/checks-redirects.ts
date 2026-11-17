@@ -13,10 +13,11 @@
  * read, deterministic, thresholds stated here, and missing data means no finding. A rate-limited URL
  * (fetch_state='rate_limited', or a legacy stored 429/503) is unknown, never an error.
  */
+import { lifetimePageRows } from '../core/gscPageTotals.js';
 import type { CheckContext, CheckDef, RawFinding } from './checks.js';
 import type Database from 'better-sqlite3';
 import { isInternalHost } from '../core/extract.js';
-import { GSC_ROWS, hasGscRows } from '../core/gscRows.js';
+import { hasGscRows } from '../core/gscRows.js';
 
 const rows = (c: CheckContext, sql: string, ...args: unknown[]): any[] => c.db.prepare(sql).all(...args);
 const one = (c: CheckContext, sql: string, ...args: unknown[]): any => c.db.prepare(sql).get(...args);
@@ -144,9 +145,11 @@ export function equityLookup(c: CheckContext): (key: string) => Equity {
     let gsc: Equity['gsc'] = null;
     if (c.gscMaxDate) {
       if (!gscStmt && hasGscRows(c.db)) {
-        // Integration (#67 x #64): the gsc_rows view already counts each day once (#61).
+        // Integration (#67 x #64): the gsc_rows view already counts each day once (#61). Page totals
+        // (#118) when they cover the whole stored history, so long-tail clicks count too.
+        const src = lifetimePageRows(c.db);
         gscStmt = c.db.prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, MIN(date) "from"
-          FROM ${GSC_ROWS} WHERE page_key=? AND date <= ? AND ? IS NOT NULL`);
+          FROM ${src} WHERE page_key=? AND date <= ? AND ? IS NOT NULL`);
       }
       if (!gscStmt) {
         mixed = JSON.stringify(rows(c, `SELECT date FROM search_analytics GROUP BY date HAVING SUM(${lite}) > 0 AND SUM(NOT ${lite}) > 0`).map(r => r.date));

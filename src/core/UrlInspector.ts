@@ -1,3 +1,4 @@
+import { PAGE_TOTALS, pageTotalsRange } from './gscPageTotals.js';
 import { AuditDatabase } from './AuditDatabase.js';
 import { GscClient } from './GscClient.js';
 import { dbPathFor } from './paths.js';
@@ -22,7 +23,8 @@ export class UrlInspector {
   private targetUrls(db: AuditDatabase, limit: number): string[] {
     const byClicks = db.db
       .prepare(
-        `SELECT page AS url FROM gsc_rows WHERE page IS NOT NULL
+        // Page totals when synced (#118): they include pages whose clicks are all anonymised queries.
+        `SELECT page AS url FROM ${pageTotalsRange(db.db).max ? PAGE_TOTALS : 'gsc_rows'} WHERE page IS NOT NULL
          GROUP BY page ORDER BY SUM(clicks) DESC LIMIT ?`,
       )
       .all(limit) as { url: string }[];

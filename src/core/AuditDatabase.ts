@@ -12,6 +12,7 @@
 import { ensureFtsSchema } from './fts.js';
 import { ensureExternalSchema } from './externalLinks.js';
 import { ensureGscRows } from './gscRows.js';
+import { ensurePageTotalsSchema } from './gscPageTotals.js';
 import { ensureCruxSchema } from './cruxSchema.js';
 import { ensureRobotsTxtSchema } from './robotsStore.js';
 import Database from 'better-sqlite3';
@@ -663,6 +664,7 @@ export class AuditDatabase {
     // gsc_rows / gsc_country_rows / gsc_device_rows: every GSC total reads these, so a day stored in
     // two row shapes is counted once (#61). Recomputes the per-day choice only when the data moved.
     ensureGscRows(this.db);
+    ensurePageTotalsSchema(this.db); // date × page totals: every page/site total reads these (#118)
     ensureCruxSchema(this.db);      // CrUX field data (#55): crux_metrics / crux_fractions / crux_targets
     ensureRobotsTxtSchema(this.db); // robots.txt bytes per origin, written by the crawl (#55)
   }

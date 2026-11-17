@@ -9,6 +9,7 @@
 import type Database from 'better-sqlite3';
 import { diffLatest, type DriftResult } from '../audit/drift.js';
 import { SMALL_BASE_MIN } from './displayRules.js';
+import { pageRowsFor } from './gscPageTotals.js';
 
 const tableExists = (db: Database.Database, name: string): boolean =>
   !!db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(name);
@@ -83,10 +84,12 @@ export function monthlyClicks(db: Database.Database, maxDate: string): MonthlyCl
   for (let m = minDate.slice(0, 7); m <= lastMonth; m = addMonths(m, 1)) allMonths.push(m);
   const shown = allMonths.slice(-MAX_MONTHS);
   const from = `${shown[0]}-01` < minDate ? minDate : `${shown[0]}-01`;
+  // Site totals (#118): page totals when they cover every month shown, else the query rows.
+  const src = pageRowsFor(db, maxDate, Math.round((ms(maxDate) - ms(from)) / DAY) + 1).table;
   const rows = db.prepare(
     `SELECT substr(date,1,7) m, COUNT(DISTINCT date) days,
             SUM(clicks) clicks, SUM(impressions) impressions
-     FROM gsc_rows WHERE date >= @from AND date <= @to GROUP BY m`,
+     FROM ${src} WHERE date >= @from AND date <= @to GROUP BY m`,
   ).all({ from, to: maxDate }) as { m: string; days: number; clicks: number; impressions: number }[];
   const got = new Map(rows.map(r => [r.m, r]));
   const months: MonthPoint[] = shown.map(m => {
@@ -122,7 +125,8 @@ export function yearOnYear(db: Database.Database, maxDate: string): YearOnYear |
   const pEnd = iso(ms(end) - 364 * DAY);
   const pStart = iso(ms(start) - 364 * DAY);
   if (span.lo > pStart) return { available: false, reason: 'needs-13-months', gscMinDate: span.lo, neededFrom: pStart };
-  const sum = (a: string, b: string): { clicks: number; days: number } => clicksBetween(db, a, b);
+  const src = pageRowsFor(db, end, Math.round((ms(end) - ms(pStart)) / DAY) + 1).table; // one source for both years (#118)
+  const sum = (a: string, b: string): { clicks: number; days: number } => clicksBetween(db, src, a, b);
   const cur = sum(start, end);
   const prior = sum(pStart, pEnd);
   // A gap in the prior-year window (7 of 28 days held made flat traffic "+300%") is not a comparison.
@@ -130,10 +134,10 @@ export function yearOnYear(db: Database.Database, maxDate: string): YearOnYear |
   return { available: true, window: { start, end }, priorWindow: { start: pStart, end: pEnd }, clicks: cur.clicks, priorYearClicks: prior.clicks, priorYearDays: prior.days, currentDays: cur.days };
 }
 
-function clicksBetween(db: Database.Database, a: string, b: string): { clicks: number; days: number } {
+function clicksBetween(db: Database.Database, table: string, a: string, b: string): { clicks: number; days: number } {
   return db.prepare(
     `SELECT COALESCE(SUM(clicks),0) clicks, COUNT(DISTINCT date) days
-     FROM gsc_rows WHERE date >= @a AND date <= @b`,
+     FROM ${table} WHERE date >= @a AND date <= @b`,
   ).get({ a, b }) as { clicks: number; days: number };
 }
 
@@ -142,8 +146,9 @@ function clicksBetween(db: Database.Database, a: string, b: string): { clicks: n
 export interface ClickWindows { current: number; prior: number | null; currentDays: number; priorDays: number; window: { start: string; end: string }; priorWindow: { start: string; end: string } }
 export function clickWindows(db: Database.Database, maxDate: string): ClickWindows {
   const start = iso(ms(maxDate) - 27 * DAY), pEnd = iso(ms(maxDate) - 28 * DAY), pStart = iso(ms(maxDate) - 55 * DAY);
-  const cur = clicksBetween(db, start, maxDate), prior = clicksBetween(db, pStart, pEnd);
-  const minDate = (db.prepare(`SELECT MIN(date) d FROM gsc_rows`).get() as { d: string | null }).d;
+  const src = pageRowsFor(db, maxDate, 56).table; // site totals (#118), one source for both windows
+  const cur = clicksBetween(db, src, start, maxDate), prior = clicksBetween(db, src, pStart, pEnd);
+  const minDate = (db.prepare(`SELECT MIN(date) d FROM ${src}`).get() as { d: string | null }).d;
   return {
     current: cur.clicks, prior: priorHeld(minDate, pStart, cur.days, prior.days) ? prior.clicks : null,
     currentDays: cur.days, priorDays: prior.days,
@@ -354,8 +359,8 @@ export const MOVER_MIN_PRIOR = SMALL_BASE_MIN;
 /** Largest absolute click changes, last 28 days vs the prior 28, across ALL pages (not a top-N subset). */
 export function pageMovers(db: Database.Database, maxDate: string, limit = 3): PageMovers {
   const rows = db.prepare(
-    `WITH cur AS (SELECT page_key, SUM(clicks) c FROM gsc_rows WHERE page_key IS NOT NULL AND date <= @max AND date > date(@max, '-28 days') GROUP BY page_key),
-          prev AS (SELECT page_key, SUM(clicks) c FROM gsc_rows WHERE page_key IS NOT NULL AND date > date(@max, '-56 days') AND date <= date(@max, '-28 days') GROUP BY page_key)
+    `WITH cur AS (SELECT page_key, SUM(clicks) c FROM ${pageRowsFor(db, maxDate, 56).table} WHERE page_key IS NOT NULL AND date <= @max AND date > date(@max, '-28 days') GROUP BY page_key),
+          prev AS (SELECT page_key, SUM(clicks) c FROM ${pageRowsFor(db, maxDate, 56).table} WHERE page_key IS NOT NULL AND date > date(@max, '-56 days') AND date <= date(@max, '-28 days') GROUP BY page_key)
      SELECT prev.page_key urlKey, COALESCE(cur.c,0) clicks, prev.c prevClicks, COALESCE(cur.c,0) - prev.c change
      FROM prev LEFT JOIN cur ON cur.page_key = prev.page_key WHERE prev.c >= @min`,
   ).all({ max: maxDate, min: MOVER_MIN_PRIOR }) as PageMove[];

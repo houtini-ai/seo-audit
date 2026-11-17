@@ -545,6 +545,10 @@ function coverageFooter(d: any): string {
         !last ? 'Device and country need a segmented sync - ask Claude to add device and country breakdowns.'
           : inWindow ? `Segment rows to ${last}.` : `No device or country rows in the last 28 days: the last segment sync covered up to ${last}. Ask Claude to refresh device and country breakdowns.`);
     })()]),
+    // Page and site totals (#118): GSC page totals count every click; the query rows miss anonymised ones.
+    ...(d.pageTotalsSource === undefined || !cv.gsc ? [] : [d.pageTotalsSource === 'page-totals'
+      ? chip(true, 'Page totals', 'every click', 'Page and site clicks come from Search Console page totals, so clicks from anonymised queries are counted.')
+      : chip(false, 'Page totals', 'query clicks only', 'Page and site clicks here count only clicks Search Console ties to a query, often half or fewer of the real total. Click Sync GSC in Actions to fetch page totals.')]),
     chip(cv.crawlPages > 0, 'Crawl', cv.crawlPages ? `<span class="n">${fmt(cv.crawlPages)}</span> pages` : 'none'),
     chip(cv.inspected > 0, 'URL inspection', !cv.inspected ? 'none' : cv.inspectedIndexable == null ? `<span class="n">${fmt(cv.inspected)}</span> URLs (a sample)`
       : `<span class="n">${fmt(cv.inspectedIndexable)}</span> of <span class="n">${fmt(cv.indexablePages)}</span> indexable pages`,

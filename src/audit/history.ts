@@ -74,10 +74,24 @@ export function checkIdsJson(ids: string[]): string {
 // recorded, the grain is read from its findings (the roll-up's findings carry `evidence.scope`;
 // a page crawled before 0.16.1 still gets a per-page finding, marked as such). A pair of runs
 // whose grain differs for a check leaves that check out of the pair's counts, with a note.
-export const REGROUPED_CHECKS: Record<string, { grain: number; since: string; area: string }> = {
+//
+// Traffic basis (1.0.7, #118). The checks below decide which pages to flag from GSC page traffic.
+// Until 1.0.7 that was the query rows, which miss anonymised clicks (58-65% on two production sites), so
+// pages with real traffic read as "no traffic"; from 1.0.7 it is GSC page totals. Same mechanism:
+// grain 1 = query-attributed, grain 2 = page totals, recorded as `id@2` when the run read page
+// totals. A run without a recorded grain is grain 1 (findings carry no marker), so the first audit
+// after the upgrade doesn't count findings as "resolved" (over a hundred on one production site)
+// that nothing on the site fixed.
+export const REGROUPED_CHECKS: Record<string, { grain: number; since: string; area: string; basis?: true }> = {
   'a11y-link-name': { grain: 2, since: '0.16.1', area: 'accessibility' },
   'a11y-button-name': { grain: 2, since: '0.16.1', area: 'accessibility' },
   'a11y-duplicate-id': { grain: 2, since: '0.16.1', area: 'accessibility' },
+  ...Object.fromEntries([
+    'canonical-ignored', 'ctr-below-expected', 'faceted-spider-trap', 'ghost-pages', 'high-ipr-no-traffic',
+    'high-yield-cwv-fail', 'impressions-rising-clicks-flat', 'index-bloat', 'indexed-junk-url', 'noindex-with-traffic',
+    'orphan-with-impressions', 'rising-pages', 'robots-blocked-with-traffic', 'stale-content', 'traffic-decay',
+    'traffic-to-dead-url', 'underlinked-editorial', 'underlinked-high-demand', 'site-wide-indexing-alarm', 'ai-search-bot-blocked',
+  ].map(id => [id, { grain: 2, since: '1.0.7', area: 'search-traffic', basis: true as const }])),
 };
 const LEGACY_PAGE_NOTE = 'crawled before 0.16.1%';
 const GRAIN_RE = /^(.+)@(\d+)$/;
@@ -103,9 +117,10 @@ export function findingsGrain(db: Database.Database, runId: string, checkId: str
 }
 
 /** check_ids for a finished run: the check ids, with `@N` on a regrouped check stored at grain N > 1. */
-export function checkIdsWithGrain(db: Database.Database, runId: string, ids: string[]): string {
+export function checkIdsWithGrain(db: Database.Database, runId: string, ids: string[], opts: { pageTotals?: boolean } = {}): string {
   return checkIdsJson(ids.map(id => {
     if (!REGROUPED_CHECKS[id]) return id;
+    if (REGROUPED_CHECKS[id].basis) return opts.pageTotals ? `${id}@${REGROUPED_CHECKS[id].grain}` : id;
     const g = findingsGrain(db, runId, id);
     return g && g > 1 ? `${id}@${g}` : id;
   }));
@@ -117,6 +132,7 @@ function grainIn(db: Database.Database, runId: string, checkIds: string | null, 
   try { ids = checkIds ? JSON.parse(checkIds) as string[] : []; } catch { ids = []; }
   const recorded = ids.map(id => GRAIN_RE.exec(id)).find(m => m && m[1] === checkId);
   if (recorded) return Number(recorded[2]);
+  if (REGROUPED_CHECKS[checkId]?.basis) return 1; // traffic basis: unrecorded = the query rows
   return findingsGrain(db, runId, checkId);
 }
 
@@ -132,6 +148,9 @@ export function regroupedBetween(db: Database.Database, prev: { run_id: string; 
 
 /** The note shown wherever a pair's counts leave regrouped checks out. */
 export function regroupedNote(checkIds: string[]): string {
+  if (checkIds.length && checkIds.every(id => REGROUPED_CHECKS[id]?.basis)) {
+    return 'search-traffic findings re-measured with GSC page totals in 1.0.7; not counted';
+  }
   const since = [...new Set(checkIds.map(id => REGROUPED_CHECKS[id]?.since).filter(Boolean))].join(', ');
   const areas = [...new Set(checkIds.map(id => REGROUPED_CHECKS[id]?.area).filter(Boolean))];
   return `${areas.length === 1 ? areas[0] : 'some'} findings regrouped in ${since || 'a newer version'}; not counted`;

@@ -4,6 +4,7 @@ import { SEGMENTS, gscStorageState, refreshLegacyDayShapes, segmentSql, segments
 import { gb, migrateGscStorage, type GscMigrationResult } from './gscMigrate.js';
 import { GscClient } from './GscClient.js';
 import { dbPathFor } from './paths.js';
+import { PAGE_TOTALS, pageTotalsRange } from './gscPageTotals.js';
 import { urlKey, hostFormForProperty } from './url-key.js';
 import type { FetchOptions, GscApiRow } from './types.js';
 
@@ -50,6 +51,43 @@ export interface SyncResult {
   dimensions?: string[];
   /** Set when the sync was cancelled: rows fetched before the cancel, discarded (nothing was written). */
   discarded?: number;
+  /**
+   * The date × page totals fetched alongside (#118): the source of every page/site total. A first
+   * sync after the upgrade backfills the span the query rows already cover (GSC keeps 16 months).
+   */
+  pageTotals?: { rowsFetched: number; startDate: string; endDate: string; backfill?: boolean };
+}
+
+/** The dimensions of the page-totals request: no query, so anonymised traffic is counted (#118). */
+export const PAGE_TOTAL_DIMENSIONS = ['date', 'page'];
+
+/** The earliest date GSC still serves: 16 months back. */
+export const gscRetentionStart = (now = new Date()): string => {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 16, now.getUTCDate()));
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * The page-totals window for a sync (#118). Empty table = backfill from the earlier of the
+ * requested start and the first stored query row (so the totals cover what the audit already
+ * reads), never before GSC's retention; otherwise the same incremental rule as the main rows.
+ */
+export function planPageTotals(
+  range: { min: string | null; max: string | null },
+  saMin: string | null,
+  start: string,
+  end: string,
+  full: boolean,
+  now = new Date(),
+): { startDate: string; endDate: string; replaceFrom: string | null; noop: boolean; backfill: boolean } {
+  if (full) return { startDate: start, endDate: end, replaceFrom: null, noop: false, backfill: false };
+  if (!range.max) {
+    const earliest = saMin && saMin < start ? saMin : start;
+    const floor = gscRetentionStart(now);
+    return { startDate: earliest < floor ? floor : earliest, endDate: end, replaceFrom: null, noop: false, backfill: true };
+  }
+  const plan = planIncremental(range.max, start, end);
+  return { startDate: plan.startDate, endDate: end, replaceFrom: plan.replaceFrom, noop: plan.noop, backfill: false };
 }
 
 /** True when a dimension set produces segment rows (a device or a country). */
@@ -209,6 +247,12 @@ export class GscSync {
       db.db.exec('DELETE FROM sa_stage');
       const stageIns = db.db.prepare(`INSERT INTO sa_stage (${STAGE_COLS}) VALUES (@date, @query, @page, @page_key, @device, @country, @search_type, @clicks, @impressions, @ctr, @position)`);
       const stageRows = db.db.transaction((records: Record<string, unknown>[]) => { for (const r of records) stageIns.run(r); });
+      // Page totals (#118) stage the same way and land in the same apply.
+      const PT_COLS = 'date, page, page_key, search_type, clicks, impressions, ctr, position';
+      db.db.exec(`CREATE TEMP TABLE IF NOT EXISTS pt_stage (${PT_COLS})`);
+      db.db.exec('DELETE FROM pt_stage');
+      const ptIns = db.db.prepare(`INSERT INTO pt_stage (${PT_COLS}) VALUES (@date, @page, @page_key, @search_type, @clicks, @impressions, @ctr, @position)`);
+      const stagePt = db.db.transaction((records: Record<string, unknown>[]) => { for (const r of records) ptIns.run(r); });
 
       let total = 0;
       // Search-type guard: the unique indexes (date,query,page,device,country) do NOT include
@@ -226,7 +270,7 @@ export class GscSync {
        * segment shapes) or 'upsert' (merge, e.g. a first sync or a totals fullResync).
        */
       const applyStaged = db.db.transaction((mode: 'wipe' | 'lag' | 'window' | 'upsert', from: string, to: string) => {
-        if (mode === 'wipe') db.db.exec(`DELETE FROM search_analytics; DELETE FROM ${SEGMENTS}; DELETE FROM gsc_day_shape;`);
+        if (mode === 'wipe') db.db.exec(`DELETE FROM search_analytics; DELETE FROM ${SEGMENTS}; DELETE FROM gsc_day_shape; DELETE FROM ${PAGE_TOTALS};`);
         else if (mode === 'lag') {
           if (!legacy) db.db.prepare(`DELETE FROM ${table} WHERE date >= ? AND date <= ?`).run(from, to);
           else {
@@ -244,6 +288,15 @@ export class GscSync {
         db.db.exec(`INSERT OR IGNORE INTO sa_queries(query) SELECT DISTINCT query FROM sa_stage WHERE query IS NOT NULL`);
         db.db.exec('DELETE FROM sa_stage');
       });
+      /** Page totals land like the main rows: 'wipe' (another search type), 'lag' (re-pulled days replaced), else upsert. */
+      const applyPt = db.db.transaction((mode: 'wipe' | 'lag' | 'upsert', from: string, to: string) => {
+        if (mode === 'wipe') db.db.exec(`DELETE FROM ${PAGE_TOTALS}`);
+        else if (mode === 'lag') db.db.prepare(`DELETE FROM ${PAGE_TOTALS} WHERE date >= ? AND date <= ?`).run(from, to);
+        db.db.exec(`INSERT INTO ${PAGE_TOTALS} (${PT_COLS}) SELECT ${PT_COLS} FROM pt_stage WHERE true
+          ON CONFLICT(date, page) DO UPDATE SET page_key = excluded.page_key, search_type = excluded.search_type,
+            clicks = excluded.clicks, impressions = excluded.impressions, ctr = excluded.ctr, position = excluded.position`);
+        db.db.exec('DELETE FROM pt_stage');
+      });
 
       // ── Incremental resume ─────────────────────────────────────────────────────────────────
       // The first sync pulls the requested window; every sync after that only fetches from the
@@ -256,22 +309,27 @@ export class GscSync {
       const result = (rowsFetched: number, extra: Partial<SyncResult> = {}): SyncResult =>
         ({ siteUrl, rowsFetched, startDate: options2.startDate, endDate: options2.endDate, table, dimensions: dims, ...extra, ...(migration ? { migration } : {}), ...(deferred ? { storageMigrationDeferred: deferred } : {}) });
       let replaceFrom: string | null = null;
+      let mainNoop = false;
+      // The page-totals window (#118), planned from its own table (a first sync backfills it).
+      const saMin = (db.db.prepare(`SELECT MIN(date) d FROM search_analytics`).get() as { d: string | null }).d;
+      const pt = planPageTotals(pageTotalsRange(db.db), saMin, options.startDate, options.endDate, !!options.fullResync || mustWipe);
       if (!options.fullResync && !mustWipe) {
         const plan = planIncremental(segments ? stored.segments : stored.totals, options2.startDate, options2.endDate);
         // Already synced past the requested window (e.g. a historical/comparison pull whose
-        // endDate predates the stored data): no-op instead of calling GSC with start > end.
-        if (plan.noop) {
-          db.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(siteUrl);
-          return result(0);
-        }
-        if (plan.replaceFrom) { options2 = { ...options2, startDate: plan.startDate }; replaceFrom = plan.replaceFrom; }
+        // endDate predates the stored data): no fetch instead of calling GSC with start > end.
+        if (plan.noop) mainNoop = true;
+        else if (plan.replaceFrom) { options2 = { ...options2, startDate: plan.startDate }; replaceFrom = plan.replaceFrom; }
+      }
+      if (mainNoop && pt.noop) {
+        db.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(siteUrl);
+        return result(0);
       }
       // A full-window segment sync over stored segment rows replaces that window (in the apply
       // transaction, like the wipe), so a day never holds two segment shapes.
       const replaceWindow = segments && !mustWipe && !replaceFrom
         && (!!db.db.prepare(`SELECT 1 FROM ${SEGMENTS} WHERE date >= ? AND date <= ? LIMIT 1`).get(options2.startDate, options2.endDate)
           || (legacy && !!db.db.prepare(`SELECT 1 FROM search_analytics WHERE date >= ? AND date <= ? AND ${SEG} LIMIT 1`).get(options2.startDate, options2.endDate)));
-      await this.gsc.fetchSearchAnalytics(siteUrl, options2, signal, ({ rows }) => {
+      if (!mainNoop) await this.gsc.fetchSearchAnalytics(siteUrl, options2, signal, ({ rows }) => {
         const records = rows.map((row: GscApiRow) => {
           const keys = row.keys ?? [];
           const rec: Record<string, string | null> = {};
@@ -296,21 +354,41 @@ export class GscSync {
         update({ siteUrl, rowsFetched: total });
       });
 
+      // Page totals: date × page, no query, so anonymised traffic is counted (#118).
+      let ptTotal = 0;
+      if (!pt.noop && !signal.aborted) {
+        const ptOptions: FetchOptions = { ...options, startDate: pt.startDate, endDate: pt.endDate, dimensions: PAGE_TOTAL_DIMENSIONS };
+        await this.gsc.fetchSearchAnalytics(siteUrl, ptOptions, signal, ({ rows }) => {
+          stagePt(rows.map((row: GscApiRow) => {
+            const [date, page] = row.keys ?? [];
+            return { date, page, page_key: page ? urlKey(page, { hostForm }) : null, search_type: wantType,
+              clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position };
+          }));
+          ptTotal += rows.length;
+          update({ siteUrl, rowsFetched: total, pageTotalsFetched: ptTotal });
+        });
+      }
+      const ptResult = pt.noop ? {} : { pageTotals: { rowsFetched: ptTotal, startDate: pt.startDate, endDate: pt.endDate, ...(pt.backfill ? { backfill: true } : {}) } };
+
       // Cancelled part-way (the client stops paging on abort, it doesn't throw): nothing is written,
       // last_synced_at is not touched, and the staged rows go with the connection.
-      if (signal.aborted) return result(0, { discarded: total });
-      // An empty response never wipes or replaces stored days.
-      if (total > 0) {
-        const mode = mustWipe ? 'wipe' : replaceFrom ? 'lag' : replaceWindow ? 'window' : 'upsert';
-        applyStaged(mode, replaceFrom ?? options2.startDate, options2.endDate);
-      }
+      if (signal.aborted) return result(0, { discarded: total + ptTotal });
+      // Both row sets land in one transaction, or neither does. An empty response never wipes or
+      // replaces stored days.
+      db.db.transaction(() => {
+        if (total > 0) {
+          const mode = mustWipe ? 'wipe' : replaceFrom ? 'lag' : replaceWindow ? 'window' : 'upsert';
+          applyStaged(mode, replaceFrom ?? options2.startDate, options2.endDate);
+        }
+        if (ptTotal > 0) applyPt(mustWipe && total === 0 ? 'wipe' : pt.replaceFrom ? 'lag' : 'upsert', pt.replaceFrom ?? pt.startDate, pt.endDate);
+      })();
       // The writer owns the totals: over the synced window, each day's totals in search_analytics
       // become the fuller of the all-country rows and the segment rows aggregated (#65). In the old
       // layout the views pick per day instead, from gsc_day_shape, brought up to date here.
       if (legacy && total > 0) refreshLegacyDayShapes(db.db, options2.startDate, options2.endDate);
       const settled = total > 0 && !legacy ? settleGscTotals(db.db, options2.startDate, options2.endDate, segments) : undefined;
       db.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(siteUrl);
-      return result(total, settled ? { settled } : {});
+      return result(total, { ...(settled ? { settled } : {}), ...ptResult });
     } finally {
       db.close();
     }

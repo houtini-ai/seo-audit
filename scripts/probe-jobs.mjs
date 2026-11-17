@@ -49,7 +49,8 @@ const site = 'https://example.com/';
 {
   const row = (date, query, clicks) => ({ keys: [date, query, `${site}p`], clicks, impressions: clicks * 10, ctr: 0.1, position: 3 });
   let served = [];
-  const fakeGsc = { fetchSearchAnalytics: async (_s, opts, _sig, onBatch) => { served.push(opts.startDate); await onBatch({ rows: served.length === 1 ? first : second }); } };
+  // The page-totals request (#118, dimensions date,page) answers empty; `served` tracks the main rows.
+  const fakeGsc = { fetchSearchAnalytics: async (_s, opts, _sig, onBatch) => { if (opts.dimensions?.join(',') === 'date,page') return 0; served.push(opts.startDate); await onBatch({ rows: served.length === 1 ? first : second }); } };
   const first = [row('2026-10-01', 'a', 10), row('2026-10-05', 'a', 9), row('2026-10-06', 'partial', 2), row('2026-10-06', 'dropped-later', 1)];
   const second = [row('2026-10-03', 'a', 11), row('2026-10-06', 'partial', 40), row('2026-10-07', 'a', 12)];
   const sync = new GscSync(fakeGsc, dir);

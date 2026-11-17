@@ -9,13 +9,14 @@
  * thresholds come from Google's documentation or are stated in the check. Missing data means no
  * finding, never a zero. Appended to CHECKS in checks.ts.
  */
+import { pageRowsFor } from '../core/gscPageTotals.js';
 import type { CheckContext, CheckDef, RawFinding } from './checks.js';
 import { latestRobotsTxt } from '../core/robotsStore.js';
 import { robotsVerdict, rulesFromText } from '../core/robots.js';
 import { AI_BOTS } from '../core/aiBots.js';
 import { BAND_RANK, CWV_THRESHOLDS, cwvBand, type CwvBand, type CwvMetric } from '../core/CruxSync.js';
 import { loadBrandQueries, brandPredicate } from '../core/brand.js';
-import { GSC_ROWS, gscStorageState, gscTotalsSource, hasGscRows } from '../core/gscRows.js';
+import { GSC_ROWS, gscStorageState, hasGscRows } from '../core/gscRows.js';
 
 const rows = (c: CheckContext, sql: string, ...args: unknown[]): any[] => c.db.prepare(sql).all(...args);
 const one = (c: CheckContext, sql: string, ...args: unknown[]): any => c.db.prepare(sql).get(...args);
@@ -70,7 +71,7 @@ function indexingTriggers(c: CheckContext): Record<string, unknown>[] {
     const week = (endOffset: number): { pages: number; days: number; from: string; to: string } => one(c,
       `SELECT COUNT(DISTINCT CASE WHEN impressions > 0 THEN page_key END) pages, COUNT(DISTINCT date) days,
               date(?, '${-endOffset - 6} days') "from", date(?, '${-endOffset} days') "to"
-       FROM search_analytics WHERE page_key IS NOT NULL AND date >= date(?, '${-endOffset - 6} days') AND date <= date(?, '${-endOffset} days')`, d, d, d, d);
+       FROM ${pageRowsFor(c.db, d, 14).table} WHERE page_key IS NOT NULL AND date >= date(?, '${-endOffset - 6} days') AND date <= date(?, '${-endOffset} days')`, d, d, d, d);
     const cur = week(0), prior = week(7);
     if (cur.days === 7 && prior.days === 7 && prior.pages >= IMPRESSION_PAGES_MIN && cur.pages < prior.pages * (1 - IMPRESSION_PAGES_DROP)) {
       triggers.push({ trigger: 'impression-pages-drop', currentWeek: cur, priorWeek: prior, changePct: pct(cur.pages, prior.pages), threshold: `> ${IMPRESSION_PAGES_DROP * 100}% fewer pages with impressions, prior week >= ${IMPRESSION_PAGES_MIN} pages, finalised GSC days only` });
@@ -114,7 +115,7 @@ function aiSearchBotFindings(c: CheckContext): RawFinding[] {
   if (!rb) return [];
   // Top pages by clicks (28 finalised days) - a block on these costs the most citations.
   const top: string[] = c.gscMaxDate
-    ? rows(c, `SELECT page_key FROM ${gscTotalsSource(c.db)} WHERE page_key IS NOT NULL AND date > date(?, '-28 days') AND date <= ? GROUP BY page_key HAVING SUM(clicks) > 0 ORDER BY SUM(clicks) DESC LIMIT ?`, c.gscMaxDate, c.gscMaxDate, AI_BOT_TOP_PAGES).map(r => r.page_key)
+    ? rows(c, `SELECT page_key FROM ${pageRowsFor(c.db, c.gscMaxDate, 28).table} WHERE page_key IS NOT NULL AND date > date(?, '-28 days') AND date <= ? GROUP BY page_key HAVING SUM(clicks) > 0 ORDER BY SUM(clicks) DESC LIMIT ?`, c.gscMaxDate, c.gscMaxDate, AI_BOT_TOP_PAGES).map(r => r.page_key)
     : [];
   const pathOf = (u: string): string | null => { try { const x = new URL(u); return x.pathname + x.search; } catch { return null; } };
   const blocked: Record<string, unknown>[] = [];

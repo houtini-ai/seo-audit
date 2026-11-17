@@ -5,6 +5,7 @@
  * noise). This classifies each 404 by discovery source, search traffic and backlinks, finds the
  * closest live URL by slug similarity, and buckets it: redirect / review / ignore.
  */
+import { lifetimePageRows } from './gscPageTotals.js';
 import type Database from 'better-sqlite3';
 import { probeUrls, type ProbeResult } from './probeUrls.js';
 
@@ -99,7 +100,8 @@ export function triage404s(db: Database.Database, opts: TriageOptions = {}): Tri
   const q = {
     links: db.prepare(`SELECT COUNT(DISTINCT source_key) n FROM links WHERE target_key=? AND is_internal=1`),
     sitemap: db.prepare(`SELECT 1 FROM sitemap_urls WHERE url_key=? LIMIT 1`),
-    gsc: db.prepare(`SELECT COALESCE(SUM(clicks),0) c, COALESCE(SUM(impressions),0) i, MAX(CASE WHEN impressions>0 THEN date END) last FROM gsc_rows WHERE page_key=?`),
+    // A dead URL's lifetime GSC traffic: page totals when they cover the whole stored history (#118).
+    gsc: db.prepare(`SELECT COALESCE(SUM(clicks),0) c, COALESCE(SUM(impressions),0) i, MAX(CASE WHEN impressions>0 THEN date END) last FROM ${lifetimePageRows(db)} WHERE page_key=?`),
     bl: db.prepare(`SELECT backlinks, referring_domains FROM page_backlinks WHERE url_key=?`),
   };
   const safe = <T>(f: () => T, d: T): T => { try { return f(); } catch { return d; } }; // tables absent on a crawl-only DB

@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { pageRowsFor } from './gscPageTotals.js';
 import { AuditDatabase } from './AuditDatabase.js';
 import type { AiBotAccess } from './agentReadiness.js';
 import { getDataFreshness, type DataFreshness } from './dataFreshness.js';
@@ -73,6 +74,8 @@ export interface DashboardData {
   /** The last day with device / country rows (null: never synced with segments). When it is before
    *  the 28-day window, the breakdowns are empty and the UI says why instead of hiding them. */
   segmentsLastDate?: string | null;
+  /** Where page and site totals came from (#118): GSC page totals, or the query rows (missing anonymised traffic) on a database not synced since. */
+  pageTotalsSource?: 'page-totals' | 'query-attributed';
   /** The first day of the 28-day window the breakdowns cover (the same window as the KPIs). */
   breakdownWindowStart?: string;
   pagePerformance?: { urlKey: string; clicks: number; prevClicks: number; clicksChangePct: number | null; impressions: number; position: number; category: string }[];
@@ -235,7 +238,8 @@ interface Totals { clicks: number; impressions: number; position: number }
 // 30: gscShape only while the GSC storage is pending or migrating (never after the migration).
 // 31: auditDeltas[].excluded and findings.byCategory[].regrouped (regrouped checks left out of the counts).
 // 32: segmentsLastDate + breakdownWindowStart (the device / country panels' empty state, the coverage chip).
-const PAYLOAD_VERSION = '32';
+// 33: page/site totals read GSC page totals (date × page, #118); pageTotalsSource names the source.
+const PAYLOAD_VERSION = '33';
 
 /** Build the dashboard payload for a property from its synced GSC history. */
 /** The Search Console window lengths the dashboard offers; 28 is the default and the only one cached. */
@@ -263,7 +267,7 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     // Lazy, one-time health backfill for past audit runs (a no-op probe once every run is visited).
     backfillAuditHealth(db.db);
     const ver = db.db.prepare(
-      `SELECT (SELECT MAX(date)||':'||COALESCE(MAX(rowid),0) FROM search_analytics)||':'||(SELECT COALESCE(MAX(rowid),0) FROM search_analytics_segments) sa,
+      `SELECT (SELECT MAX(date)||':'||COALESCE(MAX(rowid),0) FROM search_analytics)||':'||(SELECT COALESCE(MAX(rowid),0) FROM search_analytics_segments)||':'||(SELECT COALESCE(MAX(date),'')||':'||COALESCE(MAX(rowid),0) FROM gsc_page_totals) sa,
               (SELECT run_id FROM audit_runs ORDER BY started_at DESC LIMIT 1)||':'||(SELECT COUNT(*)||':'||COALESCE(MAX(finished_at),'')||':'||COUNT(health_basis) FROM audit_runs) run,
               (SELECT COALESCE(MAX(rowid),0) FROM pages) pg,
               (SELECT COALESCE(MAX(checked_at),'') FROM agent_readiness) ar,
@@ -304,6 +308,12 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     // days would still slip into current-period sums and the daily charts. (Prior windows already
     // cap below maxDate, so they don't need it.) maxDate is our own ISO date — safe to interpolate.
     const UB = `date <= '${maxDate}'`;
+    // Page and site totals (tiles, the daily trend, page tables, decay, equity) read the GSC page
+    // totals (#118): the query rows miss anonymised traffic (58-65% of clicks on two live sites).
+    // ONE source for the whole payload, covering its longest page-total window, so tiles, trend
+    // and tables always agree; a database without page totals falls back and says so.
+    const PT = pageRowsFor(db.db, maxDate, Math.max(days * 2, 90));
+    const PTT = PT.table;
 
     const totals = (start: string, end?: string): Totals => {
       const where = end
@@ -311,21 +321,21 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
         : `date > date(?, '${start}') AND ${UB}`;
       const args = end ? [maxDate, maxDate] : [maxDate];
       const r = db.db
-        .prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0),0) position FROM gsc_rows WHERE ${where}`)
+        .prepare(`SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0),0) position FROM ${PTT} WHERE ${where}`)
         .get(...args) as Totals;
       return r;
     };
 
     // Days with data in each window: the prior compares only when it is held (priorHeld).
     const daysWithData = (start: string, end?: string): number => (db.db
-      .prepare(`SELECT COUNT(DISTINCT date) n FROM gsc_rows WHERE ${end ? `date > date(?, '${start}') AND date <= date(?, '${end}')` : `date > date(?, '${start}') AND ${UB}`}`)
+      .prepare(`SELECT COUNT(DISTINCT date) n FROM ${PTT} WHERE ${end ? `date > date(?, '${start}') AND date <= date(?, '${end}')` : `date > date(?, '${start}') AND ${UB}`}`)
       .get(...(end ? [maxDate, maxDate] : [maxDate])) as { n: number }).n;
     const curDays = daysWithData(W1), priorDays = daysWithData(W2, W1);
     const cur = totals(W1);
     const priorAll = totals(W2, W1);
     // The prior window compares only when it is held (the history reaches it, and it isn't mostly
     // gaps): otherwise it is null, never a row of zeros that reads as "up from none".
-    const heldFrom = (db.db.prepare('SELECT MIN(date) d FROM gsc_rows').get() as { d: string | null }).d;
+    const heldFrom = (db.db.prepare(`SELECT MIN(date) d FROM ${PTT}`).get() as { d: string | null }).d;
     const priorStart = new Date(Date.parse(`${maxDate}T00:00:00Z`) - (days * 2 - 1) * 86_400_000).toISOString().slice(0, 10);
     const hasPrior = priorHeld(heldFrom, priorStart, curDays, priorDays);
     const prior = hasPrior ? priorAll : null;
@@ -366,7 +376,7 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     const rankTrend = db.db
       .prepare(
         `SELECT date, COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(impressions),0) impressions, COALESCE(SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0),0) position
-         FROM gsc_rows WHERE ${UB} AND date > date(?, '-90 days') GROUP BY date ORDER BY date`,
+         FROM ${PTT} WHERE ${UB} AND date > date(?, '-90 days') GROUP BY date ORDER BY date`,
       )
       .all(maxDate) as { date: string; clicks: number; impressions: number; position: number }[];
 
@@ -464,8 +474,8 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     const countryBreakdown = (db.db.prepare(`SELECT country, SUM(clicks) clicks, SUM(impressions) impressions FROM gsc_country_rows WHERE country <> '' AND ${UB} AND date > date(?, '${W1}') GROUP BY country ORDER BY clicks DESC LIMIT 10`).all(maxDate) as any[]).map(c => ({ country: c.country, clicks: c.clicks, prevClicks: (ctyPrior.get(c.country) as number) ?? 0, impressions: c.impressions }));
 
     // Page performance + categorisation (current vs prior 28d)
-    const pagePrior = new Map((db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions FROM gsc_rows WHERE page_key IS NOT NULL AND date > date(?, '${W2}') AND date <= date(?, '${W1}') GROUP BY page_key`).all(maxDate, maxDate) as any[]).map(p => [p.page_key, p]));
-    const pagePerformance = (db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position FROM gsc_rows WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '${W1}') GROUP BY page_key ORDER BY clicks DESC LIMIT 40`).all(maxDate) as any[]).map(p => {
+    const pagePrior = new Map((db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions FROM ${PTT} WHERE page_key IS NOT NULL AND date > date(?, '${W2}') AND date <= date(?, '${W1}') GROUP BY page_key`).all(maxDate, maxDate) as any[]).map(p => [p.page_key, p]));
+    const pagePerformance = (db.db.prepare(`SELECT page_key, SUM(clicks) clicks, SUM(impressions) impressions, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position FROM ${PTT} WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '${W1}') GROUP BY page_key ORDER BY clicks DESC LIMIT 40`).all(maxDate) as any[]).map(p => {
       const prev = (pagePrior.get(p.page_key) as any) ?? { clicks: 0, impressions: 0 };
       // The small-base rule (displayRules): no % on a prior under SMALL_BASE_MIN clicks (0 -> 1 is not +100%).
       const pct = prev.clicks >= SMALL_BASE_MIN ? Math.round(((p.clicks - prev.clicks) / prev.clicks) * 100) : null;
@@ -477,8 +487,8 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     // row is a real page with a measured before/after over matched 28-day windows.
     const contentDecay = (db.db.prepare(
       `WITH cur AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
-                    FROM gsc_rows WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '${W1}') GROUP BY page_key),
-            prev AS (SELECT page_key, SUM(clicks) c FROM gsc_rows WHERE page_key IS NOT NULL AND date > date(?, '${W2}') AND date <= date(?, '${W1}') GROUP BY page_key)
+                    FROM ${PTT} WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '${W1}') GROUP BY page_key),
+            prev AS (SELECT page_key, SUM(clicks) c FROM ${PTT} WHERE page_key IS NOT NULL AND date > date(?, '${W2}') AND date <= date(?, '${W1}') GROUP BY page_key)
        SELECT prev.page_key url, prev.c prevC, COALESCE(cur.c,0) curC, COALESCE(cur.i,0) curI, COALESCE(cur.pos,0) pos
        FROM prev LEFT JOIN cur ON cur.page_key=prev.page_key
        WHERE prev.c >= 10 AND COALESCE(cur.c,0) < prev.c * 0.8
@@ -638,7 +648,7 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
     const pageRows = db.db.prepare(`SELECT url_key, COALESCE(ipr,0) ipr FROM pages WHERE status_code=200 AND indexable=1`).all() as { url_key: string; ipr: number }[];
     if (pageRows.length) {
       const g28 = new Map<string, { clicks: number; impr: number }>();
-      for (const r of db.db.prepare(`SELECT page_key, SUM(clicks) c, SUM(impressions) i FROM gsc_rows WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '${W1}') GROUP BY page_key`).all(maxDate) as any[]) g28.set(r.page_key, { clicks: r.c, impr: r.i });
+      for (const r of db.db.prepare(`SELECT page_key, SUM(clicks) c, SUM(impressions) i FROM ${PTT} WHERE page_key IS NOT NULL AND ${UB} AND date > date(?, '${W1}') GROUP BY page_key`).all(maxDate) as any[]) g28.set(r.page_key, { clicks: r.c, impr: r.i });
       const scatter: NonNullable<DashboardData['equityScatter']> = [];
       const agg = new Map<string, { ipr: number; clicks: number; n: number }>();
       for (const p of pageRows) {
@@ -1045,6 +1055,7 @@ export function getDashboardData(dataDir: string, siteUrl: string, opts: { days?
       deviceBreakdown,
       countryBreakdown,
       segmentsLastDate: segmentsMaxDate(db.db),
+      pageTotalsSource: PT.source,
       breakdownWindowStart: new Date(Date.parse(`${maxDate}T00:00:00Z`) - 27 * 86_400_000).toISOString().slice(0, 10),
       pagePerformance,
       keywordMovement,

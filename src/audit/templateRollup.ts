@@ -11,7 +11,7 @@
  * An element is "shared" when it appears on at least TEMPLATE_MIN_PAGES pages. Pages crawled before
  * 0.16.1 have no samples and keep one finding per page (re-crawl to group them).
  */
-import { gscTotalsSource } from '../core/gscRows.js';
+import { pageRowsFor } from '../core/gscPageTotals.js';
 import type { CheckContext, RawFinding } from './checks.js';
 
 export const TEMPLATE_MIN_PAGES = 3;
@@ -41,7 +41,7 @@ export function rollupA11y(c: CheckContext, spec: A11yRollupSpec): RawFinding[] 
 
   const clicks = new Map<string, number>();
   if (c.gscMaxDate) {
-    for (const r of c.db.prepare(`SELECT page_key k, SUM(clicks) n FROM ${gscTotalsSource(c.db)} WHERE date <= ? AND date > date(?, '-28 days') AND page_key IS NOT NULL GROUP BY page_key`)
+    for (const r of c.db.prepare(`SELECT page_key k, SUM(clicks) n FROM ${pageRowsFor(c.db, c.gscMaxDate, 28).table} WHERE date <= ? AND date > date(?, '-28 days') AND page_key IS NOT NULL GROUP BY page_key`)
       .all(c.gscMaxDate, c.gscMaxDate) as { k: string; n: number }[]) clicks.set(r.k, r.n ?? 0);
   }
   const byClicks = (a: string, b: string): number => (clicks.get(b) ?? 0) - (clicks.get(a) ?? 0) || a.localeCompare(b);

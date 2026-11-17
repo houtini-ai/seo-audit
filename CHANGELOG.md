@@ -8,6 +8,17 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [Unreleased]
+
+### Fixed
+- **Page and site traffic now counts every click** (#118). The sync stored only date × query × page rows, and when you ask Search Console for the query dimension it leaves out anonymised queries: on two production sites the stored rows held 35-42% of the real clicks. Every sync now also fetches date × page totals into a new `gsc_page_totals` table. Page and site totals read it: audit priority and traffic at stake, the zero-traffic and trend checks, the dashboard tiles, daily trend, page tables, Summary and portfolio. Anything that needs the query (cannibalisation, striking distance, branded split, recon) still reads the query rows. The first sync after upgrading backfills page totals over the span the query rows already cover (up to Search Console's 16 months). Stored page totals match Search Console's own page figures exactly.
+- **Zero-traffic checks no longer flag pages that get traffic** (#118). On one production site, 91% of `index-bloat` findings ("no impressions in 90 days") and 86% of `high-ipr-no-traffic` findings ("zero clicks") had traffic in the page totals. Both checks now read page totals.
+
+### Changed
+- **Until a property is synced once, audits and the dashboard say they're using query clicks only.** `run_audit` adds a note, its result carries `pageTotalsSource`, and the dashboard's data-coverage footer shows a "Page totals" chip.
+- **The first audit on page totals leaves the traffic checks out of opened/resolved**, with a note, the same way the 0.16.1 accessibility regrouping was handled, so the history doesn't show fixes nobody made.
+- `query_data` can read `gsc_page_totals`.
+
 ## [1.0.6] — 2026-11-17
 
 ### Fixed
