@@ -320,7 +320,7 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 
 ## 7. Utilities
 - **data_location** — where DBs are stored (set with a path). · **normalize_url** — the join key for a URL. · **composition_cookbook** — the data-surface map and multi-source recipes. · **seo_audit_help** — this page.
-- **data_storage** — per-property disk usage + row counts; prune (vacuum / clear-crawl-history / delete-property / repair, destructive ones and repair need \`confirm:true\`); \`check:true\` runs an integrity check. _"How much disk is my audit data using?"_
+- **data_storage** — per-property disk usage + row counts; prune (vacuum / clear-crawl-history / delete-property / repair; destructive ones are the user's call: ask first, then \`confirm\`, and the server asks the user directly too); \`check:true\` runs an integrity check. _"How much disk is my audit data using?"_
 
 _Tip: first time on a property → \`refresh_property\` then \`run_audit\`._
 _Composing your own analysis? Call \`composition_cookbook\` first — the data-surface map (grain + join keys per source) and worked multi-source recipes._`;
@@ -367,6 +367,24 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
   const jobDeps: JobDeps = { dataDir, sync, inspector, crawler, refresh, rankTracker, backlinks, entities, dfs, cruxSync, withDashboard: (siteUrl, fn) => withDashboard(siteUrl, fn) };
   const startFor = <K extends JobKindName>(siteUrl: string, kind: K, args: JobArgsByKind[K]): string =>
     submitJob(jobs, kind, args, jobDeps, jobScope(siteUrl));
+  /**
+   * Ask the user, not the model, to confirm an irreversible action (MCP elicitation). 'unsupported'
+   * when the client can't ask (no form elicitation): the caller then needs a typed confirmation.
+   */
+  const askUserToConfirm = async (message: string): Promise<'confirmed' | 'declined' | 'unsupported'> => {
+    if (!server.server.getClientCapabilities()?.elicitation) return 'unsupported';
+    try {
+      const r = await server.server.elicitInput({
+        mode: 'form',
+        message,
+        requestedSchema: { type: 'object', properties: { confirm: { type: 'boolean', title: 'Yes, I am sure', default: false } }, required: ['confirm'] },
+      });
+      return r.action === 'accept' && (r.content as { confirm?: unknown } | undefined)?.confirm === true ? 'confirmed' : 'declined';
+    } catch (e) {
+      if (/does not support/i.test(String(e))) return 'unsupported';
+      throw e;
+    }
+  };
   const requireGsc = <T>(v: T | null): T => {
     if (!v) throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set — required for Search Console access. Call seo_audit_help for what is configured on this machine and how to set it up.');
     return v;
@@ -486,14 +504,15 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'data_storage',
     {
       title: 'Data storage summary + pruning',
-      description: 'Data hygiene. No args: list every per-property database in the data dir — size (incl. WAL), key row counts (search_analytics, pages, links, page_snapshots, findings), last sync and last crawl, and any link_intersect prospect set with its capture date (flagged when it is going stale) — plus the DataForSEO/Majestic caches and reports folder sizes. Optional siteUrl narrows to one property. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (delete page_snapshots + audit runs/findings older than the 5 most recent, then vacuum), "delete-property" (remove the DB files entirely). Destructive actions (clear-crawl-history, delete-property) REQUIRE confirm:true and refuse loudly without it, naming what would be deleted. Refuses to prune while any job is running. Integrity: `check:true` (with siteUrl) starts an async job running SQLite\'s full integrity_check (minutes on a multi-GB DB; check:"quick" is faster but misses missing-index-row damage) and reports damaged indexes. `prune:{siteUrl, action:"repair"}` with confirm:true backs up the DB file, REINDEXes the damaged indexes and re-checks (async job) — the fix for a sync failing with "database disk image is malformed".',
+      description: 'Data hygiene. No args: list every per-property database in the data dir — size (incl. WAL), key row counts (search_analytics, pages, links, page_snapshots, findings), last sync and last crawl, and any link_intersect prospect set with its capture date (flagged when it is going stale) — plus the DataForSEO/Majestic caches and reports folder sizes. Optional siteUrl narrows to one property. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (delete page_snapshots + audit runs/findings older than the 5 most recent, then vacuum), "delete-property" (remove the DB files entirely). Destructive actions (clear-crawl-history, delete-property) are for the USER to decide: without confirm they refuse, naming what would be deleted; ask the user, and only on their yes pass confirm. The server then asks the user directly where the client supports it, and otherwise needs confirm set to the property name exactly. Refuses to prune while any job is running. Integrity: `check:true` (with siteUrl) starts an async job running SQLite\'s full integrity_check (minutes on a multi-GB DB; check:"quick" is faster but misses missing-index-row damage) and reports damaged indexes. `prune:{siteUrl, action:"repair"}` with confirm:true backs up the DB file, REINDEXes the damaged indexes and re-checks (async job) — the fix for a sync failing with "database disk image is malformed".',
       inputSchema: {
         siteUrl: z.string().optional(),
         prune: z.object({
           siteUrl: z.string(),
           action: z.enum(['vacuum', 'clear-crawl-history', 'delete-property', 'repair']),
         }).optional(),
-        confirm: z.boolean().optional(),
+        confirm: z.union([z.boolean(), z.string()]).optional()
+          .describe('Destructive prune actions (delete-property, clear-crawl-history): set only after the USER said yes in chat. Where the client supports it, the user is also asked directly; otherwise pass the property name exactly (confirm:"sc-domain:example.com"), not true.'),
         check: z.union([z.boolean(), z.enum(['quick', 'full'])]).optional().describe('Run an integrity check on siteUrl\'s DB (async job). true = full integrity_check.'),
         hide: z.object({ siteUrl: z.string(), hidden: z.boolean().optional() }).optional()
           .describe('Hide a property from the dashboard\'s domain dropdown and the portfolio (hidden:false shows it again). Reversible; the database is untouched. For a stray duplicate such as a URL-prefix twin of an sc-domain property.'),
@@ -532,7 +551,34 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
       }
       if (prune) {
         const running = jobs.possiblyRunning().map(j => ({ id: j.id, type: j.type })); // conservative: a busy owner can look stale for a while
-        const r = pruneProperty(dataDir(), prune.siteUrl, prune.action as 'vacuum' | 'clear-crawl-history' | 'delete-property', confirm === true, running);
+        const action = prune.action as 'vacuum' | 'clear-crawl-history' | 'delete-property';
+        let confirmed = confirm === true || confirm === prune.siteUrl;
+        if (confirmed && action !== 'vacuum') {
+          // "Are you sure": a destructive prune is the user's decision, not the model's. The dry run
+          // names what would go; the user answers in the client (elicitation), where the model
+          // can't answer for them. A client without elicitation must pass the property name typed
+          // out, after asking the user in chat.
+          const preview = pruneProperty(dataDir(), prune.siteUrl, action, false, running);
+          if (!preview.ok && preview.refused && !/needs confirm/i.test(preview.refused)) {
+            return { content: [{ type: 'text', text: preview.refused }], structuredContent: preview as unknown as Record<string, unknown> };
+          }
+          // The dry run's own description of what goes, without its "REFUSED" lead-in and re-run hint.
+          const detail = (preview.refused ?? '').replace(/^REFUSED[^.]*\.\s*/, '').replace(/\s*Re-run with confirm:true[^.]*\.?$/, '');
+          const what = `${action === 'delete-property' ? `Permanently delete the local database for ${prune.siteUrl}?` : `Clear old crawl and audit history for ${prune.siteUrl}?`} ${detail} This cannot be undone.`;
+          const asked = await askUserToConfirm(what);
+          if (asked === 'declined') {
+            return { content: [{ type: 'text', text: `Not done: the user declined to ${action} ${prune.siteUrl}. Nothing was changed.` }], structuredContent: { ok: false, refused: 'user_declined', action, siteUrl: prune.siteUrl } };
+          }
+          if (asked === 'unsupported' && confirm !== prune.siteUrl) {
+            return {
+              content: [{ type: 'text', text: `REFUSED: ${action} is destructive and this client can't ask the user directly. ${preview.refused ?? ''}
+Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say yes, re-run with confirm:"${prune.siteUrl}" (the property name exactly, not true).` }],
+              structuredContent: { ok: false, refused: 'typed_confirm_required', action, siteUrl: prune.siteUrl },
+            };
+          }
+          confirmed = true;
+        }
+        const r = pruneProperty(dataDir(), prune.siteUrl, action, confirmed, running);
         if (!r.ok) {
           return { content: [{ type: 'text', text: r.refused ?? `Could not ${prune.action}.` }], structuredContent: r as unknown as Record<string, unknown> };
         }
@@ -584,7 +630,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
         `${liLines ? `Link-intersect prospects (may be stale — competitors keep earning links):\n${liLines}\n\n` : ''}` +
         `${cacheLines ? `Caches:\n${cacheLines}\n` : ''}Reports folder: ${fmtBytes(s.reportsBytes)}` +
         `${s.other.length ? `\nOther .db files: ${s.other.map(o => `${o.file} (${fmtBytes(o.bytes)})`).join(', ')}` : ''}\n\n` +
-        `Prune with data_storage prune:{siteUrl, action:"vacuum" | "clear-crawl-history" | "delete-property" | "repair"} (destructive actions and repair need confirm:true). Check integrity with data_storage {siteUrl, check:true}.`;
+        `Prune with data_storage prune:{siteUrl, action:"vacuum" | "clear-crawl-history" | "delete-property" | "repair"} (destructive actions need the user's yes, then confirm; repair needs confirm:true). Check integrity with data_storage {siteUrl, check:true}.`;
       return { content: [{ type: 'text', text: md }], structuredContent: s as unknown as Record<string, unknown> };
     },
   );
