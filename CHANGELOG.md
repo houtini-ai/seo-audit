@@ -8,6 +8,12 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [1.0.6] — 2026-11-17
+
+### Fixed
+- **`refresh_property` no longer starts a job that does nothing** (#117). When every phase is off (`gsc`, `crawl`, `inspect`, `ranks`, `crux` all false), or the ones left on have no credentials, it returns `status: "noop"` and says why instead of a job that "completes".
+- **Job-starting tools refuse a `siteUrl` that isn't a website** (#117). `refresh_property`, `sync_gsc`, `start_crawl` and `inspect_urls` accept `sc-domain:example.com`, an http(s) URL or a bare hostname, and refuse `file://`, `javascript:`, `ftp://` and URLs with a username or password before any job record or database file is created.
+
 ## [1.0.5] — 2026-11-11
 
 Three checks for missing Open Graph and structured data (157 in all). They read data every crawl already stores, so a fresh audit picks them up with no re-crawl.
