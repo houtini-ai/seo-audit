@@ -455,8 +455,8 @@ export class GscSync {
         settled = settled ? { days: settled.days + s.days, derivedDays: settled.derivedDays + s.derivedDays, recordedDays: settled.recordedDays + s.recordedDays } : s;
       }
       db.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(siteUrl);
-      // The reported range is what was fetched: from the backfill's first day when there was one.
-      return result(total, { ...(backfill ? { startDate: backfill.startDate, ...(mainNoop ? { endDate: backfill.endDate } : {}), backfill: { ...backfill, rowsFetched: backfillRows } } : {}), ...(settled ? { settled } : {}), ...ptResult });
+      // startDate / endDate stay the main (incremental) range; the earlier days ride in `backfill`.
+      return result(total, { ...(backfill ? { backfill: { ...backfill, rowsFetched: backfillRows } } : {}), ...(settled ? { settled } : {}), ...ptResult });
     } finally {
       db.close();
     }
