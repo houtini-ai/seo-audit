@@ -56,6 +56,10 @@ export function historicalDateFrom(months: number, now: Date = new Date()): stri
 /** Per-call options. `maxAgeDays` narrows the cache age for one call (the portfolio's weekly tier
  * wants last week's numbers, not the 20-day shared default). It may be longer or shorter than the
  * client TTL: it only decides whether THIS call reuses a cached response. */
+/** Cache rows older than this (and than the client TTL) are deleted when the client opens. Keep it
+ * above every per-call maxAgeDays. */
+const CACHE_PRUNE_MIN_DAYS = 30;
+
 export interface DfsCallOptions { timeoutMs?: number; maxAgeDays?: number }
 
 /** Client-level hooks: `fetchImpl` lets tests serve saved fixtures with no network; `onCost` sees every
@@ -93,6 +97,12 @@ export class DataForSeoClient {
       );
       CREATE INDEX IF NOT EXISTS idx_dfs_endpoint ON dataforseo_cache(endpoint);
     `);
+    // Nothing else ever deletes from this table, so drop entries no call can reuse: older than the
+    // client TTL and than the longest per-call maxAgeDays (the portfolio's 25-day monthly tier).
+    try {
+      this.cache.prepare(`DELETE FROM dataforseo_cache WHERE fetched_at < datetime('now', ?)`)
+        .run(`-${Math.ceil(Math.max(ttlDays, CACHE_PRUNE_MIN_DAYS))} days`);
+    } catch { /* a locked or read-only cache must not stop the client starting */ }
   }
 
   /** Serialise live work — only one request in flight at any time (singular worker). */
@@ -193,17 +203,27 @@ export class DataForSeoClient {
    * at depth=20 is absent from the top 20 organic — nothing is known about its position beyond that.
    * `loadAsyncAiOverview` makes DataForSEO wait for a client-side-loaded AI Overview and return its
    * references; without it those SERPs come back with an empty AIO (asynchronous_ai_overview:true)
-   * and citation is unknowable. Small surcharge, refunded when no async AIO is found. */
+   * and citation is unknowable. Small surcharge, refunded when no async AIO is found.
+   * `resolvePoisonedResults` asks DataForSEO to detect and restore poisoned SERPs: organic results are
+   * replaced from a Web-mode reference page (restored items carry 'from_web' in `checks`); other
+   * features (AI Overview, PAA) are kept from the original page. If page 1 is poisoned, later pages in
+   * the task are also collected in Web mode. If the reference page can't be fetched, the original
+   * results come back unchanged. Billing: a flat extra SERP page on EVERY task, whatever the depth and
+   * whether or not poisoning is found (Live/Normal: +$0.002, so a depth-20 call goes from ~$0.004 to ~$0.006). Requests that
+   * also set udm=web / udm=14 (url or search_param) return an error. Opt-in for those reasons — used by
+   * recon (recon_targets and recon_todos remeasure), where a poisoned page would invent a competitive gap; the
+   * flag is part of the request body, so resolved and unresolved responses are cached separately. */
   async serpOrganic(
     keyword: string, location?: string | number, languageCode = 'en', depth = 20,
-    opts: { loadAsyncAiOverview?: boolean } = {},
+    opts: { loadAsyncAiOverview?: boolean; resolvePoisonedResults?: boolean; maxAgeDays?: number } = {},
   ): Promise<DfsResponse> {
     return this.call('/v3/serp/google/organic/live/advanced', [
       {
         keyword, ...this.loc(location), language_code: languageCode, depth,
         ...(opts.loadAsyncAiOverview ? { load_async_ai_overview: true } : {}),
+        ...(opts.resolvePoisonedResults ? { resolve_poisoned_results: true } : {}),
       },
-    ]);
+    ], opts.maxAgeDays != null ? { maxAgeDays: opts.maxAgeDays } : undefined);
   }
 
   /** SERP — live YouTube organic results for a keyword (video discovery). Same SERP

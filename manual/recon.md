@@ -4,7 +4,7 @@ Most audit tools tell you *what* is wrong on a page. Recon answers a harder ques
 
 It's the most data-intensive thing this MCP does, so it's on-demand and it costs a little (live SERP calls). You point it at a property, it does the legwork, and you get back a prioritised to-do board you can annotate and re-measure after you ship the fix.
 
-> **Needs a DataForSEO key** (the live SERP is a paid call, ~$0.004 per page). The competitor-fetching step needs no key at all. See [getting-started.md](getting-started.md#environment-variables).
+> **Needs a DataForSEO key** (the live SERP is a paid call, ~$0.006 per page). The competitor-fetching step needs no key at all. See [getting-started.md](getting-started.md#environment-variables).
 
 ## The one prompt
 
@@ -95,7 +95,9 @@ Recon doesn't just report - it seeds a **trackable to-do board** per page, and t
 
 ## What it costs
 
-The SERP call is ~$0.004 per page, plus a small refundable surcharge for loading async AI Overviews. A 10-page recon is a few cents. The competitor-fetching step is free: plain HTTP requests, no API. Every DataForSEO response is cached, so re-running within the cache window is free.
+The SERP call is ~$0.006 per page: two result pages, one more for poisoned-SERP checking, plus a small refundable surcharge for loading async AI Overviews.
+
+**Poisoned SERPs.** Since September 2026 Google has served some automated traffic a normal-looking results page whose organic results are swapped for unrelated domains. Read naively, that makes a page ranking #4 look absent and fills the competitor list with junk. Recon asks DataForSEO to check every SERP against Google's Web mode and restore the organic results when the page is poisoned (restored items are marked `from_web`). It does not repair the AI Overview or People Also Ask, and a restored rank is a Web-mode rank, so it can differ from a normal-page rank by a few places. Recon readings taken before this change were not checked. When a page was restored, recon reports the AI Overview citation as unknown and marks the rank as a Web-mode rank. A remeasure always fetches the SERP live (about $0.006), in the same market as the baseline, and warns when the before and after readings came from different modes. A 10-page recon is a few cents. The competitor-fetching step is free: plain HTTP requests, no API. Every DataForSEO response is cached, so re-running within the cache window is free.
 
 ## When to reach for it
 

@@ -16,6 +16,7 @@ export interface SerpReconResult {
   aioResolved: boolean;               // did we actually get AIO references to judge citation from?
   aioReferences: { rank: number | null; domain: string; url: string; title: string; nested: boolean }[];
   videoPresent: boolean;
+  restoredFromWeb: boolean;           // DataForSEO found the page poisoned and restored organic from Google's Web mode ('from_web' in checks): the rank is a Web-mode rank and the AIO was NOT repaired
   organicAbove: { rank: number; domain: string; url: string; title: string }[]; // organic ranked above us (or all, if we're absent)
   videoItems: { url: string; title: string; source: string }[];
 }
@@ -26,6 +27,16 @@ export function hostOf(s: string | undefined | null): string {
   return String(s).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '').toLowerCase().trim();
 }
 
+/** True when a SERP item reports a property. DataForSEO moved the per-item booleans
+ * (is_featured_snippet, is_image, is_video, amp_version, is_malicious, is_web_story) into a
+ * `checks` string array (docs, 2026-11: "this check no longer appears in SERP"), adding
+ * is_highly_cited and from_web. Reads `checks` first and falls back to the legacy boolean so
+ * older cached responses still parse. */
+export function serpItemHas(item: any, check: string): boolean {
+  if (Array.isArray(item?.checks) && item.checks.includes(check)) return true;
+  return item?.[check] === true;
+}
+
 export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDepth = 20): SerpReconResult {
   const own = hostOf(ownDomain);
   const result = resp.tasks?.[0]?.result?.[0] ?? {};
@@ -34,13 +45,14 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
 
   let ourOrganicRank: number | null = null;
   const organic: { rank: number; domain: string; url: string; title: string }[] = [];
-  let aioPresent = false, aioAsync = false, videoPresent = false;
+  let aioPresent = false, aioAsync = false, videoPresent = false, restoredFromWeb = false;
   const aioReferences: SerpReconResult['aioReferences'] = [];
   const videoItems: SerpReconResult['videoItems'] = [];
 
   for (const it of items) {
     const t = it.type;
     if (t === 'organic') {
+      if (serpItemHas(it, 'from_web')) restoredFromWeb = true;
       const domain = hostOf(it.domain || it.url);
       const rank = Number(it.rank_group) || organic.length + 1;  // rank_group = position among ORGANIC results
       organic.push({ rank, domain, url: it.url ?? '', title: it.title ?? '' });
@@ -62,7 +74,11 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
         }
       };
       collect(it.references, false);
-      for (const el of it.items ?? []) collect(el?.references, true);
+      for (const el of it.items ?? []) {
+        collect(el?.references, true);
+        // ai_overview_expanded_element carries its references per component (DataForSEO docs, 2026-11).
+        for (const comp of el?.components ?? []) collect(comp?.references, true);
+      }
     } else if (t === 'video' || t === 'short_videos') {
       videoPresent = true;
       for (const v of it.items ?? []) {
@@ -75,7 +91,10 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
   // is UNKNOWN, not "not cited" — 5 of 11 cached AIO SERPs came back that way, and reading them
   // as "not cited" manufactured accuracy-or-freshness verdicts out of a missing fetch.
   const aioResolved = aioPresent && aioReferences.length > 0;
+  // On a poisoned page DataForSEO restores the organic block only: the AI Overview is the one
+  // Google served with the poisoned page, so its citations are not evidence either way.
   const aioCitesUs = !aioPresent ? false
+    : restoredFromWeb ? null
     : aioResolved ? aioReferences.some(r => own && r.domain === own)
     : null;
 
@@ -84,7 +103,7 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
     ? organic.slice(0, 8)
     : organic.filter(o => o.rank < ourOrganicRank!);
 
-  return { itemTypes, ourOrganicRank, serpDepth, aioPresent, aioCitesUs, aioAsync, aioResolved, aioReferences, videoPresent, organicAbove, videoItems };
+  return { itemTypes, ourOrganicRank, serpDepth, aioPresent, aioCitesUs, aioAsync, aioResolved, aioReferences, videoPresent, restoredFromWeb, organicAbove, videoItems };
 }
 
 /**
@@ -101,7 +120,8 @@ export const rankPhrase = (r: SerpReconResult): string =>
 
 export function reconVerdict(r: SerpReconResult): { verdict: ReconVerdict; note: string } {
   const strongOrganic = r.ourOrganicRank != null && r.ourOrganicRank <= 5;
-  const shape = r.videoPresent ? ' The SERP carries a video pack, so some click loss is format, not content.' : '';
+  const shape = (r.videoPresent ? ' The SERP carries a video pack, so some click loss is format, not content.' : '')
+    + (r.restoredFromWeb ? ' Google served a poisoned results page for this fetch; the organic results were restored from its Web mode, so the rank is a Web-mode rank and can sit a few places off a normal one.' : '');
   const pos = rankPhrase(r);
   if (!r.aioPresent) {
     return strongOrganic
@@ -111,7 +131,9 @@ export function reconVerdict(r: SerpReconResult): { verdict: ReconVerdict; note:
   // AIO present but unresolved (async, no references pulled): citation is UNKNOWN. Classify on
   // organic strength alone and say so — never bill an unfetched AIO as "does not cite you".
   if (r.aioCitesUs == null) {
-    const why = `An AI Overview is present but its citations were not resolved${r.aioAsync ? ' (Google loads it asynchronously)' : ''}, so whether it cites you is UNKNOWN — re-run with the async AI Overview loaded before treating this as an accuracy problem.`;
+    const why = r.restoredFromWeb
+      ? `An AI Overview is present, but it came with a poisoned results page and is not repaired, so whether it cites you is UNKNOWN — re-run later before treating this as an accuracy problem.`
+      : `An AI Overview is present but its citations were not resolved${r.aioAsync ? ' (Google loads it asynchronously)' : ''}, so whether it cites you is UNKNOWN — re-run with the async AI Overview loaded before treating this as an accuracy problem.`;
     return strongOrganic
       ? { verdict: 'defend-and-deepen', note: `You rank organic ${pos}. ${why}${shape}` }
       : { verdict: 'competitive-gap', note: `You rank organic ${pos}. ${why}${shape}` };

@@ -8,6 +8,16 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 `package.json`, `server.json` (x2) and `mcpb/manifest.json`, retitle `[Unreleased]` here, commit as
 `chore(release): X.Y.Z`, `git tag -a vX.Y.Z -m "X.Y.Z - <headline>"`, push the tag, `npm publish`.
 
+## [Unreleased]
+
+### Changed
+- **Recon checks for poisoned Google SERPs.** `recon_targets` and `recon_todos` remeasure now send DataForSEO's `resolve_poisoned_results`: when Google serves a poisoned page (organic results swapped for unrelated domains), the organic results are restored from Google's Web mode instead of reading as "you're absent, here are your competitors". Costs one extra SERP page per call (~$0.004 → ~$0.006 per recon page). The AI Overview is not repaired, and restored ranks are Web-mode ranks.
+- On a restored (poisoned) page the AI Overview citation is reported as unknown instead of "not cited", and the result, the to-do baseline and the remeasure outcome record that the rank is a Web-mode rank.
+- `recon_todos` remeasure now always fetches the SERP live (it used to be served the cached baseline within 20 days), reuses the baseline's location, works on a to-do already marked shipped (and errors instead of silently doing nothing otherwise), reports its cost, and updates the page's stored rank and citation state so the dashboard and portfolio refresh.
+- The DataForSEO cache deletes entries older than 30 days (or the cache TTL, if longer) when the client opens; it previously only grew.
+- SERP item flags are read from DataForSEO's new `checks` array (the `is_featured_snippet`-style booleans are gone), with a fallback for cached responses. This restores `isFeaturedSnippet` on ranked keywords.
+- AI Overview references nested in `ai_overview_expanded_element` components are now counted when checking whether the AI Overview cites you.
+
 ## [1.0.7] — 2026-11-17
 
 Page and site traffic now counts every click, including anonymised queries, so zero-traffic checks stop flagging pages that get traffic. Run one Search Console sync per property to backfill. Also: only synced Search Console properties count as yours, and deleting data needs your own yes.

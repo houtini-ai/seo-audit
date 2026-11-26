@@ -13,7 +13,7 @@ import { getDashboardDataAsync } from './core/dashboardAsync.js';
 import { listFindings } from './core/findingsQuery.js';
 import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
 import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
-import { parseSerpForRecon } from './core/serpRecon.js';
+import { parseSerpForRecon, serpItemHas } from './core/serpRecon.js';
 import { insertTodos, opportunityBasis } from './audit/recon.js';
 
 /** The dashboard fields for a structured result: an openable URL, or (in a container the host
@@ -1658,7 +1658,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'recon_targets',
     {
       title: 'Content recon: why a page is losing, and what to do about it',
-      description: '[Paid: DataForSEO SERP per page (~$0.004 each, plus a small refundable surcharge for loading async AI Overviews), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your striking-distance pages (auto-selected: the page\'s top query at positions 3-15, highest impressions first; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced, depth 20 organic), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, competitive-gap, or page-cannot-rank (the crawl says the URL is noindex/canonicalised away, so its GSC history is legacy and the SERP read belongs to another page). Honesty rules baked in: every GSC figure carries its 28-day window; organicRank:null means "absent from the top 20 ORGANIC results", never a position; and an AI Overview whose citations could not be resolved reports aioCitesUs:null (UNKNOWN) rather than "not cited". To-dos are prioritised by OPPORTUNITY (impressions x the CTR gap between where you rank and a realistic target, damped by the verdict), not by raw impressions, and cannibalisation is counted across the whole query cluster. Set scrapeCompetitors:true to also pull the top competitors as content, free and with no API key, routed by host: Reddit → its .json, other pages → a browser-profile HTTP fetch, and ranking videos are listed rather than fetched (a video page has no readable text over HTTP); competitorLimit (default 5) caps how many are fetched and everything above the cap is listed as skipped. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Watch the ranking videos (usually what wins these SERPs) and use the fetched pages. Then write findings back with save_recon_todo; track with recon_todos. **Async job:** returns a jobId immediately - poll check_sync_status; the finished job carries the per-page verdicts, to-dos and a summary. (Each page is persisted to the ledger as it completes, so recon_todos shows results even mid-run.)',
+      description: '[Paid: DataForSEO SERP per page (~$0.006 each: two result pages plus one for poisoned-SERP checking, and a small refundable surcharge for loading async AI Overviews), bounded to the batch | Use for: the deep "why are we behind and what to add" recon] For each of your striking-distance pages (auto-selected: the page\'s top query at positions 3-15, highest impressions first; or pass explicit urls), this fetches OUR live page with the crawler, pulls the live Google SERP (DataForSEO SERP-advanced, depth 20 organic), and classifies WHY we are behind using the organic-rank x AI-Overview-citation matrix: defend-and-deepen (cited + strong), accuracy-or-freshness (rank but the AIO will not quote us - the sharpest, most actionable class), consolidate-weak-page, competitive-gap, or page-cannot-rank (the crawl says the URL is noindex/canonicalised away, so its GSC history is legacy and the SERP read belongs to another page). Honesty rules baked in: every GSC figure carries its 28-day window; organicRank:null means "absent from the top 20 ORGANIC results", never a position; the SERP is fetched with DataForSEO resolve_poisoned_results, so if Google served a poisoned page (organic results swapped for unrelated domains) the organic block is restored from Google\'s Web mode (the AI Overview is not repaired); and an AI Overview whose citations could not be resolved reports aioCitesUs:null (UNKNOWN) rather than "not cited". To-dos are prioritised by OPPORTUNITY (impressions x the CTR gap between where you rank and a realistic target, damped by the verdict), not by raw impressions, and cannibalisation is counted across the whole query cluster. Set scrapeCompetitors:true to also pull the top competitors as content, free and with no API key, routed by host: Reddit → its .json, other pages → a browser-profile HTTP fetch, and ranking videos are listed rather than fetched (a video page has no readable text over HTTP); competitorLimit (default 5) caps how many are fetched and everything above the cap is listed as skipped. Cloudflare-challenge sites (e.g. PCMag) still can\'t be fetched from a server and come back as a per-URL error — the SERP still tells you they rank; if one matters, ask the user to paste its copy or supply a text file and diff that in. Watch the ranking videos (usually what wins these SERPs) and use the fetched pages. Then write findings back with save_recon_todo; track with recon_todos. **Async job:** returns a jobId immediately - poll check_sync_status; the finished job carries the per-page verdicts, to-dos and a summary. (Each page is persisted to the ledger as it completes, so recon_todos shows results even mid-run.)',
       inputSchema: {
         siteUrl: z.string(),
         limit: z.number().int().min(1).max(50).optional().describe('Pages per batch (default 5; async so large batches are fine)'),
@@ -1726,14 +1726,14 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'recon_todos',
     {
       title: 'List, track and annotate content-recon to-dos',
-      description: 'The content-recon to-do board. With no id: list to-dos (optionally filter by page or status), grouped by page with each page\'s verdict — the pick-a-page-to-work-on surface, and the hand-off to content-machine. With id: update one to-do — set status (open → researching → drafted → shipped → dismissed) and/or append a dated annotation note (your own observations, the history). On status:shipped with remeasure:true it re-fetches the SERP and records the outcome, so you can see whether the fix moved you from AIO-uncited to cited, or up the organic ranks.',
+      description: 'The content-recon to-do board. With no id: list to-dos (optionally filter by page or status), grouped by page with each page\'s verdict — the pick-a-page-to-work-on surface, and the hand-off to content-machine. With id: update one to-do — set status (open → researching → drafted → shipped → dismissed) and/or append a dated annotation note (your own observations, the history). With remeasure:true on a shipped to-do (set status:shipped in the same call, or one already shipped) it fetches the SERP live (paid: one DataForSEO SERP call, ~$0.006, never from cache; same market as the baseline unless you pass location) and records the outcome, so you can see whether the fix moved you from AIO-uncited to cited, or up the organic ranks. The reply states the cost, and the page\'s stored rank and citation state are updated too.',
       inputSchema: {
         siteUrl: z.string(),
         urlKey: z.string().optional().describe('Filter the list to one page'),
         status: z.enum(['open', 'researching', 'drafted', 'shipped', 'dismissed']).optional().describe('Filter the list, or the new status when id is set'),
         id: z.number().int().optional().describe('Update this to-do'),
         note: z.string().optional().describe('Append a dated annotation to this to-do'),
-        remeasure: z.boolean().optional().describe('On status:shipped, re-fetch the SERP and record the outcome (paid)'),
+        remeasure: z.boolean().optional().describe('On a shipped to-do, fetch the SERP live and record the outcome (paid, ~$0.006)'),
         location: z.union([z.string(), z.number()]).optional(),
       },
     },
@@ -1747,16 +1747,32 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
           if (note) notes = (notes ? notes + '\n' : '') + `[${new Date().toISOString().slice(0, 10)}] ${note}`;
           let outcome = row.outcome;
           let outcomeNote = '';
-          if (status === 'shipped' && remeasure) {
+          if (remeasure) {
+            // A to-do already marked shipped can be re-measured on its own; anything else would
+            // silently do nothing, so say why instead.
+            if ((status ?? row.status) !== 'shipped') throw new Error(`remeasure needs a shipped to-do: #${id} is "${status ?? row.status}". Pass status:"shipped" with remeasure:true.`);
             const client = requireDfs(dfs); // remeasure is paid: fail loudly rather than silently skip it
-            // Same depth + async-AIO handling as recon_targets, so before/after are comparable.
-            const serpResp = await client.serpOrganic(row.query, location, 'en', 20, { loadAsyncAiOverview: true });
+            const base = row.baseline ? JSON.parse(row.baseline) : {};
+            // Same market as the baseline unless the caller overrides it — the default (United
+            // States) would otherwise compare two different countries.
+            const loc = location ?? base.location ?? undefined;
+            // Same depth + async-AIO + poisoned-SERP handling as recon_targets, so before/after are
+            // comparable. maxAgeDays:0 forces a live fetch: the cached response IS the baseline.
+            const serpResp = await client.serpOrganic(row.query, loc, 'en', 20, { loadAsyncAiOverview: true, resolvePoisonedResults: true, maxAgeDays: 0 });
             const serp = parseSerpForRecon(serpResp, dfsHost(siteUrl), 20);
             const cited = (v: unknown) => (v == null ? 'unknown' : v ? 'yes' : 'no');
-            outcome = JSON.stringify({ organicRank: serp.ourOrganicRank, serpDepth: 20, aioCitesUs: serp.aioCitesUs, aioResolved: serp.aioResolved, at: new Date().toISOString().slice(0, 10) });
-            const base = row.baseline ? JSON.parse(row.baseline) : {};
+            outcome = JSON.stringify({ organicRank: serp.ourOrganicRank, serpDepth: 20, aioCitesUs: serp.aioCitesUs, aioResolved: serp.aioResolved, restoredFromWeb: serp.restoredFromWeb, location: loc ?? null, cost: serpResp.cost, at: new Date().toISOString().slice(0, 10) });
             const rankStr = (r: number | null | undefined) => (r == null ? 'not in top 20' : `#${r}`);
-            outcomeNote = ` Outcome: organic ${rankStr(base.organicRank)}→${rankStr(serp.ourOrganicRank)}, AIO cited ${cited(base.aioCitesUs)}→${cited(serp.aioCitesUs)}.`;
+            const modeNote = serp.restoredFromWeb !== !!base.restoredFromWeb
+              ? ` Caution: ${serp.restoredFromWeb ? 'this reading' : 'the baseline'} came from a poisoned page restored from Google's Web mode, so the two ranks are not like-for-like.`
+              : '';
+            outcomeNote = ` Outcome: organic ${rankStr(base.organicRank)}→${rankStr(serp.ourOrganicRank)}, AIO cited ${cited(base.aioCitesUs)}→${cited(serp.aioCitesUs)}.${modeNote} DataForSEO SERP cost $${serpResp.cost.toFixed(4)}.`;
+            // Keep the page-level reading current: the dashboard's AI Overview panel and the
+            // portfolio rank table read recon_page, and its researched_at feeds their cache key.
+            if (row.url_key) {
+              db.db.prepare(`UPDATE recon_page SET organic_rank=?, aio_present=?, aio_cites_us=?, video_present=?, researched_at=datetime('now') WHERE url_key=? AND query=?`)
+                .run(serp.ourOrganicRank, serp.aioPresent ? 1 : 0, serp.aioCitesUs == null ? null : (serp.aioCitesUs ? 1 : 0), serp.videoPresent ? 1 : 0, row.url_key, row.query);
+            }
           }
           db.db.prepare(`UPDATE recon_todo SET status=COALESCE(?,status), notes=?, outcome=COALESCE(?,outcome), updated_at=datetime('now') WHERE id=?`)
             .run(status ?? null, notes, outcome ?? null, id);
@@ -2182,7 +2198,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
             keywordDifficulty: kd.keyword_properties?.keyword_difficulty ?? null,
             intent: kd.search_intent_info?.main_intent ?? null,
             serpFeatures,
-            isFeaturedSnippet: serp.is_featured_snippet === true ? true : null,
+            isFeaturedSnippet: serpItemHas(serp, 'is_featured_snippet') ? true : null,
           };
         })
         .filter((k): k is NonNullable<typeof k> => k != null);
