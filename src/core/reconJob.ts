@@ -93,7 +93,7 @@ export async function runReconJob(
       const verdict = crawlRealityOverride(serpVerdict, state) ?? serpVerdict;
       const cluster = clusterCannibalisation(db.db, t.query, fresh.effectiveMax);
       const basis = opportunityBasis(t.impressions, serp.ourOrganicRank, t.position, verdict.verdict);
-      const baseline = { organicRank: serp.ourOrganicRank, serpDepth: SERP_DEPTH, aioCitesUs: serp.aioCitesUs, gscPosition: t.position, gscImpressions: t.impressions, window: gscWindow, at: today };
+      const baseline = { organicRank: serp.ourOrganicRank, serpDepth: SERP_DEPTH, aioCitesUs: serp.aioCitesUs, restoredFromWeb: serp.restoredFromWeb, location: location ?? null, gscPosition: t.position, gscImpressions: t.impressions, window: gscWindow, at: today };
       persistReconPage(db.db, {
         urlKey: t.urlKey, query: t.query, verdict: verdict.verdict, verdictNote: verdict.note,
         organicRank: serp.ourOrganicRank, gscPosition: t.position, gscImpressions: t.impressions,
@@ -161,7 +161,10 @@ export async function runReconJob(
         organicRank: serp.ourOrganicRank, serpDepth: SERP_DEPTH,
         organicRankNote: serp.ourOrganicRank == null ? `absent from the top ${SERP_DEPTH} organic results — position beyond ${SERP_DEPTH} was not measured` : undefined,
         aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, aioResolved: serp.aioResolved, aioAsync: serp.aioAsync,
-        aioNote: serp.aioCitesUs == null && serp.aioPresent ? 'AI Overview present but citations unresolved — citation status UNKNOWN, not "not cited"' : undefined,
+        aioNote: serp.aioCitesUs == null && serp.aioPresent
+          ? (serp.restoredFromWeb ? 'AI Overview came with a poisoned results page and is not repaired — citation status UNKNOWN, not "not cited"' : 'AI Overview present but citations unresolved — citation status UNKNOWN, not "not cited"')
+          : undefined,
+        restoredFromWeb: serp.restoredFromWeb,
         videoPresent: serp.videoPresent,
         verdict: verdict.verdict, verdictNote: verdict.note,
         ...(verdict.verdict === 'page-cannot-rank' ? { serpVerdict: serpVerdict.verdict, serpVerdictNote: serpVerdict.note } : {}),
@@ -181,7 +184,7 @@ export async function runReconJob(
           : r.aioCitesUs == null ? 'AIO: citation UNKNOWN (unresolved)'
           : r.aioCitesUs ? 'AIO: cited' : `AIO: NOT cited (${r.competitors.aioReferences.length} refs checked)`;
         const flags = [aio, r.videoPresent ? 'video pack' : null].filter(Boolean).join(' · ');
-        const rank = r.organicRank != null ? `organic #${r.organicRank}` : `not in the top ${SERP_DEPTH} organic`;
+        const rank = (r.organicRank != null ? `organic #${r.organicRank}` : `not in the top ${SERP_DEPTH} organic`) + (r.restoredFromWeb ? ' (Web-mode rank: poisoned page restored)' : '');
         const cann = r.cannibalisationCluster?.cannibalising ? `\nCluster overlap: ${r.cannibalisationCluster.urls.length} of your URLs across "${r.cannibalisationCluster.core.join(' ')}", colliding on ${r.cannibalisationCluster.collidingQueries} of ${r.cannibalisationCluster.clusterQueries} queries.` : '';
         const cf = r.competitorFetch
           ? `\nCompetitors: ${r.competitorFetch.fetched}/${r.competitorFetch.attempted} fetched of ${r.competitorFetch.identified} identified (limit ${r.competitorFetch.limit})${r.competitorFetch.skipped.length ? `; skipped ${r.competitorFetch.skipped.map((s: any) => s.url).join(', ')}` : ''}.` +
@@ -207,7 +210,7 @@ export async function runReconJob(
       urlKey: r.urlKey, query: r.query, window: r.window,
       impressions: r.impressions, gscPosition: r.gscPosition, priorPosition: r.priorPosition, slipped: r.slipped,
       organicRank: r.organicRank, serpDepth: r.serpDepth, organicRankNote: r.organicRankNote,
-      aioPresent: r.aioPresent, aioCitesUs: r.aioCitesUs, aioResolved: r.aioResolved, aioNote: r.aioNote, videoPresent: r.videoPresent,
+      aioPresent: r.aioPresent, aioCitesUs: r.aioCitesUs, aioResolved: r.aioResolved, aioNote: r.aioNote, restoredFromWeb: r.restoredFromWeb, videoPresent: r.videoPresent,
       verdict: r.verdict, verdictNote: r.verdictNote,
       opportunityClicks: r.priorityBasis?.opportunityClicks, positionSource: r.priorityBasis?.positionSource, targetPosition: r.priorityBasis?.targetPosition,
       hasProductSchema: r.hasProductSchema, dateModified: r.dateModified, todosInserted: r.todosInserted,

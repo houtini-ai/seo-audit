@@ -1726,14 +1726,14 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'recon_todos',
     {
       title: 'List, track and annotate content-recon to-dos',
-      description: 'The content-recon to-do board. With no id: list to-dos (optionally filter by page or status), grouped by page with each page\'s verdict — the pick-a-page-to-work-on surface, and the hand-off to content-machine. With id: update one to-do — set status (open → researching → drafted → shipped → dismissed) and/or append a dated annotation note (your own observations, the history). On status:shipped with remeasure:true it re-fetches the SERP and records the outcome, so you can see whether the fix moved you from AIO-uncited to cited, or up the organic ranks.',
+      description: 'The content-recon to-do board. With no id: list to-dos (optionally filter by page or status), grouped by page with each page\'s verdict — the pick-a-page-to-work-on surface, and the hand-off to content-machine. With id: update one to-do — set status (open → researching → drafted → shipped → dismissed) and/or append a dated annotation note (your own observations, the history). With remeasure:true on a shipped to-do (set status:shipped in the same call, or one already shipped) it fetches the SERP live (paid: one DataForSEO SERP call, ~$0.006, never from cache; same market as the baseline unless you pass location) and records the outcome, so you can see whether the fix moved you from AIO-uncited to cited, or up the organic ranks. The reply states the cost, and the page\'s stored rank and citation state are updated too.',
       inputSchema: {
         siteUrl: z.string(),
         urlKey: z.string().optional().describe('Filter the list to one page'),
         status: z.enum(['open', 'researching', 'drafted', 'shipped', 'dismissed']).optional().describe('Filter the list, or the new status when id is set'),
         id: z.number().int().optional().describe('Update this to-do'),
         note: z.string().optional().describe('Append a dated annotation to this to-do'),
-        remeasure: z.boolean().optional().describe('On status:shipped, re-fetch the SERP and record the outcome (paid)'),
+        remeasure: z.boolean().optional().describe('On a shipped to-do, fetch the SERP live and record the outcome (paid, ~$0.006)'),
         location: z.union([z.string(), z.number()]).optional(),
       },
     },
@@ -1747,16 +1747,32 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
           if (note) notes = (notes ? notes + '\n' : '') + `[${new Date().toISOString().slice(0, 10)}] ${note}`;
           let outcome = row.outcome;
           let outcomeNote = '';
-          if (status === 'shipped' && remeasure) {
+          if (remeasure) {
+            // A to-do already marked shipped can be re-measured on its own; anything else would
+            // silently do nothing, so say why instead.
+            if ((status ?? row.status) !== 'shipped') throw new Error(`remeasure needs a shipped to-do: #${id} is "${status ?? row.status}". Pass status:"shipped" with remeasure:true.`);
             const client = requireDfs(dfs); // remeasure is paid: fail loudly rather than silently skip it
-            // Same depth + async-AIO handling as recon_targets, so before/after are comparable.
-            const serpResp = await client.serpOrganic(row.query, location, 'en', 20, { loadAsyncAiOverview: true, resolvePoisonedResults: true });
+            const base = row.baseline ? JSON.parse(row.baseline) : {};
+            // Same market as the baseline unless the caller overrides it — the default (United
+            // States) would otherwise compare two different countries.
+            const loc = location ?? base.location ?? undefined;
+            // Same depth + async-AIO + poisoned-SERP handling as recon_targets, so before/after are
+            // comparable. maxAgeDays:0 forces a live fetch: the cached response IS the baseline.
+            const serpResp = await client.serpOrganic(row.query, loc, 'en', 20, { loadAsyncAiOverview: true, resolvePoisonedResults: true, maxAgeDays: 0 });
             const serp = parseSerpForRecon(serpResp, dfsHost(siteUrl), 20);
             const cited = (v: unknown) => (v == null ? 'unknown' : v ? 'yes' : 'no');
-            outcome = JSON.stringify({ organicRank: serp.ourOrganicRank, serpDepth: 20, aioCitesUs: serp.aioCitesUs, aioResolved: serp.aioResolved, at: new Date().toISOString().slice(0, 10) });
-            const base = row.baseline ? JSON.parse(row.baseline) : {};
+            outcome = JSON.stringify({ organicRank: serp.ourOrganicRank, serpDepth: 20, aioCitesUs: serp.aioCitesUs, aioResolved: serp.aioResolved, restoredFromWeb: serp.restoredFromWeb, location: loc ?? null, cost: serpResp.cost, at: new Date().toISOString().slice(0, 10) });
             const rankStr = (r: number | null | undefined) => (r == null ? 'not in top 20' : `#${r}`);
-            outcomeNote = ` Outcome: organic ${rankStr(base.organicRank)}→${rankStr(serp.ourOrganicRank)}, AIO cited ${cited(base.aioCitesUs)}→${cited(serp.aioCitesUs)}.`;
+            const modeNote = serp.restoredFromWeb !== !!base.restoredFromWeb
+              ? ` Caution: ${serp.restoredFromWeb ? 'this reading' : 'the baseline'} came from a poisoned page restored from Google's Web mode, so the two ranks are not like-for-like.`
+              : '';
+            outcomeNote = ` Outcome: organic ${rankStr(base.organicRank)}→${rankStr(serp.ourOrganicRank)}, AIO cited ${cited(base.aioCitesUs)}→${cited(serp.aioCitesUs)}.${modeNote} DataForSEO SERP cost $${serpResp.cost.toFixed(4)}.`;
+            // Keep the page-level reading current: the dashboard's AI Overview panel and the
+            // portfolio rank table read recon_page, and its researched_at feeds their cache key.
+            if (row.url_key) {
+              db.db.prepare(`UPDATE recon_page SET organic_rank=?, aio_present=?, aio_cites_us=?, video_present=?, researched_at=datetime('now') WHERE url_key=? AND query=?`)
+                .run(serp.ourOrganicRank, serp.aioPresent ? 1 : 0, serp.aioCitesUs == null ? null : (serp.aioCitesUs ? 1 : 0), serp.videoPresent ? 1 : 0, row.url_key, row.query);
+            }
           }
           db.db.prepare(`UPDATE recon_todo SET status=COALESCE(?,status), notes=?, outcome=COALESCE(?,outcome), updated_at=datetime('now') WHERE id=?`)
             .run(status ?? null, notes, outcome ?? null, id);
