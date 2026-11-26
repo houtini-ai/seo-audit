@@ -5,7 +5,9 @@ import { AuditDatabase } from './AuditDatabase.js';
 import { dbPathFor } from './paths.js';
 import { urlKey, hostFormForProperty, type UrlKeyOptions } from './url-key.js';
 import { extractPage, isInternalHost, decodeHtmlBody } from './extract.js';
-import { fetchRobotsTxt, rulesFromText, robotsUnreachable } from './robots.js';
+import { fetchRobotsTxt, rulesFromText, robotsUnreachable, robotsTokenFor } from './robots.js';
+import { headerNoindex } from './robotsDirectives.js';
+import { publicOnlyAgent } from './netGuard.js';
 import { storeRobotsTxt } from './robotsStore.js';
 import { probeTls, storeTls, ensureTlsSchema, tlsTwin } from './tlsProbe.js';
 import { finalizeLinkGraph } from './linkGraph.js';
@@ -28,8 +30,8 @@ export const isHtmlContentType = (ct: string | null | undefined): boolean =>
   HTML_MIME_TYPES.has((ct ?? '').split(';')[0].trim().toLowerCase());
 
 // File types we never need the body of — images, media, fonts, archives, office docs, css/js,
-// pdf. We HEAD these (status + content-type only, no download) — a big bandwidth/time win on
-// asset-heavy sites. We still record them (status/type) so broken-link checks work.
+// pdf. Kept out of the sitemap/GSC/backlink seeds. One reached by a link is still requested (a GET
+// whose body is cancelled unread: see fetchWithRedirects) and recorded, so broken-link checks work.
 const ASSET_EXT = /\.(jpe?g|png|gif|webp|avif|svg|svgz|ico|bmp|tiff?|heic|psd|pdf|zip|rar|7z|gz|tgz|tar|bz2|mp4|mpeg|mpg|m4v|webm|mov|avi|mkv|flv|wmv|mp3|m4a|aac|opus|weba|wav|ogg|oga|flac|wma|css|js|mjs|cjs|map|woff2?|ttf|otf|eot|dmg|exe|msi|apk|bin|doc|docx|xls|xlsx|ppt|pptx)$/i;
 const isAssetUrl = (u: string): boolean => { try { return ASSET_EXT.test(new URL(u).pathname); } catch { return false; } };
 
@@ -56,7 +58,7 @@ function classifyIndexability(
   if (status >= 400) return { indexable: 0, reason: `http-${status}` };       // 404, 410, 500, 503, …
   if (status >= 300) return { indexable: 0, reason: 'redirect' };             // redirect chain exceeded maxHops
   if (!isHtml) return { indexable: 0, reason: 'non-html' };
-  if (/noindex/i.test(xRobotsTag ?? '')) return { indexable: 0, reason: 'noindex-header' }; // X-Robots-Tag
+  if (headerNoindex(xRobotsTag)) return { indexable: 0, reason: 'noindex-header' }; // X-Robots-Tag (unscoped or googlebot's)
   if (noindexMeta) return { indexable: 0, reason: 'noindex-meta' };
   if (canonicalKey && canonicalKey !== finalKey) return { indexable: 0, reason: 'canonicalised' };
   return { indexable: 1, reason: null };
@@ -146,12 +148,13 @@ interface FetchOutcome {
   /** Any response on the way carried Shopify storefront headers. */
   shopify: boolean;
   /** Set when a redirect hop was NOT followed: it left the property (another host, a skip pattern,
-   *  a non-http scheme) or robots.txt disallows it. `finalUrl` is then the unfetched target. */
+   *  a non-http scheme), robots.txt disallows it, or the target is a page this crawl already stored.
+   *  `finalUrl` is then the target, not fetched by this request. */
   stoppedAt?: RedirectStop;
 }
 
 /** Why a redirect hop was not followed. */
-export type RedirectStop = 'offsite' | 'robots';
+export type RedirectStop = 'offsite' | 'robots' | 'seen';
 
 /** Per-crawl bot-block bookkeeping: whether the Chrome fallback is allowed, and how it's going. */
 export interface UaState { fallback: boolean; preferChrome: boolean; botTried: number; blockedAsBot: number; okAsChrome: number; blockedAsChrome: number }
@@ -373,14 +376,23 @@ export class Crawler {
     const ua = opts.userAgent ?? DEFAULT_UA;
     // Chrome fallback on bot blocks, unless the user chose a user agent explicitly.
     const uaState: UaState = { fallback: !opts.userAgent && opts.chromeFallback !== false, preferChrome: false, botTried: 0, blockedAsBot: 0, okAsChrome: 0, blockedAsChrome: 0 };
-    const excludeRes = (opts.excludePatterns ?? []).flatMap(p => { try { return [new RegExp(p, 'i')]; } catch { return []; } });
+    // A pattern that isn't a regular expression (a glob such as "*/tag/*") fails the crawl here, before
+    // anything is fetched or written: dropped silently, the crawl ran with no exclusion and said nothing.
+    const excludeRes = (opts.excludePatterns ?? []).map((p) => {
+      try { return new RegExp(p, 'i'); } catch (err) {
+        throw new Error(`excludePatterns: "${p}" is not a valid regular expression (${err instanceof Error ? err.message : String(err)}). Patterns are regexes tested against the full URL, e.g. "/tag/" or "[?&]page=".`);
+      }
+    });
 
-    const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : siteUrl;
+    // sc-domain:example.com and a bare hostname (example.com, which assertPropertyId accepts) both seed https.
+    const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/`
+      : /^https?:\/\//i.test(siteUrl.trim()) ? siteUrl : `https://${siteUrl.trim()}/`;
     const baseHost = new URL(seed).hostname;
     const keyOpts: UrlKeyOptions = { hostForm: hostFormForProperty(siteUrl) };
     const origin = new URL(seed).origin;
 
     const dispatcher = makeDispatcher(Math.min((opts.maxConcurrency ?? 8) * 2, 32));
+    let guardDispatcher: Agent | null = null; // public-addresses-only pool for off-host asset probes, made on first use
     const db = new AuditDatabase(dbPathFor(this.dataDir, siteUrl));
     db.upsertProperty(siteUrl, keyOpts.hostForm ?? 'asis');
     const crawlId = randomUUID().slice(0, 8);
@@ -412,7 +424,7 @@ export class Crawler {
     // Googlebot / AI-bot verdicts (#55). RFC 9309: a 4xx means no robots.txt (crawl everything); an
     // UNREACHABLE file (5xx, 429, no response) means crawl nothing, as Google does: the crawl stops
     // (failed, with the reason) before it writes anything.
-    const robotsTxt = await fetchRobotsTxt(origin, ua);
+    const robotsTxt = await fetchRobotsTxt(origin, ua, { chromeFallback: uaState.fallback });
     try { storeRobotsTxt(db.db, origin, robotsTxt); } catch (err) { console.error('[crawl] robots.txt not stored:', err instanceof Error ? err.message : String(err)); }
     // TLS certificate (#79 tls-expiring): one handshake each for the crawl host and its www/apex twin,
     // https sites only, in parallel and bounded (8 s each). Never fails the crawl. The table holds
@@ -431,7 +443,8 @@ export class Crawler {
       }
     } catch (err) { console.error('[crawl] TLS probe skipped:', err instanceof Error ? err.message : String(err)); }
     const robotsDown = robotsUnreachable(robotsTxt.status);
-    const robots = rulesFromText(robotsTxt.body ?? '', 'seo-audit-console');
+    // The group obeyed is the one for the identity the site sees: a custom userAgent names its own token.
+    const robots = rulesFromText(robotsTxt.body ?? '', robotsTokenFor(opts.userAgent));
     const robotsNote = `robots.txt was unreachable (${robotsTxt.status ? `HTTP ${robotsTxt.status}` : 'no response'}): RFC 9309 treats that as "disallow everything", as Google does, so nothing was crawled. Fix robots.txt (it should answer 200, or 404 for none) and crawl again.`;
 
     const pageInsert = db.db.prepare(
@@ -491,6 +504,7 @@ export class Crawler {
     const linkBuf: Record<string, unknown>[] = [];
     const visited = new Set<string>();
     const emitted = new Set<string>(); // final url_keys already extracted+written
+    const storedUrl = new Map<string, string>(); // url_key → the exact URL of a page fetched and stored (not redirect-out sources)
     const imageRefs = new Map<string, number>(); // distinct <img> src → pages using it
     // attempt/notBefore: set on a URL re-queued after a rate limit (#54).
     type FrontierItem = { url: string; depth: number; attempt?: number; notBefore?: number };
@@ -513,7 +527,7 @@ export class Crawler {
     let sitemaps: CrawlResult['sitemaps'];
     if (!signal.aborted) {
       try {
-        const sm = await fetchSitemapUrls(origin, ua, keyOpts, { signal });
+        const sm = await fetchSitemapUrls(origin, ua, keyOpts, { signal, chromeFallback: uaState.fallback });
         sitemaps = { declared: sm.sources, undeclared: sm.undeclared, fetched: sm.sitemapsFetched, urls: sm.urls.length, ...(sm.oversized.length ? { oversized: sm.oversized } : {}) };
         const smInsert = db.db.prepare(`INSERT INTO sitemap_urls (url_key, url, lastmod, fetched_at) VALUES (?,?,?,datetime('now')) ON CONFLICT(url_key) DO NOTHING`);
         const smFile = db.db.prepare(`INSERT OR REPLACE INTO sitemap_files (url, source, outcome, http_status, kind, entries, bytes, invalid_locs, walk_capped, fetched_at)
@@ -599,12 +613,19 @@ export class Crawler {
     const redirectStop = (target: URL): RedirectStop | null => {
       if (target.protocol !== 'http:' && target.protocol !== 'https:') return 'offsite';
       if (!isInternalHost(target.hostname, baseHost) || skipUrl(target.toString(), excludeRes)) return 'offsite';
-      return robots.isAllowed(target.pathname + target.search) ? null : 'robots';
+      if (!robots.isAllowed(target.pathname + target.search)) return 'robots';
+      // The target is a page this crawl already stored: the redirect is recorded, the page not downloaded again.
+      // Exact URL only: a variant that shares the page's key (http/www/tracking params) is a hop that
+      // itself redirects, and stopping there would record the chain cut short.
+      return storedUrl.get(urlKey(target.toString(), keyOpts)) === target.toString() ? 'seen' : null;
     };
+    let running = 0; // requests in flight: counted against maxPages, or the cap overshot by up to concurrency - 1
     const processOne = async (item: FrontierItem): Promise<void> => {
       // A re-queued rate-limited URL waits out its spacing (usually long past by the time it is reached).
       if (item.notBefore && item.notBefore > Date.now()) await sleepUnlessAborted(item.notBefore - Date.now(), signal);
       if (signal.aborted) return;
+      // Already fetched as the target of a redirect while it waited in the frontier: not fetched again.
+      if (!item.attempt && emitted.has(urlKey(item.url, keyOpts))) return;
       if (dynamicDelay) await sleep(dynamicDelay);
       const path = (() => { try { const u = new URL(item.url); return u.pathname + u.search; } catch { return '/'; } })();
       if (!robots.isAllowed(path)) {
@@ -650,7 +671,7 @@ export class Crawler {
         // redirect-out and do NOT store the off-site target as a page or extract its links.
         // A hop that was not followed (stoppedAt) is handled the same way: the source is the redirect
         // and the target is never fetched; a robots-disallowed target is recorded as such.
-        let offsite = r.stoppedAt != null;
+        let offsite = r.stoppedAt === 'offsite' || r.stoppedAt === 'robots';
         try { offsite ||= r.redirects.length > 0 && (!isInternalHost(new URL(r.finalUrl).hostname, baseHost) || skipUrl(r.finalUrl, excludeRes)); } catch { /* unparseable final URL */ }
         if (r.stoppedAt === 'robots') {
           ensureWiped();
@@ -671,8 +692,12 @@ export class Crawler {
         // Multiple enqueued URLs can redirect to the same final page. The pages table
         // dedupes via ON CONFLICT(url_key), but re-extracting the same HTML would insert
         // its outlinks AGAIN, inflating inlink_count/iPR weights — so skip re-processing.
-        if (emitted.has(finalKey)) { crawled++; flush(); return; }
+        // Not counted as crawled: nothing new is stored, and counting it spent the maxPages budget twice.
+        if (emitted.has(finalKey)) { flush(); return; }
         emitted.add(finalKey);
+        if (!offsite) storedUrl.set(finalKey, r.finalUrl);
+        // A followed redirect's target is now fetched: a later link to it must not fetch it again.
+        visited.add(finalKey);
         if (r.truncated) errorInsert.run(crawlId, r.finalUrl, 'body-truncated', `HTML body over ${MAX_HTML_BYTES / 1024 / 1024} MB: read and extracted up to that size only`);
         const status = offsite ? (r.redirects[0]?.status ?? r.status) : r.status;
         const isHtml = !offsite && isHtmlContentType(r.contentType);
@@ -737,7 +762,7 @@ export class Crawler {
               target_url: l.targetUrl, target_key: l.targetKey, anchor_text: l.anchor,
               is_internal: l.isInternal ? 1 : 0, placement: l.placement, rel: l.rel, href_form: l.hrefForm,
             });
-            if (l.isInternal && !skipUrl(l.targetUrl, excludeRes) && item.depth + 1 <= maxDepth && (crawled + frontier.length) < maxPages) {
+            if (l.isInternal && !skipUrl(l.targetUrl, excludeRes) && item.depth + 1 <= maxDepth && (crawled + running + frontier.length) < maxPages) {
               enqueue(l.targetUrl, item.depth + 1);
             }
           }
@@ -755,7 +780,6 @@ export class Crawler {
     // work has drained — never while requests are still running (avoids late
     // writes after the DB is closed when the page cap is hit mid-flight).
     await new Promise<void>((resolve) => {
-      let running = 0;
       let finished = false;
       const pump = (): void => {
         if (finished) return;
@@ -768,7 +792,7 @@ export class Crawler {
         if (capHit) return; // stop starting new work; let in-flight drain via finally → pump
         // limiter.limit, not the configured ceiling: the AIMD-adjusted effective concurrency (#54).
         // After a decrease, in-flight requests above the new limit drain before anything new starts.
-        while (running < limiter.limit && frontier.length > 0 && crawled < maxPages && !signal.aborted) {
+        while (running < limiter.limit && frontier.length > 0 && crawled + running < maxPages && !signal.aborted) {
           const item = frontier.shift()!;
           running++;
           processOne(item).finally(() => { running--; pump(); });
@@ -809,16 +833,30 @@ export class Crawler {
     // Shared header-only probe for the two post-crawl passes: fetch, read headers, cancel the
     // body immediately — the bytes are never downloaded. Politeness lives in probePool: 2
     // workers paced at (at least) the crawl delay, so the aggregate stays at a few rps.
+    // Hop by hop, like the sitemap fetcher: the property's own host goes through the crawl's pool (it
+    // may be local), any other host (a CDN image, a third-party script, a redirect target) through
+    // publicOnlyAgent, so an <img src> or a redirect naming 169.254.169.254 or an intranet host is
+    // refused at connect time instead of requested and its status and size stored.
     const headProbe = async (url: string, extraHeaders: Record<string, string>, redirect: 'follow' | 'manual'): Promise<{ status: number; header: (n: string) => string | null } | null> => {
       try {
-        // Same identity the page crawl ended on: a walled site would otherwise 403 every probe and
-        // record false conditional-304 / asset statuses seconds after storing the pages as 200.
-        const res = await ufetch(url, { headers: { ...(uaState.preferChrome ? CHROME_HEADERS : { 'user-agent': ua }), ...extraHeaders }, redirect, dispatcher, signal: AbortSignal.timeout(10000) });
-        try { await res.body?.cancel(); } catch { /* already closed */ }
-        // #54: a throttled probe measured nothing - treat it like a fetch error (no status stored;
-        // a conditional probe that got 429 must not read as "returned 200 instead of 304").
-        if (isRateLimited(res.status, n => res.headers.get(n))) return null;
-        return { status: res.status, header: (n: string) => res.headers.get(n) };
+        let current = url;
+        for (let hop = 0; hop <= 5; hop++) {
+          const target = new URL(current);
+          if (target.protocol !== 'http:' && target.protocol !== 'https:') return null;
+          const own = isInternalHost(target.hostname, baseHost);
+          // Same identity the page crawl ended on: a walled site would otherwise 403 every probe and
+          // record false conditional-304 / asset statuses seconds after storing the pages as 200.
+          const res = await ufetch(current, { headers: { ...(uaState.preferChrome ? CHROME_HEADERS : { 'user-agent': ua }), ...extraHeaders }, redirect: 'manual',
+            dispatcher: own ? dispatcher : (guardDispatcher ??= publicOnlyAgent({ connections: 4, keepAliveTimeout: 10_000 })), signal: AbortSignal.timeout(10000) });
+          try { await res.body?.cancel(); } catch { /* already closed */ }
+          const loc = redirect === 'follow' && res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+          if (loc && hop < 5) { current = new URL(loc, current).toString(); continue; }
+          // #54: a throttled probe measured nothing - treat it like a fetch error (no status stored;
+          // a conditional probe that got 429 must not read as "returned 200 instead of 304").
+          if (isRateLimited(res.status, n => res.headers.get(n))) return null;
+          return { status: res.status, header: (n: string) => res.headers.get(n) };
+        }
+        return null;
       } catch { return null; }
     };
     const probePool = async <T>(items: T[], run: (item: T) => Promise<void>): Promise<void> => {
@@ -968,6 +1006,7 @@ export class Crawler {
     } finally {
       db.close();
       try { await dispatcher.close(); } catch { /* pool already gone */ }
+      try { await (guardDispatcher as Agent | null)?.close(); } catch { /* pool already gone */ }
     }
   }
 }

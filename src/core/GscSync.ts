@@ -31,6 +31,22 @@ export function planIncremental(maxStoredDate: string | null, start: string, end
   return resume > start ? { startDate: resume, replaceFrom: resume, noop: false } : { startDate: start, replaceFrom: null, noop: false };
 }
 
+/**
+ * The days BEFORE the stored history that a sync must also fetch. planIncremental only looks at the
+ * last stored date, so a later request with an earlier start (first sync 90 days, then "go back 16
+ * months") was narrowed to the lag days and the earlier months were never fetched. When the
+ * requested start precedes the first stored date, the whole gap [start, first stored day - 1] is
+ * fetched as well — through to the stored history even when the request ends earlier, because every
+ * later plan reads MIN(date)/MAX(date) as one unbroken range and a hole would read as covered.
+ * Null when there is nothing stored, nothing earlier asked, or the request is empty (end < start,
+ * e.g. a window wholly older than GSC's retention after its start was clamped).
+ */
+export function planBackfill(minStoredDate: string | null, start: string, end: string): { startDate: string; endDate: string } | null {
+  if (!minStoredDate || start >= minStoredDate || end < start) return null;
+  const before = new Date(Date.parse(minStoredDate) - 86400000).toISOString().slice(0, 10);
+  return { startDate: start, endDate: before };
+}
+
 export interface SyncResult {
   siteUrl: string;
   rowsFetched: number;
@@ -51,6 +67,8 @@ export interface SyncResult {
   dimensions?: string[];
   /** Set when the sync was cancelled: rows fetched before the cancel, discarded (nothing was written). */
   discarded?: number;
+  /** Days before the stored history that this sync also fetched (the request started earlier than the first stored day). */
+  backfill?: { startDate: string; endDate: string; rowsFetched: number };
   /**
    * The date × page totals fetched alongside (#118): the source of every page/site total. A first
    * sync after the upgrade backfills the span the query rows already cover (GSC keeps 16 months).
@@ -79,7 +97,7 @@ export function planPageTotals(
   end: string,
   full: boolean,
   now = new Date(),
-): { startDate: string; endDate: string; replaceFrom: string | null; noop: boolean; backfill: boolean } {
+): { startDate: string; endDate: string; replaceFrom: string | null; noop: boolean; backfill: boolean; before?: { startDate: string; endDate: string } } {
   if (full) return { startDate: start, endDate: end, replaceFrom: null, noop: false, backfill: false };
   if (!range.max) {
     const earliest = saMin && saMin < start ? saMin : start;
@@ -87,7 +105,11 @@ export function planPageTotals(
     return { startDate: earliest < floor ? floor : earliest, endDate: end, replaceFrom: null, noop: false, backfill: true };
   }
   const plan = planIncremental(range.max, start, end);
-  return { startDate: plan.startDate, endDate: end, replaceFrom: plan.replaceFrom, noop: plan.noop, backfill: false };
+  // A request that starts before the stored page totals also fetches the days before them (never
+  // before GSC's retention), when the incremental range does not already start at the request.
+  const floor = gscRetentionStart(now);
+  const before = plan.noop || plan.replaceFrom ? planBackfill(range.min, start < floor ? floor : start, end) : null;
+  return { startDate: plan.startDate, endDate: end, replaceFrom: plan.replaceFrom, noop: plan.noop, backfill: false, ...(before ? { before } : {}) };
 }
 
 /** True when a dimension set produces segment rows (a device or a country). */
@@ -109,6 +131,19 @@ export function storedMaxDates(db: Database.Database): { totals: string | null; 
   };
   const totals = max(`SELECT MAX(date) d FROM search_analytics`);
   return { totals, segments: segmentsMaxDate(db) };
+}
+
+/** The first stored date of the totals and of the segment rows, read like storedMaxDates. */
+export function storedMinDates(db: Database.Database): { totals: string | null; segments: string | null } {
+  const min = (sql: string): string | null => {
+    try { return (db.prepare(sql).get() as { d: string | null } | undefined)?.d ?? null; } catch { return null; }
+  };
+  let segments = min(`SELECT MIN(date) d FROM ${SEGMENTS}`);
+  if (gscStorageState(db) !== 'done') {
+    const legacy = min(`SELECT date d FROM search_analytics WHERE ${segmentSql()} ORDER BY date ASC LIMIT 1`);
+    if (legacy && (!segments || legacy < segments)) segments = legacy;
+  }
+  return { totals: min(`SELECT MIN(date) d FROM search_analytics`), segments };
 }
 
 /**
@@ -159,19 +194,25 @@ export class GscSync {
    *  dimension decision as run() (syncDimensions: a lite request may keep segmenting) and the same
    *  stored dates, so it states the real range. A different search type still forces the full
    *  window (checking it means scanning the tables); the finished job reports the range used. */
-  plannedRange(siteUrl: string, options: FetchOptions): { startDate: string; endDate: string; incremental: boolean; noop?: boolean; dimensions: string[]; segmentsKept?: boolean } {
+  plannedRange(siteUrl: string, options: FetchOptions): { startDate: string; endDate: string; incremental: boolean; noop?: boolean; dimensions: string[]; segmentsKept?: boolean; backfill?: { startDate: string; endDate: string } } {
     let max: { totals: string | null; segments: string | null } = { totals: null, segments: null };
+    let min: { totals: string | null; segments: string | null } = { totals: null, segments: null };
     try {
       // A plain read-only handle: two index-backed MAX(date) lookups and nothing else. The tool's
       // reply waits on this, so no schema ensure work (AuditDatabase) and no write lock.
       const db = new Database(dbPathFor(this.dataDir, siteUrl), { readonly: true, fileMustExist: true });
-      try { max = storedMaxDates(db); } finally { db.close(); }
+      try { max = storedMaxDates(db); min = storedMinDates(db); } finally { db.close(); }
     } catch { /* no DB yet, or one this version never opened */ }
     const { dimensions, segmentsKept } = syncDimensions(options.dimensions, max);
     const shape = { dimensions, ...(segmentsKept ? { segmentsKept } : {}) };
     if (options.fullResync) return { startDate: options.startDate, endDate: options.endDate, incremental: false, ...shape };
     const plan = planIncremental(isSegmentSync(dimensions) ? max.segments : max.totals, options.startDate, options.endDate);
-    return { startDate: plan.startDate, endDate: options.endDate, incremental: plan.startDate !== options.startDate, ...(plan.noop ? { noop: true } : {}), ...shape };
+    // The days before the stored history, when the request starts earlier (same rule as run()).
+    const backfill = plan.noop || plan.replaceFrom ? planBackfill(isSegmentSync(dimensions) && !segmentsKept ? min.segments : min.totals, options.startDate, options.endDate) : null;
+    // Stored data already reaches past the requested end, but starts after the requested start:
+    // the fetch is the earlier days alone.
+    if (plan.noop && backfill) return { startDate: backfill.startDate, endDate: backfill.endDate, incremental: false, backfill, ...shape };
+    return { startDate: plan.startDate, endDate: options.endDate, incremental: plan.startDate !== options.startDate, ...(plan.noop ? { noop: true } : {}), ...(backfill ? { backfill } : {}), ...shape };
   }
 
   async run(
@@ -220,7 +261,7 @@ export class GscSync {
       const legacy = gscStorageState(db.db) !== 'done';
 
       const stored = storedMaxDates(db.db);
-      const { dimensions: dims } = syncDimensions(asked, stored);
+      const { dimensions: dims, segmentsKept } = syncDimensions(asked, stored);
       let options2: FetchOptions = { ...options, dimensions: dims };
       // The sync guard (#65): segment rows go to search_analytics_segments, all-country rows to
       // search_analytics, never the other way (each table's trigger refuses the wrong shape too).
@@ -310,6 +351,9 @@ export class GscSync {
         ({ siteUrl, rowsFetched, startDate: options2.startDate, endDate: options2.endDate, table, dimensions: dims, ...extra, ...(migration ? { migration } : {}), ...(deferred ? { storageMigrationDeferred: deferred } : {}) });
       let replaceFrom: string | null = null;
       let mainNoop = false;
+      // The days before the stored history, when the request starts earlier than the first stored
+      // day (planBackfill): fetched and staged with the rest, so they land in the same transaction.
+      let backfill: { startDate: string; endDate: string } | null = null;
       // The page-totals window (#118), planned from its own table (a first sync backfills it).
       const saMin = (db.db.prepare(`SELECT MIN(date) d FROM search_analytics`).get() as { d: string | null }).d;
       const pt = planPageTotals(pageTotalsRange(db.db), saMin, options.startDate, options.endDate, !!options.fullResync || mustWipe);
@@ -319,17 +363,24 @@ export class GscSync {
         // endDate predates the stored data): no fetch instead of calling GSC with start > end.
         if (plan.noop) mainNoop = true;
         else if (plan.replaceFrom) { options2 = { ...options2, startDate: plan.startDate }; replaceFrom = plan.replaceFrom; }
+        if (plan.noop || plan.replaceFrom) {
+          const min = storedMinDates(db.db);
+          // Measured against the rows that were asked for: the segment rows for a segment request,
+          // the totals otherwise (a lite request re-aimed at segments to keep the breakdowns current
+          // still asked for totals; its earlier days are fetched once and their totals derived).
+          backfill = planBackfill(segments && !segmentsKept ? min.segments : min.totals, options.startDate, options.endDate);
+        }
       }
-      if (mainNoop && pt.noop) {
+      if (mainNoop && pt.noop && !backfill && !pt.before) {
         db.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(siteUrl);
         return result(0);
       }
       // A full-window segment sync over stored segment rows replaces that window (in the apply
       // transaction, like the wipe), so a day never holds two segment shapes.
-      const replaceWindow = segments && !mustWipe && !replaceFrom
+      const replaceWindow = segments && !mustWipe && !replaceFrom && !mainNoop
         && (!!db.db.prepare(`SELECT 1 FROM ${SEGMENTS} WHERE date >= ? AND date <= ? LIMIT 1`).get(options2.startDate, options2.endDate)
           || (legacy && !!db.db.prepare(`SELECT 1 FROM search_analytics WHERE date >= ? AND date <= ? AND ${SEG} LIMIT 1`).get(options2.startDate, options2.endDate)));
-      if (!mainNoop) await this.gsc.fetchSearchAnalytics(siteUrl, options2, signal, ({ rows }) => {
+      const stagePage = ({ rows }: { rows: GscApiRow[] }): void => {
         const records = rows.map((row: GscApiRow) => {
           const keys = row.keys ?? [];
           const rec: Record<string, string | null> = {};
@@ -352,43 +403,66 @@ export class GscSync {
         stageRows(records);
         total += records.length;
         update({ siteUrl, rowsFetched: total });
-      });
+      };
+      if (!mainNoop) await this.gsc.fetchSearchAnalytics(siteUrl, options2, signal, stagePage);
+      let backfillRows = 0;
+      if (backfill && !signal.aborted) {
+        const before = total;
+        await this.gsc.fetchSearchAnalytics(siteUrl, { ...options2, startDate: backfill.startDate, endDate: backfill.endDate }, signal, stagePage);
+        backfillRows = total - before;
+      }
 
       // Page totals: date × page, no query, so anonymised traffic is counted (#118).
-      let ptTotal = 0;
+      let ptTotal = 0, ptMainRows = 0;
+      const stagePtPage = ({ rows }: { rows: GscApiRow[] }): void => {
+        stagePt(rows.map((row: GscApiRow) => {
+          const [date, page] = row.keys ?? [];
+          return { date, page, page_key: page ? urlKey(page, { hostForm }) : null, search_type: wantType,
+            clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position };
+        }));
+        ptTotal += rows.length;
+        update({ siteUrl, rowsFetched: total, pageTotalsFetched: ptTotal });
+      };
       if (!pt.noop && !signal.aborted) {
-        const ptOptions: FetchOptions = { ...options, startDate: pt.startDate, endDate: pt.endDate, dimensions: PAGE_TOTAL_DIMENSIONS };
-        await this.gsc.fetchSearchAnalytics(siteUrl, ptOptions, signal, ({ rows }) => {
-          stagePt(rows.map((row: GscApiRow) => {
-            const [date, page] = row.keys ?? [];
-            return { date, page, page_key: page ? urlKey(page, { hostForm }) : null, search_type: wantType,
-              clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position };
-          }));
-          ptTotal += rows.length;
-          update({ siteUrl, rowsFetched: total, pageTotalsFetched: ptTotal });
-        });
+        await this.gsc.fetchSearchAnalytics(siteUrl, { ...options, startDate: pt.startDate, endDate: pt.endDate, dimensions: PAGE_TOTAL_DIMENSIONS }, signal, stagePtPage);
+        ptMainRows = ptTotal;
       }
-      const ptResult = pt.noop ? {} : { pageTotals: { rowsFetched: ptTotal, startDate: pt.startDate, endDate: pt.endDate, ...(pt.backfill ? { backfill: true } : {}) } };
+      // The days before the stored page totals, when the request starts earlier (planPageTotals).
+      if (pt.before && !signal.aborted) {
+        await this.gsc.fetchSearchAnalytics(siteUrl, { ...options, startDate: pt.before.startDate, endDate: pt.before.endDate, dimensions: PAGE_TOTAL_DIMENSIONS }, signal, stagePtPage);
+      }
+      const ptStart = pt.before && (pt.noop || pt.before.startDate < pt.startDate) ? pt.before.startDate : pt.startDate;
+      const ptResult = pt.noop && !pt.before ? {} : { pageTotals: { rowsFetched: ptTotal, startDate: ptStart, endDate: pt.noop ? pt.before!.endDate : pt.endDate, ...(pt.backfill ? { backfill: true } : {}) } };
 
       // Cancelled part-way (the client stops paging on abort, it doesn't throw): nothing is written,
       // last_synced_at is not touched, and the staged rows go with the connection.
       if (signal.aborted) return result(0, { discarded: total + ptTotal });
       // Both row sets land in one transaction, or neither does. An empty response never wipes or
-      // replaces stored days.
+      // replaces stored days: the destructive modes need rows from the MAIN range. Rows from the
+      // earlier-days backfill alone are only ever upserted.
+      const mainRows = total - backfillRows;
       db.db.transaction(() => {
         if (total > 0) {
-          const mode = mustWipe ? 'wipe' : replaceFrom ? 'lag' : replaceWindow ? 'window' : 'upsert';
+          const mode = mainRows === 0 ? 'upsert' : mustWipe ? 'wipe' : replaceFrom ? 'lag' : replaceWindow ? 'window' : 'upsert';
           applyStaged(mode, replaceFrom ?? options2.startDate, options2.endDate);
         }
-        if (ptTotal > 0) applyPt(mustWipe && total === 0 ? 'wipe' : pt.replaceFrom ? 'lag' : 'upsert', pt.replaceFrom ?? pt.startDate, pt.endDate);
+        if (ptTotal > 0) applyPt(ptMainRows === 0 ? 'upsert' : mustWipe && total === 0 ? 'wipe' : pt.replaceFrom ? 'lag' : 'upsert', pt.replaceFrom ?? pt.startDate, pt.endDate);
       })();
       // The writer owns the totals: over the synced window, each day's totals in search_analytics
       // become the fuller of the all-country rows and the segment rows aggregated (#65). In the old
       // layout the views pick per day instead, from gsc_day_shape, brought up to date here.
-      if (legacy && total > 0) refreshLegacyDayShapes(db.db, options2.startDate, options2.endDate);
-      const settled = total > 0 && !legacy ? settleGscTotals(db.db, options2.startDate, options2.endDate, segments) : undefined;
+      // Each fetched range on its own (the main one, then the days before the stored history): the
+      // days between them were not touched by this sync.
+      const ranges = [...(mainNoop ? [] : [{ startDate: options2.startDate, endDate: options2.endDate }]), ...(backfill ? [backfill] : [])];
+      let settled: SettleResult | undefined;
+      if (total > 0) for (const r of ranges) {
+        if (legacy) { refreshLegacyDayShapes(db.db, r.startDate, r.endDate); continue; }
+        const s = settleGscTotals(db.db, r.startDate, r.endDate, segments);
+        settled = settled ? { days: settled.days + s.days, derivedDays: settled.derivedDays + s.derivedDays, recordedDays: settled.recordedDays + s.recordedDays } : s;
+      }
       db.db.prepare(`UPDATE property_meta SET last_synced_at = datetime('now') WHERE site_url = ?`).run(siteUrl);
-      return result(total, { ...(settled ? { settled } : {}), ...ptResult });
+      // startDate / endDate stay the main (incremental) range; the earlier days ride in `backfill`.
+      return result(total, { ...(backfill ? { backfill: { ...backfill, rowsFetched: backfillRows } } : {}), ...(settled ? { settled } : {}), ...ptResult });
     } finally {
       db.close();
     }

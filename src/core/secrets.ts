@@ -21,6 +21,9 @@ export type OptionalSecretName = keyof typeof OPTIONAL_SECRETS;
 // happens to contain one of these words is possible but rare, and the failure mode of letting a
 // placeholder through (a tier that claims to be on and then 401s) is the one this exists to stop.
 const PLACEHOLDER_RE = /your[-_ ]|key[-_ ]?here|changeme|^x{3,}$|placeholder|example/i;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// The documentation domains (RFC 2606) no real account uses: you@example.com, me@example.org.
+const RESERVED_EMAIL_RE = /@(example\.(com|org|net)|[^@]*\.(example|invalid|test))$/i;
 
 /** Why a raw value counts as unset, or null when it looks like a real value. Pure, for tests. */
 export function placeholderReason(raw: string | undefined | null): 'unset' | 'empty' | 'template' | 'placeholder' | null {
@@ -28,8 +31,20 @@ export function placeholderReason(raw: string | undefined | null): 'unset' | 'em
   const v = raw.trim();
   if (!v) return 'empty';
   if (v.includes('${')) return 'template';            // an MCP host's unsubstituted ${user_config.x}
-  if (/^<.*>$/.test(v) || PLACEHOLDER_RE.test(v)) return 'placeholder';
-  return null;
+  if (/^<.*>$/.test(v)) return 'placeholder';
+  // An email address (a DataForSEO login is one) is judged on its reserved domain only: the word
+  // patterns below match inside real addresses (seo@example-agency.co.uk, bob@your-seo.com) and
+  // would switch the whole tier off for a working account.
+  // A template address still counts: your-email@yourdomain.com, changeme@changeme.com.
+  if (EMAIL_RE.test(v)) {
+    const [local, domain] = v.toLowerCase().split('@');
+    const label = domain.split('.')[0];
+    const templ = RESERVED_EMAIL_RE.test(v)
+      || /^(changeme|placeholder|x{3,})$/.test(local)
+      || /^(your[-_]?(domain|company|site|e?mail)|changeme|placeholder)$/.test(label);
+    return templ ? 'placeholder' : null;
+  }
+  return PLACEHOLDER_RE.test(v) ? 'placeholder' : null;
 }
 
 const warned = new Set<string>();

@@ -9,7 +9,7 @@ import { shareText, sharePct, sourceFreshness, freshnessDot } from '../core/disp
 
 const fmt = fmtNum;
 import type { DashboardData } from './dashboard.js';
-import { clickCta, clickText } from './askClaude.js';
+import { clickCta, clickText, actionTo, actionPhrase } from './askClaude.js';
 // The payload type lives in dashboard.ts (local view types, so core's node-only deps stay out of
 // the bundle). Fields this module reads that the view type doesn't declare are accessed via `x`.
 type Dash = DashboardData;
@@ -64,7 +64,7 @@ export function freshVerdict(d: Dash, kind: string, s: { state: string; at: stri
   }
   if (kind === 'audit' && x(d).freshness?.auditVsCrawl?.predatesCrawl) {
     flag = 'older than crawl';
-    rule += ' The latest audit ran before the latest completed crawl, so its findings describe the previous crawl: click Run audit in Actions.';
+    rule += ` The latest audit ran before the latest completed crawl, so its findings describe the previous crawl: ${actionPhrase('audit')}.`;
   }
   return { dot: freshnessDot(s.state, !!flag), flag, rule };
 }
@@ -166,7 +166,7 @@ export const isolatedText = (n: { inlinks: number; bodyInlinks: number }): strin
 export function drawNetwork(d: Dash, ctx: OverviewCtx, id: string, opts: { compact: boolean }): boolean {
   const sg = d.structureGraph;
   const { col } = ctx;
-  if (!sg?.nodes?.length) { ctx.wrap(id).setEmpty('Click Crawl in Actions to map the internal link network', col); return false; }
+  if (!sg?.nodes?.length) { ctx.wrap(id).setEmpty(actionTo('crawl', 'to map the internal link network'), col); return false; }
   const nodes = opts.compact ? [...sg.nodes].sort((a: any, b: any) => b.ipr - a.ipr).slice(0, 90) : sg.nodes;
   const keep = new Set(nodes.map((n: any) => n.id));
   const catOf = (n: any): number => ((n.status == null || n.status >= 300) ? 2 : (n.indexable ? 0 : 1));

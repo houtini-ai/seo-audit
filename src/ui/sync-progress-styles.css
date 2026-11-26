@@ -24,6 +24,7 @@ body {
 .status-badge.running, .status-badge.queued { background: var(--accent-glow); color: var(--accent); }
 .status-badge.completed { background: rgba(22,163,74,.12); color: var(--success); }
 .status-badge.failed { background: rgba(220,38,38,.12); color: var(--error); }
+.status-badge.idle { background: var(--border-subtle); color: var(--text-secondary); }
 .status-badge.cancelled, .status-badge.interrupted { background: rgba(217,119,6,.12); color: var(--warning); }
 .site { font-size: 13px; font-weight: 500; }
 .elapsed { font-size: 12px; color: var(--text-secondary); margin-left: auto; font-variant-numeric: tabular-nums; }
@@ -39,6 +40,11 @@ body {
 .phase .plabel { font-size: 11px; color: var(--text-secondary); text-align: center; }
 .phase.active .plabel { color: var(--text); font-weight: 600; }
 .phase.done .plabel { color: var(--text); }
+/* A phase that did not run (no credentials, switched off) or failed: never drawn as done. */
+.phase.skipped .dot { background: var(--bg); border-style: dashed; border-color: var(--text-secondary); }
+.phase.skipped .plabel { text-decoration: line-through; }
+.phase.failed .dot { background: var(--error); border-color: var(--error); }
+.phase.failed .plabel { color: var(--error); font-weight: 600; }
 
 /* Active phase detail */
 .current { margin-bottom: 18px; }
@@ -60,7 +66,10 @@ body {
 /* Completion summary */
 .summary { margin-top: 8px; }
 .summary-done { font-size: 13px; font-weight: 600; color: var(--success); margin-bottom: 10px; }
-.summary-error { font-size: 13px; font-weight: 600; color: var(--error); }
+.summary-error { font-size: 13px; font-weight: 600; color: var(--error); margin-bottom: 10px; }
+.summary-warn { font-size: 13px; font-weight: 600; color: var(--warning); margin-bottom: 10px; }
+.summary-note { font-size: 13px; color: var(--text-secondary); }
+.summary-row--warn span:last-child { color: var(--warning); text-align: right; max-width: 70%; }
 .summary-row { display: flex; justify-content: space-between; padding: 7px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border-subtle); font-size: 13px; margin-bottom: 4px; }
 .summary-row span:first-child { color: var(--text-secondary); }
 .summary-row span:last-child { font-variant-numeric: tabular-nums; }

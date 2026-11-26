@@ -37,6 +37,7 @@
             </div>
             <div class="range" id="range"></div>
           </div>
+          <button class="link-btn" id="refreshBtn" type="button" title="Re-read this property's stored data (free)" hidden>Refresh</button>
           <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light or dark theme" title="Toggle light / dark"></button>
         </div>
       </header>
@@ -102,7 +103,7 @@
       <section class="tab-panel" data-panel="issues" role="tabpanel">
         <div class="chart-card" id="findingsCard">
           <h3>Issues &amp; fixes</h3>
-          <div class="hint">Every issue found in the audit, ranked by impact ÷ effort using real traffic at risk. Switch to <strong>By category</strong> for the recommended fix and real examples. Click Run audit in Actions to populate.</div>
+          <div class="hint">Every issue found in the audit, ranked by impact ÷ effort using real traffic at risk. Switch to <strong>By category</strong> for the recommended fix and real examples. <span data-actions-only>Click Run audit in Actions to populate.</span></div>
           <div class="seg" id="issuesToggle" role="tablist" aria-label="Issues view">
             <button class="seg-btn active" data-view="list" role="tab">Prioritised list</button>
             <button class="seg-btn" data-view="grouped" role="tab">By category (with fixes)</button>
@@ -294,7 +295,7 @@
         </div>
         <div class="chart-card">
           <h3>Top keyword performance - <span data-win>28</span>d vs prior</h3>
-          <div class="hint">Green = improved · red = declined · the signed number is the click change · click a bar for related terms</div>
+          <div class="hint">Green = improved · red = declined · the signed number is the click change · click a bar for related terms<span id="kwCostHint"></span></div>
           <p class="sr-only" id="kwSummary"></p>
           <div class="chart" id="kwChart" role="img" aria-label="Top keyword performance change, current window versus prior"></div>
           <div id="related" class="related"></div>
@@ -366,7 +367,7 @@
         </div>
         <div class="chart-card">
           <h3>Agent readiness - is your site ready for AI agents?</h3>
-          <div class="hint">How discoverable and usable your site is for AI agents - llms.txt, agents.md, AI-bot rules, MCP server card and more. Click Agent in Actions to populate.</div>
+          <div class="hint">How discoverable and usable your site is for AI agents - llms.txt, agents.md, AI-bot rules, MCP server card and more. <span data-actions-only>Click Agent in Actions to populate.</span></div>
           <div id="agentPanel"></div>
         </div>
         <div class="chart-card" id="answerabilityCard" style="display:none">

@@ -55,7 +55,7 @@ export const randomSlug = (): string => `seo-audit-probe-${randomBytes(5).toStri
  * flips for a URL with an explicit port (neither is a real-world variant).
  */
 export function planSiteProbes(db: Database.Database, siteUrl: string, slug: () => string = randomSlug): { plan: SiteProbePlan[]; home: string; skipped: string[] } {
-  const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : siteUrl;
+  const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : /^https?:\/\//i.test(siteUrl) ? siteUrl : `https://${siteUrl}/`;
   const keyOpts = { hostForm: hostFormForProperty(siteUrl) };
   const homeRow = db.prepare(`SELECT url, status_code s FROM pages WHERE url_key = ? LIMIT 1`).get(urlKey(seed, keyOpts)) as { url: string; s: number } | undefined;
   const home = homeRow?.s === 200 && homeRow.url ? new URL('/', homeRow.url).toString() : new URL('/', seed).toString();

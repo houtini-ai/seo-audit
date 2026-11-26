@@ -1,6 +1,6 @@
 # DataForSEO functions
 
-Everything SEO Audit Console does with *market* data goes through [DataForSEO](https://dataforseo.com/?aff=213701) — a pay-as-you-go API for search volumes, live SERPs, competitor data, backlinks and Lighthouse. The SERP/Keywords/Labs APIs need no subscription; calls cost fractions of a cent to a few cents and are **cached locally for 20 days**, so a repeat question is free and nothing runs unless you ask. (Backlinks is a separate DataForSEO subscription — see the last section.)
+Everything SEO Audit Console does with *market* data goes through [DataForSEO](https://dataforseo.com/?aff=213701) — a pay-as-you-go API for search volumes, live SERPs, competitor data, backlinks and Lighthouse. The SERP/Keywords/Labs APIs need no subscription; most calls cost fractions of a cent to a few cents (the rank-history calls bill per month returned: `track_ranks`, which `refresh_property` runs, pulls the full history back to October 2020 for about $0.21, and `domain_visibility` costs about $0.13 for its default 12 months) and are **cached locally for 20 days**, so a repeat question is free and nothing runs unless you ask. (Backlinks is a separate DataForSEO subscription — see the last section.)
 
 Set `DATAFORSEO_USERNAME` + `DATAFORSEO_PASSWORD` ([getting-started](getting-started.md#environment-variables)). Each tool below names the DataForSEO endpoint (or endpoints) it calls, so you can price it against DataForSEO's own docs.
 

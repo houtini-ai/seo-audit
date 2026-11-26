@@ -150,6 +150,12 @@ function cruxLatest(c: CheckContext, metric: CwvMetric): CruxRow[] {
     ORDER BY m.scope, m.target, m.form_factor`, metric) as CruxRow[];
 }
 
+/** "Not collected" until sync_crux has asked CrUX about at least one target (a target with too little Chrome traffic still counts as asked). */
+function cruxNote(c: CheckContext): string | null {
+  for (const t of ['crux_targets', 'crux_metrics']) if (tableExists(c, t) && one(c, `SELECT 1 FROM ${t} LIMIT 1`)) return null;
+  return 'not collected: no Chrome UX Report data. Run sync_crux (needs a Google API key in CRUX_API_KEY; refresh_property runs it when the key is set).';
+}
+
 function cruxEvidence(r: CruxRow, metric: CwvMetric, band: CwvBand): Record<string, unknown> {
   const t = CWV_THRESHOLDS[metric];
   return {
@@ -290,25 +296,25 @@ export const SIGNAL_CHECKS: CheckDef[] = [
     id: 'crux-field-lcp', category: 'performance', severity: 'med', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Real-user LCP not good (CrUX p75)',
     fix: 'Chrome users\' Largest Contentful Paint at the 75th percentile is over Google\'s 2.5 s "good" threshold (poor above 4 s), measured over the latest 28-day CrUX window. The LCP sub-parts in the dashboard payload show which part to fix: server response (TTFB), resource load delay (discover the LCP image sooner: preload it, no lazy-load on it), load duration (smaller image, modern format, CDN) or render delay (render-blocking CSS/JS). Needs sync_crux.',
-    run: cruxFieldCheck('largest_contentful_paint'),
+    run: cruxFieldCheck('largest_contentful_paint'), collected: cruxNote,
   },
   {
     id: 'crux-field-inp', category: 'performance', severity: 'med', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Real-user INP not good (CrUX p75)',
     fix: 'Interaction to Next Paint at the 75th percentile is over Google\'s 200 ms "good" threshold (poor above 500 ms): taps and clicks take visibly long to respond. INP is field-only, so no lab tool reproduces it exactly. Break up long JavaScript tasks, defer third-party scripts, cut work in input handlers, and avoid large DOM updates on interaction. Needs sync_crux.',
-    run: cruxFieldCheck('interaction_to_next_paint'),
+    run: cruxFieldCheck('interaction_to_next_paint'), collected: cruxNote,
   },
   {
     id: 'crux-field-cls', category: 'performance', severity: 'med', labels: ['G'], certainty: 1, effortBase: 3, fixType: 'per-page',
     title: 'Real-user CLS not good (CrUX p75)',
     fix: 'Cumulative Layout Shift at the 75th percentile is over Google\'s 0.1 "good" threshold (poor above 0.25): content jumps while people read. Give images, embeds and ad slots explicit dimensions, reserve space for late content, and avoid inserting content above what is already shown. Needs sync_crux.',
-    run: cruxFieldCheck('cumulative_layout_shift'),
+    run: cruxFieldCheck('cumulative_layout_shift'), collected: cruxNote,
   },
   {
     id: 'crux-regression', category: 'performance', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Core Web Vital regressed into a worse band (CrUX)',
     fix: 'A Core Web Vital\'s real-user p75 crossed into a worse Google band (good -> needs improvement -> poor) within the last four 28-day CrUX windows. Find what shipped around when it started (theme, plugin, script, image or hosting change) and roll it back or fix it. Needs sync_crux history.',
-    run: cruxRegression,
+    run: cruxRegression, collected: cruxNote,
   },
   {
     id: 'nonbrand-decline-masked', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'global',

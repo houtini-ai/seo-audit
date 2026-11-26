@@ -125,11 +125,31 @@ export class Backlinks {
          VALUES (@url_key,@url,@backlinks,@referring_domains,@dofollow,@status_code,datetime('now'))
          ON CONFLICT(url_key) DO UPDATE SET url=excluded.url, backlinks=excluded.backlinks,
            referring_domains=excluded.referring_domains, dofollow=excluded.dofollow,
-           status_code=excluded.status_code, fetched_at=datetime('now')`,
+           status_code=COALESCE(excluded.status_code, page_backlinks.status_code),
+           fetched_at=CASE WHEN excluded.status_code IS NULL AND page_backlinks.status_code IS NOT NULL THEN page_backlinks.fetched_at ELSE datetime('now') END`,
       );
+      // COALESCE above: a URL this pull did not check (outside the status budget, or throttled)
+      // keeps the status an earlier pull found, instead of going back to "unchecked".
+      // Rows the pull no longer returns are removed in the same transaction: page_backlinks was
+      // upsert-only, so a URL that lost its backlinks kept its old count forever (and
+      // backlinks-to-404 kept reporting it). Only when the page list itself came back with rows: an
+      // empty or failed list (the call throws on an API error) deletes nothing. The list is ordered
+      // by backlinks and capped at `limit`, so when it is full a stored row below its smallest
+      // count may simply sit beyond the cap and is kept; a stored row above it would have been
+      // returned if it still had those links.
+      const listLimit = Math.min(opts.limit ?? 1000, 1000);
+      const listComplete = items.length < listLimit;
+      const minBacklinks = rows.reduce((m, r) => Math.min(m, r.backlinks), Infinity);
+      let pruned = 0;
       db.db.transaction(() => {
         for (const r of rows) upsert.run({ ...r, status_code: crawlStatus.get(r.url_key) ?? fetched.get(r.url_key) ?? null });
+        if (rows.length) {
+          pruned = db.db.prepare(
+            `DELETE FROM page_backlinks WHERE url_key NOT IN (SELECT value FROM json_each(?))${listComplete ? '' : ' AND backlinks > ?'}`,
+          ).run(JSON.stringify(rows.map(r => r.url_key)), ...(listComplete ? [] : [minBacklinks])).changes;
+        }
       })();
+      if (pruned) update({ phase: 'pages', pages: rows.length, removedStale: pruned });
 
       // Majestic per-URL Trust Flow (trapped-authority v2). GetIndexItemInfo batches ≤100 items
       // per call and MajesticClient slices internally, so this is ceil(N/100) calls, not N. Bounded

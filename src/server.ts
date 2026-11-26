@@ -57,6 +57,7 @@ import Database from 'better-sqlite3';
 import { runQueryData, QUERYABLE_TABLES, FILTER_OPS, METRIC_FNS, truncateCell } from './core/queryData.js';
 import { ftsIndexFor, pendingBackfills, INLINE_BACKFILL_MAX_ROWS, type FtsIndex } from './core/fts.js';
 import { storageSummary, pruneProperty, fmtBytes } from './core/dataStorage.js';
+import { parseSqliteUtc } from './core/sqliteTime.js';
 import { scoreSitePassages } from './core/passageScore.js';
 import { buildDraftBrief } from './core/draftBrief.js';
 import { generateJsonLd, suggestRedirect, suggestInternalLinks, collapseChainRules } from './generators/index.js';
@@ -166,11 +167,11 @@ ARCHETYPE CHAINS (compose along these lines):
 
 COST DISCIPLINE (behave like a strategist who knows the margins):
 - Free and instant, use liberally: everything on synced data — query_data, run_audit, query_audit, suggest_pages, list_templates, detect_changes, export_report; get_dashboard / serve_dashboard to open (in chat, a keyword click or a Content research lookup in the dashboard is a paid per-keyword call). trend_categories is free but needs DataForSEO credentials.
-- Free collection (your own site and Google APIs): sync_gsc, start_crawl, inspect_urls, sync_crux, probe_urls, check_agent_readiness. refresh_property is free EXCEPT one DataForSEO Labs rank call when DataForSEO is set (ranks:false skips it).
-- Paid but CHEAP and 20-day cached (Labs/Keywords, ~$0.01–0.13 a call): keyword_volume, topic_trend, search_intent, ranked_keywords, serp_features, domain_visibility, top_pages, competitors_domain, page_intersection, topic_gaps. Top-down pulls only — ONE ranked_keywords call answers "what does this domain rank for"; NEVER loop keywords through SERP endpoints to reconstruct what a Labs call returns.
+- Free collection (your own site and Google APIs): sync_gsc, start_crawl, inspect_urls, sync_crux, probe_urls, check_agent_readiness. refresh_property is free EXCEPT one DataForSEO Labs rank-history call when DataForSEO is set: the full history back to 2020-10, about $0.21 when not served from the 20-day cache (ranks:false skips it).
+- Paid but CHEAP and 20-day cached (Labs/Keywords, ~$0.01–0.13 a call): keyword_volume, topic_trend, search_intent, ranked_keywords, serp_features, domain_visibility (billed per month returned: about $0.13 for the default 12), top_pages, competitors_domain, page_intersection, topic_gaps. Top-down pulls only — ONE ranked_keywords call answers "what does this domain rank for"; NEVER loop keywords through SERP endpoints to reconstruct what a Labs call returns.
 - Paid per-keyword (SERP): related_terms, youtube_discovery (ranking videos for a topic — pair with a transcript tool), news_discovery (recent coverage / freshness), and AI-Overview CITATION checks. On-demand for a handful of clicked/explicit keywords, never a list.
 - Content research (what to write / what changed): topic_trend (is a topic rising/seasonal; with a categoryCode from the free trend_categories, is a whole market growing and what is breaking out in it) → youtube_discovery + news_discovery (what the winning videos/articles cover) → draft_content.
-- Also paid (quote or cap first): recon_targets (a live SERP per page), market_sizing, page_lighthouse, track_ranks, link_intersect, refresh_portfolio (quotes, then needs confirm).
+- Also paid (quote or cap first): recon_targets (a live SERP per page), market_sizing, page_lighthouse, track_ranks (about $0.21 uncached: the full monthly history, billed per month returned), link_intersect, refresh_portfolio (quotes, then needs confirm).
 - Separate subscription: pull_backlinks and link_intersect (DataForSEO Backlinks — a 40204 error means it isn't activated).
 
 AGENCY MACRO-WORKFLOWS (the engagement arc — each stage feeds the next):
@@ -504,7 +505,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'data_storage',
     {
       title: 'Data storage summary + pruning',
-      description: 'Data hygiene. No args: list every per-property database in the data dir — size (incl. WAL), key row counts (search_analytics, pages, links, page_snapshots, findings), last sync and last crawl, and any link_intersect prospect set with its capture date (flagged when it is going stale) — plus the DataForSEO/Majestic caches and reports folder sizes. Optional siteUrl narrows to one property. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (delete page_snapshots + audit runs/findings older than the 5 most recent, then vacuum), "delete-property" (remove the DB files entirely). Destructive actions (clear-crawl-history, delete-property) are for the USER to decide: without confirm they refuse, naming what would be deleted; ask the user, and only on their yes pass confirm. The server then asks the user directly where the client supports it, and otherwise needs confirm set to the property name exactly. Refuses to prune while any job is running. Integrity: `check:true` (with siteUrl) starts an async job running SQLite\'s full integrity_check (minutes on a multi-GB DB; check:"quick" is faster but misses missing-index-row damage) and reports damaged indexes. `prune:{siteUrl, action:"repair"}` with confirm:true backs up the DB file, REINDEXes the damaged indexes and re-checks (async job) — the fix for a sync failing with "database disk image is malformed".',
+      description: 'Data hygiene. No args: list every per-property database in the data dir — size (incl. WAL), key row counts (search_analytics, pages, links, page_snapshots, findings), last sync and last crawl, and any link_intersect prospect set with its capture date (flagged when it is going stale) — plus the DataForSEO/Majestic caches and reports folder sizes. Optional siteUrl narrows to one property. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (keep the 5 most recent completed audit runs with their findings and the page_snapshots of the 5 most recent crawls; delete older ones and any failed or unfinished runs, then vacuum), "delete-property" (remove the DB files entirely, together with its .bak-* backups). Destructive actions (clear-crawl-history, delete-property) are for the USER to decide: without confirm they refuse, naming what would be deleted; ask the user, and only on their yes pass confirm. The server then asks the user directly where the client supports it, and otherwise needs confirm set to the property name exactly. Refuses to prune while any job is running. Integrity: `check:true` (with siteUrl) starts an async job running SQLite\'s full integrity_check (minutes on a multi-GB DB; check:"quick" is faster but misses missing-index-row damage) and reports damaged indexes. `prune:{siteUrl, action:"repair"}` with confirm:true backs up the DB file, REINDEXes the damaged indexes and re-checks (async job) — the fix for a sync failing with "database disk image is malformed".',
       inputSchema: {
         siteUrl: z.string().optional(),
         prune: z.object({
@@ -584,10 +585,10 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
         }
         const d = r.detail;
         const line = prune.action === 'delete-property'
-          ? `Deleted ${prune.siteUrl}'s database (${fmtBytes(Number(d.bytesFreed) || 0)} freed).`
+          ? `Deleted ${prune.siteUrl}'s database${Array.isArray(d.backupsDeleted) && d.backupsDeleted.length ? ` and its ${d.backupsDeleted.length} backup file(s)` : ''} (${fmtBytes(Number(d.bytesFreed) || 0)} freed).`
           : prune.action === 'vacuum'
             ? `Vacuumed ${prune.siteUrl}: ${fmtBytes(Number(d.bytesBefore) || 0)} → ${fmtBytes(Number(d.bytesAfter) || 0)} (${fmtBytes(Number(d.bytesReclaimed) || 0)} reclaimed).`
-            : `Cleared crawl/audit history for ${prune.siteUrl} beyond the 5 most recent runs: ${fmtBytes(Number(d.bytesBefore) || 0)} → ${fmtBytes(Number(d.bytesAfter) || 0)} (${fmtBytes(Number(d.bytesReclaimed) || 0)} reclaimed).`;
+            : `Cleared crawl/audit history for ${prune.siteUrl} beyond the 5 most recent completed runs: ${fmtBytes(Number(d.bytesBefore) || 0)} → ${fmtBytes(Number(d.bytesAfter) || 0)} (${fmtBytes(Number(d.bytesReclaimed) || 0)} reclaimed).`;
         return { content: [{ type: 'text', text: line }], structuredContent: r as unknown as Record<string, unknown> };
       }
       const s = storageSummary(dataDir(), siteUrl);
@@ -616,7 +617,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
       const liProps = s.properties.filter(p => (p.linkProspects ?? 0) > 0);
       const liLines = liProps.map(p => {
         const fetched = p.linkProspectsFetched;
-        const ageDays = fetched ? Math.floor((nowMs - Date.parse(fetched)) / 86400000) : null;
+        const ageDays = fetched ? Math.floor((nowMs - parseSqliteUtc(fetched)) / 86400000) : null;
         const stale = ageDays != null && ageDays > 20;
         return `- ${p.siteUrl ?? p.file}: ${p.linkProspects} prospects, captured ${fetched?.slice(0, 10) ?? '—'}${ageDays != null ? ` (${ageDays}d ago${stale ? ' — likely stale, re-run link_intersect to update' : ''})` : ''}`;
       }).join('\n');
@@ -781,9 +782,12 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
   );
 
   // sync_gsc's start reply: the range the job will actually fetch (#33), or that there's nothing to.
-  const syncReply = (siteUrl: string, jobId: string, planned: { startDate: string; endDate: string; incremental: boolean; noop?: boolean; segmentsKept?: boolean }, requestedStart: string, full: boolean): string => {
-    if (planned.noop) return `Sync started for ${siteUrl} (job ${jobId}): nothing to fetch, the stored data already covers ${requestedStart} → ${planned.endDate}. Poll check_sync_status.`;
-    const how = planned.incremental ? ` (incremental: the last stored days are re-pulled and replaced; requested window started ${requestedStart})` : full ? ' (full re-pull)' : '';
+  const syncReply = (siteUrl: string, jobId: string, planned: { startDate: string; endDate: string; incremental: boolean; noop?: boolean; segmentsKept?: boolean; backfill?: { startDate: string; endDate: string } }, requestedStart: string, full: boolean): string => {
+    // noop is only planned when the stored history starts on or before the requested start AND runs
+    // past the requested end; a request that starts earlier than the stored history is a backfill.
+    if (planned.noop) return `Sync started for ${siteUrl} (job ${jobId}): nothing to fetch, the stored history starts on or before ${requestedStart} and already runs past ${planned.endDate} (full=true re-pulls the window anyway). Poll check_sync_status.`;
+    const earlier = planned.backfill ? `the days before the stored history, ${planned.backfill.startDate} → ${planned.backfill.endDate}` : '';
+    const how = planned.incremental ? ` (incremental: the last stored days are re-pulled and replaced${earlier ? `, plus ${earlier}` : `; requested window started ${requestedStart}`})` : full ? ' (full re-pull)' : earlier ? ` (${earlier}; the stored data already runs past the requested end)` : '';
     const segs = planned.segmentsKept ? ', with device and country segments (this property\'s breakdowns are kept current)' : '';
     return `Sync started for ${siteUrl} (job ${jobId}): fetching ${planned.startDate} → ${planned.endDate}${how}${segs}. Poll check_sync_status.`;
   };
@@ -853,7 +857,19 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     const migDeferred = (res as { storageMigrationDeferred?: string; gsc?: { storageMigrationDeferred?: string } } | undefined);
     const deferredMsg = migDeferred?.storageMigrationDeferred ?? migDeferred?.gsc?.storageMigrationDeferred;
     const deferredLine = deferredMsg ? `\n\n⚠ GSC ${deferredMsg}` : '';
-    return head + prog + blockLine + rlLine + deferredLine + (link
+    // A refresh completes even when a phase was skipped (no credentials) or failed on its own (ranks,
+    // inspection, CrUX): say which, in the text, so "completed" never hides a phase that did not run.
+    const phaseRes = (res ?? {}) as Record<string, unknown>;
+    const PHASE_NOTES: [string, string][] = [
+      ['gscSkipped', 'GSC sync skipped'], ['inspectSkipped', 'URL inspection skipped'], ['inspectError', 'URL inspection FAILED'],
+      ['ranksSkipped', 'rank history skipped'], ['ranksError', 'rank history FAILED'], ['cruxSkipped', 'CrUX skipped'], ['cruxError', 'CrUX FAILED'],
+      ['stopped', 'URL inspection stopped early'],
+    ];
+    const phaseNotes = PHASE_NOTES.filter(([k]) => typeof phaseRes[k] === 'string' && phaseRes[k]).map(([k, label]) => `${label}: ${String(phaseRes[k]).slice(0, 300)}`);
+    const nestedStop = (phaseRes.inspect as { stopped?: string } | undefined)?.stopped; // refresh nests the inspect result
+    if (nestedStop) phaseNotes.push(`URL inspection stopped early: ${nestedStop.slice(0, 300)}`);
+    const phaseLine = phaseNotes.length ? `\n\n⚠ Not everything ran. ${phaseNotes.join('; ')}.` : '';
+    return head + prog + blockLine + rlLine + deferredLine + phaseLine + (link
       ? `\n\n📊 The dashboard is updated with this data: ${link} (open it in your browser).`
       : containerNote ? `\n\n📊 The dashboard is updated with this data. ${containerNote}`
       : `\n\n📊 The data is in. See it with get_dashboard${siteUrl ? ` for ${siteUrl}` : ''} (in chat), open_dashboard (browser tab) or export_report.`);
@@ -1032,9 +1048,18 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
               | { url: string; redirects: string | null } | undefined;
             let hops: { from: string; to: string }[] = [];
             try { hops = page?.redirects ? JSON.parse(page.redirects) : []; } catch { /* malformed chain */ }
+            let finalUrl = page?.url;
+            if (!hops.length) {
+              // A chain whose final page was first reached another way is keyed by its SOURCE url
+              // and lives in redirect_sources, not on a pages row.
+              const src = db.db.prepare('SELECT final_url, chain FROM redirect_sources WHERE url_key = ?').get(affectedKey) as
+                | { final_url: string | null; chain: string | null } | undefined;
+              try { hops = src?.chain ? JSON.parse(src.chain) : []; } catch { /* malformed chain */ }
+              finalUrl = src?.final_url ?? undefined;
+            }
             kind = 'redirect';
-            fix = page && hops.length
-              ? { ...collapseChainRules(page.url, hops, redirectFormat ?? 'htaccess'), chain: hops }
+            fix = finalUrl && hops.length
+              ? { ...collapseChainRules(finalUrl, hops, redirectFormat ?? 'htaccess'), chain: hops }
               : { explanation: 'Redirect chain no longer present in the latest crawl — re-crawl and re-audit.' };
             break;
           }
@@ -1138,7 +1163,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'refresh_property',
     {
       title: 'Refresh a property (sync + crawl + inspect)',
-      description: '[Free, except one paid DataForSEO Labs rank call when DataForSEO is set (cached 20 days; ranks:false skips it)] Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history → CrUX field data (when CRUX_API_KEY is set; each target at most once per 7 days). Opens a live progress widget (phases + counts). Set gsc/crawl/inspect/ranks/crux=false to run just part. GSC sync is "lite" (date×query×page) by default — set segments=true to also pull device/country breakdowns (much heavier on large sites). GSC sync is INCREMENTAL: the first sync pulls the window (default last 90 days; pass startDate to go deeper), later syncs only fetch new days — set full=true to force a full re-pull. Use this for "sync everything"; use the single-purpose tools to update just one thing.',
+      description: '[Free, except one paid DataForSEO Labs rank call when DataForSEO is set (the full rank history, about $0.21 when not cached; cached 20 days; ranks:false skips it)] Full refresh for a property in one async job: GSC sync → site crawl → URL inspection → DataForSEO rank history → CrUX field data (when CRUX_API_KEY is set; each target at most once per 7 days). Opens a live progress widget (phases + counts). Set gsc/crawl/inspect/ranks/crux=false to run just part. GSC sync is "lite" (date×query×page) by default — set segments=true to also pull device/country breakdowns (much heavier on large sites). GSC sync is INCREMENTAL: the first sync pulls the window (default last 90 days; pass startDate to go deeper), later syncs only fetch new days, plus any days before the stored history when startDate is earlier than it — set full=true to force a full re-pull. Use this for "sync everything"; use the single-purpose tools to update just one thing.',
       inputSchema: {
         siteUrl: z.string(),
         gsc: z.boolean().optional(),
@@ -1182,7 +1207,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'sync_gsc',
     {
       title: 'Sync Search Console data (just GSC)',
-      description: 'Update just the GSC search-analytics history (async job — poll with check_sync_status). Incremental: the first sync pulls the range (default last 90 days; pass startDate to go deeper), later syncs only fetch new days — set full=true to force a full re-pull. Lite by default (date×query×page); set segments=true (or pass dimensions) to also pull device/country. For a full refresh use refresh_property. Grain: date × query × page. Joins: page_key (url_key) → crawl/inspection/backlinks; query → DataForSEO keyword tools.',
+      description: 'Update just the GSC search-analytics history (async job — poll with check_sync_status). Incremental: the first sync pulls the range (default last 90 days; pass startDate to go deeper), later syncs only fetch new days, plus any days before the stored history when startDate is earlier than it — set full=true to force a full re-pull. Lite by default (date×query×page); set segments=true (or pass dimensions) to also pull device/country. For a full refresh use refresh_property. Grain: date × query × page. Joins: page_key (url_key) → crawl/inspection/backlinks; query → DataForSEO keyword tools.',
       inputSchema: {
         siteUrl: z.string(),
         startDate: z.string().optional(),
@@ -2240,6 +2265,20 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     },
   );
 
+  // The DataForSEO location saved on a property (track_ranks, portfolio "location"), or undefined.
+  const savedDfsLocation = (siteUrl: string): string | number | undefined => {
+    try {
+      const d = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
+      try { return d.getDfsLocation(siteUrl) ?? undefined; } finally { d.close(); }
+    } catch { return undefined; }
+  };
+  // The location to store beside a Labs result: the one asked for, else the one the response says it used.
+  const dfsLocationLabel = (loc: string | number | undefined, r: { tasks: any[] }): string | null => {
+    if (typeof loc === 'string') return loc;
+    const code = loc ?? r.tasks[0]?.result?.[0]?.location_code;
+    return code != null ? String(code) : null;
+  };
+
   // serp_features — the SERP-feature footprint: "how much of my market do AI Overviews,
   // snippets and other features sit on, and do I already rank page 1 there?" One cached
   // Labs pull, volume-weighted; persisted so the dashboard can chart it.
@@ -2259,7 +2298,10 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     async ({ siteUrl, target, location, languageCode, limit }) => {
       const client = requireDfs(dfs);
       const domain = dfsHost(target ?? siteUrl);
-      const r = await client.rankedKeywords(domain, location, languageCode ?? 'en', limit ?? 1000, 'keyword_data.keyword_info.search_volume,desc');
+      // The property's saved market (track_ranks / portfolio) unless one is passed: without it the
+      // client falls back to the United States, and a UK site was charted on US volumes.
+      const loc = location ?? savedDfsLocation(siteUrl);
+      const r = await client.rankedKeywords(domain, loc, languageCode ?? 'en', limit ?? 1000, 'keyword_data.keyword_info.search_volume,desc');
       const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
       const sample = items.map((it: any) => {
         const kd = it.keyword_data ?? {};
@@ -2271,7 +2313,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
           serpFeatures: Array.isArray(kd.serp_info?.serp_item_types) ? kd.serp_info.serp_item_types as string[] : null,
         };
       }).filter(s => s.keyword);
-      const fp = computeSerpFootprint(domain, typeof location === 'string' ? location : location != null ? String(location) : null, sample);
+      const fp = computeSerpFootprint(domain, dfsLocationLabel(loc, r), sample);
       const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
       try { persistSerpFootprint(db.db, fp); } finally { db.close(); }
       const lines = fp.features.map(f =>
@@ -2310,9 +2352,13 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
       const domains = [own, ...competitors.map(c => dfsHost(c)).filter(c => c && c !== own)];
       const inputs = [];
       let cost = 0; let cachedAll = true;
+      // The property's saved market unless one is passed (see serp_features).
+      const loc = location ?? savedDfsLocation(siteUrl);
+      let locLabel: string | null = null;
       for (const domain of domains) { // sequential - the client serialises anyway
-        const r = await client.rankedKeywords(domain, location, languageCode ?? 'en', limitPerDomain ?? 1000, 'keyword_data.keyword_info.search_volume,desc');
+        const r = await client.rankedKeywords(domain, loc, languageCode ?? 'en', limitPerDomain ?? 1000, 'keyword_data.keyword_info.search_volume,desc');
         cost += r.cost; cachedAll = cachedAll && r.cached;
+        locLabel ??= dfsLocationLabel(loc, r);
         const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
         inputs.push({
           domain,
@@ -2324,7 +2370,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
           })).filter((k: any) => k.keyword),
         });
       }
-      const m = computeMarketSizing(inputs, typeof location === 'string' ? location : location != null ? String(location) : null);
+      const m = computeMarketSizing(inputs, locLabel);
       const db = new AuditDatabase(dbPathFor(dataDir(), siteUrl));
       try { persistMarketSizing(db.db, m); } finally { db.close(); }
       const sovLine = m.domains.map(d => `${d === own ? '**' + d + '**' : d} ${m.sovByDomain[d]}%`).join(' · ');
@@ -2954,7 +3000,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
         `${fmtNum(result.totalCount)} domains link to the target set; pulled ${result.poolFetched}, ${result.kept} passed filters, showing top ${result.prospects.length}. Sorted by ${result.sortedBy} (followed-first).` +
         `${enriched ? ` Majestic-enriched ${result.majesticEnriched}${result.enrichCapped ? ` (top by domain rank; ${result.kept - result.majesticEnriched} more qualified but weren’t enriched — raise enrichLimit or topN)` : ''}.` : ''}\n\n` +
         `| Prospect domain | Links to | ${trustHead} | Link | Spam | Backlinks${topicCol} |\n|---|---|---|---|---|---${topicSep} |`;
-      const footer = `\n\n${enriched ? 'Trust Flow = Majestic (0-100); Topical Trust Flow shows whether that authority is on-topic.' : `Domain trust = DataForSEO domain rank (0-1000). Set MAJESTIC_API_KEY to re-sort by Trust Flow + Topical Trust Flow (the directory-killer signal).`} ` +
+      const footer = `\n\n${enriched ? 'Trust Flow = Majestic (0-100); Topical Trust Flow shows whether that authority is on-topic.' : result.majesticError ? `Domain trust = DataForSEO domain rank (0-1000). Majestic failed (${result.majesticError}), so this list is sorted by DataForSEO domain rank instead of Trust Flow.` : `Domain trust = DataForSEO domain rank (0-1000). Set MAJESTIC_API_KEY to re-sort by Trust Flow + Topical Trust Flow (the directory-killer signal).`} ` +
         `${result.cached ? 'DataForSEO cached.' : `Live cost $${totalCost.toFixed(4)}.`} Persisted to link_prospects.` + browserLink(siteUrl);
       return {
         content: [{ type: 'text', text: capMdRows(header, rows, footer) }],
@@ -3038,7 +3084,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'track_ranks',
     {
       title: 'Track ranks over time (DataForSEO)',
-      description: 'Ingest the DataForSEO over-time sequence (monthly rank distribution + ETV) into rank_history, so rank charts have a real time axis reconciled with GSC. DataForSEO Labs call — cached 20 days. Pass location once (e.g. "Australia", "United Kingdom") — it is saved per property. Async job.',
+      description: '[Paid: Labs historical_rank_overview, ONE call, about $0.21 when not cached ($0.12 per task + $0.0012 per month returned; it pulls the full history back to 2020-10), cached 20d | Use for: the property\'s rank-history time axis] Ingest the DataForSEO over-time sequence (monthly rank distribution + ETV) into rank_history, so rank charts have a real time axis reconciled with GSC. A cache hit costs nothing. Pass location once (e.g. "Australia", "United Kingdom") — it is saved per property. Async job.',
       inputSchema: { siteUrl: z.string(), location: z.union([z.string(), z.number()]).optional() },
     },
     async ({ siteUrl, location }) => {

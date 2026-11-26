@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { parseSqliteUtc } from './sqliteTime.js';
 
 /**
  * Minimal Wikidata client over the PUBLIC API (no auth) — entity search + claims — with a
@@ -24,7 +25,7 @@ export class WikidataClient {
 
   private async getJson(url: string): Promise<any> {
     const row = this.cache.prepare('SELECT body, fetched_at FROM wd_cache WHERE url = ?').get(url) as { body: string; fetched_at: string } | undefined;
-    if (row && Date.now() - Date.parse(row.fetched_at) < this.ttlMs) return JSON.parse(row.body);
+    if (row && Date.now() - parseSqliteUtc(row.fetched_at) < this.ttlMs) return JSON.parse(row.body);
     const res = await fetch(url, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error(`Wikidata ${res.status} for ${url}`);
     const json = await res.json();

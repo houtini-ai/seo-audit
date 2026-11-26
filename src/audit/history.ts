@@ -54,7 +54,22 @@ export function computeHealth(db: Database.Database, runId: string, crawlId?: st
  * has none yet, so taking the latest STARTED run made a site read 100 / "0 critical" while a run
  * was failing or in progress. Rows from before `status` existed count when they have a finish time.
  */
-export const LATEST_COMPLETED_RUN_WHERE = `(status = 'completed' OR (status IS NULL AND finished_at IS NOT NULL))`;
+export const LATEST_COMPLETED_RUN_WHERE = `((status = 'completed' OR (status IS NULL AND finished_at IS NOT NULL)) AND COALESCE(scope, '') NOT LIKE 'categories:%')`;
+
+/**
+ * A run_audit limited to some categories is a drill-down, not the property's audit: stored as the
+ * latest run it made the dashboard, list_findings and the export show only those findings, with a
+ * health score of 100 when the chosen categories held no crit/high check. Such a run records its
+ * scope as `categories:<a,b>` (the scope column predates every migration, so readers on any database
+ * can test it), and every reader of "the latest completed run" (LATEST_COMPLETED_RUN_WHERE) and the
+ * run history leave it out. The run's own reply still returns its findings.
+ */
+export const FILTERED_SCOPE_PREFIX = 'categories:';
+export const NOT_FILTERED_RUN_SQL = `COALESCE(scope, '') NOT LIKE '${FILTERED_SCOPE_PREFIX}%'`;
+/** The scope a run stores: the requested one, or `categories:<sorted list>` for a category-filtered run. */
+export function runScope(scope: string | undefined, categories: string[] | undefined): string {
+  return categories?.length ? `${FILTERED_SCOPE_PREFIX}${[...new Set(categories)].sort().join(',')}` : scope ?? 'core';
+}
 
 /** Canonical form of a run's check set: sorted, de-duplicated ids as a JSON array. An id may carry
  *  its finding grain as `id@N` (see REGROUPED_CHECKS); two sets are the same check set when their
@@ -241,9 +256,13 @@ export interface AuditHistory {
 
 const MAX_RUNS = 60;
 
+/** The delta key of a finding within its check: its URL, or for a site-level finding 'site' plus the query / page its evidence names. */
+export const FINDING_KEY_SQL = `COALESCE(url_key, 'site' || CASE WHEN json_valid(evidence) AND (json_extract(evidence, '$.query') IS NOT NULL OR json_extract(evidence, '$.page') IS NOT NULL)
+    THEN char(31) || COALESCE(json_extract(evidence, '$.query'), '') || char(31) || COALESCE(json_extract(evidence, '$.page'), '') ELSE '' END)`;
+
 /**
  * Health per completed run + deltas between consecutive COMPLETED runs, oldest first.
- * Delta key = check_id + url_key ("site" when null). Opened = in run N, not N-1; resolved = in N-1,
+ * Delta key = check_id + url_key (for a site-level finding: "site" plus its query / page, FINDING_KEY_SQL). Opened = in run N, not N-1; resolved = in N-1,
  * not N; carried = in both. A pair is compared only with the same scope AND the same recorded check
  * set (grains stripped); otherwise it carries a `skipped` reason and null counts. A check whose
  * finding grain changed between the two runs (REGROUPED_CHECKS) is left out of the counts and
@@ -252,11 +271,12 @@ const MAX_RUNS = 60;
  * completed one).
  */
 export function auditHistory(db: Database.Database): AuditHistory {
-  const totalRuns = (db.prepare(`SELECT COUNT(*) n FROM audit_runs`).get() as { n: number }).n;
+  // Category-filtered runs (runScope) are not the property's audit: no health point, no delta.
+  const totalRuns = (db.prepare(`SELECT COUNT(*) n FROM audit_runs WHERE ${NOT_FILTERED_RUN_SQL}`).get() as { n: number }).n;
   const rows = (db.prepare(
     `SELECT run_id, scope, status, started_at, finished_at, check_ids, health_score, health_error_pages, health_total_pages, health_basis,
             ${COMPLETED_SQL} done
-     FROM audit_runs ORDER BY started_at DESC, rowid DESC LIMIT ${MAX_RUNS}`,
+     FROM audit_runs WHERE ${NOT_FILTERED_RUN_SQL} ORDER BY started_at DESC, rowid DESC LIMIT ${MAX_RUNS}`,
   ).all() as {
     run_id: string; scope: string | null; status: string | null; started_at: string | null; finished_at: string | null; check_ids: string | null;
     health_score: number | null; health_error_pages: number | null; health_total_pages: number | null; health_basis: string | null; done: number;
@@ -268,7 +288,10 @@ export function auditHistory(db: Database.Database): AuditHistory {
   }));
 
   // Check ids are registry ids (letters, digits, hyphens), never user input; quoted all the same.
-  const keysOf = (skip: string[]): string => `SELECT DISTINCT check_id, COALESCE(url_key, 'site') FROM findings WHERE run_id = ?` +
+  // A site-level (null-URL) finding is keyed by its query, and page where the evidence names one
+  // (keyword-cannibalisation, lost-queries, position-slipping emit up to 40 each): keyed as plain
+  // 'site', all of a check's findings were ONE key, so a query fixed and another opened read as carried.
+  const keysOf = (skip: string[]): string => `SELECT DISTINCT check_id, ${FINDING_KEY_SQL} FROM findings WHERE run_id = ?` +
     (skip.length ? ` AND check_id NOT IN (${skip.map(id => `'${id.replace(/'/g, "''")}'`).join(', ')})` : '');
   const countOf = (sql: string, a: string, b: string): number => (db.prepare(`SELECT COUNT(*) n FROM (${sql})`).get(a, b) as { n: number }).n;
   const sameSet = (a: string | null, b: string | null): boolean => JSON.stringify(baseCheckIds(a)) === JSON.stringify(baseCheckIds(b));

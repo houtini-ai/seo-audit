@@ -302,7 +302,7 @@ function readOwned(dataDir: string, files: Map<string, string>, siteUrls: string
       }
       let audit: OwnedReads['audit'] = null;
       try {
-        const runs = db.prepare(`SELECT health_score s, finished_at f FROM audit_runs WHERE health_score IS NOT NULL AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 2`).all() as { s: number; f: string }[];
+        const runs = db.prepare(`SELECT health_score s, finished_at f FROM audit_runs WHERE health_score IS NOT NULL AND finished_at IS NOT NULL AND COALESCE(scope, '') NOT LIKE 'categories:%' ORDER BY finished_at DESC LIMIT 2`).all() as { s: number; f: string }[];
         if (runs[0]) audit = { score: runs[0].s, prior: runs[1]?.s ?? null, at: runs[0].f };
       } catch { /* pre-0.16 DB: no health columns */ }
       const newCritical = newCriticalFindings(db);

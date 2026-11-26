@@ -174,15 +174,20 @@ export const equityWeight = (e: Equity): number => (e.gsc?.clicks ?? 0) * 1e6 + 
 
 // ── redirect-chain (existing check, extended) ────────────────────────────────────────────────
 /**
- * The extended `redirect-chain`: the same rows as before (a page whose recorded pages.redirects chain
- * has 2+ hops, keyed by that FINAL page, which is what fix_finding's collapse-the-chain generator
- * reads), now limited to chains that stay on the property and resolve. Before, it also counted chains
- * that left the site or never resolved: on a Shopify store ~1,300 login/OAuth bounces (accounts.<domain>,
- * shop.app), stored as off-site 302 rows, read as "chains to collapse". Loops and hop-cap chains are
- * redirect-loop's; login/cart flows are excluded like every other redirect check.
+ * The extended `redirect-chain`, limited to chains that stay on the property and resolve. Before, it
+ * also counted chains that left the site or never resolved: on a Shopify store ~1,300 login/OAuth
+ * bounces (accounts.<domain>, shop.app), stored as off-site 302 rows, read as "chains to collapse".
+ * Loops and hop-cap chains are redirect-loop's; login/cart flows are excluded like every other
+ * redirect check. Two stores, one finding per source URL:
+ *   - pages.redirects: the 2+ hop chain a final page was FIRST reached through, keyed by that FINAL
+ *     page (which is what fix_finding's collapse-the-chain generator reads);
+ *   - redirect_sources: every other URL that redirected through 2+ hops, keyed by the SOURCE. The
+ *     crawler writes a final page once, so a chain that ends on a page already crawled (directly, or
+ *     through another redirect) exists only here; reading pages.redirects alone missed all of those.
  */
 export function redirectChainFindings(c: CheckContext): RawFinding[] {
   const out: RawFinding[] = [];
+  const seen = new Set<string>(); // source URLs already reported from pages.redirects
   for (const p of rows(c, `SELECT url_key urlKey, url, status_code status, redirects FROM pages
       WHERE redirects IS NOT NULL AND json_valid(redirects) AND json_array_length(redirects) >= 2`)) {
     if (p.status != null && p.status >= 300 && p.status < 400) continue; // never resolved (loop, hop cap, off-site): not a chain to collapse
@@ -190,7 +195,17 @@ export function redirectChainFindings(c: CheckContext): RawFinding[] {
     if (chain.length < 2) continue;
     const r: RedirectRecord = { sourceKey: p.urlKey, sourceUrl: chain[0].from, firstStatus: chain[0].status ?? null, finalKey: p.urlKey, finalUrl: p.url, chain, recordedIn: 'pages.redirects' };
     if (!inScope(r) || loopPoint(chain)) continue;
+    seen.add(chain[0].from);
     out.push({ urlKey: p.urlKey, evidence: { hops: chain.length, source: chain[0].from, finalUrl: p.url, chain: hopsOut(chain) } });
+  }
+  const final = finalPageLookup(c);
+  for (const r of redirectRecords(c)) {
+    if (r.recordedIn !== 'redirect_sources' || r.chain.length < 2) continue;
+    if (seen.has(r.sourceUrl) || seen.has(r.chain[0].from)) continue; // the chain its final page was first reached through: reported above
+    if (!inScope(r) || loopPoint(r.chain)) continue;
+    const fp = final(r.finalKey);
+    if (!fp || fp.status == null || (fp.status >= 300 && fp.status < 400)) continue; // unknown or never resolved (as above): not a chain to collapse
+    out.push({ urlKey: r.sourceKey, evidence: { hops: r.chain.length, source: r.sourceUrl, finalUrl: fp.url, chain: hopsOut(r.chain), recordedIn: r.recordedIn } });
   }
   return out;
 }

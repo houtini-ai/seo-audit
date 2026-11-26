@@ -7,10 +7,10 @@ import {
 import { shareText, sharePct, quickWinsEmptyReason, trappedEmptyReason, CATEGORY_LABEL, categoryLabel, breakdownsEmptyReason as emptyBreakdowns } from '../core/displayRules.js';
 import { TITLE_MAX_CHARS, META_DESC_MAX_CHARS } from '../core/onPageLimits.js';
 import { renderSearchTop, renderHealthTop, renderSideFreshness, drawNetwork, isolatedText, pctChg, SEV_ORDER, SEV_LABEL, type OverviewCtx } from './panels.js';
-import { renderSummary, aiSignalsHtml, type SummaryCtx } from './summary.js';
+import { renderSummary, aiSignalsHtml, repaintAges, type SummaryCtx } from './summary.js';
 import { renderFieldCwv } from './cwv.js';
 import { buildDomainPicker, showDomainsView, showWatchedDomain, setupOverviewTabs, setupActions, repaintDomainViews, type WebBoot } from './shell.js';
-import { clickCta, askChip, askText, askButton, askClaudePrompt, promptTarget } from './askClaude.js';
+import { clickCta, askChip, askText, askButton, askClaudePrompt, promptTarget, actionTo, actionPhrase, setCtaContext, getCtaMode } from './askClaude.js';
 
 // Local view types (avoid importing core, which pulls node-only deps into the bundle).
 interface Totals { clicks: number; impressions: number; ctr: number; position: number }
@@ -157,8 +157,20 @@ async function callServer(name: string, args: Record<string, unknown>): Promise<
     }
     return await r.json();
   }
-  return app.callServerTool({ name, arguments: args });
+  // A tool that throws comes back as a result marked isError, not as a rejection: surface it as an
+  // error here, so no caller reads an error result as "no data".
+  const res = await app.callServerTool({ name, arguments: args });
+  if (res?.isError) throw new Error(toolErrorText(res));
+  return res;
 }
+function toolErrorText(res: { content?: unknown }): string {
+  const c = Array.isArray(res.content) ? res.content.find((x: any) => x?.type === 'text' && typeof x.text === 'string') as { text: string } | undefined : undefined;
+  return c?.text?.trim().slice(0, 300) || 'the server returned an error';
+}
+/** An exported report: the payload is inlined and there is no server or host to call. */
+const __isExport = !!(window as any).__DASH_FIXTURE__ && !__sacWeb;
+/** The in-chat widget, under an MCP host: no Actions panel, no page reload, but Claude is there. */
+const __embedded = !__sacWeb && !(window as any).__DASH_FIXTURE__;
 
 function applyHostContext(ctx: { theme?: 'light' | 'dark'; styles?: { variables?: McpUiStyles } } | undefined) {
   if (!ctx) return;
@@ -181,13 +193,16 @@ app.onhostcontextchanged = (ctx) => {
 let dataLoaded = false;
 /** The Search Console window (days) the non-Summary tabs compare: current N days vs the N before. */
 const WINDOWS = [7, 28, 90, 180];
+/** The window the data on screen was loaded for: a failed window change falls back to it. */
+let loadedWinDays = 28;
 let winDays = ((): number => { const d = Number(new URLSearchParams(location.search).get('days')); return WINDOWS.includes(d) ? d : 28; })();
 let loadedSite = '';
 async function loadDashboard(siteUrl: string): Promise<void> {
   if (dataLoaded || !siteUrl) return;
   dataLoaded = true;
-  if (!loadedSite) setupOverviewTabs(siteUrl, callServer, () => (currentData ? aiSignalsHtml(currentData) : ''));
+  if (!loadedSite) overviewTabs = setupOverviewTabs(siteUrl, callServer, () => (currentData ? aiSignalsHtml(currentData) : ''));
   loadedSite = siteUrl;
+  setCtaContext(__embedded ? 'ask' : getCtaMode(), siteUrl);
   // A cold build after a sync can take a minute on a big property: say so instead of a bare spinner.
   const slow = setTimeout(() => {
     const l = document.getElementById('loading');
@@ -199,14 +214,20 @@ async function loadDashboard(siteUrl: string): Promise<void> {
     if (!data) throw new Error('no data');
     clearTimeout(slow);
     currentData = data;
+    loadedWinDays = winDays;
     render(data);
+    if (__embedded) { const rb = document.getElementById('refreshBtn'); if (rb) rb.hidden = false; }
   } catch (e) {
     clearTimeout(slow);
     dataLoaded = false; // allow a retry on a later tool result
+    const why = e instanceof Error ? ` (${e.message})` : '';
+    // A refresh or a window change that failed: keep what is on screen and say so.
+    if (currentData) { toast(`Couldn’t reload the dashboard data${why}`, 'warn'); return; }
     $('loading').style.display = 'none';
     const empty = $('empty');
     empty.style.display = 'flex';
-    empty.textContent = `Couldn’t load dashboard data${e instanceof Error ? ` (${e.message})` : ''}. Reload, or run a crawl and sync from the Actions panel.`;
+    empty.textContent = `Couldn’t load dashboard data${why}. ` + (getCtaMode() === 'actions' ? 'Reload, or run a crawl and sync from the Actions panel.'
+      : __embedded ? 'Use Refresh to try again, or ask Claude to refresh this property.' : 'Reload to try again.');
   }
 }
 
@@ -473,8 +494,9 @@ function renderFindings(fc: DashboardData['findings'], _col: ReturnType<typeof p
       const page = (res?.structuredContent ?? res) as { total: number; rows: Row[] };
       rows = offset ? rows.concat(page.rows) : page.rows;
       rowsTotal = page.total;
-    } catch {
+    } catch (e) {
       if (my !== token) return;
+      toast(`Couldn’t load the findings (${e instanceof Error ? e.message : String(e)}); showing the top ${fc.top.length} instead`, 'warn');
       rows = fc.top.filter(f => (active === 'all' || f.severity === active) && (area === 'all' || f.category === area) && (!check || f.check_id === check));
       rowsTotal = -1; // unknown: we only have the top 50
     } finally {
@@ -601,8 +623,30 @@ function paintNavBadges(data: DashboardData): void {
   set('ai', ar?.score != null ? String(ar.score) : null, 'nb-score', 'Agent readiness score, out of 100');
 }
 
+/** What depends on where the page runs (browser with Actions, in chat, exported file), not on the data. */
+function applyMode(data: DashboardData): void {
+  const mode = getCtaMode();
+  document.querySelectorAll<HTMLElement>('[data-actions-only]').forEach(el => { el.hidden = mode !== 'actions'; });
+  $('empty').textContent = mode === 'actions' ? 'No data yet - crawl and sync this property from the Actions panel first.'
+    : mode === 'ask' ? `No data yet. Ask Claude: Refresh ${promptTarget(data.siteUrl)} (sync Search Console and crawl the site).`
+      : 'No data in this report.';
+  // The free AI signals are in the payload, so the AI visibility tab has them in every mode.
+  const sig = document.getElementById('aiSignals');
+  if (sig) sig.innerHTML = aiSignalsHtml(data);
+  // In chat, a click on a keyword bar runs paid lookups: say so where the click is offered.
+  const cost = document.getElementById('kwCostHint');
+  if (cost) cost.textContent = __embedded && data.apiKeys?.dataforseo ? ' (paid DataForSEO lookups, cached 20 days)' : '';
+  // An exported report can't fetch: the Market tab (the DataForSEO overview) and Content research
+  // (live lookups) would be empty pages, so they are left out of the menu.
+  if (__isExport) for (const p of ['market', 'research']) {
+    const b = document.querySelector<HTMLElement>(`.tab-btn[data-panel="${p}"]`);
+    if (b) b.hidden = true;
+  }
+}
+
 function render(data: DashboardData): void {
   $('loading').style.display = 'none';
+  applyMode(data);
   paintNavBadges(data);
   renderSideFreshness(data); // the sidebar lives outside #content: show job status even with no GSC data
   if (data.empty || !data.summary) {
@@ -685,8 +729,8 @@ function render(data: DashboardData): void {
       ? `/${sink.template}/ absorbs ${sink.iprPct}% of internal equity but drives ${sink.trafficPct}% of traffic - equity flowing into a dead end.`
       : 'Internal equity share vs organic traffic share, by template.';
   } else {
-    wrap('mismatchChart').setEmpty(crawled ? 'No indexable 200 page in the crawl to group by template' : 'Click Crawl in Actions to map equity flow', col);
-    $('mismatchSummary').textContent = 'Click Crawl in Actions to see equity flow by template.';
+    wrap('mismatchChart').setEmpty(crawled ? 'No indexable 200 page in the crawl to group by template' : actionTo('crawl', 'to map equity flow'), col);
+    $('mismatchSummary').textContent = actionTo('crawl', 'to see equity flow by template.');
   }
 
   // 0b) Internal link explorer - folder-to-folder iPR flow as a bipartite Sankey.
@@ -737,8 +781,8 @@ function render(data: DashboardData): void {
     wrap('scatterChart').on('click', (p: any) => { if (p?.data?.id) window.open(p.data.id, '_blank', 'noopener'); });
     $('scatterSummary').textContent = `${sc.length} URLs by internal PageRank and impressions; bottom-right = high-authority pages earning no traffic. Scroll to zoom, click a point to open the page.`;
   } else {
-    wrap('scatterChart').setEmpty(crawled ? `No page has iPR 15+ or 5+ impressions in the last ${winDays} days to plot` : 'Click Crawl in Actions to map equity vs traffic', col);
-    $('scatterSummary').textContent = 'Click Crawl in Actions to see the equity map.';
+    wrap('scatterChart').setEmpty(crawled ? `No page has iPR 15+ or 5+ impressions in the last ${winDays} days to plot` : actionTo('crawl', 'to map equity vs traffic'), col);
+    $('scatterSummary').textContent = actionTo('crawl', 'to see the equity map.');
   }
 
   // 0c) Crawl network (the signature visual): the internal link skeleton of the highest-equity
@@ -765,7 +809,7 @@ function render(data: DashboardData): void {
   } else {
     pendingNetworkDraw = null;
     $('structureNote').innerHTML = '';
-    $('structureSummary').textContent = 'Click Crawl in Actions to map your internal link structure.';
+    $('structureSummary').textContent = actionTo('crawl', 'to map your internal link structure.');
   }
 
   // 0d) Security / HTTPS coverage (V2) - header coverage bars, status-coloured (grey the context,
@@ -919,7 +963,7 @@ function render(data: DashboardData): void {
       `<div class="ar-top">${ring}<div class="ar-meta"><div class="ar-level">${esc(ar.level)}</div><div class="ar-cats">${cats}</div></div></div>
       <div class="ar-checks">${items}</div>`;
   } else {
-    $('agentPanel').innerHTML = '<p class="muted">Click Agent in Actions to populate the agent-readiness score.</p>';
+    $('agentPanel').innerHTML = `<p class="muted">${clickCta('readiness', 'Not checked yet.')}</p>`;
   }
 
   // 0b) Cannibalisation braids - per contested query, competing URLs' weekly position over time
@@ -983,7 +1027,7 @@ function render(data: DashboardData): void {
   $('topLinkedTable').innerHTML = tlp.length
     ? tableHtml(['URL', 'Internal links in', 'Status', 'Indexable'], tlp.map(p =>
       `<tr><td class="url" title="${esc(p.url)}">${esc(shortPath(p.url))}</td><td class="num">${fmt(p.inlinks)}</td><td>${statusBadge(p.status)}</td><td>${p.indexable ? icons.check : `${icons.x} ${esc(p.reason || '')}`}</td></tr>`))
-    : (crawled ? '<p class="muted">No internal page in the crawl has an internal link in.</p>' : emptyState('Click Crawl in Actions to see the internal-link hierarchy.'));
+    : (crawled ? '<p class="muted">No internal page in the crawl has an internal link in.</p>' : emptyState(actionTo('crawl', 'to see the internal-link hierarchy.')));
   // status null = not fetched (rate limited, #54) or robots-blocked: unknown, not a broken page.
   const tlpBroken = tlp.filter(p => p.status != null && p.status !== 200).length;
   $('topLinkedSummary').textContent = `Top ${tlp.length} internally-linked pages by inlink count; ${tlpBroken} return a non-200 status.`;
@@ -1411,7 +1455,7 @@ function renderCrawlOnly(data: DashboardData): void {
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(b => {
     const on = usable.has(b.dataset.panel ?? '');
     b.disabled = !on;
-    if (on) b.removeAttribute('title'); else b.title = 'Needs Search Console data - click Sync GSC in Actions';
+    if (on) b.removeAttribute('title'); else b.title = `Needs Search Console data - ${actionPhrase('sync')}`;
   });
   setupTabs();
   openDeepLinkedTab();
@@ -1478,7 +1522,17 @@ function setupRangeControl(): void {
     ctl.classList.add('busy');
     ctl.setAttribute('aria-busy', 'true');
     dataLoaded = false;
-    void loadDashboard(loadedSite).finally(() => { ctl.classList.remove('busy'); ctl.removeAttribute('aria-busy'); });
+    void loadDashboard(loadedSite).finally(() => {
+      ctl.classList.remove('busy'); ctl.removeAttribute('aria-busy');
+      // The load failed and the old window's data is still on screen: put the control and URL back.
+      if (currentData && loadedWinDays !== winDays) {
+        winDays = loadedWinDays;
+        markWindow();
+        const back = new URL(location.href);
+        if (winDays === 28) back.searchParams.delete('days'); else back.searchParams.set('days', String(winDays));
+        history.replaceState(null, '', back);
+      }
+    });
   });
 }
 
@@ -1557,7 +1611,9 @@ function buildExportBar(data: DashboardData): void {
     bar.appendChild(b);
   };
   if (data.findings?.top?.length) {
-    mk('Findings CSV', () => downloadCsv('seo-findings.csv', [
+    // The payload holds the highest-priority findings only: the label says how many rows that is.
+    const nTop = data.findings.top.length, nAll = data.findings.total;
+    mk(nAll > nTop ? `Findings CSV (top ${fmt(nTop)} of ${fmt(nAll)})` : 'Findings CSV', () => downloadCsv('seo-findings.csv', [
       ['severity', 'check', 'url', 'clicks', 'impressions', 'position', 'priority', 'fix'],
       ...data.findings!.top.map(f => {
         const rec = safeJson(f.recommendation), t = safeJson(f.traffic_at_risk);
@@ -1731,17 +1787,17 @@ function renderResearch(data: DashboardData): void {
     kw.addEventListener('keydown', e => { if (e.key === 'Enter') void runResearch('news', kw.value.trim(), out); });
     return;
   }
-  if (data.apiKeys && !data.apiKeys.dataforseo) {
-    el.innerHTML = upsellCard({ title: 'Content research — News, Videos & Trends', lead: 'The news articles, YouTube videos and Google-Trends interest behind any topic — the freshness and query-fan-out signals that feed AI answers. Needs a DataForSEO account.', provider: 'dataforseo', cta: 'Get DataForSEO' });
-    return;
-  }
+  if (__isExport) { el.innerHTML = ''; return; } // no server to ask: the tab is left out (applyMode)
+  // News is the free Google News lookup, so it is offered with or without a DataForSEO key; Videos
+  // and Trend are paid DataForSEO lookups and need the key.
+  const paid = !(data.apiKeys && !data.apiKeys.dataforseo);
   el.innerHTML = `<div class="chart-card"><h3>Content research</h3>
-    <div class="hint">On-demand DataForSEO — the news, videos and trend interest for a topic. Each is a live, 20-day-cached SERP call.</div>
-    <div class="research-bar"><input id="researchKw" type="text" placeholder="Enter a topic or keyword…" aria-label="Research keyword" /><button class="btn" data-research="news">News</button><button class="btn" data-research="youtube">Videos</button><button class="btn" data-research="topic_trend">Trend</button></div>
-    <div id="researchOut" class="research-out"></div></div>`;
+    <div class="hint">News search is free (Google News). ${paid ? 'Videos and Trend are paid DataForSEO lookups, each a live call cached for 20 days.' : 'Videos and Google Trends need a DataForSEO account.'}</div>
+    <div class="research-bar"><input id="researchKw" type="text" placeholder="Enter a topic or keyword…" aria-label="Research keyword" /><button class="btn" data-research="news">News</button>${paid ? '<button class="btn" data-research="youtube">Videos</button><button class="btn" data-research="topic_trend">Trend</button>' : ''}</div>
+    <div id="researchOut" class="research-out"></div></div>` +
+    (paid ? '' : upsellCard({ title: 'Content research — Videos & Trends', lead: 'The YouTube videos and Google-Trends interest behind any topic — the freshness and query-fan-out signals that feed AI answers. Needs a DataForSEO account.', provider: 'dataforseo', cta: 'Get DataForSEO' }));
   const out = document.getElementById('researchOut') as HTMLElement;
   const kw = document.getElementById('researchKw') as HTMLInputElement;
-  if ((window as any).__DASH_FIXTURE__ && !__sacWeb) out.innerHTML = `<div class="empty-state">This is a static export — open the live dashboard to run research.</div>`;
   el.querySelectorAll<HTMLButtonElement>('[data-research]').forEach(b => { b.onclick = (): void => { void runResearch(b.dataset.research!, kw.value.trim(), out); }; });
   kw.addEventListener('keydown', e => { if (e.key === 'Enter') void runResearch('news', kw.value.trim(), out); });
 }
@@ -1763,7 +1819,9 @@ async function runResearch(kind: string, keyword: string, out: HTMLElement): Pro
       const dir = last > first * 1.1 ? 'rising' : last < first * 0.9 ? 'falling' : 'flat';
       out.innerHTML = `<div class="metric-card" style="max-width:340px"><div class="label">Google Trends — “${esc(keyword)}”</div><div class="value">${dir}</div><div class="hint">${series.length} points · ${Math.round(first)}→${Math.round(last)}, peak ${Math.max(...vals)}</div></div>`;
     } else {
-      const arts: any[] = ((await callServer('news_discovery', { keyword })) as any)?.structuredContent?.articles ?? [];
+      // source 'google' = the free Google News feed only. Without it the chat tool also runs the paid
+      // DataForSEO news search when a key is set (the browser's handler is free whatever is sent).
+      const arts: any[] = ((await callServer('news_discovery', { keyword, source: 'google' })) as any)?.structuredContent?.articles ?? [];
       out.innerHTML = arts.length ? tbl('<tr><th>Article</th><th>Source</th><th>When</th></tr>', arts.slice(0, 20).map(a => `<tr><td><a class="rec-url" href="${esc(a.url ?? '#')}" target="_blank" rel="noopener">${esc(a.title ?? '(untitled)')}</a></td><td>${esc(a.source ?? '–')}</td><td>${esc(a.timestamp ?? '–')}</td></tr>`).join('')) : `<div class="empty-state">No news for “${esc(keyword)}”.</div>`;
     }
   } catch (e) {
@@ -1820,6 +1878,20 @@ async function loadRelated(keyword: string): Promise<void> {
   }
 }
 
+/** In chat there is no page to reload: Refresh re-reads the (free) payload and repaints. */
+let overviewTabs: { reset: () => void } | null = null;
+function setupRefreshButton(): void {
+  const btn = document.getElementById('refreshBtn') as HTMLButtonElement | null;
+  if (!btn) return;
+  btn.onclick = (): void => {
+    if (!loadedSite || btn.disabled) return;
+    btn.disabled = true; btn.textContent = 'Refreshing...';
+    dataLoaded = false;
+    void loadDashboard(loadedSite).then(() => { overviewTabs?.reset(); })
+      .finally(() => { btn.disabled = false; btn.textContent = 'Refresh'; });
+  };
+}
+
 // Light/dark toggle (pricemonitor ◐). Reuses the existing theme path: applyHostContext
 // stamps data-theme + the .dark class, then render(currentData) re-tints the ECharts
 // (they read CSS custom properties at build time). Persisted per-origin in localStorage.
@@ -1857,6 +1929,9 @@ function setupThemeToggle(): void {
 const __fixture = (window as any).__DASH_FIXTURE__;
 if (__fixture) {
   applyHostContext({ theme: (window as any).__DASH_THEME__ ?? 'light' });
+  // The web server serves the page with no fixture; a fixture without it is an exported report,
+  // where nothing can be run: no Actions button to point at, no Claude to ask.
+  if (__isExport) setCtaContext('none', (__fixture as DashboardData).siteUrl);
   currentData = __fixture; render(__fixture);
 } else if (__sacWeb) {
   // Web mode: a ?theme= deep-link wins (headless capture / shared link), else a saved choice, else the browser's colour scheme.
@@ -1871,13 +1946,34 @@ if (__fixture) {
   if (__sacWeb.view === 'domains') showDomainsView(__sacWeb, callServer);
   else if (__sacWeb.domain) void showWatchedDomain(__sacWeb.domain, callServer);
   else {
-    setupActions(__sacWeb.siteUrl, callServer);
+    // A read-only dashboard has no Actions panel: its "do this next" prompts ask Claude instead.
+    setupActions(__sacWeb.siteUrl, callServer, enabled => {
+      const mode = enabled ? 'actions' : 'ask';
+      if (mode === getCtaMode()) return;
+      setCtaContext(mode, __sacWeb.siteUrl);
+      if (currentData) render(currentData);
+    });
     setupRangeControl();
     loadDashboard(__sacWeb.siteUrl);
   }
 } else {
+  setCtaContext('ask');
+  setupRefreshButton();
   app.connect().then(() => applyHostContext(app.getHostContext() as any));
 }
+
+// The brand links to the web server's "All domains" page: only that server has it.
+if (!__sacWeb) document.getElementById('brandHome')?.removeAttribute('href');
+
+// "3h ago" and "checked 2d ago" are worked out when a panel is painted: repaint those panels each
+// minute so a page left open doesn't keep saying "just now". (The data itself is not re-read.)
+setInterval(() => {
+  if (!currentData || document.hidden) return;
+  renderSideFreshness(currentData);
+  repaintAges(currentData);
+  const sig = document.getElementById('aiSignals');
+  if (sig?.innerHTML) sig.innerHTML = aiSignalsHtml(currentData);
+}, 60_000);
 
 // Wire the light/dark toggle in every mode (the button is static in dashboard.html).
 setupThemeToggle();
