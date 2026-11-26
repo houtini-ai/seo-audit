@@ -193,15 +193,19 @@ export class DataForSeoClient {
    * at depth=20 is absent from the top 20 organic — nothing is known about its position beyond that.
    * `loadAsyncAiOverview` makes DataForSEO wait for a client-side-loaded AI Overview and return its
    * references; without it those SERPs come back with an empty AIO (asynchronous_ai_overview:true)
-   * and citation is unknowable. Small surcharge, refunded when no async AIO is found. */
+   * and citation is unknowable. Small surcharge, refunded when no async AIO is found.
+   * `resolvePoisonedResults` asks DataForSEO to detect and restore poisoned SERPs (restored organic
+   * items carry 'from_web' in their `checks` array). Costs one extra SERP page per task and cannot be
+   * combined with udm=web / udm=14, so it is opt-in. */
   async serpOrganic(
     keyword: string, location?: string | number, languageCode = 'en', depth = 20,
-    opts: { loadAsyncAiOverview?: boolean } = {},
+    opts: { loadAsyncAiOverview?: boolean; resolvePoisonedResults?: boolean } = {},
   ): Promise<DfsResponse> {
     return this.call('/v3/serp/google/organic/live/advanced', [
       {
         keyword, ...this.loc(location), language_code: languageCode, depth,
         ...(opts.loadAsyncAiOverview ? { load_async_ai_overview: true } : {}),
+        ...(opts.resolvePoisonedResults ? { resolve_poisoned_results: true } : {}),
       },
     ]);
   }

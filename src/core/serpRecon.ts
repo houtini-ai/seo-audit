@@ -26,6 +26,16 @@ export function hostOf(s: string | undefined | null): string {
   return String(s).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '').toLowerCase().trim();
 }
 
+/** True when a SERP item reports a property. DataForSEO moved the per-item booleans
+ * (is_featured_snippet, is_image, is_video, amp_version, is_malicious, is_web_story) into a
+ * `checks` string array (docs, 2026-11: "this check no longer appears in SERP"), adding
+ * is_highly_cited and from_web. Reads `checks` first and falls back to the legacy boolean so
+ * older cached responses still parse. */
+export function serpItemHas(item: any, check: string): boolean {
+  if (Array.isArray(item?.checks) && item.checks.includes(check)) return true;
+  return item?.[check] === true;
+}
+
 export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDepth = 20): SerpReconResult {
   const own = hostOf(ownDomain);
   const result = resp.tasks?.[0]?.result?.[0] ?? {};
@@ -62,7 +72,11 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
         }
       };
       collect(it.references, false);
-      for (const el of it.items ?? []) collect(el?.references, true);
+      for (const el of it.items ?? []) {
+        collect(el?.references, true);
+        // ai_overview_expanded_element carries its references per component (DataForSEO docs, 2026-11).
+        for (const comp of el?.components ?? []) collect(comp?.references, true);
+      }
     } else if (t === 'video' || t === 'short_videos') {
       videoPresent = true;
       for (const v of it.items ?? []) {

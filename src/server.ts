@@ -13,7 +13,7 @@ import { getDashboardDataAsync } from './core/dashboardAsync.js';
 import { listFindings } from './core/findingsQuery.js';
 import { computeSerpFootprint, persistSerpFootprint } from './core/serpFootprint.js';
 import { computeMarketSizing, persistMarketSizing } from './core/marketSizing.js';
-import { parseSerpForRecon } from './core/serpRecon.js';
+import { parseSerpForRecon, serpItemHas } from './core/serpRecon.js';
 import { insertTodos, opportunityBasis } from './audit/recon.js';
 
 /** The dashboard fields for a structured result: an openable URL, or (in a container the host
@@ -2182,7 +2182,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
             keywordDifficulty: kd.keyword_properties?.keyword_difficulty ?? null,
             intent: kd.search_intent_info?.main_intent ?? null,
             serpFeatures,
-            isFeaturedSnippet: serp.is_featured_snippet === true ? true : null,
+            isFeaturedSnippet: serpItemHas(serp, 'is_featured_snippet') ? true : null,
           };
         })
         .filter((k): k is NonNullable<typeof k> => k != null);
