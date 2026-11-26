@@ -141,7 +141,7 @@ let repaintAi: (() => void) | null = null;
  * mentions, cited pages and co-cited sources on AI visibility), fetched once on the first open of
  * either. The AI tab also shows the free signals from the dashboard payload (`signals`).
  */
-export function setupOverviewTabs(siteUrl: string, callServer: CallServer, signals: () => string): void {
+export function setupOverviewTabs(siteUrl: string, callServer: CallServer, signals: () => string): { reset: () => void } {
   const domain = domainOfProperty(siteUrl);
   let overview: Promise<any> | null = null;
   const fetchOverview = (): Promise<any> => (overview ??= (async () => {
@@ -153,11 +153,14 @@ export function setupOverviewTabs(siteUrl: string, callServer: CallServer, signa
   const noData = (title: string, e: unknown, what: string): string =>
     `<div class="chart-card"><h3>${title}</h3><div class="hint">${esc(errText(e))}. ${what} arrive with a portfolio refresh. That costs money, so it starts from chat: ask Claude to "Refresh my SEO Console portfolio" and it quotes the cost first.</div></div>`;
 
+  const resets: (() => void)[] = [];
   const wire = (panel: string, rootId: string, section: 'market' | 'ai', title: string, what: string, onPaint: (p: () => void) => void): void => {
     const btn = document.querySelector<HTMLButtonElement>(`.tab-btn[data-panel="${panel}"]`);
     const root = document.getElementById(rootId);
     if (!btn || !root) return;
     let started = false;
+    // After a refresh: forget what was fetched, and fetch again now if this tab is the open one.
+    resets.push(() => { started = false; root.innerHTML = ''; if (btn.classList.contains('active')) btn.click(); });
     btn.addEventListener('click', () => {
       if (panel === 'ai') { const s = document.getElementById('aiSignals'); if (s) s.innerHTML = signals(); }
       if (started) return;
@@ -172,6 +175,7 @@ export function setupOverviewTabs(siteUrl: string, callServer: CallServer, signa
   };
   wire('market', 'marketView', 'market', 'Market', 'DataForSEO numbers (estimated traffic and keywords, backlinks, countries)', p => { repaintMarket = p; });
   wire('ai', 'aiView', 'ai', 'AI mentions', 'Mentions in Google AI Overviews and ChatGPT, AI search volume and the pages cited', p => { repaintAi = p; });
+  return { reset: () => { overview = null; repaintMarket = null; repaintAi = null; resets.forEach(r => r()); } };
 }
 
 // ---------- Sidebar actions ----------
@@ -198,7 +202,7 @@ const ago = (iso: string): string => {
  * The sidebar's Actions block for a property. Hidden when the server is read-only. Polls the job
  * list every few seconds while a job is live, and offers a reload once one finishes.
  */
-export function setupActions(siteUrl: string, callServer: CallServer): void {
+export function setupActions(siteUrl: string, callServer: CallServer, onAvailability?: (enabled: boolean) => void): void {
   const box = document.getElementById('sideActions');
   if (!box) return;
   let status: ActionStatus | null = null;
@@ -256,6 +260,7 @@ export function setupActions(siteUrl: string, callServer: CallServer): void {
           : { text: `${label} ${STATE_LABEL[j.state] ?? j.state}${j.error ? `: ${j.error}` : ''}`, err: true };
       }
       status = next;
+      onAvailability?.(!!next.enabled);
     } catch { /* keep the last status */ }
     paint();
     const anyLive = !!status?.jobs.some(j => LIVE.has(j.state));

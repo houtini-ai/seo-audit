@@ -77,7 +77,13 @@ export class Refresh {
       else {
         update({ phase: 'inspect' });
         phases.push('inspect');
-        out.inspect = await this.inspector.run(siteUrl, { limit: opts.inspectLimit }, p => update({ phase: 'inspect', ...p }), signal);
+        // The inspector throws when nothing could be inspected (quota spent, no permission): reported
+        // here, never fatal, so the phases after it still run.
+        try {
+          out.inspect = await this.inspector.run(siteUrl, { limit: opts.inspectLimit }, p => update({ phase: 'inspect', ...p }), signal);
+        } catch (err) {
+          out.inspectError = err instanceof Error ? err.message : String(err);
+        }
       }
     }
     if (signal.aborted) return out;
@@ -87,7 +93,13 @@ export class Refresh {
       else {
         update({ phase: 'ranks' });
         phases.push('ranks');
-        out.ranks = await this.rankTracker.run(siteUrl, { location: opts.location }, p => update({ phase: 'ranks', ...p }), signal);
+        // Reported, never fatal (like CrUX below): GSC, the crawl and inspection are already written,
+        // and an empty DataForSEO balance must not fail the refresh or skip the CrUX phase.
+        try {
+          out.ranks = await this.rankTracker.run(siteUrl, { location: opts.location }, p => update({ phase: 'ranks', ...p }), signal);
+        } catch (err) {
+          out.ranksError = err instanceof Error ? err.message : String(err);
+        }
       }
     }
     if (signal.aborted) return out;

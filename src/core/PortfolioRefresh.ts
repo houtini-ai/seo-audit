@@ -85,6 +85,7 @@ export async function runPortfolioRefresh(
       `INSERT INTO portfolio_run (started_at, tier, trigger, quoted_usd, status, job_id) VALUES (?, ?, ?, ?, 'running', ?)`,
     ).run(startedAt, args.tier, args.trigger, quote.usd, args.jobId ?? null).lastInsertRowid);
     let spent = 0, calls = 0, cacheHits = 0;
+    let firstError = '';
     const famOut: PortfolioRefreshResult['families'] = [];
     const ledger = () => store.db.prepare('UPDATE portfolio_run SET spent_usd = ?, calls = ?, cache_hits = ? WHERE id = ?').run(round(spent), calls, cacheHits, runId);
     const paid = (r: DfsResponse) => { calls++; if (r.cached) cacheHits++; spent += r.cost || 0; ledger(); return r; };
@@ -126,6 +127,7 @@ export async function runPortfolioRefresh(
         } catch (e) {
           failed++;
           const { status, error } = classifyDfsError(e);
+          firstError ||= error;
           record(call, fam, status, error);
           // A family that isn't enabled fails the same way every time: don't pay for more tries.
           if (status === 'not-enabled') { for (const rest of fam.calls.slice(i + 1)) record(rest, fam, 'not-enabled', error); break; }
@@ -145,6 +147,13 @@ export async function runPortfolioRefresh(
     ].filter(Boolean).join('; ');
     ledger();
     store.db.prepare(`UPDATE portfolio_run SET finished_at = ?, status = ?, note = ? WHERE id = ?`).run(new Date().toISOString(), status, note, runId);
+    // Every family that ran failed (bad credentials, no balance, DataForSEO unreachable): that is a
+    // failed job with the reason, not a "completed" one. The run row and per-domain statuses above
+    // are already written. A partial failure still completes, and says so in `note`.
+    const ran = famOut.filter(f => f.status !== 'skipped-budget');
+    if (!signal.aborted && ran.length > 0 && ran.every(f => f.status === 'failed')) {
+      throw new Error(`Portfolio refresh failed: all ${ran.length} endpoint famil${ran.length === 1 ? 'y' : 'ies'} failed, nothing was fetched. First error: ${firstError.slice(0, 400) || 'unknown'}`);
+    }
     return { runId, tier: args.tier, quoted: quote.usd, spent: round(spent), calls, cacheHits, families: famOut, note };
   } finally { store.close(); }
 }

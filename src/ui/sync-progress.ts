@@ -14,7 +14,9 @@ interface JobProgress {
 }
 interface Job {
   id?: string; jobId?: string; state?: string; status?: string;
-  startedAt?: string; siteUrl?: string; progress?: JobProgress; result?: any; error?: string;
+  startedAt?: string; siteUrl?: string; progress?: JobProgress; result?: any;
+  /** A failed job's reason; on a status reply with no job at all, a code such as 'not_found'. */
+  error?: string;
   /** A queued job's status line: waiting for the job runner, or that none seems to be running. */
   note?: string;
 }
@@ -28,7 +30,14 @@ const PHASES = [
   { key: 'crux', label: 'CrUX field data' },
 ];
 
+const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+const LIVE = new Set(['running', 'queued']);
+const stateOf = (job: Job): string => job.state ?? job.status ?? 'unknown';
+/** Poll only a job that can still change. */
+const pollable = (job: Job): boolean => LIVE.has(stateOf(job));
+
 let currentJobId: string | null = null;
+let pollFailures = 0;
 let startedAt: number | null = null;
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let ticker: ReturnType<typeof setInterval> | null = null;
@@ -47,8 +56,13 @@ app.ontoolresult = (result: { structuredContent?: Job }) => {
   if (!r) return;
   currentJobId = r.jobId ?? r.id ?? null;
   if (r.siteUrl) $('site').textContent = extractDomain(r.siteUrl);
+  // refresh_property with nothing to run starts no job: say so, and don't wait on one.
+  if ((r.status === 'noop' && !r.state) || !currentJobId) {
+    renderStopped('nothing to run', 'No job was started: every phase is switched off or has no credentials configured. Ask Claude what is set up.', false);
+    return;
+  }
   render(r);
-  startPolling();
+  if (pollable(r)) startPolling();
 };
 
 // Production-inert preview hook (screenshot harness): render a fixed job, no host/poll.
@@ -69,14 +83,65 @@ function startPolling(): void {
     if (!currentJobId) return;
     try {
       const res = await app.callServerTool({ name: 'check_sync_status', arguments: { jobId: currentJobId } });
-      if (res?.structuredContent) render(res.structuredContent as Job);
-    } catch { /* keep polling */ }
+      const sc = res?.structuredContent as Job | undefined;
+      if (res?.isError || !sc) { pollFailed(); return; }
+      pollFailures = 0;
+      // No such job (the server restarted, or the registry was pruned): it will never be found again.
+      if (!sc.state && !sc.status && sc.error) {
+        renderStopped('unknown', `The server no longer knows job ${currentJobId}${sc.error === 'not_found' ? '' : ` (${sc.error})`}: it may have restarted. Ask Claude for the property's current status.`, true);
+        return;
+      }
+      render(sc);
+    } catch { pollFailed(); }
   }, 2000);
+}
+/** A poll that can't be answered is retried; after a minute of nothing but failures, stop and say so. */
+function pollFailed(): void {
+  if (++pollFailures < 30) return;
+  renderStopped('unknown', 'Lost contact with the server, so this job\'s progress can no longer be read. Ask Claude for its status.', true);
 }
 function stopPolling(): void { if (pollInterval) { clearInterval(pollInterval); pollInterval = null; } if (ticker) { clearInterval(ticker); ticker = null; } }
 
+/** A final panel with no job behind it (nothing was started, or the job can't be read any more). */
+function renderStopped(badgeText: string, message: string, isError: boolean): void {
+  stopPolling();
+  const badge = $('status-badge');
+  badge.textContent = badgeText;
+  badge.className = `status-badge ${isError ? 'interrupted' : 'idle'}`;
+  $('job-id').textContent = currentJobId ? `Job ${currentJobId}` : '';
+  $('phases').innerHTML = PHASES.map(ph => `<div class="phase pending"><span class="dot"></span><span class="plabel">${ph.label}</span></div>`).join('');
+  $('current').style.display = 'none';
+  const sum = $('summary');
+  sum.style.display = 'block';
+  sum.innerHTML = `<div class="${isError ? 'summary-error' : 'summary-note'}">${escapeHtml(message)}</div>`;
+}
+
+/** How each phase ended, from the finished job: its result names what ran, what was skipped (and
+ *  why) and what failed. With no result (a failed job), the last phase reached is where it stopped. */
+function phaseOutcomes(job: Job, state: string): { cls: string; note: string }[] {
+  const r = job.result && typeof job.result === 'object' ? job.result : null;
+  const reached = PHASES.findIndex(ph => ph.key === job.progress?.phase);
+  return PHASES.map((ph, i) => {
+    if (r) {
+      if (r[`${ph.key}Error`]) return { cls: 'failed', note: `failed: ${String(r[`${ph.key}Error`])}` };
+      if (r[`${ph.key}Skipped`]) return { cls: 'skipped', note: `skipped: ${String(r[`${ph.key}Skipped`])}` };
+      if (r[ph.key]) return { cls: 'done', note: '' };
+      return { cls: 'pending', note: Array.isArray(r.phases) ? 'not run' : '' };
+    }
+    if (reached < 0) return { cls: 'pending', note: '' };
+    if (i < reached) return { cls: 'done', note: '' };
+    if (i === reached) return state === 'completed' ? { cls: 'done', note: '' } : { cls: 'failed', note: state };
+    return { cls: 'pending', note: '' };
+  });
+}
+
 function render(job: Job): void {
-  const state = job.state ?? job.status ?? 'running';
+  const state = stateOf(job);
+  // A state this widget doesn't know can't be waited on: show it and stop.
+  if (!TERMINAL.has(state) && !LIVE.has(state)) {
+    renderStopped(state, `The job reports the state "${state}", which this view can't follow. Ask Claude for its status.`, true);
+    return;
+  }
   const p = job.progress ?? {};
   if (job.startedAt && startedAt === null) startedAt = Date.parse(job.startedAt);
   if (job.siteUrl) $('site').textContent = extractDomain(job.siteUrl);
@@ -88,13 +153,14 @@ function render(job: Job): void {
   badge.className = `status-badge ${state}`;
   if (startedAt) $('elapsed').textContent = formatDuration(Date.now() - startedAt);
 
-  const done = state === 'completed' || state === 'failed' || state === 'cancelled' || state === 'interrupted';
+  const done = TERMINAL.has(state);
+  const outcomes = done ? phaseOutcomes(job, state) : [];
   const curIdx = done ? PHASES.length : state === 'queued' ? -1 : Math.max(0, PHASES.findIndex(ph => ph.key === p.phase));
 
   // Phase stepper
   $('phases').innerHTML = PHASES.map((ph, i) => {
-    const cls = done && state === 'completed' ? 'done' : i < curIdx ? 'done' : i === curIdx ? 'active' : 'pending';
-    return `<div class="phase ${cls}"><span class="dot"></span><span class="plabel">${ph.label}</span></div>`;
+    const cls = done ? outcomes[i].cls : i < curIdx ? 'done' : i === curIdx ? 'active' : 'pending';
+    return `<div class="phase ${cls}"${done && outcomes[i].note ? ` title="${escapeHtml(outcomes[i].note)}"` : ''}><span class="dot"></span><span class="plabel">${ph.label}</span></div>`;
   }).join('');
 
   // Active phase detail
@@ -134,17 +200,26 @@ function render(job: Job): void {
     stopPolling();
     sum.style.display = 'block';
     const r = job.result ?? {};
+    const rows = [
+      r.gsc ? ['Search Console', `${formatNumber(r.gsc.rowsFetched ?? 0)} rows · ${r.gsc.startDate}–${r.gsc.endDate}`] : null,
+      r.crawl ? ['Crawl', `${r.crawl.crawled ?? 0} pages · ${r.crawl.failed ?? 0} failed`] : null,
+      r.inspect ? ['URL inspection', `${r.inspect.inspected ?? 0} inspected`] : null,
+      r.ranks ? ['Rank history', `${r.ranks.periods ?? 0} periods${r.ranks.cost ? ` · $${r.ranks.cost}` : ''}`] : null,
+      r.crux ? ['CrUX field data', `${r.crux.ok ?? 0} of ${r.crux.queried ?? 0} targets with data${r.crux.insufficientData ? ` · ${r.crux.insufficientData} with too little traffic` : ''}${r.crux.errors?.length ? ` · ${r.crux.errors.length} errors` : ''}`] : null,
+    ].filter(Boolean) as [string, string][];
+    // What didn't run, and why: a skipped or failed phase is never shown as done.
+    const problems = PHASES.map((ph, i) => (outcomes[i].cls === 'skipped' || (outcomes[i].cls === 'failed' && r[`${ph.key}Error`]) ? [ph.label, outcomes[i].note] : null))
+      .filter(Boolean) as [string, string][];
+    const rowsHtml = rows.map(([k, v]) => `<div class="summary-row"><span>${k}</span><span>${escapeHtml(v)}</span></div>`).join('') +
+      problems.map(([k, v]) => `<div class="summary-row summary-row--warn"><span>${k}</span><span>${escapeHtml(v)}</span></div>`).join('');
     if (state === 'failed' || state === 'interrupted') {
-      sum.innerHTML = `<div class="summary-error">Sync ${state}${job.error ? `: ${escapeHtml(job.error)}` : ''}</div>`;
+      sum.innerHTML = `<div class="summary-error">Refresh ${state}${job.error ? `: ${escapeHtml(job.error)}` : ''}</div>` + rowsHtml;
+    } else if (state === 'cancelled') {
+      sum.innerHTML = `<div class="summary-warn">Refresh cancelled${job.error ? `: ${escapeHtml(job.error)}` : ''}. ${rows.length ? 'What finished before it stopped:' : 'Nothing finished before it stopped.'}</div>` + rowsHtml;
     } else {
-      const rows = [
-        r.gsc ? ['Search Console', `${formatNumber(r.gsc.rowsFetched ?? 0)} rows · ${r.gsc.startDate}–${r.gsc.endDate}`] : null,
-        r.crawl ? ['Crawl', `${r.crawl.crawled ?? 0} pages · ${r.crawl.failed ?? 0} failed`] : null,
-        r.inspect ? ['URL inspection', `${r.inspect.inspected ?? 0} inspected`] : null,
-        r.ranks ? ['Rank history', `${r.ranks.periods ?? 0} periods${r.ranks.cost ? ` · $${r.ranks.cost}` : ''}`] : null,
-      ].filter(Boolean) as [string, string][];
-      sum.innerHTML = `<div class="summary-done">✓ Refresh complete - click Run audit in Actions next.</div>` +
-        rows.map(([k, v]) => `<div class="summary-row"><span>${k}</span><span>${escapeHtml(v)}</span></div>`).join('');
+      const partial = problems.length > 0;
+      // This widget lives in chat: the next step is a request to Claude, not a dashboard button.
+      sum.innerHTML = `<div class="${partial ? 'summary-warn' : 'summary-done'}">${partial ? `Refresh finished, with ${problems.length} phase${problems.length === 1 ? '' : 's'} skipped or failed.` : '✓ Refresh complete.'} Ask Claude to run the audit next.</div>` + rowsHtml;
     }
   } else {
     sum.style.display = 'none';

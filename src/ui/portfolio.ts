@@ -17,7 +17,16 @@ async function init(): Promise<void> {
   const root = document.getElementById('app')!;
   const host = {
     root, web: false,
-    callServer: (name: string, args: Record<string, unknown>) => app.callServerTool({ name, arguments: args }),
+    // A tool that throws comes back as a result marked isError, not as a rejection: make it one.
+    callServer: async (name: string, args: Record<string, unknown>) => {
+      const res = await app.callServerTool({ name, arguments: args });
+      if (res?.isError) {
+        const c = Array.isArray(res.content) ? res.content.find((x: any) => x?.type === 'text' && typeof x.text === 'string') as { text: string } | undefined : undefined;
+        throw new Error(c?.text?.trim().slice(0, 300) || 'the server returned an error');
+      }
+      return res;
+    },
+    canRefresh: !fixture,
     canMessage: () => !fixture && !!(app.getHostCapabilities?.() as any)?.message,
     sendMessage: (text: string) => app.sendMessage({ role: 'user', content: [{ type: 'text', text }] }) as Promise<{ isError?: boolean } | undefined>,
   };

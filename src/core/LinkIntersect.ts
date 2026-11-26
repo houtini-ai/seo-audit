@@ -54,6 +54,7 @@ export interface LinkIntersectResult {
   cost: number;
   majesticEnriched: number;     // how many prospects got Majestic Trust Flow (0 = tier off)
   enrichCapped: boolean;        // true if more prospects qualified than the enrich cap allowed
+  majesticError?: string;       // set when Majestic failed: the rows are sorted by DataForSEO domain rank instead
   sortedBy: 'trustFlow' | 'domainTrust' | 'intersections'; // what the returned order reflects
 }
 
@@ -165,20 +166,28 @@ export class LinkIntersect {
     // its per-call batch cap) and REPORT if more qualified than we enriched (no silent cap).
     let majesticEnriched = 0;
     let enrichCapped = false;
+    let majesticError: string | undefined;
     if (majestic && kept.length) {
       const enrichLimit = Math.min(opts.enrichLimit ?? 100, 500); // MajesticClient batches by 100 internally
       const candidates = [...kept].sort((a, b) => (b.domainTrust ?? -1) - (a.domainTrust ?? -1)).slice(0, enrichLimit);
       enrichCapped = kept.length > candidates.length;
-      const metrics = await majestic.getIndexItemInfo(candidates.map(c => c.domain), { datasource: 'historic', desiredTopics: 5 });
-      const byItem = new Map(metrics.map(m => [m.item.toLowerCase(), m]));
-      for (const p of candidates) {
-        const m = byItem.get(p.domain.toLowerCase());
-        if (m) {
-          p.trustFlow = m.trustFlow;
-          p.citationFlow = m.citationFlow;
-          p.topicalTrustFlow = m.topicalTrustFlow;
-          majesticEnriched++;
+      // Majestic is optional: a bad key, spent units or an outage must not fail the intersect the
+      // DataForSEO call already paid for. Fall back to the domain-rank sort and report the error.
+      try {
+        const metrics = await majestic.getIndexItemInfo(candidates.map(c => c.domain), { datasource: 'historic', desiredTopics: 5 });
+        const byItem = new Map(metrics.map(m => [m.item.toLowerCase(), m]));
+        for (const p of candidates) {
+          const m = byItem.get(p.domain.toLowerCase());
+          if (m) {
+            p.trustFlow = m.trustFlow;
+            p.citationFlow = m.citationFlow;
+            p.topicalTrustFlow = m.topicalTrustFlow;
+            majesticEnriched++;
+          }
         }
+      } catch (err) {
+        majesticError = err instanceof Error ? err.message : String(err);
+        enrichCapped = false;
       }
     }
 
@@ -205,6 +214,7 @@ export class LinkIntersect {
       totalCount, poolFetched: items.length, kept: kept.length,
       prospects: top, cached: res.cached, cost: res.cost,
       majesticEnriched, enrichCapped,
+      ...(majesticError ? { majesticError } : {}),
       sortedBy: sort === 'intersections' ? 'intersections' : (majesticActive ? 'trustFlow' : 'domainTrust'),
     };
   }

@@ -6,8 +6,8 @@ import { finalizeLinkGraph } from '../core/linkGraph.js';
 import { gscFreshness } from '../core/gscFreshness.js';
 import { brandToken } from '../core/url-key.js';
 import { snapshotCrawl } from './drift.js';
-import { checkIdsWithGrain, computeHealth, serverVersion } from './history.js';
-import { CHECKS, expectedCtr, type CheckContext, type CheckDef } from './checks.js';
+import { checkIdsWithGrain, computeHealth, runScope, serverVersion } from './history.js';
+import { CHECKS, expectedCtr, type CheckContext, type CheckDef, type RawFinding } from './checks.js';
 import { PAGE_EXPERIENCE_STAKE_SHARE } from './stakes.js';
 
 const MAX_PER_CHECK = 500; // bound findings/check so a huge site can't balloon the table
@@ -159,9 +159,13 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       if (cr) {
         const g = db.db.prepare('SELECT MAX(ipr) mi, MAX(inlink_count) mc FROM pages WHERE crawl_id=?').get(cr.crawl_id) as { mi: number | null; mc: number | null };
         if ((g.mi ?? 0) === 0 && (g.mc ?? 0) === 0) finalizeLinkGraph(db.db, cr.crawl_id, null);
-        // Drift snapshot (idempotent per crawl) so change-detection has cross-crawl history.
-        const at = (db.db.prepare(`SELECT COALESCE(finished_at, datetime('now')) at FROM crawl_metadata WHERE crawl_id=?`).get(cr.crawl_id) as { at: string } | undefined)?.at ?? new Date().toISOString();
-        snapshotCrawl(db.db, cr.crawl_id, at);
+        // Drift snapshot (idempotent per crawl) so change-detection has cross-crawl history: a
+        // self-heal for a completed crawl that never got one. Only a COMPLETED crawl: the snapshot is
+        // taken once per crawl, so an audit run while the crawl was still filling `pages` (or after
+        // it was cancelled) froze that partial page set as the crawl's snapshot for good, and
+        // detect_changes then reported every page not yet fetched as removed.
+        const cm = db.db.prepare(`SELECT status, finished_at at FROM crawl_metadata WHERE crawl_id=?`).get(cr.crawl_id) as { status: string | null; at: string | null } | undefined;
+        if (cm?.status === 'completed') snapshotCrawl(db.db, cr.crawl_id, cm.at ?? new Date().toISOString());
       }
     }
     const ctx: CheckContext = { db: db.db, gscMaxDate: maxDate, brand: brandToken(siteUrl), siteUrl };
@@ -199,7 +203,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
 
     const insertErrorPage = db.db.prepare(`INSERT OR IGNORE INTO audit_error_pages (run_id, url_key) VALUES (?, ?)`);
     db.db.prepare(`INSERT INTO audit_runs (run_id, scope, gsc_window_end, integrity_ok, started_at, status) VALUES (?,?,?,?,datetime('now'),'running')`)
-      .run(runId, opts.scope ?? 'core', maxDate, pageCount > 0 ? 1 : 0);
+      .run(runId, runScope(opts.scope, opts.categories), maxDate, pageCount > 0 ? 1 : 0);
     startedRunId = runId;
 
     let total = 0;
@@ -213,7 +217,14 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       for (const chk of checks) {
         const missing = chk.collected?.(ctx) ?? null;
         if (missing) notCollected.push({ checkId: chk.id, note: missing });
-        const all = chk.run(ctx);
+        let all = chk.run(ctx);
+        // Over the cap, keep the findings with the most traffic (then by url_key, so the stored set
+        // is the same from run to run): the checks return rows in table order, so the 500 kept were
+        // arbitrary and a site's top page could be the one left out.
+        if (all.length > MAX_PER_CHECK) {
+          const clicksOf = (f: RawFinding): number => (f.urlKey ? trafficMap.get(f.urlKey)?.clicks : null) ?? 0;
+          all = [...all].sort((a, b) => clicksOf(b) - clicksOf(a) || (a.urlKey ?? '').localeCompare(b.urlKey ?? ''));
+        }
         // Effort scales with the REAL number of affected pages, not the stored sample. Scaling on
         // the capped length understates E (log10(509) vs log10(5009)) and therefore INFLATES
         // priority = (T×Y×C)/E on exactly the biggest checks — the cap was reordering the report.
@@ -265,7 +276,11 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
           // RECOVERABLE gap. Site-wide findings with no traffic signal fall back to a severity
           // fraction of total site clicks.
           let T: number;
-          if (traf.impressions > 0 || traf.clicks > 0) {
+          if (chk.stakeModel === 'lost-clicks') {
+            // The fix wins back what the page lost (evidence.clicks), not what it still earns: priced
+            // on current clicks, a page that kept 4 of 1,120 clicks ranked far below one that kept none.
+            T = evClicks;
+          } else if (traf.impressions > 0 || traf.clicks > 0) {
             if (chk.stakeModel === 'ctr-gap' || chk.stakeModel === 'rank-gap') {
               const target = chk.stakeModel === 'rank-gap' ? STRIKING_TARGET_POSITION : (traf.position || 10);
               const potential = traf.impressions > 0 ? traf.impressions * expectedCtr(target) : 0;
@@ -315,7 +330,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
       .all(runId) as AuditResult['byCheck'])
       .map(r => {
         const t = truncated.get(r.checkId);
-        const row = { ...r, priority: round1(r.priority) }; // AVG(): 1 dp is plenty, and 15 digits x 143 checks is not
+        const row = { ...r, priority: round1(r.priority) }; // AVG(): 1 dp is plenty, and 15 digits per check is not
         return t ? { ...row, totalFound: t, truncated: true } : row;
       });
     const truncatedChecks = [...truncated.entries()]

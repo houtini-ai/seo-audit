@@ -15,10 +15,22 @@ export const ACTION_LABELS = {
   crawl: 'Crawl',
   sync: 'Sync GSC',
   inspect: 'Inspect',
-  agent: 'Agent',
+  readiness: 'Agent',
 } as const;
 
 export type ActionKey = keyof typeof ACTION_LABELS;
+
+/**
+ * The same actions as a request to Claude, for the views with no Actions panel (the in-chat
+ * widget, a read-only dashboard). `p` is a property reference (promptTarget(siteUrl)).
+ */
+export const ACTION_PROMPTS: Record<ActionKey, (p: string) => string> = {
+  audit: p => `Run the SEO audit for ${p}.`,
+  crawl: p => `Crawl ${p}.`,
+  sync: p => `Sync the Search Console data for ${p}.`,
+  inspect: p => `Run URL inspection on the top pages of ${p}.`,
+  readiness: p => `Check agent readiness for ${p}.`,
+};
 
 /** The nicest way to name a property inside a prompt: the bare host, no scheme/prefix/www. */
 export function promptTarget(siteUrl: string): string {

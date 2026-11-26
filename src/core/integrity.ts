@@ -5,7 +5,7 @@
  * only the full integrity_check finds it. Both run in a worker thread (see integrityWorker.ts).
  */
 import { Worker } from 'node:worker_threads';
-import { copyFileSync, existsSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { dbPathFor } from './paths.js';
 
@@ -65,7 +65,7 @@ export async function checkIntegrity(dataDir: string, siteUrl: string, mode: 'qu
 }
 
 /**
- * Back up the DB file (after a WAL checkpoint, so the copy is self-contained), REINDEX each
+ * Back up the DB file (SQLite's online backup: one self-contained, consistent copy), REINDEX each
  * damaged index, then re-check. Table-level damage is reported, not "fixed": REINDEX rebuilds
  * indexes from table rows and cannot recover lost table data.
  */
@@ -77,10 +77,12 @@ export async function repairIndexes(dataDir: string, siteUrl: string): Promise<R
     return { siteUrl, dbFile, backup: null, reindexed: [], before, after: null,
       note: 'The damage is in table data, not an index, so REINDEX cannot fix it. Restore from a backup, or delete the property (data_storage prune delete-property) and re-sync.' };
   }
-  { const db = new Database(dbFile); try { db.pragma('wal_checkpoint(TRUNCATE)'); } finally { db.close(); } }
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
-  const backup = `${dbFile}.bak-${stamp}`;
-  copyFileSync(dbFile, backup);
+  let backup = `${dbFile}.bak-${stamp}`;
+  for (let i = 1; existsSync(backup); i++) backup = `${dbFile}.bak-${stamp}-${i}`;
+  // Online backup API, not a file copy (as the GSC migration does): a consistent snapshot that
+  // includes the WAL, even if another connection (the dashboard) writes or checkpoints meanwhile.
+  { const db = new Database(dbFile, { fileMustExist: true }); try { await db.backup(backup); } finally { db.close(); } }
   const r = await runWorker(dbFile, 'full', before.damagedIndexes);
   const after = toReport(siteUrl, dbFile, 'full', r.messages, r.ms);
   const note = after.ok

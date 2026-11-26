@@ -13,7 +13,7 @@ import { shareText, capHealth, runLabels, categoryLabel, shortDay } from '../cor
 import { buildVerdict, direction } from '../core/summaryVerdict.js';
 import { ago, SEV_LABEL, freshVerdict } from './panels.js';
 import { cwvTile, cwvCoverage } from './cwv.js';
-import { clickCta, clickText, askChip, askClaudePrompt, promptTarget } from './askClaude.js';
+import { clickCta, clickText, askChip, askClaudePrompt, promptTarget, actionTo, actionPhrase, getCtaMode } from './askClaude.js';
 
 const fmt = fmtNum;
 
@@ -69,7 +69,7 @@ function freshness(d: any): string {
       `<div class="sf-v">${esc(line)}${flag ? ` <span class="sf-flag">${esc(flag)}</span>` : ''}</div></div>`);
     if (s.error) problems.push(`<div class="sf-err"><b>${esc(LABEL[kind])}:</b> ${esc(String(s.error).slice(0, 160))}</div>`);
   }
-  if (!cells.length) return empty('No data sources recorded yet. Use Crawl and Sync GSC in the Actions panel.');
+  if (!cells.length) return empty(getCtaMode() === 'actions' ? 'No data sources recorded yet. Use Crawl and Sync GSC in the Actions panel.' : getCtaMode() === 'ask' ? 'No data sources recorded yet. Ask Claude to crawl the site and sync Search Console.' : 'No data sources recorded yet.');
   const sh = d.gscShape;
   const shapeNote = sh ? `<div class="sf-warn">Search Console history holds two row shapes (${esc((sh.shapes ?? ['all-country', 'per-country']).join(' and '))} rows) on <span class="n">${fmt(sh.mixedDays)}</span> days, ${esc(dayLabel(sh.from))} to ${esc(dayLabel(sh.to))}. Every figure in the dashboard reads one shape per day (the fuller one), so each of those days counts once.</div>` : '';
   return `<div class="sf-row">${cells.join('')}</div>${problems.join('')}${shapeNote}`;
@@ -89,7 +89,7 @@ function verdict(d: any): string {
     resolvedNote: lastDelta && !lastDelta.skipped ? lastDelta.excluded?.note ?? null : null,
     pagesChanged: dr?.counts && !dr.staleness ? dr.counts.pagesChanged : null,
   });
-  if (v.empty) return empty('Nothing to summarise yet. Sync Search Console, then run a crawl and an audit, from the Actions panel.');
+  if (v.empty) return empty(getCtaMode() === 'actions' ? 'Nothing to summarise yet. Sync Search Console, then run a crawl and an audit, from the Actions panel.' : getCtaMode() === 'ask' ? 'Nothing to summarise yet. Ask Claude to sync Search Console, then crawl and audit the site.' : 'Nothing to summarise yet.');
   const sentence = v.segments.map(s => (s.n ? `<b class="n">${esc(s.text)}</b>` : esc(s.text))).join('');
   const chipCls: Record<string, string> = { up: 'vc-up', down: 'vc-down', flat: 'vc-flat', neutral: 'vc-flat' };
   // Open critical issues read as critical, not as a neutral count.
@@ -108,7 +108,7 @@ function tiles(d: any): string {
   const out: string[] = [];
   const sum = d.summary;
   if (!sum) {
-    out.push(`<div class="metric-card tile-connect"><div class="label">Search Console</div><div class="connect-msg">Connect Search Console to see traffic and trends.</div><div class="metric-sub">Click Sync GSC in Actions.</div></div>`);
+    out.push(`<div class="metric-card tile-connect"><div class="label">Search Console</div><div class="connect-msg">Connect Search Console to see traffic and trends.</div><div class="metric-sub">${esc(actionTo('sync', '').trim())}.</div></div>`);
   } else {
     const { current: c, prior: p } = clicks28(d)!;
     const months = (d.monthly?.months ?? []).filter((m: any) => !m.partial && m.clicks != null).map((m: any) => m.clicks);
@@ -155,20 +155,20 @@ function tiles(d: any): string {
       title: `${hs.definition} ${hs.totalPages - hs.errorPages} of ${hs.totalPages} pages.${capNote} Bands (Weak under 31, Fair, Good from 71, Excellent from 91) are a product convention, not an industry benchmark.${hist.length >= 2 ? ` Sparkline: ${hist.length} audits.` : ''}`,
     }));
   } else {
-    out.push(tile({ label: 'Site health', value: '–', sub: (d.coverage?.crawlPages ?? 0) > 0 ? 'click Run audit in Actions' : 'crawl, then Run audit, in Actions' }));
+    out.push(tile({ label: 'Site health', value: '–', sub: (d.coverage?.crawlPages ?? 0) > 0 ? actionPhrase('audit') : getCtaMode() === 'actions' ? 'crawl, then Run audit, in Actions' : `${actionPhrase('crawl')}, then an audit` }));
   }
 
   const ic = d.indexCoverage;
   out.push(ic
     ? tile({ label: 'Indexed', value: `<span class="n">${fmt(ic.indexed)}</span><span class="kpi-of"> of <span class="n">${fmt(ic.total)}</span></span>`, sub: 'inspected URLs (a sample)', title: 'From URL Inspection, which is quota-bound: a sample of URLs, never a share of the whole site.' })
-    : tile({ label: 'Indexed', value: '–', sub: 'click Inspect in Actions' }));
+    : tile({ label: 'Indexed', value: '–', sub: actionPhrase('inspect') }));
 
   out.push(cwvTile(d));
 
   const ar = d.agentReadiness;
   out.push(ar
     ? tile({ label: 'AI readiness', value: `<span class="n">${ar.score}</span><span class="kpi-of">/100</span>`, foot: `<span class="tile-band">${esc(ar.level)}</span>`, sub: `checked ${esc(ago(ar.checkedAt))}`, title: 'Agent-readiness probe (check_agent_readiness): the share of discoverability, content, bot-access and capability checks the site passes. One stored result, so no trend yet.' })
-    : tile({ label: 'AI readiness', value: '–', sub: 'click Agent in Actions' }));
+    : tile({ label: 'AI readiness', value: '–', sub: actionPhrase('readiness') }));
   return out.join('');
 }
 
@@ -178,7 +178,7 @@ function trend(d: any, ctx: SummaryCtx): void {
   const { col } = ctx;
   if (!m?.months?.length) {
     show('sumTrendLegend', false);
-    set('sumTrendNote', d.summary ? '' : 'Connect Search Console: click Sync GSC in Actions to see up to 16 months of clicks.');
+    set('sumTrendNote', d.summary ? '' : `Connect Search Console: ${actionPhrase('sync')} to see up to 16 months of clicks.`);
     set('sumTrendSrc', '');
     ctx.wrap('sumTrendChart').setEmpty(d.summary ? 'No monthly data yet' : 'No Search Console data', col);
     return;
@@ -435,7 +435,7 @@ function actions(d: any, ctx: SummaryCtx): string {
 function drift(d: any, ctx: SummaryCtx): string {
   const dr = d.drift;
   if (!dr || dr.snapshots === 0) return empty(clickCta('crawl', 'No crawl yet.'));
-  if (dr.staleness) return `<div class="sum-banner">This comparison isn't current: a newer crawl (${esc(dayLabel(dr.staleness.newestCrawlAt))}) has no snapshot. Click Run audit in Actions to snapshot it.</div>`;
+  if (dr.staleness) return `<div class="sum-banner">This comparison isn't current: a newer crawl (${esc(dayLabel(dr.staleness.newestCrawlAt))}) has no snapshot. ${esc(actionTo('audit', 'to snapshot it.'))}</div>`;
   if (!dr.counts) return empty('Needs two crawls to show change. Crawl again on another day.');
   const c = dr.counts;
   const rows = [
@@ -497,12 +497,12 @@ export function aiSignalsHtml(d: any): string {
         const p = c.total ? Math.round((c.passed / c.total) * 100) : 0;
         return `<div class="stat-row"><div class="sr-top"><span>${esc(c.category)}</span><span><b class="n">${c.passed}</b><em class="n">of ${c.total}</em></span></div><div class="stat-track"><span style="width:${p}%;background:var(--accent)"></span></div></div>`;
       }).join('')}</div><div class="sum-note">Checked ${esc(ago(ar.checkedAt))}.</div>`
-    : empty(clickCta('agent', 'Not checked yet.'));
+    : empty(clickCta('readiness', 'Not checked yet.'));
 
   let botsHtml: string;
   const bots: any[] | null = ar?.bots ?? null;
-  if (!ar) botsHtml = empty(clickCta('agent', 'Not checked yet.'));
-  else if (!bots) botsHtml = empty('Per-bot access needs a fresh agent check - click Agent in Actions - or the site has no robots.txt.');
+  if (!ar) botsHtml = empty(clickCta('readiness', 'Not checked yet.'));
+  else if (!bots) botsHtml = empty(`Per-bot access needs a fresh agent check (${actionPhrase('readiness')}), or the site has no robots.txt.`);
   else {
     const pill = (b: any): string => {
       const blocked = b.verdict === 'blocked' || (b.verdict === 'not-stated' && b.inherits === 'blocked');
@@ -536,7 +536,7 @@ function coverageFooter(d: any): string {
   const chip = (on: boolean, k: string, v: string, title = ''): string =>
     `<span class="cov-chip${on ? '' : ' cov-off'}"${title ? ` title="${esc(title)}"` : ''}><span class="dot ${on ? 'dot-ok' : 'dot-never'}"></span><span class="cov-k">${k}</span> ${v}</span>`;
   const chips = [
-    chip(!!cv.gsc, 'Search Console', cv.gsc ? `<span class="n">${cv.gsc.months}</span> months` : 'none', cv.gsc ? `${cv.gsc.minDate} to ${cv.gsc.maxDate}` : 'Click Sync GSC in Actions'),
+    chip(!!cv.gsc, 'Search Console', cv.gsc ? `<span class="n">${cv.gsc.months}</span> months` : 'none', cv.gsc ? `${cv.gsc.minDate} to ${cv.gsc.maxDate}` : actionTo('sync', '').trim()),
     // Device / country rows: only a segments:true sync writes them, so they can stop while the totals go on.
     ...(d.segmentsLastDate === undefined || !cv.gsc ? [] : [(() => {
       const last: string | null = d.segmentsLastDate;
@@ -548,7 +548,7 @@ function coverageFooter(d: any): string {
     // Page and site totals (#118): GSC page totals count every click; the query rows miss anonymised ones.
     ...(d.pageTotalsSource === undefined || !cv.gsc ? [] : [d.pageTotalsSource === 'page-totals'
       ? chip(true, 'Page totals', 'every click', 'Page and site clicks come from Search Console page totals, so clicks from anonymised queries are counted.')
-      : chip(false, 'Page totals', 'query clicks only', 'Page and site clicks here count only clicks Search Console ties to a query, often half or fewer of the real total. Click Sync GSC in Actions to fetch page totals.')]),
+      : chip(false, 'Page totals', 'query clicks only', 'Page and site clicks here count only clicks Search Console ties to a query, often half or fewer of the real total. ' + actionTo('sync', 'to fetch page totals.'))]),
     chip(cv.crawlPages > 0, 'Crawl', cv.crawlPages ? `<span class="n">${fmt(cv.crawlPages)}</span> pages` : 'none'),
     chip(cv.inspected > 0, 'URL inspection', !cv.inspected ? 'none' : cv.inspectedIndexable == null ? `<span class="n">${fmt(cv.inspected)}</span> URLs (a sample)`
       : `<span class="n">${fmt(cv.inspectedIndexable)}</span> of <span class="n">${fmt(cv.indexablePages)}</span> indexable pages`,
@@ -560,6 +560,14 @@ function coverageFooter(d: any): string {
     chip(false, 'Server logs', 'not collected', 'Log analysis is out of scope.'),
   ];
   return `<span class="cov-title">Data coverage</span>${chips.join('')}`;
+}
+
+/** Repaint the panels that carry a relative time ("3h ago"). None of them holds a listener or a chart. */
+export function repaintAges(d: any): void {
+  set('sumFresh', freshness(d));
+  set('sumTiles', tiles(d));
+  set('sumAreasSrc', d.findings?.finishedAt ? `Audit · ${ago(d.findings.finishedAt)}` : 'Audit');
+  set('sumAi', aiSignalsHtml(d));
 }
 
 export function renderSummary(d: any, ctx: SummaryCtx): void {

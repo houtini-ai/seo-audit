@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { parseSqliteUtc } from './sqliteTime.js';
 
 /**
  * DataForSEO client modelled on the official connection (api.dataforseo.com, Basic
@@ -130,7 +131,7 @@ export class DataForSeoClient {
     const row = this.cache
       .prepare('SELECT response_json, cost, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
       .get(key) as { response_json: string; cost: number; fetched_at: string } | undefined;
-    if (row && Date.now() - Date.parse(row.fetched_at) < ttlMs) {
+    if (row && Date.now() - parseSqliteUtc(row.fetched_at) < ttlMs) {
       return { tasks: JSON.parse(row.response_json), cached: true, cost: 0 };
     }
 
@@ -140,7 +141,7 @@ export class DataForSeoClient {
       const again = this.cache
         .prepare('SELECT response_json, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
         .get(key) as { response_json: string; fetched_at: string } | undefined;
-      if (again && Date.now() - Date.parse(again.fetched_at) < ttlMs) {
+      if (again && Date.now() - parseSqliteUtc(again.fetched_at) < ttlMs) {
         return { tasks: JSON.parse(again.response_json), cached: true, cost: 0 };
       }
       const res = await this.fetchImpl(`${BASE_URL}${endpoint}`, {
@@ -350,7 +351,7 @@ export class DataForSeoClient {
       .prepare('SELECT response_json, fetched_at FROM dataforseo_cache WHERE cache_key = ?')
       .get(key) as { response_json: string; fetched_at: string } | undefined;
     let tasks: any[];
-    if (row && Date.now() - Date.parse(row.fetched_at) < this.ttlMs) {
+    if (row && Date.now() - parseSqliteUtc(row.fetched_at) < this.ttlMs) {
       tasks = JSON.parse(row.response_json);
     } else {
       const res = await fetch(`${BASE_URL}${endpoint}`, { headers: { Authorization: this.auth }, signal: AbortSignal.timeout(60000) });
@@ -380,7 +381,9 @@ export class DataForSeoClient {
     location?: string | number,
     languageCode = 'en',
   ): Promise<{ peopleAlsoAsk: string[]; relatedSearches: string[]; cached: boolean; cost: number }> {
-    const r = await this.serpOrganic(keyword, location, languageCode, 30);
+    // Depth 10: People Also Ask and related searches are page-1 elements, and SERP calls bill per
+    // page of 10 results. Depth 30 paid for three pages and read one.
+    const r = await this.serpOrganic(keyword, location, languageCode, 10);
     const items: any[] = r.tasks[0]?.result?.[0]?.items ?? [];
     const peopleAlsoAsk: string[] = [];
     const relatedSearches: string[] = [];

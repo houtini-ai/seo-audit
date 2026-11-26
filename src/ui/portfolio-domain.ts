@@ -175,7 +175,7 @@ function crawlPillHtml(crawl: CrawlState | null, isOwned: boolean): string {
 
 /** `embedded`: shown as a tab inside the domain's own property dashboard, so no back link and no
  * link to the dashboard it is already in. `backLabel` names where Back goes. */
-export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: () => void; embedded?: boolean; backLabel?: string; section?: 'all' | 'market' | 'ai' }): void {
+export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: () => void; onRefresh?: () => void; embedded?: boolean; backLabel?: string; section?: 'all' | 'market' | 'ai' }): void {
   const st = chartState.get(root) ?? { charts: [], ai: [] };
   chartState.set(root, st);
   st.charts.forEach(c => c.dispose()); st.charts = [];
@@ -251,7 +251,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
   root.innerHTML = `
     <div class="pf-domain"><div class="pf-wrap">
       <header class="pf-card">
-        ${opts.embedded ? '' : `<div class="pf-topline"><button class="pf-back" type="button" id="pf-back">${esc(opts.backLabel ?? 'Back to domains')}</button><span class="pf-breadcrumb">Domains / ${esc(data.row.domain)}</span></div>`}
+        ${opts.embedded ? '' : `<div class="pf-topline"><button class="pf-back" type="button" id="pf-back">${esc(opts.backLabel ?? 'Back to domains')}</button><span class="pf-breadcrumb">Domains / ${esc(data.row.domain)}</span>${opts.onRefresh ? '<span class="pf-header-spacer"></span><button class="pf-back" type="button" id="pf-refresh" title="Re-read the stored data (free)">Refresh</button>' : ''}</div>`}
         <div class="pf-title-row">
           <h1 class="pf-title">${esc(data.row.domain)}</h1>
           <span class="pf-country" title="${esc(data.row.countryName)}">${esc(data.row.country)}</span>
@@ -573,6 +573,7 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
   backlinks();
 
   rootEl.querySelector<HTMLButtonElement>('#pf-back')?.addEventListener('click', () => opts.onBack());
+  rootEl.querySelector<HTMLButtonElement>('#pf-refresh')?.addEventListener('click', () => opts.onRefresh?.());
   const seg = rootEl.querySelector<HTMLElement>('#pf-seg-ai');
   seg?.addEventListener('click', ev => {
     const t = (ev.target as HTMLElement).closest<HTMLElement>('[data-ai]');

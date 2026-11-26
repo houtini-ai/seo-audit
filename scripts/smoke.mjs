@@ -436,6 +436,14 @@ ok(Array.isArray(dash2?.freshness?.sources) && dash2.freshness.sources.length ==
   const real = ['d41d8cd98f00b204e9800998ecf8427e', 'richard@houtini.com', 'Tr0ub4dor&3', 'xx', 'axxxb'];
   const wrong = real.filter(v => placeholderReason(v) != null);
   ok(wrong.length === 0, `optionalSecret: real-looking values pass${wrong.length ? ` — REJECTED ${JSON.stringify(wrong)}` : ''}`);
+  // A DataForSEO login is an email address: the placeholder words inside a real one must not switch the tier off.
+  const emails = ['seo@example-agency.co.uk', 'bob@your-seo.com', 'info@keyhere.io', 'team@placeholder-media.com', 'your-name@agency.io'];
+  const emailWrong = emails.filter(v => placeholderReason(v) != null);
+  ok(emailWrong.length === 0, `optionalSecret: real email-style logins pass${emailWrong.length ? ` — REJECTED ${JSON.stringify(emailWrong)}` : ''}`);
+  const fakeEmails = ['you@example.com', 'me@example.org', 'user@mail.example', '${user_config.dataforseo_username}@x.com', '<you@agency.com>'];
+  const emailBad = fakeEmails.filter(v => placeholderReason(v) == null);
+  ok(emailBad.length === 0, `optionalSecret: reserved-domain and template emails are still rejected${emailBad.length ? ` — ACCEPTED ${JSON.stringify(emailBad)}` : ''}`);
+  ok(dataForSeoCredentials({ DATAFORSEO_USERNAME: 'seo@example-agency.co.uk', DATAFORSEO_PASSWORD: 'd41d8cd98f00b204' })?.user === 'seo@example-agency.co.uk', 'optionalSecret: an email login containing "example" switches DataForSEO on');
   ok(placeholderReason('') === 'empty' && placeholderReason('   ') === 'empty' && placeholderReason(undefined) === 'unset', 'optionalSecret: blank / whitespace / missing are unset');
   ok(optionalSecret('MAJESTIC_API_KEY', { MAJESTIC_API_KEY: '  abc123  ' }) === 'abc123', 'optionalSecret: values are trimmed');
   // Exactly one stderr line per rejected name, naming the tier; blank stays silent.

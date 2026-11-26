@@ -61,11 +61,13 @@ export interface CheckDef {
    *   - 'ctr-gap':  a snippet/CTR fix on a page that already ranks — the recoverable gap,
    *                 impressions × expected-CTR(current position) − clicks.
    *   - 'rank-gap': a page-2 query a push could move to page 1 — impressions × expected-CTR@8 − clicks.
+   *   - 'lost-clicks': a page that lost traffic — the clicks it lost (evidence.clicks), which is what a
+   *                 refresh wins back; its current clicks shrink as the loss grows.
    * Only set it on checks whose fix IS closing that gap; everything else stakes the page's own clicks
    * (pricing T at the curve would claim a well-ranking page's whole curve-implied traffic for, say, an
    * oversized image — 75× its real clicks on a page with a SERP-feature CTR gap).
    */
-  stakeModel?: 'clicks' | 'ctr-gap' | 'rank-gap';
+  stakeModel?: 'clicks' | 'ctr-gap' | 'rank-gap' | 'lost-clicks';
   title: string;
   fix: string;
   run(ctx: CheckContext): RawFinding[];
@@ -174,6 +176,16 @@ function schemaFindings(ctx: CheckContext, kinds: SchemaIssueKind[]): RawFinding
   return out;
 }
 
+// `collected` for a check whose only source is an optional table (filled by a separate tool): with
+// the table empty (or `where` matching nothing) the check has nothing to read, so zero findings is
+// "unknown", reported in AuditResult.notCollected with the step that fills it, not a pass.
+const needsRows = (table: string, how: string, where = '1=1') => (c: CheckContext): string | null => {
+  try { if (c.db.prepare(`SELECT 1 FROM ${table} WHERE ${where} LIMIT 1`).get()) return null; } catch { /* table or column absent: not collected */ }
+  return `not collected: ${how}`;
+};
+const NEEDS_INSPECTION = needsRows('url_inspection', 'no URL Inspection data. Run inspect_urls.');
+const NEEDS_BACKLINKS = needsRows('page_backlinks', 'no backlink data. Run pull_backlinks (DataForSEO Backlinks).');
+
 // Position→expected-CTR curve lives in core/ctrModel (shared with the dashboard). Re-export it so
 // existing `import { expectedCtr } from './checks.js'` call sites keep working.
 export { expectedCtr };
@@ -224,6 +236,7 @@ export const CHECKS: CheckDef[] = [
     // Flag the real Response-vs-Render gaps: internal links only after JS, body only after JS, or a title only after JS.
     // Matches dependsOnJsFlag() exactly: links only after JS, body only after JS, or title only after JS
     // (raw title empty AND rendered title present) — not merely a title that changed.
+    collected: needsRows('render_audit', 'render_audit is empty. Run render_pages (a bounded sample in headless Chromium; needs the optional Playwright).'),
     run: (c) => rows(c, `SELECT url_key urlKey, links_only_rendered lor, raw_word_count rwc, rendered_word_count rdwc, raw_title rawt, rendered_title rt
       FROM render_audit
       WHERE links_only_rendered > 0
@@ -460,6 +473,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'coverage-not-indexed', category: 'indexation', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Crawled but not indexed', fix: 'Investigate quality/duplication — Google crawled it and chose not to index.',
+    collected: NEEDS_INSPECTION,
     run: (c) => rows(c, `SELECT url_key urlKey, coverage_state state FROM url_inspection WHERE coverage_state LIKE '%not indexed%'`).map(r => ({ urlKey: r.urlKey, evidence: { coverageState: r.state } })),
   },
   {
@@ -470,6 +484,7 @@ export const CHECKS: CheckDef[] = [
     // when the latest crawl shows the page declaring the expected canonical while Google's choice
     // is only its www/apex or http/https twin, and the twin host no longer serves a duplicate (the
     // crawl's site probes), it is marked fixed-on-site, awaiting Google's re-crawl.
+    collected: NEEDS_INSPECTION,
     run: (c) => {
       let twinProbe: { verdict: string } | undefined;
       try { twinProbe = rows(c, `SELECT verdict FROM probes WHERE source = ? AND variant_type = 'host-home-host' ORDER BY id DESC LIMIT 1`, SITE_PROBE_SOURCE)[0]; } catch { /* no probes table: not judged */ }
@@ -496,7 +511,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'striking-distance', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page', stakeModel: 'rank-gap',
     title: 'Striking-distance query (page 2)', fix: 'Small on-page + internal-link push could reach page 1.',
-    run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position, SUM(impressions) impressions FROM gsc_rows WHERE query IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query, page_key HAVING SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0)>10 AND SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0)<=20 AND SUM(impressions)>=20 ORDER BY impressions DESC LIMIT 50`).map(r => ({ urlKey: r.urlKey, evidence: { query: r.query, position: Math.round(r.position * 10) / 10, impressions: r.impressions } })) : [],
+    run: (c) => c.gscMaxDate ? rows(c, `SELECT page_key urlKey, query, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) position, SUM(impressions) impressions, SUM(clicks) clicks FROM gsc_rows WHERE query IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY query, page_key HAVING SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0)>10 AND SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0)<=20 AND SUM(impressions)>=20 ORDER BY impressions DESC LIMIT 50`).map(r => ({ urlKey: r.urlKey, evidence: { query: r.query, position: Math.round(r.position * 10) / 10, impressions: r.impressions, clicks: r.clicks } })) : [],
   },
   // ── Additions from industry checklist review (buildable on current data) ──
   {
@@ -517,21 +532,27 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'redirect-chain', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
     title: 'Redirect chain (2+ hops)', fix: 'Collapse to a single hop to the final URL.',
-    // #55 group B: one finding per redirecting SOURCE (redirect_sources + pages.redirects), internal
-    // chains that resolve only. Off-site/login bounces and loops are excluded (loops: redirect-loop).
+    // #55 group B: internal chains that resolve only; off-site/login bounces and loops are excluded
+    // (loops: redirect-loop). Reads BOTH stores: pages.redirects (the chain the final page was first
+    // reached through, keyed by that final page) and redirect_sources (every other redirecting URL,
+    // keyed by the source). See redirectChainFindings.
     run: redirectChainFindings,
   },
   {
     id: 'internal-links-to-redirects', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'automated',
     title: 'Internal links pointing through redirects', fix: 'Repoint internal links to the final URL (saves crawl + equity).',
-    // Flag a link ONLY if the raw href it uses is itself a redirect source — i.e. that exact URL
-    // appears as a `from` hop in some redirect chain. The old query flagged any link whose target
-    // page merely HAD a `redirects` entry, which fired site-wide on www-canonical properties: every
-    // page records the seed apex→www hop, yet the actual hrefs already use the final (www) URL and
-    // never redirect. Matching the href (fragment-stripped) against the real redirect-source set is
-    // robust to that artefact. Kept entirely in SQL (json_each over pages.redirects) so we never
-    // materialise the whole links table in JS — the links table is the largest in the DB.
+    // Flag a link ONLY if the URL it points at is itself a redirect source. Two stores hold those:
+    //  - redirect_sources: every crawled URL that redirected to a DIFFERENT url_key, keyed by the
+    //    source. This is the main set. pages.redirects alone missed most of it: it holds only the
+    //    chain the final page was FIRST reached through, so a link to /old (-> /new) went unreported
+    //    whenever /new had already been crawled directly.
+    //  - pages.redirects: the hops whose source shares its target's url_key (http->https, a trailing
+    //    slash), matched on the exact raw href (fragment-stripped). Matching the href, not the key,
+    //    matters here: on a www-canonical property every page reached through the seed's apex->www
+    //    hop records it, yet the hrefs already use the final URL and never redirect.
+    // Kept entirely in SQL so we never materialise the whole links table in JS (the largest table).
     run: (c) => {
+      const hasRs = !!c.db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='redirect_sources'`).get();
       return rows(c, `
         WITH redir_src AS (
           -- Feed json_each a CASE that yields '[]' for any null/invalid value, so it never receives
@@ -541,13 +562,19 @@ export const CHECKS: CheckDef[] = [
           FROM pages, json_each(CASE WHEN json_valid(pages.redirects) THEN pages.redirects ELSE '[]' END) j
           WHERE pages.redirects IS NOT NULL AND pages.redirects <> '[]' AND j.type = 'object'
         )
-        SELECT l.target_key urlKey, COUNT(DISTINCT l.source_key) sources
-        FROM links l
-        JOIN redir_src r ON r.src = (CASE WHEN instr(l.target_url, '#') > 0
-                                          THEN substr(l.target_url, 1, instr(l.target_url, '#') - 1)
-                                          ELSE l.target_url END)
-        WHERE l.is_internal = 1
-        GROUP BY l.target_key`).map(r => ({ urlKey: r.urlKey, evidence: { linkingPages: r.sources } }));
+        SELECT urlKey, COUNT(DISTINCT source_key) sources FROM (
+          SELECT l.target_key urlKey, l.source_key
+          FROM links l
+          JOIN redir_src r ON r.src = (CASE WHEN instr(l.target_url, '#') > 0
+                                            THEN substr(l.target_url, 1, instr(l.target_url, '#') - 1)
+                                            ELSE l.target_url END)
+          WHERE l.is_internal = 1
+          ${hasRs ? `UNION
+          SELECT l.target_key urlKey, l.source_key
+          FROM links l JOIN redirect_sources rs ON rs.url_key = l.target_key
+          WHERE l.is_internal = 1 AND rs.final_key IS NOT rs.url_key` : ''}
+        )
+        GROUP BY urlKey`).map(r => ({ urlKey: r.urlKey, evidence: { linkingPages: r.sources } }));
     },
   },
   {
@@ -654,7 +681,7 @@ export const CHECKS: CheckDef[] = [
   },
   // ── Period-over-period (GSC history by date) — the trend questions SEOs live in ──
   {
-    id: 'traffic-decay', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    id: 'traffic-decay', category: 'merged', severity: 'high', labels: ['G'], certainty: 1, effortBase: 5, fixType: 'per-page', stakeModel: 'lost-clicks',
     title: 'Page losing clicks (period-over-period)', fix: 'Refresh and expand the content, and check for lost rankings — this page’s Search Console clicks fell sharply against the previous 28 days.',
     run: (c) => (!c.gscMaxDate || spanDays(c) < 56) ? [] : rows(c, `
       WITH cur AS (SELECT page_key, SUM(clicks) c, SUM(impressions) i, SUM(position*impressions)*1.0/NULLIF(SUM(impressions),0) pos
@@ -873,6 +900,7 @@ export const CHECKS: CheckDef[] = [
     // Requires `score_passages` to have run (like CWV needs page_lighthouse).
     id: 'weak-passage-answer', category: 'merged', severity: 'high', labels: ['G', 'N'], certainty: 0.8, effortBase: 5, fixType: 'per-page',
     title: 'No passage strongly answers the ranking query (AI-search risk)', fix: 'A local neural reranker found no single passage on this page that confidently answers its top query — the page covers the topic loosely but offers no dense, extractable answer, so AI/passage search will prefer a clearer source. Add a focused, self-contained passage: a heading that states the question + a direct ~50-word answer up top. Run `score_passages` to (re)populate.',
+    collected: needsRows('pages', 'no passage scores. Run score_passages.', 'max_passage_score IS NOT NULL'),
     run: (c) => rows(c, `SELECT url_key urlKey, max_passage_score mps, max_passage_query q, max_passage_impr impr FROM pages
       WHERE indexable=1 AND max_passage_score IS NOT NULL AND max_passage_score < 3`)
       .map(x => ({ urlKey: x.urlKey, evidence: { topQuery: x.q, maxPassageScore: x.mps, impressions: x.impr ?? 0, note: 'best passage scores below the reranker confidence threshold' } })),
@@ -925,7 +953,7 @@ export const CHECKS: CheckDef[] = [
     // + zero-click-SERP CTR loss). Flag when the page hasn't been meaningfully re-dated in >12 months
     // AND clicks are down >25% YoY AND impressions down >15% YoY (impressions confirm ranking decay,
     // not just CTR). Needs ~13 months of GSC — guarded by spanDays so it stays silent on shallow syncs.
-    id: 'stale-content', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
+    id: 'stale-content', category: 'merged', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page', stakeModel: 'lost-clicks',
     title: 'Stale page declining year-on-year', fix: 'This page hasn’t been meaningfully updated in over a year and its Search Console clicks are down sharply versus the same period last year — refresh and expand the content (and honestly re-date it) to rebuild the freshness signal Google rewards.',
     run: (c) => {
       if (!c.gscMaxDate || spanDays(c) < 455) return []; // YoY window reaches back 455 days — anything less truncates the prior-year period
@@ -1013,20 +1041,31 @@ export const CHECKS: CheckDef[] = [
   // ── Merged crawl × Search Console — the "expert questions" that need both datasets ──
   {
     id: 'ghost-pages', category: 'merged', severity: 'high', labels: ['D', 'G'], certainty: 1, effortBase: 5, fixType: 'per-page',
-    title: 'Ranking page the crawl can’t reach', fix: 'Google sends impressions/clicks to this URL but the site crawl never reached it — add internal links so it’s discoverable (or confirm it should exist and isn’t blocked).',
+    // The crawl seeds every URL Search Console reports (Crawler: GSC seed), so a ranking URL is only
+    // absent from a complete crawl when it redirected (redirect_sources: the redirect checks' subject),
+    // failed to fetch (errors), or was never requested: a URL the crawl skips by rule (internal search,
+    // cart, a file type) or one on another host of the property. Only the last group is a finding;
+    // the old title, "the crawl can't reach it - add internal links", was wrong for all of them.
+    title: 'Ranking URL the crawl did not fetch', fix: 'Google sends impressions/clicks to this URL, but the latest complete crawl holds no page for it, and it neither redirected nor failed to fetch. Usually it is a URL the crawl skips by rule (internal search, cart, a faceted or tracking variant, a file such as a PDF) or one on another host of the property. Decide whether it should be in Google at all: noindex or canonicalise it if not; if it should, make sure it is linked internally and in the sitemap.',
     run: (c) => {
       if (!c.gscMaxDate) return [];
       // Only meaningful on a COMPLETE crawl — if the crawl hit its maxPages cap, "absent
       // from crawl" is unreliable. Tie the guard to the crawl that produced the CURRENT
       // pages (not the latest crawl_metadata row, which may be a later failed crawl).
-      const m = c.db.prepare('SELECT urls_crawled c, max_pages m FROM crawl_metadata WHERE crawl_id = (SELECT crawl_id FROM pages LIMIT 1)').get() as { c: number; m: number } | undefined;
+      const m = c.db.prepare('SELECT crawl_id id, status, urls_crawled c, max_pages m FROM crawl_metadata WHERE crawl_id = (SELECT crawl_id FROM pages LIMIT 1)').get() as { id: string; status: string | null; c: number; m: number } | undefined;
       // max_pages is nullable (NULL = no cap = complete crawl) — `c >= null` coerces to
       // `c >= 0`, which would silently disable the check forever on capless crawls.
-      if (!m || m.c === 0 || (m.m != null && m.c >= m.m)) return [];
+      // A crawl still running, cancelled or failed is not complete either: most of the site is absent.
+      if (!m || m.status !== 'completed' || m.c === 0 || (m.m != null && m.c >= m.m)) return [];
+      const hasRs = !!c.db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='redirect_sources'`).get();
+      // URLs this crawl requested and got no answer for (errors.url is raw: key it like pages.url_key).
+      const failed = new Set<string>();
+      try { for (const e of rows(c, `SELECT DISTINCT url FROM errors WHERE crawl_id = ?`, m.id)) failed.add(urlKey(e.url, { hostForm: hostFormOf(c) })); } catch { /* no errors table */ }
       return rows(c, `SELECT page_key urlKey, SUM(clicks) clicks, SUM(impressions) impressions FROM ${PT(c, 28)}
         WHERE page_key IS NOT NULL AND ${win(c.gscMaxDate)} GROUP BY page_key
         HAVING SUM(impressions) >= 50 AND page_key NOT IN (SELECT url_key FROM pages)
-        ORDER BY impressions DESC`).map(r => ({ urlKey: r.urlKey, evidence: { clicks: r.clicks, impressions: r.impressions, note: 'earns GSC traffic but absent from the crawl' } }));
+          ${hasRs ? 'AND page_key NOT IN (SELECT url_key FROM redirect_sources)' : ''}
+        ORDER BY impressions DESC`).filter(r => !failed.has(r.urlKey)).map(r => ({ urlKey: r.urlKey, evidence: { clicks: r.clicks, impressions: r.impressions, note: 'earns GSC traffic; not fetched by the latest complete crawl (no redirect, no fetch error recorded)' } }));
     },
   },
   {
@@ -1091,6 +1130,7 @@ export const CHECKS: CheckDef[] = [
     // weeks old, and a URL 301'd since then was reported as a crit 404. Order: the URL's own pages
     // row → a recorded redirect (judged by where it lands) → the stored pull status, labelled with
     // its age, only when the crawl never reached the URL.
+    collected: NEEDS_BACKLINKS,
     run: (c) => {
       const out: RawFinding[] = [];
       for (const r of rows(c, `SELECT b.url_key urlKey, b.backlinks, b.referring_domains rd, b.status_code storedSt, b.fetched_at fetchedAt,
@@ -1118,6 +1158,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'orphan-no-links', category: 'crawlability', severity: 'med', labels: ['D'], certainty: 1, effortBase: 5, fixType: 'per-page',
     title: 'Orphan page — no internal or external links', fix: 'Add internal links (and earn external ones) — this indexable page has zero inlinks and no backlinks, so it depends on the sitemap alone.',
+    collected: NEEDS_BACKLINKS,
     run: (c) => {
       const has = (c.db.prepare('SELECT COUNT(*) n FROM page_backlinks').get() as { n: number }).n;
       if (!has) return []; // backlinks not pulled — can't credibly assert "no external links"
@@ -1147,14 +1188,19 @@ export const CHECKS: CheckDef[] = [
     // Join the declared canonical_key back to the crawl. Only flag when we crawled the target.
     // Skip self-canonicals. Covers: non-200 target, noindex target, canonical chain/loop (target
     // canonicalises onward), and HTTPS→HTTP downgrade (the indexability-hint family).
+    // The downgrade is tested on the RAW urls and outside the self-canonical skip: url_key forces
+    // https, so an https page canonicalising to its own http:// URL has canonical_key = url_key and
+    // was skipped as a self-canonical (the commonest form of the downgrade).
     run: (c) => rows(c, `SELECT p.url_key urlKey, p.canonical_url canon, p.canonical_key ck, t.status_code st, t.noindex ni, t.canonical_key tck
       FROM pages p JOIN pages t ON t.url_key = p.canonical_key
-      WHERE p.canonical_key IS NOT NULL AND p.canonical_key != p.url_key AND p.status_code = 200
-        AND (t.status_code != 200 OR t.noindex = 1
-          OR (t.canonical_key IS NOT NULL AND t.canonical_key != t.url_key)
-          OR (p.url_key LIKE 'https://%' AND p.canonical_url LIKE 'http://%'))`)
+      WHERE p.canonical_key IS NOT NULL AND p.status_code = 200
+        AND ((p.canonical_key != p.url_key AND (t.status_code != 200 OR t.noindex = 1
+            OR (t.canonical_key IS NOT NULL AND t.canonical_key != t.url_key)))
+          OR (p.url LIKE 'https://%' AND p.canonical_url LIKE 'http://%'))`)
       .map(r => {
-        const reason = r.st !== 200 ? `target returns HTTP ${r.st}`
+        const self = r.ck === r.urlKey; // only the https -> http downgrade reaches here self-canonical
+        const reason = self ? 'HTTPS page canonicalises to an HTTP URL'
+          : r.st !== 200 ? `target returns HTTP ${r.st}`
           : r.ni ? 'target is noindex'
           : (r.tck && r.tck !== r.ck) ? (r.tck === r.urlKey ? 'canonical loop (target points back here)' : 'canonical chain (target canonicalises onward)')
           : 'HTTPS page canonicalises to an HTTP URL';
@@ -1179,6 +1225,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Soft 404 — 200 OK but Google treats it as not-found', fix: 'Either populate the page with real content, or return a true 404/410 (or noindex) — it serves 200 but Google has flagged it as a soft 404.',
     // URL Inspection page-fetch-state = soft 404 while the crawler sees a 200. The crawler alone
     // would call this page fine; Google disagrees. Needs URL Inspection populated.
+    collected: NEEDS_INSPECTION,
     run: (c) => rows(c, `SELECT i.url_key urlKey, p.word_count wc, p.bytes bytes
       FROM url_inspection i JOIN pages p ON p.url_key = i.url_key
       WHERE LOWER(i.page_fetch_state) LIKE '%soft%' AND p.status_code = 200`).map(r => ({ urlKey: r.urlKey, evidence: { pageFetchState: 'soft 404', wordCount: r.wc, bytes: r.bytes } })),
@@ -1189,6 +1236,7 @@ export const CHECKS: CheckDef[] = [
     // Parses the stored richResultsResult JSON (url_inspection.rich_results) that inspect_urls
     // already captures: detectedItems[].items[].issues[] carries Google's severity + message.
     // Needs URL Inspection populated (run inspect_urls). Zero API cost — data is already in the DB.
+    collected: NEEDS_INSPECTION,
     run: (c) => {
       const out: RawFinding[] = [];
       for (const r of iterRows(c, `SELECT url_key urlKey, rich_results rr FROM url_inspection WHERE rich_results IS NOT NULL AND rich_results != ''`)) {
@@ -1222,6 +1270,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Page type mismatches its query intent', fix: 'Reformat or retarget the page — its template doesn’t match the SERP intent for its top query (e.g. a product page ranking for an informational query, or an article for a transactional one). Run search_intent siteUrl:<property> to populate intents.',
     // Join each page's top GSC query → persisted keyword_intent → page schema flavour (from json_ld).
     // Judgement (N, 0.7): intent + schema-type inference is heuristic, so it only runs with includeJudgement.
+    collected: needsRows('keyword_intent', 'no query intents stored. Run search_intent with siteUrl.'),
     run: (c) => {
       if (!c.gscMaxDate) return [];
       if (((c.db.prepare('SELECT COUNT(*) n FROM keyword_intent').get() as { n: number }).n) === 0) return []; // intents not pulled
@@ -1249,6 +1298,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'high-yield-cwv-fail', category: 'performance', severity: 'med', labels: ['D', 'G'], certainty: 1, effortBase: 8, fixType: 'per-page',
     title: 'High-traffic page failing Core Web Vitals', fix: 'Prioritise CWV work here — this page earns real clicks but fails lab Core Web Vitals (LCP > 2.5s, CLS > 0.1, or performance < 50), so engineering effort has clear ROI. Run page_lighthouse siteUrl:<property> on key URLs to populate CWV.',
+    collected: needsRows('page_cwv', 'no lab Core Web Vitals stored. Run page_lighthouse with siteUrl on key URLs.'),
     run: (c) => {
       if (!c.gscMaxDate) return [];
       if (((c.db.prepare('SELECT COUNT(*) n FROM page_cwv').get() as { n: number }).n) === 0) return []; // CWV not pulled
@@ -1267,8 +1317,10 @@ export const CHECKS: CheckDef[] = [
     title: 'Paginated pages canonicalising away from themselves', fix: 'Make each paginated page (page 2, 3, …) self-canonical. Canonicalising page 2+ back to page 1 tells Google the deeper pages are duplicates, so products/articles linked only from page 2+ drop out of the crawl.',
     run: (c) => rows(c, `SELECT url_key urlKey, url, canonical_url canon FROM pages
         WHERE status_code=200 AND canonical_count>0 AND canonical_key IS NOT NULL AND canonical_key != url_key
-          AND (rel_prev=1 OR url LIKE '%/page/%' OR url GLOB '*[?&]page=[0-9]*' OR url GLOB '*[?&]paged=[0-9]*' OR url GLOB '*[?&]p=[0-9]*')`)
-      .filter(r => !/[?&](page|p)=1(\b|&|$)/.test(r.url) && !/\/page\/1(\/?$|\?)/.test(r.url)) // page 1 self-canonicalising to base is fine
+          AND (rel_prev=1 OR url GLOB '*/page/[0-9]*' OR url GLOB '*[?&]page=[0-9]*' OR url GLOB '*[?&]paged=[0-9]*')`)
+      // ?p=<n> is NOT pagination (a WordPress post id, canonical to its permalink by design), and
+      // /page/ only with a number after it (/page/about is a section, not page 2).
+      .filter(r => !/[?&]page=1(\b|&|$)/.test(r.url) && !/\/page\/1(\/?$|\?)/.test(r.url)) // page 1 self-canonicalising to base is fine
       .map(r => ({ urlKey: r.urlKey, evidence: { url: r.url, canonical: r.canon } })),
   },
   {
@@ -1276,12 +1328,18 @@ export const CHECKS: CheckDef[] = [
     title: 'Article dateModified earlier than datePublished', fix: 'Fix the Article schema dates — dateModified must be on or after datePublished. An impossible date undermines trust in the markup and can suppress the freshness signal.',
     run: (c) => {
       const out: RawFinding[] = [];
-      for (const r of rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND json_ld LIKE '%Article%' AND json_ld LIKE '%date%'`)) {
+      // ARTICLE_LIKE, not LIKE '%Article%': a BlogPosting-only page never reached the type test.
+      const DAY = /^\d{4}-\d{2}-\d{2}$/;
+      for (const r of rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND ${ARTICLE_LIKE} AND json_ld LIKE '%date%'`)) {
         for (const n of parseJsonLdNodes(r.jsonLd)) {
-          const t = nodeType(n);
-          if (!t || !/article|blogposting|newsarticle/i.test(t)) continue;
+          if (!typesOf(n).some(t => /article|posting/.test(t))) continue; // every @type of the node (array-aware), the families the old first-type test covered
           const pub = Date.parse(n.datePublished), mod = Date.parse(n.dateModified);
-          if (!Number.isNaN(pub) && !Number.isNaN(mod) && mod < pub) { out.push({ urlKey: r.urlKey, evidence: { datePublished: n.datePublished, dateModified: n.dateModified } }); break; }
+          if (Number.isNaN(pub) || Number.isNaN(mod)) continue;
+          // A date-only value has no time: compare the two as days, or "2025-06-10" (midnight) reads
+          // as earlier than a 09:00 publication on the same day.
+          const dayOnly = DAY.test(String(n.datePublished).trim()) || DAY.test(String(n.dateModified).trim());
+          const earlier = dayOnly ? String(n.dateModified).trim().slice(0, 10) < String(n.datePublished).trim().slice(0, 10) : mod < pub;
+          if (earlier) { out.push({ urlKey: r.urlKey, evidence: { datePublished: n.datePublished, dateModified: n.dateModified } }); break; }
         }
       }
       return out;
@@ -1292,6 +1350,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'entity-internal-link-gap', category: 'crawlability', severity: 'low', labels: ['N'], certainty: 0.5, effortBase: 3, fixType: 'per-page',
     title: 'Topically related pages not internally linked', fix: 'Add an internal link from the broader page to the more specific one — Wikidata says their entities are related (subclass-of / part-of) but no internal link connects them, leaving a gap in the topical mesh. Run resolve_entities first; verify the entity match before acting (heuristic).',
+    collected: needsRows('page_entity', 'no page entities resolved. Run resolve_entities.'),
     run: (c) => {
       if (((c.db.prepare('SELECT COUNT(*) n FROM page_entity').get() as { n: number }).n) === 0) return []; // not resolved
       return rows(c, `SELECT parent.url_key urlKey, child.url_key target, parent.label pl, child.label cl, ee.relation rel
@@ -1310,7 +1369,7 @@ export const CHECKS: CheckDef[] = [
     title: 'Sitemap lists non-indexable URLs', fix: 'Remove URLs from the XML sitemap that are 4xx/5xx, redirected, noindex, canonicalised or robots-blocked — the sitemap should list only canonical, indexable pages, or Google loses trust in it.',
     run: (c) => {
       if (!sitemapHasRows(c)) return [];
-      return rows(c, `SELECT s.url_key urlKey, p.indexable_reason reason, p.status_code st FROM sitemap_urls s JOIN pages p ON p.url_key = s.url_key WHERE p.indexable = 0`)
+      return rows(c, `SELECT s.url_key urlKey, p.indexable_reason reason, p.status_code st FROM sitemap_urls s JOIN pages p ON p.url_key = s.url_key WHERE p.indexable = 0 AND COALESCE(p.indexable_reason,'') != 'non-html'`) // a PDF or feed in the sitemap is a legitimate entry
         .map(r => ({ urlKey: r.urlKey, evidence: { reason: r.reason ?? 'not-indexable', status: r.st } }));
     },
   },
@@ -1381,9 +1440,9 @@ export const CHECKS: CheckDef[] = [
   {
     id: 'image-preview-restricted', category: 'indexation', severity: 'low', labels: ['D'], certainty: 1, effortBase: 1, fixType: 'per-page',
     title: 'max-image-preview restricted below large', fix: 'The robots meta tag caps image previews at none/standard. Google Discover strongly favours large image previews — set max-image-preview:large (or remove the restriction) unless there\'s a licensing reason not to.',
-    run: (c) => rows(c, `SELECT url_key urlKey, robots FROM pages WHERE status_code=200 AND indexable=1
-        AND (LOWER(REPLACE(robots,' ','')) LIKE '%max-image-preview:none%' OR LOWER(REPLACE(robots,' ','')) LIKE '%max-image-preview:standard%') LIMIT 50`)
-      .map(r => ({ urlKey: r.urlKey, evidence: { robots: r.robots } })),
+    run: (c) => rows(c, `SELECT url_key urlKey, robots, x_robots_tag xrt FROM pages WHERE status_code=200 AND indexable=1
+        AND (LOWER(REPLACE(COALESCE(robots,'') || ',' || COALESCE(x_robots_tag,''),' ','')) LIKE '%max-image-preview:none%' OR LOWER(REPLACE(COALESCE(robots,'') || ',' || COALESCE(x_robots_tag,''),' ','')) LIKE '%max-image-preview:standard%') LIMIT 50`)
+      .map(r => ({ urlKey: r.urlKey, evidence: { robots: r.robots, ...(r.xrt ? { xRobotsTag: r.xrt } : {}) } })),
   },
   {
     id: 'excessive-links', category: 'onpage', severity: 'low', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'per-page',
@@ -1688,7 +1747,7 @@ export const CHECKS: CheckDef[] = [
     // Reads the FULL @type set of each article-family node (typesOf — array-@type aware). Fires
     // only when the article family present is exactly {article}, i.e. no more-specific subtype is
     // declared anywhere. A page typed ["Article","BlogPosting"] is NOT flagged (BlogPosting IS specific).
-    run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND json_ld LIKE '%Article%'`)
+    run: (c) => rows(c, `SELECT url_key urlKey, json_ld jsonLd FROM pages WHERE status_code=200 AND indexable=1 AND ${HTML_CT} AND ${ARTICLE_LIKE}`)
       .map(r => { const present = new Set<string>(); for (const n of discoverArticleNodes(r.jsonLd)) for (const t of typesOf(n)) if (DISCOVER_TYPES.includes(t)) present.add(t); return { urlKey: r.urlKey, present }; })
       .filter(x => x.present.has('article') && x.present.size === 1)
       .map(x => ({ urlKey: x.urlKey, evidence: { articleTypesDeclared: ['Article'], note: 'the Article schema declares only the generic Article type — no more specific subtype' } })),

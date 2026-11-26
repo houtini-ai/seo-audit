@@ -3,6 +3,7 @@ import { readCapped, MAX_SITEMAP_BYTES } from './cappedBody.js';
 import { urlKey, type UrlKeyOptions } from './url-key.js';
 import { isInternalHost } from './extract.js';
 import { publicOnlyAgent } from './netGuard.js';
+import { CHROME_HEADERS, looksBotBlocked } from './userAgents.js';
 
 /**
  * Sitemap discovery + parse for reconciliation against the crawl. Finds sitemaps via robots.txt
@@ -38,18 +39,27 @@ type Fetched = { text: string; finalUrl: string; oversized?: boolean };
 let guardAgent: ReturnType<typeof publicOnlyAgent> | null = null;
 const MAX_HOPS = 5;
 // `failedStatus` carries the HTTP status of a failed fetch (0 = no response) for the per-file record.
-async function fetchText(url: string, ua: string, ownHost: string, failedStatus?: { status: number }, signal?: AbortSignal): Promise<Fetched | null> {
+// `chromeFallback`: a bot block (403, 999, a WAF challenge) under the crawler's UA is retried once
+// with the Chrome headers, as the page fetch does, so a walled site's sitemaps are still read.
+async function fetchText(url: string, ua: string, ownHost: string, failedStatus?: { status: number }, signal?: AbortSignal, chromeFallback = false): Promise<Fetched | null> {
   try {
     let current = url;
     let res: Response | null = null;
+    let asChrome = false;
     for (let hop = 0; hop <= MAX_HOPS; hop++) {
       const own = isInternalHost(new URL(current).hostname, ownHost);
       const timeout = AbortSignal.timeout(15000);
       res = await fetch(current, {
-        headers: { 'user-agent': ua }, redirect: 'manual',
+        headers: asChrome ? CHROME_HEADERS : { 'user-agent': ua }, redirect: 'manual',
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         ...(own ? {} : { dispatcher: (guardAgent ??= publicOnlyAgent()) }),
       } as RequestInit);
+      if (chromeFallback && !asChrome && looksBotBlocked(res.status, n => res!.headers.get(n))) {
+        try { await res.body?.cancel(); } catch { /* no body */ }
+        asChrome = true;
+        hop--; // the same URL again, as Chrome: not a redirect hop
+        continue;
+      }
       const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
       if (!loc) break;
       try { await res.body?.cancel(); } catch { /* no body */ }
@@ -112,17 +122,23 @@ export interface SitemapResult {
 const CONVENTIONAL = ['/sitemap_index.xml', '/sitemap.xml', '/wp-sitemap.xml'];
 
 export async function fetchSitemapUrls(
-  origin: string, ua: string, keyOpts: UrlKeyOptions, opts: { maxSitemaps?: number; maxUrls?: number; signal?: AbortSignal } = {},
+  origin: string, ua: string, keyOpts: UrlKeyOptions, opts: { maxSitemaps?: number; maxUrls?: number; signal?: AbortSignal; chromeFallback?: boolean } = {},
 ): Promise<SitemapResult> {
   const ownHost = new URL(origin).hostname;
   const signal = opts.signal;
+  const chromeFallback = opts.chromeFallback === true;
   const maxSitemaps = opts.maxSitemaps ?? 60;
   const maxUrls = opts.maxUrls ?? 100000;
 
   // Discover sitemap locations from robots.txt; fall back to /sitemap.xml.
   const sources: string[] = [];
-  const robots = (await fetchText(new URL('/robots.txt', origin).toString(), ua, ownHost, undefined, signal))?.text;
-  if (robots) for (const m of robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)) sources.push(m[1].trim());
+  const robots = (await fetchText(new URL('/robots.txt', origin).toString(), ua, ownHost, undefined, signal, chromeFallback))?.text;
+  // A relative value (`Sitemap: /sitemap.xml`) is resolved against the origin: it used to be
+  // requested as written, which is not a URL, and was reported as a sitemap that didn't respond.
+  if (robots) for (const m of robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)) {
+    const v = m[1].trim();
+    try { sources.push(/^https?:\/\//i.test(v) ? v : new URL(v, origin).toString()); } catch { sources.push(v); }
+  }
   const conventional = CONVENTIONAL.map(p => new URL(p, origin).toString());
   const undeclared: string[] = [];
   const oversized: string[] = [];
@@ -163,13 +179,15 @@ export async function fetchSitemapUrls(
     const smKey = keyOf(sm);
     if (parsed.has(smKey)) continue; // this document was already parsed (another spelling, or a redirect target): no fetch
     const failed = { status: 0 };
-    const got = await fetchText(sm, ua, ownHost, failed, signal);
+    const got = await fetchText(sm, ua, ownHost, failed, signal, chromeFallback);
     fetched++;
     const file: SitemapFile = { url: sm, source: sourceOf.get(sm) ?? 'index', outcome: 'ok', httpStatus: null, kind: null, entries: null, bytes: null, invalidLocs: 0 };
     if (!got) { files.push({ ...file, outcome: failed.status ? 'http-error' : 'no-response', httpStatus: failed.status || null }); continue; }
     file.httpStatus = 200;
     if (got.oversized) { oversized.push(sm); files.push({ ...file, outcome: 'oversized' }); continue; }
-    const txt = got.text;
+    // <loc><![CDATA[https://…]]></loc> is valid XML and several generators write it: unwrap it, or
+    // every such URL was counted as an invalid <loc> and neither seeded nor stored.
+    const txt = got.text.includes('<![CDATA[') ? got.text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1') : got.text;
     // A catch-all route can answer 200 with HTML for /sitemap.xml: only count real sitemap XML.
     // A failed fetch is NOT marked parsed, so another spelling of the same sitemap is still tried.
     if (!txt || !/<(urlset|sitemapindex)[\s>]/i.test(txt)) { files.push({ ...file, outcome: 'not-sitemap', bytes: Buffer.byteLength(txt ?? '') }); continue; }

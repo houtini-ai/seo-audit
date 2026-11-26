@@ -304,17 +304,27 @@ export function pruneProperty(
   const bytesBefore = sizeWithSidecars(dbFile);
 
   if (action === 'delete-property') {
-    const summary = storageSummary(dataDir, siteUrl).properties[0];
+    const listing = storageSummary(dataDir, siteUrl);
+    const summary = listing.properties[0];
+    // This database's `<file>.bak-*` copies, by name: found even when the database itself is unreadable.
+    const backups = listing.backups.filter(b => b.of === path.basename(dbFile));
+    const backupBytes = backups.reduce((n, b) => n + b.bytes, 0);
     if (!confirm) {
       return {
-        ...base, ok: false, detail: { dbFile, bytes: bytesBefore, rows: summary },
+        ...base, ok: false, detail: { dbFile, bytes: bytesBefore, rows: summary, backups: backups.map(b => b.file), backupBytes },
         refused: `REFUSED — delete-property is destructive and needs confirm:true. This would permanently delete ${dbFile} (+ -wal/-shm), ${fmtBytes(bytesBefore)}: ` +
-          `${summary?.searchAnalytics ?? '?'} search_analytics rows (+${summary?.searchAnalyticsSegments ?? 0} segment rows), ${summary?.pages ?? '?'} pages, ${summary?.links ?? '?'} links, ${summary?.pageSnapshots ?? '?'} snapshots, ${summary?.findings ?? '?'} findings. ` +
+          `${summary?.searchAnalytics ?? '?'} search_analytics rows (+${summary?.searchAnalyticsSegments ?? 0} segment rows), ${summary?.pages ?? '?'} pages, ${summary?.links ?? '?'} links, ${summary?.pageSnapshots ?? '?'} snapshots, ${summary?.findings ?? '?'} findings` +
+          `${backups.length ? `, and its ${backups.length} backup file(s) (${backups.map(b => b.file).join(', ')}, ${fmtBytes(backupBytes)})` : ''}. ` +
           `GSC history is re-syncable but slow to rebuild. Re-run with confirm:true to proceed.`,
       };
     }
     for (const suffix of ['', '-wal', '-shm']) rmSync(dbFile + suffix, { force: true });
-    return { ...base, ok: true, detail: { dbFile, bytesFreed: bytesBefore } };
+    // Its backups go with it (each is a full-size copy nothing else would ever remove), and its
+    // row-count cache entry.
+    for (const b of backups) for (const suffix of ['', '-wal', '-shm']) rmSync(path.join(dataDir, b.file) + suffix, { force: true });
+    const countsCache = readCountsCache(dataDir);
+    if (path.basename(dbFile) in countsCache) { delete countsCache[path.basename(dbFile)]; writeCountsCache(dataDir, countsCache); }
+    return { ...base, ok: true, detail: { dbFile, bytesFreed: bytesBefore + backupBytes, backupsDeleted: backups.map(b => b.file) } };
   }
 
   if (action === 'vacuum') {
@@ -331,17 +341,24 @@ export function pruneProperty(
   // most recent, then VACUUM. Preview first so the refusal can name what goes.
   const db = new Database(dbFile);
   try {
-    const keepRuns = (db.prepare(`SELECT run_id FROM audit_runs ORDER BY started_at DESC LIMIT ${KEEP_RECENT}`).all() as { run_id: string }[]).map(r => r.run_id);
+    // The runs kept are the newest COMPLETED ones, by the readers' own predicate (history.ts
+    // LATEST_COMPLETED_RUN_WHERE): the dashboard and query_audit read the latest completed run, so
+    // keeping "the 5 newest of any status" could delete it behind five failed attempts. Failed runs
+    // and "running" rows go too: no job is live here (refused above), so a running row is a dead one.
+    const hasStatus = (db.prepare(`PRAGMA table_info(audit_runs)`).all() as { name: string }[]).some(c => c.name === 'status');
+    const completed = hasStatus ? `(status = 'completed' OR (status IS NULL AND finished_at IS NOT NULL))` : `finished_at IS NOT NULL`;
+    const keepRuns = (db.prepare(`SELECT run_id FROM audit_runs WHERE ${completed} ORDER BY started_at DESC, rowid DESC LIMIT ${KEEP_RECENT}`).all() as { run_id: string }[]).map(r => r.run_id);
     const keepCrawls = (db.prepare(`SELECT crawl_id FROM (SELECT crawl_id, MAX(captured_at) t FROM page_snapshots GROUP BY crawl_id) ORDER BY t DESC LIMIT ${KEEP_RECENT}`).all() as { crawl_id: string }[]).map(r => r.crawl_id);
     const ph = (n: number): string => Array.from({ length: n }, () => '?').join(',') || `''`;
     const oldRuns = (db.prepare(`SELECT COUNT(*) n FROM audit_runs WHERE run_id NOT IN (${ph(keepRuns.length)})`).get(...keepRuns) as { n: number }).n;
+    const unfinishedRuns = (db.prepare(`SELECT COUNT(*) n FROM audit_runs WHERE NOT ${completed}`).get() as { n: number }).n;
     const oldFindings = (db.prepare(`SELECT COUNT(*) n FROM findings WHERE run_id NOT IN (${ph(keepRuns.length)})`).get(...keepRuns) as { n: number }).n;
     const oldSnapshots = (db.prepare(`SELECT COUNT(*) n FROM page_snapshots WHERE crawl_id NOT IN (${ph(keepCrawls.length)})`).get(...keepCrawls) as { n: number }).n;
     if (!confirm) {
       db.close();
       return {
-        ...base, ok: false, detail: { oldRuns, oldFindings, oldSnapshots, keepRecent: KEEP_RECENT },
-        refused: `REFUSED — clear-crawl-history is destructive and needs confirm:true. This would permanently delete ${oldRuns} audit runs, ${oldFindings} findings and ${oldSnapshots} page snapshots older than the ${KEEP_RECENT} most recent (change-detection history beyond that window is lost). Re-run with confirm:true to proceed.`,
+        ...base, ok: false, detail: { oldRuns, unfinishedRuns, oldFindings, oldSnapshots, keepRecent: KEEP_RECENT },
+        refused: `REFUSED — clear-crawl-history is destructive and needs confirm:true. This would permanently delete ${oldRuns} audit runs${unfinishedRuns ? ` (${unfinishedRuns} of them failed or never finished)` : ''} and ${oldFindings} findings, keeping the ${KEEP_RECENT} most recent completed audit runs, and ${oldSnapshots} page snapshots older than the ${KEEP_RECENT} most recent crawls (change-detection history beyond that window is lost). Re-run with confirm:true to proceed.`,
       };
     }
     db.transaction(() => {

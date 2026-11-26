@@ -43,6 +43,8 @@ export interface PortfolioHost {
   /** The chat host can take a message ("Ask Claude to refresh"). */
   canMessage?: () => boolean;
   sendMessage?: (text: string) => Promise<{ isError?: boolean } | undefined>;
+  /** In chat there is no page to reload: offer a Refresh that re-reads the (free) stored data. */
+  canRefresh?: boolean;
   /** After a watched domain is added or removed (the dashboard rebuilds its domain dropdown). */
   onChanged?: () => void;
 }
@@ -363,6 +365,7 @@ function renderTable(el: HTMLElement): void {
       <div class="refresh-actions">
         <button class="btn link" type="button" id="copy-prompt" title="Paste this into chat: Claude quotes the cost before spending anything">Copy refresh prompt</button>
         ${canMessage ? '<button class="btn" type="button" id="ask-refresh">Ask Claude to refresh</button>' : ''}
+        ${host!.canRefresh ? '<button class="btn" type="button" id="pf-reload" title="Re-read the stored data (free). New DataForSEO numbers need a portfolio refresh from chat.">Reload data</button>' : ''}
       </div>
     </div>
     ${addForm()}
@@ -460,14 +463,19 @@ function renderTable(el: HTMLElement): void {
   el.querySelector('#export-csv')?.addEventListener('click', exportCSV);
   el.querySelector<HTMLButtonElement>('#copy-prompt')?.addEventListener('click', e => void copyRefreshPrompt(e.currentTarget as HTMLButtonElement));
   el.querySelector<HTMLButtonElement>('#ask-refresh')?.addEventListener('click', e => void askToRefresh(e.currentTarget as HTMLButtonElement));
+  el.querySelector<HTMLButtonElement>('#pf-reload')?.addEventListener('click', () => void refreshPortfolio());
 }
 
 function rerender(): void {
   const el = root();
   if (loading) { el.innerHTML = `<div class="state">${view.type === 'domain' ? 'Loading domain overview...' : 'Loading portfolio...'}</div>`; return; }
-  if (error) { el.innerHTML = `<div class="state error-state">${esc(clean(error))}</div>`; return; }
+  if (error) {
+    el.innerHTML = `<div class="state error-state">${esc(clean(error))}${host!.canRefresh ? ' <button class="btn" type="button" id="pf-retry">Try again</button>' : ''}</div>`;
+    el.querySelector<HTMLButtonElement>('#pf-retry')?.addEventListener('click', () => void refreshPortfolio());
+    return;
+  }
   if (view.type === 'domain') {
-    if (view.overview) renderDomainOverview(el, view.overview, { onBack: backToTable });
+    if (view.overview) renderDomainOverview(el, view.overview, { onBack: backToTable, ...(host!.canRefresh ? { onRefresh: () => void refreshPortfolio() } : {}) });
     else el.innerHTML = `<div class="state">Loading domain overview...</div>`;
     return;
   }
@@ -500,7 +508,10 @@ export function loadPortfolio(): Promise<PortfolioPayload | null> {
     if (view.type === 'table') { loading = true; error = null; rerender(); }
     try {
       const res = await callServer('get_portfolio_data', {});
-      payload = (res?.structuredContent ?? res) as PortfolioPayload;
+      const next = (res?.structuredContent ?? res) as PortfolioPayload | undefined;
+      // Anything that isn't the payload (an error result a host passed through) is an error, not a table.
+      if (!next || !Array.isArray(next.rows)) throw new Error('The server did not return the portfolio data.');
+      payload = next;
       return payload;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -511,6 +522,18 @@ export function loadPortfolio(): Promise<PortfolioPayload | null> {
     }
   })();
   return loadPromise;
+}
+
+/**
+ * Re-read the stored data (chat widget: Reload data / Refresh / Try again). The table's payload is
+ * always re-read, so going back to the table from a domain shows fresh rows; an open domain's
+ * overview is re-read too.
+ */
+export async function refreshPortfolio(): Promise<void> {
+  const v = view;
+  error = null;
+  await loadPortfolio();
+  if (v.type === 'domain' && view === v) await openDomain(v.domain, v.locationCode);
 }
 
 /** Re-read the table after an add or remove, and tell the host (its dropdown lists watched domains). */

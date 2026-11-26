@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { urlKey, type UrlKeyOptions } from './url-key.js';
+import { metaNoindex, headerNoindex } from './robotsDirectives.js';
 
 /** Collapse runs of whitespace to a single space and trim — a browser renders a multi-line
  * `<title>` / meta / heading that way, so a stored value with an embedded newline (" ...\n – x")
@@ -225,9 +226,16 @@ export function extractPage(
   // extraction throw — that would record a fine 200 page as a fetch failure.
   const canonicalUrl = canonicalRaw ? (() => { try { return new URL(canonicalRaw, docBase).toString(); } catch { return null; } })() : null;
   const canonicalRelative = canonicalRaw != null && !/^https?:\/\//i.test(canonicalRaw);
-  const robots = $('meta[name="robots"]').attr('content')?.trim() ?? null;
+  // Every robots meta that speaks to Google: name is `robots` or `googlebot` in any case, and a page
+  // can carry several (Google applies them all). Reading only the first lower-case `robots` tag
+  // missed `<meta name="ROBOTS" content="NOINDEX">`, a googlebot-only noindex and a second tag.
+  const robotsMetas = $('meta[name][content]').toArray()
+    .filter(el => /^(robots|googlebot)$/i.test(($(el).attr('name') ?? '').trim()))
+    .map(el => ($(el).attr('content') ?? '').trim()).filter(Boolean);
+  const robots = robotsMetas.length ? robotsMetas.join(', ') : null;
   const viewport = $('meta[name="viewport"]').attr('content')?.trim() ?? null;
-  const noindex = /noindex/i.test(robots ?? '') || /noindex/i.test(xRobotsTag ?? '');
+  // `none` = noindex, nofollow; an X-Robots-Tag scoped to another crawler doesn't count.
+  const noindex = metaNoindex(robots) || headerNoindex(xRobotsTag);
 
   // word count excluding script/style/noscript/template (fixes inline-script inflation)
   const $body = cheerio.load(html);

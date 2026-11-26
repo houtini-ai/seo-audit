@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { parseSqliteUtc } from './sqliteTime.js';
 
 /**
  * Majestic API client — the optional Trust Flow / Topical Trust Flow enrichment tier.
@@ -133,7 +134,7 @@ export class MajesticClient {
     const row = this.cache
       .prepare('SELECT * FROM majestic_metrics WHERE item = ? AND datasource = ?')
       .get(item, datasource) as any;
-    if (row && Date.now() - Date.parse(row.fetched_at) < this.ttlMs) return this.rowToMetrics(row, datasource, true);
+    if (row && Date.now() - parseSqliteUtc(row.fetched_at) < this.ttlMs) return this.rowToMetrics(row, datasource, true);
     return null;
   }
 

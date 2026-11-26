@@ -317,8 +317,8 @@ export class JobManager {
     // hold a second one, so refuse a collection job while another is live for the same property —
     // two would corrupt the shared crawl / GSC tables. (External mode queued above; claimNext serialises.)
     if (opts.scope && COLLECTION_KINDS.has(type)) {
-      const busy = this.liveForScope(opts.scope);
-      if (busy && COLLECTION_KINDS.has(busy.type)) {
+      const busy = this.liveForScope(opts.scope, COLLECTION_KINDS);
+      if (busy) {
         throw new Error(`A ${busy.type} job is already running for this property. Wait for it to finish (poll check_sync_status) or cancel it, then start the ${type} again — two collection jobs on one property would corrupt the crawl and Search Console tables.`);
       }
     }
@@ -670,16 +670,19 @@ export class JobManager {
    * a running job in THIS process, a running job in any process with a fresh heartbeat (staleMs),
    * or a queued job a runner could still claim. Used to serialise collection jobs in-process.
    */
-  liveForScope(scope: string): Job | null {
-    for (const j of this.jobs.values()) if (j.state === 'running' && j.scope === scope) return j;
+  liveForScope(scope: string, kinds?: ReadonlySet<string>): Job | null {
+    // `kinds` narrows the answer to those job types. Every live job is looked at, not just the
+    // oldest: a long-running backlinks or fts-index job must not hide a crawl started after it.
+    const wanted = (type: string): boolean => !kinds || kinds.has(type);
+    for (const j of this.jobs.values()) if (j.state === 'running' && j.scope === scope && wanted(j.type)) return j;
     if (this.db) {
       try {
         const fresh = new Date(Date.now() - this.staleMs).toISOString();
-        const r = this.db.prepare(`SELECT * FROM jobs WHERE state = 'running' AND scope = ? AND COALESCE(heartbeat_at, updated_at) >= ? ORDER BY started_at LIMIT 1`).get(scope, fresh) as JobRow | undefined;
-        if (r) return this.fromRow(r);
+        const running = this.db.prepare(`SELECT * FROM jobs WHERE state = 'running' AND scope = ? AND COALESCE(heartbeat_at, updated_at) >= ? ORDER BY started_at`).all(scope, fresh) as JobRow[];
+        for (const r of running) if (wanted(r.type)) return this.fromRow(r);
         const alive = this.runnerAlive();
         const queued = this.db.prepare(`SELECT * FROM jobs WHERE state = 'queued' AND scope = ? AND started_at >= ? ORDER BY started_at`).all(scope, new Date(Date.now() - DAY_MS).toISOString()) as JobRow[];
-        for (const row of queued) if (this.queuedIsLive(row.started_at, alive)) return this.fromRow(row);
+        for (const row of queued) if (wanted(row.type) && this.queuedIsLive(row.started_at, alive)) return this.fromRow(row);
       } catch (err) {
         this.warn(`checking live jobs for a property failed (${errText(err)}).`);
       }

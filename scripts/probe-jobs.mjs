@@ -309,6 +309,19 @@ const site = 'https://example.com/';
   check('a crawl on a DIFFERENT property is allowed', jm.get(idB)?.state === 'running', JSON.stringify(jm.get(idB)));
   const idBk = jm.submit('backlinks', { siteUrl: 'a' }, run, { scope: 'a.db' });
   check('a non-collection job (backlinks) runs alongside the crawl', jm.get(idBk)?.state === 'running', JSON.stringify(jm.get(idBk)));
+  // A non-collection job must not mask a running collection job: with backlinks as the OLDEST live
+  // job on a property, a second crawl used to be let through (the guard looked at one job only).
+  const idBk2 = jm.submit('backlinks', { siteUrl: 'm' }, run, { scope: 'm.db' });
+  const idM = jm.submit('crawl', { siteUrl: 'm' }, run, { scope: 'm.db' });
+  const m4 = refused('crawl', 'm.db');
+  check('a second crawl is refused when an older backlinks job is also live (memory path)', jm.get(idBk2)?.state === 'running' && jm.get(idM)?.state === 'running' && m4 !== null && /A crawl job is already running/.test(m4), String(m4));
+  // The same through the registry: another process sees only the rows, not this process's memory.
+  const other = new JobManager({ dbPath: jobsDbPath(cdir) });
+  let m5 = null;
+  try { other.submit('refresh', { siteUrl: 'm' }, run, { scope: 'm.db' }); } catch (e) { m5 = e.message; }
+  check('another process is refused too, past the older backlinks row (registry path)', m5 !== null && /A crawl job is already running/.test(m5), String(m5));
+  check('liveForScope without a filter still reports any live job', other.liveForScope('m.db')?.type === 'backlinks' && other.liveForScope('m.db', new Set(['crawl']))?.type === 'crawl' && other.liveForScope('m.db', new Set(['sync'])) === null);
+  other.close();
   jm.close();
   // External mode: both crawls queue (claimNext serialises them later), so neither is refused.
   const ext = new JobManager({ dbPath: jobsDbPath(cdir), runner: 'external' });

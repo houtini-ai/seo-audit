@@ -45,7 +45,7 @@
 import { execSync } from 'node:child_process';
 import { cpSync, mkdirSync, rmSync, existsSync, statSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const outDir = join(root, 'mcpb-dist');
@@ -72,6 +72,16 @@ cpSync(join(root, 'mcpb', 'manifest.json'), join(staging, 'manifest.json'));
   m.version = pkg.version;
   m.description = pkg.description;
   m.license = pkg.license;
+  // The check count comes from the live registry (the build this bundle ships), never from prose:
+  // package.json said 154 and the manifest 143 while the registry held 157.
+  const { listChecks } = await import(pathToFileURL(join(root, 'dist', 'audit', 'engine.js')).href);
+  const checks = listChecks().length;
+  const withCount = (s) => String(s).replace(/\b\d+ ((?:deterministic and judgement-labelled )?checks)\b/g, `${checks} $1`);
+  for (const [name, text] of [['package.json description', pkg.description], ['manifest long_description', m.long_description]]) {
+    if (withCount(text) !== text) console.error(`Note: ${name} states a stale check count; the bundle says ${checks}. Correct the source text.`);
+  }
+  m.description = withCount(m.description);
+  m.long_description = withCount(m.long_description);
   writeFileSync(manifestPath, JSON.stringify(m, null, 2) + '\n');
 }
 cpSync(join(root, 'dist'), join(staging, 'dist'), { recursive: true });
