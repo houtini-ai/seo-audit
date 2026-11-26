@@ -6,14 +6,16 @@ That's what the DataForSEO integration is for. Together these tools cover most o
 
 ## Setting up DataForSEO
 
-[DataForSEO](https://dataforseo.com/?aff=213701) is a pay-as-you-go API: no subscription, no seat licence. You register, top up a balance, and calls draw it down at fractions of a cent to a few cents each. Then add your credentials to the MCP config:
+[DataForSEO](https://dataforseo.com/?aff=213701) is a pay-as-you-go API: no subscription for the core APIs, no seat licence. You register, top up a balance, and calls draw it down at fractions of a cent to a few cents each. Then copy the **API login** and **API password** from the [API Access](https://app.dataforseo.com/api-access) tab of their dashboard (not your dashboard login: DataForSEO generates these) into the MCP config:
 
 ```json
 "env": {
-  "DATAFORSEO_USERNAME": "you@example.com",
-  "DATAFORSEO_PASSWORD": "your-dataforseo-password"
+  "DATAFORSEO_USERNAME": "your-api-login",
+  "DATAFORSEO_PASSWORD": "your-api-password"
 }
 ```
+
+Stuck on the account side? DataForSEO runs a 24/7 live chat in their dashboard; see [Account, credentials and getting help](dataforseo.md#account-credentials-and-getting-help).
 
 (Full config context in [getting-started.md](getting-started.md).) One wrinkle worth knowing up front: **Backlinks is a separate subscription** from the SERP/Keywords/Labs APIs on DataForSEO's side. If you call `pull_backlinks` without it activated you'll get a clear message saying so, not a cryptic error.
 
@@ -125,8 +127,8 @@ With the key set the whole list **re-sorts by Trust Flow**, the `Domain trust` c
 
 ```json
 "env": {
-  "DATAFORSEO_USERNAME": "you@example.com",
-  "DATAFORSEO_PASSWORD": "your-dataforseo-password",
+  "DATAFORSEO_USERNAME": "your-api-login",
+  "DATAFORSEO_PASSWORD": "your-api-password",
   "MAJESTIC_API_KEY": "your-majestic-api-key"
 }
 ```

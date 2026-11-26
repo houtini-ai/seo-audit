@@ -166,8 +166,8 @@ Claude Code is, in my view, the best home for this tool - the audit finds the is
 ```bash
 claude mcp add seo-audit-console \
   --env GOOGLE_APPLICATION_CREDENTIALS=C:/path/to/service-account.json \
-  --env DATAFORSEO_USERNAME=you@example.com \
-  --env DATAFORSEO_PASSWORD=your-dataforseo-password \
+  --env DATAFORSEO_USERNAME=your-api-login \
+  --env DATAFORSEO_PASSWORD=your-api-password \
   --env MAJESTIC_API_KEY=your-majestic-api-key \
   -- npx -y @houtini/seo-audit-console
 ```
@@ -198,7 +198,7 @@ Don't commit real credential paths to a shared repo unless the team shares the s
 |---|---|---|
 | `GOOGLE_APPLICATION_CREDENTIALS` | yes | Path to the GSC service-account JSON key |
 | `SAC_DATA_DIR` | optional | Where per-property SQLite databases and reports live (default: `~/Documents/seo-audit-console`) |
-| `DATAFORSEO_USERNAME` / `DATAFORSEO_PASSWORD` | optional | Switches on the keyword / SERP / competitor / CWV / backlink tools |
+| `DATAFORSEO_USERNAME` / `DATAFORSEO_PASSWORD` | optional | Switches on the keyword / SERP / competitor / CWV / backlink tools. Use the **API login and API password** from DataForSEO's [API Access](https://app.dataforseo.com/api-access) tab, not your dashboard login |
 | `DATAFORSEO_CACHE_DAYS` | optional | DataForSEO response cache TTL (default 20 days) |
 | `MAJESTIC_API_KEY` | optional | Switches on the **Majestic** tier in `link_intersect`: every prospect gains **Trust Flow** and **Topical Trust Flow**, and the list re-sorts by real editorial authority instead of DataForSEO's link-volume rank. `pull_backlinks` also adds Trust Flow to your own most-backlinked pages (up to 500), for the dashboard's Trapped authority report. Get a key on [Majestic's plans page](https://majestic.com/plans-pricing). Both tools work without it. |
 | `MAJESTIC_CACHE_DAYS` | optional | Majestic response cache TTL (default 30 days). Cache hits cost no Majestic units, so leave this generous. |
@@ -331,7 +331,9 @@ If the catalog entry still runs `npx`, the server logs a warning at start-up (in
 - **A keyword or competitor tool says it needs credentials.** Those are the optional DataForSEO tools. Everything in the core flow works without them.
 - **`link_intersect` shows a "Domain trust" column, not "Trust Flow".** That's the tool telling you no prospect was enriched by Majestic - usually because `MAJESTIC_API_KEY` isn't in your config's `env` block, or the client hasn't been restarted since you added it. The footer under the table suggests setting the key either way, so if it is set, look for a Majestic error instead (next item).
 - **Majestic errors instead of enriching.** The message comes straight from Majestic and names the cause - a bad key, or an allowance with nothing left in it. Enrichment costs roughly one unit per prospect (batched 100 per call, capped by `enrichLimit`), so a big `topN` on a small plan runs the balance down; results are cached for `MAJESTIC_CACHE_DAYS` (30 by default), so re-running the same intersect inside that window costs nothing.
+- **Every DataForSEO tool fails with an authentication error.** The credentials are almost always the dashboard login instead of the API ones. Copy the API login and API password from DataForSEO's [API Access](https://app.dataforseo.com/api-access) tab (after the first 24 hours the password is hidden: use **Send by e-mail** there), then fully restart the client.
 - **`pull_backlinks` errors even though DataForSEO works.** Backlinks is a separate DataForSEO subscription from SERP/Keywords/Labs - a 40204 error means it isn't activated on your account. The tool says so plainly when that's the cause.
+- **Anything on the DataForSEO account side** (activating an API family, balance, billing): their support team runs a 24/7 live chat in the DataForSEO dashboard, for trial accounts too. More in [DataForSEO functions](dataforseo.md#account-credentials-and-getting-help).
 - **You changed the code and nothing changed.** The running MCP server holds the previous build. `npm run build`, then fully restart the client.
 - **A tool from the new release is missing after an upgrade** (`sync_crux`, say). The client cached the tool list when it connected. Fully restart Claude Desktop or Claude Code so it fetches the new list.
 - **Under the Docker MCP gateway, the first call times out or several workers appear.** A fresh worker spends about a minute in `npx` installing the package. Pin the version and pre-warm the npm cache, or use a preinstalled image: [Running under the Docker MCP gateway](#running-under-the-docker-mcp-gateway).

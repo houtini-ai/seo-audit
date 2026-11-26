@@ -68,13 +68,13 @@
     "dataforseo_username": {
       "type": "string",
       "title": "DataForSEO username (optional)",
-      "description": "DataForSEO API login. Optional - keyword, rank, backlink, and Labs tools degrade gracefully without it.",
+      "description": "DataForSEO API login, from the API Access tab at app.dataforseo.com/api-access (it may not be your sign-up email). Optional - keyword, rank, backlink, and Labs tools degrade gracefully without it.",
       "required": false
     },
     "dataforseo_password": {
       "type": "string",
       "title": "DataForSEO password (optional)",
-      "description": "DataForSEO API password.",
+      "description": "DataForSEO API password, from the same API Access tab - not the password you log into the dashboard with.",
       "sensitive": true,
       "required": false
     },
