@@ -19,9 +19,20 @@ export const INSPECT_MAX_CONSECUTIVE_REFUSALS = 3;
 function isRefusal(err: unknown): boolean {
   const e = err as { code?: unknown; status?: unknown; response?: { status?: unknown } } | null;
   const status = Number(e?.response?.status ?? e?.status ?? e?.code);
-  if (status === 429 || status === 401 || status === 403) return true;
-  return /quota|rate limit|permission|forbidden|unauthori[sz]ed/i.test(err instanceof Error ? err.message : String(err));
+  if (status === 429) return true;
+  return /quota|rate limit/i.test(err instanceof Error ? err.message : String(err));
 }
+
+/** A 401/403: no access to the property — or just to this URL (one outside the property answers 403 too). */
+function isAuthError(err: unknown): boolean {
+  const e = err as { code?: unknown; status?: unknown; response?: { status?: unknown } } | null;
+  const status = Number(e?.response?.status ?? e?.status ?? e?.code);
+  if (status === 401 || status === 403) return true;
+  return /permission|forbidden|unauthori[sz]ed/i.test(err instanceof Error ? err.message : String(err));
+}
+/** Permission errors only stop the run when nothing has been inspected and this many URLs in a row
+ *  were refused: a few URLs outside the property must not end a run that would otherwise work. */
+const INSPECT_MAX_LEADING_AUTH_ERRORS = 10;
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 
@@ -77,7 +88,7 @@ export class UrlInspector {
 
       let inspected = 0;
       let failed = 0;
-      let refusals = 0;
+      let refusals = 0, authErrors = 0;
       let lastError = '';
       let stopped: string | undefined;
       for (const url of urls) {
@@ -111,8 +122,13 @@ export class UrlInspector {
           // A spent quota or a missing permission refuses every remaining URL too (each after its
           // own retries): stop, rather than spend an hour failing and then report "completed".
           refusals = isRefusal(err) ? refusals + 1 : 0;
+          authErrors = isAuthError(err) && !isRefusal(err) ? authErrors + 1 : 0;
+          if (inspected === 0 && authErrors >= INSPECT_MAX_LEADING_AUTH_ERRORS) {
+            stopped = `stopped after the first ${authErrors} URLs were all refused with a permission error by the URL Inspection API (${lastError})`;
+            break;
+          }
           if (refusals >= INSPECT_MAX_CONSECUTIVE_REFUSALS) {
-            stopped = `stopped after ${refusals} consecutive quota / permission errors from the URL Inspection API (${lastError})`;
+            stopped = `stopped after ${refusals} consecutive quota errors from the URL Inspection API (${lastError})`;
             break;
           }
         }

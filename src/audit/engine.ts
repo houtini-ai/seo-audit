@@ -170,6 +170,8 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
     }
     const ctx: CheckContext = { db: db.db, gscMaxDate: maxDate, brand: brandToken(siteUrl), siteUrl };
     const runId = randomUUID().slice(0, 8);
+    // A categories list naming every category is the full audit, not a drill-down.
+    const coversEveryCategory = (cats: string[] | undefined): boolean => !!cats?.length && [...new Set(CHECKS.map(c => c.category))].every(c => cats.includes(c));
 
     let checks = CHECKS;
     if (opts.categories?.length) checks = checks.filter(c => opts.categories!.includes(c.category));
@@ -203,7 +205,7 @@ export function runAudit(dataDir: string, siteUrl: string, opts: AuditOptions = 
 
     const insertErrorPage = db.db.prepare(`INSERT OR IGNORE INTO audit_error_pages (run_id, url_key) VALUES (?, ?)`);
     db.db.prepare(`INSERT INTO audit_runs (run_id, scope, gsc_window_end, integrity_ok, started_at, status) VALUES (?,?,?,?,datetime('now'),'running')`)
-      .run(runId, runScope(opts.scope, opts.categories), maxDate, pageCount > 0 ? 1 : 0);
+      .run(runId, runScope(opts.scope, coversEveryCategory(opts.categories) ? undefined : opts.categories), maxDate, pageCount > 0 ? 1 : 0);
     startedRunId = runId;
 
     let total = 0;

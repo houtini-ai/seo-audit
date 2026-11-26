@@ -1,3 +1,4 @@
+import { metaNoindex, headerNoindex } from '../core/robotsDirectives.js';
 import type Database from 'better-sqlite3';
 import { parseJsonLdNodes, nodeType } from './templates.js';
 
@@ -145,8 +146,8 @@ export function diffLatest(db: Database.Database): DriftResult {
     if (n.status_code !== o.status_code) push('status_code', o.status_code, n.status_code, (o.status_code === 200 && n.status_code !== 200) ? 'crit' : 'high');
     if ((n.indexable ?? 0) !== (o.indexable ?? 0)) push('indexable', !!o.indexable, !!n.indexable, n.indexable ? 'info' : 'crit');
     if ((n.canonical_key || '') !== (o.canonical_key || '')) push('canonical', o.canonical_key, n.canonical_key, 'high');
-    if ((n.robots || '') !== (o.robots || '')) push('robots', o.robots, n.robots, /noindex/i.test(n.robots || '') ? 'crit' : 'med');
-    if ((n.x_robots_tag || '') !== (o.x_robots_tag || '')) push('x_robots_tag', o.x_robots_tag, n.x_robots_tag, /noindex/i.test(n.x_robots_tag || '') ? 'crit' : 'med');
+    if ((n.robots || '') !== (o.robots || '')) push('robots', o.robots, n.robots, metaNoindex(n.robots) ? 'crit' : 'med');
+    if ((n.x_robots_tag || '') !== (o.x_robots_tag || '')) push('x_robots_tag', o.x_robots_tag, n.x_robots_tag, headerNoindex(n.x_robots_tag) ? 'crit' : 'med');
     if ((n.title || '') !== (o.title || '')) push('title', o.title, n.title, 'med');
     if ((n.h1 || '') !== (o.h1 || '')) push('h1', o.h1, n.h1, 'low');
     if ((n.meta_description || '') !== (o.meta_description || '')) push('meta_description', o.meta_description, n.meta_description, 'low');

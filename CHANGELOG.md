@@ -10,6 +10,45 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 
 ## [Unreleased]
 
+### Fixed (codebase audit)
+Crawl rules
+- robots.txt and sitemaps on a bot-walled site are retried with the Chrome fallback, so a 403 on robots.txt no longer reads as "no rules" while pages are fetched as Chrome.
+- Disallow rules with non-ASCII characters, spaces or lower-case percent-escapes now match.
+- Noindex detection reads every `robots` and `googlebot` meta tag in any letter case, treats `none` as noindex, accepts directives written without commas, and ignores an `X-Robots-Tag` scoped to another crawler.
+- Off-host image/resource probes and the robots.txt fetch go through the public-address guard, hop by hop.
+- A custom `userAgent` is matched against its own robots.txt group. An invalid `excludePatterns` regex fails the crawl with the pattern named, instead of being dropped.
+- A redirect target is fetched once; `maxPages` is no longer overshot by in-flight requests, and `urls_crawled` counts stored pages only. A bare-hostname property (`example.com`) crawls instead of failing. CDATA-wrapped sitemap `<loc>` values and relative `Sitemap:` lines are read.
+
+Data and storage
+- `sync_gsc` with a `startDate` earlier than the stored history fetches the missing earlier days (through to the first stored day, so history stays unbroken) and no longer answers "already covers" for days it never stored.
+- `data_storage clear-crawl-history` keeps the five newest completed full audits (failed runs and category-only runs no longer push the last good audit out). `delete-property` also removes that property's backup files, and says so, with their size, before you confirm.
+- The dashboard cache now refreshes after `page_lighthouse`, `resolve_entities` and `score_passages`.
+- `pull_backlinks` removes pages DataForSEO no longer returns and keeps a known status for a URL it did not re-check.
+- Cache ages are read as UTC (they were off by the machine's UTC offset). The repair backup uses SQLite's online backup.
+
+Jobs and tools
+- A second crawl can no longer start on a property while another job is also running there.
+- `inspect_urls` stops after repeated quota errors and fails with the reason when nothing was inspected; `refresh_portfolio` fails when every data family failed; a finished job's text lists the phases that were skipped or failed.
+- `refresh_property` carries on to CrUX when the rank-history or inspection phase fails. `link_intersect` survives a Majestic error and says it fell back to DataForSEO domain rank.
+- `serp_features` and `market_sizing` default to the property's saved market instead of the United States.
+- An email-style DataForSEO login containing words like "example" or "your" is no longer rejected as a placeholder.
+- `related_terms` requests one results page instead of three. `track_ranks` is labelled as paid (about $0.21 uncached). The check count (157) is generated for the package manifest.
+
+Audit checks
+- A `run_audit` limited to some categories is a drill-down: it returns its findings but no longer replaces the property's audit on the dashboard, in exports, history or the portfolio.
+- When a check exceeds its 500-finding cap, the highest-traffic pages are the ones kept.
+- `run_audit` only snapshots a completed crawl. `ghost-pages` ignores URLs that redirected or failed to fetch and needs a completed, uncapped crawl.
+- `redirect-chain` and `internal-links-to-redirects` read every recorded redirect, not just the first route into a page; `fix_finding` handles the newly reported chains.
+- `traffic-decay` and `stale-content` are prioritised by the clicks lost. History deltas tell site-level findings apart by query and page.
+- Fifteen checks that read optional data (CrUX, rendering, URL Inspection, backlinks, lab CWV, passages, intent, entities) report "not collected" instead of passing silently.
+- Fewer false results from `broken-canonical-target` (https→http), `article-date-illogical`, `sitemap-non-indexable` (PDFs), `pagination-canonical-to-page-1` (`?p=` post ids) and `striking-distance` (stake).
+
+Dashboard
+- The exported report shows the AI visibility block and hides tabs that need a server. "Click X in Actions" prompts work where there is an Actions panel and become ask-Claude prompts where there is not.
+- The sync progress widget shows cancelled, skipped and failed phases as such and stops polling a job that no longer exists.
+- The chat dashboard and portfolio have a Refresh control, show server errors instead of "No data" or a stuck "Loading…", and News works without a DataForSEO key (free Google News).
+- A failed date-range change puts the range control back. The findings CSV button says how many rows it exports.
+
 ### Changed
 - **Recon checks for poisoned Google SERPs.** `recon_targets` and `recon_todos` remeasure now send DataForSEO's `resolve_poisoned_results`: when Google serves a poisoned page (organic results swapped for unrelated domains), the organic results are restored from Google's Web mode instead of reading as "you're absent, here are your competitors". Costs one extra SERP page per call (~$0.004 → ~$0.006 per recon page). The AI Overview is not repaired, and restored ranks are Web-mode ranks.
 - On a restored (poisoned) page the AI Overview citation is reported as unknown instead of "not cited", and the result, the to-do baseline and the remeasure outcome record that the rank is a Web-mode rank.

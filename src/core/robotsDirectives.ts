@@ -21,7 +21,11 @@ export function googleDirectives(value: string | null | undefined, source: 'meta
     const m = /^([a-z0-9_-]+)\s*:\s*(.*)$/.exec(tok);
     if (m && !VALUED.has(m[1]) && source === 'header') { scope = m[1]; tok = m[2].trim(); }
     if (scope && scope !== 'googlebot') continue;
-    if (tok) out.push(tok);
+    if (!tok) continue;
+    // "noindex nofollow" / "noindex; nofollow" are written without commas often enough to matter;
+    // a valued directive ("max-snippet: 0") stays whole.
+    if (/^[a-z0-9_-]+\s*:/.test(tok)) out.push(tok);
+    else out.push(...tok.split(/[\s;]+/).filter(Boolean));
   }
   return out;
 }

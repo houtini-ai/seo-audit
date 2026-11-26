@@ -193,6 +193,8 @@ app.onhostcontextchanged = (ctx) => {
 let dataLoaded = false;
 /** The Search Console window (days) the non-Summary tabs compare: current N days vs the N before. */
 const WINDOWS = [7, 28, 90, 180];
+/** The window the data on screen was loaded for: a failed window change falls back to it. */
+let loadedWinDays = 28;
 let winDays = ((): number => { const d = Number(new URLSearchParams(location.search).get('days')); return WINDOWS.includes(d) ? d : 28; })();
 let loadedSite = '';
 async function loadDashboard(siteUrl: string): Promise<void> {
@@ -212,6 +214,7 @@ async function loadDashboard(siteUrl: string): Promise<void> {
     if (!data) throw new Error('no data');
     clearTimeout(slow);
     currentData = data;
+    loadedWinDays = winDays;
     render(data);
     if (__embedded) { const rb = document.getElementById('refreshBtn'); if (rb) rb.hidden = false; }
   } catch (e) {
@@ -1519,7 +1522,17 @@ function setupRangeControl(): void {
     ctl.classList.add('busy');
     ctl.setAttribute('aria-busy', 'true');
     dataLoaded = false;
-    void loadDashboard(loadedSite).finally(() => { ctl.classList.remove('busy'); ctl.removeAttribute('aria-busy'); });
+    void loadDashboard(loadedSite).finally(() => {
+      ctl.classList.remove('busy'); ctl.removeAttribute('aria-busy');
+      // The load failed and the old window's data is still on screen: put the control and URL back.
+      if (currentData && loadedWinDays !== winDays) {
+        winDays = loadedWinDays;
+        markWindow();
+        const back = new URL(location.href);
+        if (winDays === 28) back.searchParams.delete('days'); else back.searchParams.set('days', String(winDays));
+        history.replaceState(null, '', back);
+      }
+    });
   });
 }
 

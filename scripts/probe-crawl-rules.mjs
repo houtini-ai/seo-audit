@@ -65,6 +65,7 @@ const pathOf = (u) => { const x = new URL(u); return x.pathname + x.search; };
   check('index,follow / nofollow / a word containing "noindex" is not noindex', !ex('<meta name="robots" content="index, follow">').noindex && !ex('<meta name="robots" content="nofollow">').noindex && !metaNoindex('noindexing-is-not-a-directive'));
   check('X-Robots-Tag: bingbot: noindex does not apply to Google', ex('', 'bingbot: noindex').noindex === false && headerNoindex('bingbot: noindex, nofollow') === false);
   check('X-Robots-Tag: noindex / googlebot: noindex / none do', headerNoindex('noindex') && headerNoindex('googlebot: noindex') && headerNoindex('NONE') && ex('', 'noindex, nofollow').noindex === true);
+  check('directives written without commas still count (noindex nofollow / noindex; nofollow), valued ones stay whole', metaNoindex('noindex nofollow') && headerNoindex('noindex; nofollow') && ex('<meta name="robots" content="noindex nofollow">').noindex === true && googleDirectives('max-snippet: 0, noindex', 'meta').includes('max-snippet: 0'));
   check('a scope ends where the next one starts', headerNoindex('otherbot: nofollow, googlebot: noindex') === true && headerNoindex('googlebot: nofollow, otherbot: noindex') === false);
   check('a valued directive is not a user-agent scope', JSON.stringify(googleDirectives('max-snippet: 0, noindex', 'header')) === '["max-snippet: 0","noindex"]', JSON.stringify(googleDirectives('max-snippet: 0, noindex', 'header')));
 }

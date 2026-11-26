@@ -75,7 +75,7 @@ export async function repairIndexes(dataDir: string, siteUrl: string): Promise<R
   if (before.ok) return { siteUrl, dbFile, backup: null, reindexed: [], before, after: null, note: 'integrity_check is clean; nothing to repair.' };
   if (!before.damagedIndexes.length) {
     return { siteUrl, dbFile, backup: null, reindexed: [], before, after: null,
-      note: 'The damage is in table data, not an index, so REINDEX cannot fix it. Restore from a backup, or delete the property (data_storage prune delete-property) and re-sync.' };
+      note: 'The damage is in table data, not an index, so REINDEX cannot fix it. Restore from a backup (copy it over the database file). Deleting the property (data_storage prune delete-property) and re-syncing also works, but it removes the backups too and Search Console only returns the last 16 months.' };
   }
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
   let backup = `${dbFile}.bak-${stamp}`;

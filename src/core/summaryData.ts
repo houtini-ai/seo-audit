@@ -8,6 +8,7 @@
 // "0 pages changed". The UI renders those states as words.
 import type Database from 'better-sqlite3';
 import { diffLatest, type DriftResult } from '../audit/drift.js';
+import { metaNoindex, headerNoindex } from './robotsDirectives.js';
 import { FINDING_KEY_SQL, NOT_FILTERED_RUN_SQL } from '../audit/history.js';
 import { SMALL_BASE_MIN } from './displayRules.js';
 import { pageRowsFor } from './gscPageTotals.js';
@@ -197,7 +198,7 @@ export interface DriftSummary {
   staleness: DriftResult['staleness'] | null;
 }
 
-const isNoindex = (v: unknown): boolean => /noindex/i.test(String(v ?? ''));
+const isNoindex = (v: unknown, field: string): boolean => (field === 'x_robots_tag' ? headerNoindex : metaNoindex)(v == null ? null : String(v));
 
 export function driftSummary(db: Database.Database): DriftSummary {
   const snapshots = (db.prepare(`SELECT COUNT(DISTINCT crawl_id) n FROM page_snapshots`).get() as { n: number }).n;
@@ -212,7 +213,7 @@ export function driftSummary(db: Database.Database): DriftSummary {
     if (c.kind !== 'modified') continue;
     const st = c.changes.find(f => f.field === 'status_code');
     if (st && Number(st.from ?? 0) < 400 && Number(st.to ?? 0) >= 400) nowErroring++;
-    if (c.changes.some(f => (f.field === 'robots' || f.field === 'x_robots_tag') && isNoindex(f.to) && !isNoindex(f.from))) noindexAdded++;
+    if (c.changes.some(f => (f.field === 'robots' || f.field === 'x_robots_tag') && isNoindex(f.to, f.field) && !isNoindex(f.from, f.field))) noindexAdded++;
     if (c.changes.some(f => f.field === 'canonical')) canonicalChanged++;
     if (c.changes.some(f => f.field === 'title')) titleChanged++;
   }

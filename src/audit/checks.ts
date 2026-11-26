@@ -1338,7 +1338,7 @@ export const CHECKS: CheckDef[] = [
           // A date-only value has no time: compare the two as days, or "2025-06-10" (midnight) reads
           // as earlier than a 09:00 publication on the same day.
           const dayOnly = DAY.test(String(n.datePublished).trim()) || DAY.test(String(n.dateModified).trim());
-          const earlier = dayOnly ? String(n.dateModified).trim().slice(0, 10) < String(n.datePublished).trim().slice(0, 10) : mod < pub;
+          const earlier = dayOnly ? Math.floor(mod / 86400000) < Math.floor(pub / 86400000) : mod < pub;
           if (earlier) { out.push({ urlKey: r.urlKey, evidence: { datePublished: n.datePublished, dateModified: n.dateModified } }); break; }
         }
       }

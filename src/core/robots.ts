@@ -160,6 +160,7 @@ const MAX_HOPS = 5; // RFC 9309 §2.3.1.2: follow at least five consecutive redi
  */
 export async function fetchRobotsTxt(origin: string, userAgent: string, opts: { chromeFallback?: boolean } = {}): Promise<RobotsTxtFetch> {
   const ownHost = new URL(origin).hostname;
+  let tooManyRedirects = false;
   const attempt = async (asChrome: boolean): Promise<Response | null> => {
     let current = new URL('/robots.txt', origin).toString();
     for (let hop = 0; hop <= MAX_HOPS; hop++) {
@@ -175,7 +176,8 @@ export async function fetchRobotsTxt(origin: string, userAgent: string, opts: { 
       current = new URL(loc, current).toString();
       if (!/^https?:$/.test(new URL(current).protocol)) return null;
     }
-    return null; // too many redirects
+    tooManyRedirects = true;
+    return null;
   };
   try {
     let res = await attempt(false);
@@ -185,7 +187,9 @@ export async function fetchRobotsTxt(origin: string, userAgent: string, opts: { 
       res = await attempt(true);
       fetchedAs = 'chrome';
     }
-    if (!res) return { status: 0, body: null };
+    // A redirect loop or an over-long chain reads as "no robots.txt" (RFC 9309 2.3.1.2: unavailable,
+    // so crawling is allowed); a refused hop or a network failure stays unreachable (0: nothing crawled).
+    if (!res) return { status: tooManyRedirects ? 404 : 0, body: null };
     if (!res.ok) { try { await res.body?.cancel(); } catch { /* no body */ } }
     return { status: res.status, body: res.ok ? (await readCappedText(res, MAX_ROBOTS_BYTES)).text : null, ...(fetchedAs === 'chrome' ? { fetchedAs } : {}) };
   } catch {

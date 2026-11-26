@@ -35,7 +35,15 @@ export function placeholderReason(raw: string | undefined | null): 'unset' | 'em
   // An email address (a DataForSEO login is one) is judged on its reserved domain only: the word
   // patterns below match inside real addresses (seo@example-agency.co.uk, bob@your-seo.com) and
   // would switch the whole tier off for a working account.
-  if (EMAIL_RE.test(v)) return RESERVED_EMAIL_RE.test(v) ? 'placeholder' : null;
+  // A template address still counts: your-email@yourdomain.com, changeme@changeme.com.
+  if (EMAIL_RE.test(v)) {
+    const [local, domain] = v.toLowerCase().split('@');
+    const label = domain.split('.')[0];
+    const templ = RESERVED_EMAIL_RE.test(v)
+      || /^(changeme|placeholder|x{3,})$/.test(local)
+      || /^(your[-_]?(domain|company|site|e?mail)|changeme|placeholder)$/.test(label);
+    return templ ? 'placeholder' : null;
+  }
   return PLACEHOLDER_RE.test(v) ? 'placeholder' : null;
 }
 

@@ -35,13 +35,16 @@ export function planIncremental(maxStoredDate: string | null, start: string, end
  * The days BEFORE the stored history that a sync must also fetch. planIncremental only looks at the
  * last stored date, so a later request with an earlier start (first sync 90 days, then "go back 16
  * months") was narrowed to the lag days and the earlier months were never fetched. When the
- * requested start precedes the first stored date, the gap [start, first stored day - 1] (capped at
- * the requested end) is fetched as well. Null when there is nothing stored, or nothing earlier asked.
+ * requested start precedes the first stored date, the whole gap [start, first stored day - 1] is
+ * fetched as well — through to the stored history even when the request ends earlier, because every
+ * later plan reads MIN(date)/MAX(date) as one unbroken range and a hole would read as covered.
+ * Null when there is nothing stored, nothing earlier asked, or the request is empty (end < start,
+ * e.g. a window wholly older than GSC's retention after its start was clamped).
  */
 export function planBackfill(minStoredDate: string | null, start: string, end: string): { startDate: string; endDate: string } | null {
-  if (!minStoredDate || start >= minStoredDate) return null;
+  if (!minStoredDate || start >= minStoredDate || end < start) return null;
   const before = new Date(Date.parse(minStoredDate) - 86400000).toISOString().slice(0, 10);
-  return { startDate: start, endDate: before < end ? before : end };
+  return { startDate: start, endDate: before };
 }
 
 export interface SyncResult {
@@ -410,7 +413,7 @@ export class GscSync {
       }
 
       // Page totals: date × page, no query, so anonymised traffic is counted (#118).
-      let ptTotal = 0;
+      let ptTotal = 0, ptMainRows = 0;
       const stagePtPage = ({ rows }: { rows: GscApiRow[] }): void => {
         stagePt(rows.map((row: GscApiRow) => {
           const [date, page] = row.keys ?? [];
@@ -422,6 +425,7 @@ export class GscSync {
       };
       if (!pt.noop && !signal.aborted) {
         await this.gsc.fetchSearchAnalytics(siteUrl, { ...options, startDate: pt.startDate, endDate: pt.endDate, dimensions: PAGE_TOTAL_DIMENSIONS }, signal, stagePtPage);
+        ptMainRows = ptTotal;
       }
       // The days before the stored page totals, when the request starts earlier (planPageTotals).
       if (pt.before && !signal.aborted) {
@@ -434,13 +438,15 @@ export class GscSync {
       // last_synced_at is not touched, and the staged rows go with the connection.
       if (signal.aborted) return result(0, { discarded: total + ptTotal });
       // Both row sets land in one transaction, or neither does. An empty response never wipes or
-      // replaces stored days.
+      // replaces stored days: the destructive modes need rows from the MAIN range. Rows from the
+      // earlier-days backfill alone are only ever upserted.
+      const mainRows = total - backfillRows;
       db.db.transaction(() => {
         if (total > 0) {
-          const mode = mustWipe ? 'wipe' : replaceFrom ? 'lag' : replaceWindow ? 'window' : 'upsert';
+          const mode = mainRows === 0 ? 'upsert' : mustWipe ? 'wipe' : replaceFrom ? 'lag' : replaceWindow ? 'window' : 'upsert';
           applyStaged(mode, replaceFrom ?? options2.startDate, options2.endDate);
         }
-        if (ptTotal > 0) applyPt(mustWipe && total === 0 ? 'wipe' : pt.replaceFrom ? 'lag' : 'upsert', pt.replaceFrom ?? pt.startDate, pt.endDate);
+        if (ptTotal > 0) applyPt(ptMainRows === 0 ? 'upsert' : mustWipe && total === 0 ? 'wipe' : pt.replaceFrom ? 'lag' : 'upsert', pt.replaceFrom ?? pt.startDate, pt.endDate);
       })();
       // The writer owns the totals: over the synced window, each day's totals in search_analytics
       // become the fuller of the all-country rows and the segment rows aggregated (#65). In the old

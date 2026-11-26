@@ -315,7 +315,7 @@ export function pruneProperty(
         refused: `REFUSED — delete-property is destructive and needs confirm:true. This would permanently delete ${dbFile} (+ -wal/-shm), ${fmtBytes(bytesBefore)}: ` +
           `${summary?.searchAnalytics ?? '?'} search_analytics rows (+${summary?.searchAnalyticsSegments ?? 0} segment rows), ${summary?.pages ?? '?'} pages, ${summary?.links ?? '?'} links, ${summary?.pageSnapshots ?? '?'} snapshots, ${summary?.findings ?? '?'} findings` +
           `${backups.length ? `, and its ${backups.length} backup file(s) (${backups.map(b => b.file).join(', ')}, ${fmtBytes(backupBytes)})` : ''}. ` +
-          `GSC history is re-syncable but slow to rebuild. Re-run with confirm:true to proceed.`,
+          `Search Console history can be re-synced, but only the last 16 months: anything older${backups.length ? ' exists only in this database and those backups' : ' exists only in this database'}. Re-run with confirm:true to proceed.`,
       };
     }
     for (const suffix of ['', '-wal', '-shm']) rmSync(dbFile + suffix, { force: true });
@@ -347,7 +347,15 @@ export function pruneProperty(
     // and "running" rows go too: no job is live here (refused above), so a running row is a dead one.
     const hasStatus = (db.prepare(`PRAGMA table_info(audit_runs)`).all() as { name: string }[]).some(c => c.name === 'status');
     const completed = hasStatus ? `(status = 'completed' OR (status IS NULL AND finished_at IS NOT NULL))` : `finished_at IS NOT NULL`;
-    const keepRuns = (db.prepare(`SELECT run_id FROM audit_runs WHERE ${completed} ORDER BY started_at DESC, rowid DESC LIMIT ${KEEP_RECENT}`).all() as { run_id: string }[]).map(r => r.run_id);
+    // Category-filtered drill-down runs (scope 'categories:…') are not what the readers show, so they
+    // must not fill the keep list and push out the last full audit; they are dropped as old runs.
+    // A run still marked running that started in the last 30 minutes may be live in another process
+    // (run_audit is not a job the guard above can see), so it is kept.
+    const full = `${completed} AND COALESCE(scope, '') NOT LIKE 'categories:%'`;
+    const keepRuns = [
+      ...(db.prepare(`SELECT run_id FROM audit_runs WHERE ${full} ORDER BY started_at DESC, rowid DESC LIMIT ${KEEP_RECENT}`).all() as { run_id: string }[]),
+      ...(hasStatus ? db.prepare(`SELECT run_id FROM audit_runs WHERE status = 'running' AND datetime(started_at) >= datetime('now', '-30 minutes')`).all() as { run_id: string }[] : []),
+    ].map(r => r.run_id);
     const keepCrawls = (db.prepare(`SELECT crawl_id FROM (SELECT crawl_id, MAX(captured_at) t FROM page_snapshots GROUP BY crawl_id) ORDER BY t DESC LIMIT ${KEEP_RECENT}`).all() as { crawl_id: string }[]).map(r => r.crawl_id);
     const ph = (n: number): string => Array.from({ length: n }, () => '?').join(',') || `''`;
     const oldRuns = (db.prepare(`SELECT COUNT(*) n FROM audit_runs WHERE run_id NOT IN (${ph(keepRuns.length)})`).get(...keepRuns) as { n: number }).n;

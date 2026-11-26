@@ -126,7 +126,7 @@ export function getDataFreshness(db: Database.Database, liveJobs?: LiveJobs | nu
 
   // Audit: the latest run.
   if (tableExists(db, 'audit_runs')) {
-    const a = db.prepare(`SELECT scope, started_at, finished_at, finding_count, status, error FROM audit_runs ORDER BY started_at DESC LIMIT 1`).get() as
+    const a = db.prepare(`SELECT scope, started_at, finished_at, finding_count, status, error FROM audit_runs WHERE COALESCE(scope, '') NOT LIKE 'categories:%' ORDER BY started_at DESC LIMIT 1`).get() as
       { scope: string | null; started_at: string | null; finished_at: string | null; finding_count: number | null; status: string | null; error: string | null } | undefined;
     // status is written by the engine (running / completed / failed). Rows from before it existed
     // fall back to finished_at; a run with neither that started over 30 minutes ago died with its
@@ -151,7 +151,7 @@ export function getDataFreshness(db: Database.Database, liveJobs?: LiveJobs | nu
   let auditVsCrawl: DataFreshness['auditVsCrawl'];
   if (tableExists(db, 'audit_runs') && tableExists(db, 'crawl_metadata')) {
     const hasCrawlCol = (db.prepare(`PRAGMA table_info(audit_runs)`).all() as { name: string }[]).some(c => c.name === 'crawl_id');
-    const a = db.prepare(`SELECT ${hasCrawlCol ? 'crawl_id' : 'NULL crawl_id'}, COALESCE(finished_at, started_at) at FROM audit_runs ORDER BY started_at DESC LIMIT 1`).get() as { crawl_id: string | null; at: string | null } | undefined;
+    const a = db.prepare(`SELECT ${hasCrawlCol ? 'crawl_id' : 'NULL crawl_id'}, COALESCE(finished_at, started_at) at FROM audit_runs WHERE COALESCE(scope, '') NOT LIKE 'categories:%' ORDER BY started_at DESC LIMIT 1`).get() as { crawl_id: string | null; at: string | null } | undefined;
     const c = db.prepare(`SELECT crawl_id, finished_at FROM crawl_metadata WHERE status='completed' AND finished_at IS NOT NULL ORDER BY julianday(finished_at) DESC LIMIT 1`).get() as { crawl_id: string; finished_at: string } | undefined;
     if (a?.at && c) {
       const later = (db.prepare(`SELECT julianday(?) > julianday(?) later`).get(c.finished_at, a.at) as { later: number | null }).later;

@@ -59,7 +59,9 @@ try {
       planBackfill(null, '2026-01-01', '2026-02-01') === null && planBackfill('2026-01-01', '2026-01-01', '2026-02-01') === null);
     const pb = planBackfill('2026-03-10', '2026-01-01', '2026-06-01');
     check('planBackfill: the gap ends the day before the first stored day', pb?.startDate === '2026-01-01' && pb?.endDate === '2026-03-09', JSON.stringify(pb));
-    check('planBackfill: capped at the requested end', planBackfill('2026-03-10', '2026-01-01', '2026-02-01')?.endDate === '2026-02-01');
+    // Not capped at the requested end: stopping short would leave a hole that MIN/MAX(date) reads as covered.
+    check('planBackfill: runs through to the stored history even when the request ends earlier', planBackfill('2026-03-10', '2026-01-01', '2026-02-01')?.endDate === '2026-03-09');
+    check('planBackfill: an empty request (end before start) plans nothing', planBackfill('2026-03-10', '2026-02-01', '2026-01-01') === null);
     const ppt = planPageTotals({ min: d(60), max: d(20) }, d(60), d(150), d(18), false);
     check('planPageTotals: plans the days before the stored page totals too', ppt.before?.startDate === d(150) && ppt.before?.endDate === d(61) && ppt.replaceFrom === d(24), JSON.stringify(ppt));
 
@@ -94,10 +96,10 @@ try {
     const older = new GscSync(s4, dir);
     const p4 = older.plannedRange(site, { startDate: d(200), endDate: d(170) });
     check('plannedRange: a window wholly before the stored history is fetched, not "already covered"',
-      !p4.noop && p4.startDate === d(200) && p4.endDate === d(170), JSON.stringify(p4));
+      !p4.noop && p4.startDate === d(200) && p4.endDate === d(151), JSON.stringify(p4));
     await older.run(site, { startDate: d(200), endDate: d(170) }, noop, sig);
     const a4 = days('search_analytics');
-    check('...and stored without touching the later days', a4.lo === d(200) && a4.r === 133 + 31 && s4.calls.every(c => c.startDate === d(200) && c.endDate === d(170)), JSON.stringify({ a4, calls: s4.calls }));
+    check('...and stored through to the first stored day, leaving no gap and the later days untouched', a4.lo === d(200) && a4.r === 133 + 50 && a4.n === a4.r && s4.calls.every(c => c.startDate === d(200) && c.endDate === d(151)), JSON.stringify({ a4, calls: s4.calls }));
   }
 
   // ── 2. clear-crawl-history keeps completed runs ────────────────────────────────────────────
@@ -110,17 +112,19 @@ try {
     const finding = adb.db.prepare(`INSERT INTO findings (run_id, check_id) VALUES (?, 'x')`);
     for (let i = 1; i <= 7; i++) { run.run(`ok${i}`, `2026-10-0${i} 10:00:00`, `2026-10-0${i} 10:01:00`, 'completed'); finding.run(`ok${i}`); }
     for (let i = 1; i <= 5; i++) run.run(`bad${i}`, `2026-11-0${i} 10:00:00`, null, i === 5 ? 'running' : 'failed'); // newer than every completed run
+    // Category-filtered drill-downs, newer still: they must not fill the keep list (the readers skip them).
+    for (let i = 1; i <= 5; i++) adb.db.prepare(`INSERT INTO audit_runs (run_id, started_at, finished_at, status, scope) VALUES (?,?,?,'completed','categories:schema')`).run(`cat${i}`, `2026-11-1${i} 10:00:00`, `2026-11-1${i} 10:01:00`);
     adb.close();
     const preview = pruneProperty(dir, site, 'clear-crawl-history', false, []);
-    check('preview counts what goes and says which runs stay', preview.detail.oldRuns === 7 && preview.detail.unfinishedRuns === 5 && preview.detail.oldFindings === 2
-      && /7 audit runs \(5 of them failed or never finished\)/.test(preview.refused) && /most recent completed audit runs/.test(preview.refused), preview.refused);
+    check('preview counts what goes and says which runs stay', preview.detail.oldRuns === 12 && preview.detail.unfinishedRuns === 5 && preview.detail.oldFindings === 2
+      && /12 audit runs \(5 of them failed or never finished\)/.test(preview.refused) && /most recent completed audit runs/.test(preview.refused), preview.refused);
     check('preview keeps the wording the server parses', /^REFUSED[^.]*needs confirm:true\./.test(preview.refused) && /Re-run with confirm:true to proceed\.$/.test(preview.refused));
     pruneProperty(dir, site, 'clear-crawl-history', true, []);
     const db = new Database(file, { readonly: true });
     const left = db.prepare(`SELECT run_id FROM audit_runs ORDER BY started_at`).all().map(r => r.run_id).join();
     const findings = db.prepare(`SELECT COUNT(*) n FROM findings`).get().n;
     db.close();
-    check('the 5 newest completed runs survive five newer failed attempts', left === 'ok3,ok4,ok5,ok6,ok7' && findings === 5, `${left} / ${findings} findings`);
+    check('the 5 newest completed full runs survive five newer failed attempts and five newer category-only runs', left === 'ok3,ok4,ok5,ok6,ok7' && findings === 5, `${left} / ${findings} findings`);
   }
 
   // ── 3. dashboard cache version ─────────────────────────────────────────────────────────────

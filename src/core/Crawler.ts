@@ -504,6 +504,7 @@ export class Crawler {
     const linkBuf: Record<string, unknown>[] = [];
     const visited = new Set<string>();
     const emitted = new Set<string>(); // final url_keys already extracted+written
+    const storedUrl = new Map<string, string>(); // url_key → the exact URL of a page fetched and stored (not redirect-out sources)
     const imageRefs = new Map<string, number>(); // distinct <img> src → pages using it
     // attempt/notBefore: set on a URL re-queued after a rate limit (#54).
     type FrontierItem = { url: string; depth: number; attempt?: number; notBefore?: number };
@@ -614,7 +615,9 @@ export class Crawler {
       if (!isInternalHost(target.hostname, baseHost) || skipUrl(target.toString(), excludeRes)) return 'offsite';
       if (!robots.isAllowed(target.pathname + target.search)) return 'robots';
       // The target is a page this crawl already stored: the redirect is recorded, the page not downloaded again.
-      return emitted.has(urlKey(target.toString(), keyOpts)) ? 'seen' : null;
+      // Exact URL only: a variant that shares the page's key (http/www/tracking params) is a hop that
+      // itself redirects, and stopping there would record the chain cut short.
+      return storedUrl.get(urlKey(target.toString(), keyOpts)) === target.toString() ? 'seen' : null;
     };
     let running = 0; // requests in flight: counted against maxPages, or the cap overshot by up to concurrency - 1
     const processOne = async (item: FrontierItem): Promise<void> => {
@@ -692,6 +695,7 @@ export class Crawler {
         // Not counted as crawled: nothing new is stored, and counting it spent the maxPages budget twice.
         if (emitted.has(finalKey)) { flush(); return; }
         emitted.add(finalKey);
+        if (!offsite) storedUrl.set(finalKey, r.finalUrl);
         // A followed redirect's target is now fetched: a later link to it must not fetch it again.
         visited.add(finalKey);
         if (r.truncated) errorInsert.run(crawlId, r.finalUrl, 'body-truncated', `HTML body over ${MAX_HTML_BYTES / 1024 / 1024} MB: read and extracted up to that size only`);

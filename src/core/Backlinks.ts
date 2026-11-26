@@ -125,7 +125,8 @@ export class Backlinks {
          VALUES (@url_key,@url,@backlinks,@referring_domains,@dofollow,@status_code,datetime('now'))
          ON CONFLICT(url_key) DO UPDATE SET url=excluded.url, backlinks=excluded.backlinks,
            referring_domains=excluded.referring_domains, dofollow=excluded.dofollow,
-           status_code=COALESCE(excluded.status_code, page_backlinks.status_code), fetched_at=datetime('now')`,
+           status_code=COALESCE(excluded.status_code, page_backlinks.status_code),
+           fetched_at=CASE WHEN excluded.status_code IS NULL AND page_backlinks.status_code IS NOT NULL THEN page_backlinks.fetched_at ELSE datetime('now') END`,
       );
       // COALESCE above: a URL this pull did not check (outside the status budget, or throttled)
       // keeps the status an earlier pull found, instead of going back to "unchecked".
