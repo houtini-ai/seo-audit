@@ -215,7 +215,7 @@ function render(job: Job): void {
     if (state === 'failed' || state === 'interrupted') {
       sum.innerHTML = `<div class="summary-error">Refresh ${state}${job.error ? `: ${escapeHtml(job.error)}` : ''}</div>` + rowsHtml;
     } else if (state === 'cancelled') {
-      sum.innerHTML = `<div class="summary-warn">Refresh cancelled${job.error ? `: ${escapeHtml(job.error)}` : ''}. ${rows.length ? 'What finished before it stopped:' : 'Nothing finished before it stopped.'}</div>` + rowsHtml;
+      sum.innerHTML = `<div class="summary-warn">Refresh cancelled${job.error ? `: ${escapeHtml(job.error)}` : ''}.${rows.length ? ' What finished before it stopped:' : ''}</div>` + rowsHtml;
     } else {
       const partial = problems.length > 0;
       // This widget lives in chat: the next step is a request to Claude, not a dashboard button.
