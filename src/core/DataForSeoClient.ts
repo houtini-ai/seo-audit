@@ -194,9 +194,14 @@ export class DataForSeoClient {
    * `loadAsyncAiOverview` makes DataForSEO wait for a client-side-loaded AI Overview and return its
    * references; without it those SERPs come back with an empty AIO (asynchronous_ai_overview:true)
    * and citation is unknowable. Small surcharge, refunded when no async AIO is found.
-   * `resolvePoisonedResults` asks DataForSEO to detect and restore poisoned SERPs (restored organic
-   * items carry 'from_web' in their `checks` array). Costs one extra SERP page per task and cannot be
-   * combined with udm=web / udm=14, so it is opt-in. */
+   * `resolvePoisonedResults` asks DataForSEO to detect and restore poisoned SERPs: organic results are
+   * replaced from a Web-mode reference page (restored items carry 'from_web' in `checks`); other
+   * features (AI Overview, PAA) are kept from the original page. If page 1 is poisoned, later pages in
+   * the task are also collected in Web mode. If the reference page can't be fetched, the original
+   * results come back unchanged. Billing: a flat extra SERP page on EVERY task, whatever the depth and
+   * whether or not poisoning is found — it doubles a Live/Normal call ($0.002 → $0.004). Requests that
+   * also set udm=web / udm=14 (url or search_param) return an error. Opt-in for those reasons; the
+   * flag is part of the request body, so resolved and unresolved responses are cached separately. */
   async serpOrganic(
     keyword: string, location?: string | number, languageCode = 'en', depth = 20,
     opts: { loadAsyncAiOverview?: boolean; resolvePoisonedResults?: boolean } = {},
