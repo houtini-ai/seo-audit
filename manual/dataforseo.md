@@ -138,6 +138,6 @@ Endpoint: `/v3/backlinks/domain_intersection/live` (+ `competitors_domain` when 
 
 ---
 
-**Also paid, on the SERP endpoint:** `recon_targets` makes one `/v3/serp/google/organic/live/advanced` call per page it analyses (with the small surcharge for loading AI Overviews that arrive asynchronously), and `recon_todos` makes one more per to-do when you ask it to `remeasure` - see [recon.md](recon.md). **Free, from stored data:** `keyword_list` and `content_opportunities` make no DataForSEO call at all. See [tools.md](tools.md) and [composition.md](composition.md).
+**Also paid, on the SERP endpoint:** `recon_targets` makes one `/v3/serp/google/organic/live/advanced` call per page it analyses (with the small surcharge for loading AI Overviews that arrive asynchronously, and one extra page for poisoned-SERP checking), and `recon_todos` makes one more per to-do when you ask it to `remeasure` - see [recon.md](recon.md). **Free, from stored data:** `keyword_list` and `content_opportunities` make no DataForSEO call at all. See [tools.md](tools.md) and [composition.md](composition.md).
 
 **Cost discipline in one line:** Labs/Keywords are cheap and cached — use them for top-down pulls; SERP is per-keyword — a handful of explicit keywords, never a list; Backlinks needs the separate subscription.

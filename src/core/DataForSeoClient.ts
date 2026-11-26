@@ -199,8 +199,9 @@ export class DataForSeoClient {
    * features (AI Overview, PAA) are kept from the original page. If page 1 is poisoned, later pages in
    * the task are also collected in Web mode. If the reference page can't be fetched, the original
    * results come back unchanged. Billing: a flat extra SERP page on EVERY task, whatever the depth and
-   * whether or not poisoning is found — it doubles a Live/Normal call ($0.002 → $0.004). Requests that
-   * also set udm=web / udm=14 (url or search_param) return an error. Opt-in for those reasons; the
+   * whether or not poisoning is found (Live/Normal: +$0.002, so a depth-20 call goes from ~$0.004 to ~$0.006). Requests that
+   * also set udm=web / udm=14 (url or search_param) return an error. Opt-in for those reasons — used by
+   * recon (recon_targets and recon_todos remeasure), where a poisoned page would invent a competitive gap; the
    * flag is part of the request body, so resolved and unresolved responses are cached separately. */
   async serpOrganic(
     keyword: string, location?: string | number, languageCode = 'en', depth = 20,

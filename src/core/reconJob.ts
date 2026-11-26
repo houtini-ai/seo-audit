@@ -83,7 +83,7 @@ export async function runReconJob(
       update({ phase: 'recon', done: i, total: targets.length, current: t.urlKey });
       let own = null;
       try { own = await fetchOwnPage(t.urlKey, hostForm === 'asis' ? 'asis' : hostForm); } catch { /* page unreachable — classify on SERP alone */ }
-      const serpResp = await client.serpOrganic(t.query, location, 'en', SERP_DEPTH, { loadAsyncAiOverview: true });
+      const serpResp = await client.serpOrganic(t.query, location, 'en', SERP_DEPTH, { loadAsyncAiOverview: true, resolvePoisonedResults: true });
       cost += serpResp.cost;
       const serp = parseSerpForRecon(serpResp, ownDomain, SERP_DEPTH);
       // The crawl row overrides the SERP/GSC read: GSC keeps reporting impressions for URLs
