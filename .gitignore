@@ -148,3 +148,7 @@ proposals/
 # Code-review artefacts - kept in PR history, not in the published repo.
 REVIEW-NOTES.md
 review-screenshots/
+!scripts/probe-collection.mjs
+!scripts/probe-crawl-rules.mjs
+!scripts/probe-db-management.mjs
+!scripts/probe-audit-engine.mjs

@@ -130,7 +130,7 @@ function phaseOutcomes(job: Job, state: string): { cls: string; note: string }[]
     }
     if (reached < 0) return { cls: 'pending', note: '' };
     if (i < reached) return { cls: 'done', note: '' };
-    if (i === reached) return state === 'completed' ? { cls: 'done', note: '' } : { cls: 'failed', note: state };
+    if (i === reached) return state === 'completed' ? { cls: 'done', note: '' } : state === 'cancelled' ? { cls: 'skipped', note: 'cancelled during this phase' } : { cls: 'failed', note: state };
     return { cls: 'pending', note: '' };
   });
 }

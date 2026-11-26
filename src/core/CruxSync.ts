@@ -85,7 +85,7 @@ export function cruxOrigin(db: Database.Database, siteUrl: string): string {
   for (const p of pages) { try { const o = new URL(p.url).origin; counts.set(o, (counts.get(o) ?? 0) + 1); } catch { /* skip */ } }
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
   if (top) return top[0];
-  const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : siteUrl;
+  const seed = siteUrl.startsWith('sc-domain:') ? `https://${siteUrl.slice('sc-domain:'.length)}/` : /^https?:\/\//i.test(siteUrl) ? siteUrl : `https://${siteUrl}/`;
   return new URL(seed).origin;
 }
 

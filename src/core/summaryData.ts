@@ -8,6 +8,7 @@
 // "0 pages changed". The UI renders those states as words.
 import type Database from 'better-sqlite3';
 import { diffLatest, type DriftResult } from '../audit/drift.js';
+import { FINDING_KEY_SQL, NOT_FILTERED_RUN_SQL } from '../audit/history.js';
 import { SMALL_BASE_MIN } from './displayRules.js';
 import { pageRowsFor } from './gscPageTotals.js';
 
@@ -167,7 +168,7 @@ export function summaryEvents(db: Database.Database, since: string | null): Summ
     for (const r of db.prepare(`SELECT crawl_id id, finished_at at FROM crawl_metadata WHERE status='completed' AND finished_at IS NOT NULL`).all() as { id: string; at: string }[]) out.push({ kind: 'crawl', at: norm(r.at), id: r.id });
   }
   if (tableExists(db, 'audit_runs')) {
-    for (const r of db.prepare(`SELECT run_id id, finished_at at FROM audit_runs WHERE finished_at IS NOT NULL AND (status = 'completed' OR status IS NULL)`).all() as { id: string; at: string }[]) out.push({ kind: 'audit', at: norm(r.at), id: r.id });
+    for (const r of db.prepare(`SELECT run_id id, finished_at at FROM audit_runs WHERE finished_at IS NOT NULL AND (status = 'completed' OR status IS NULL) AND ${NOT_FILTERED_RUN_SQL}`).all() as { id: string; at: string }[]) out.push({ kind: 'audit', at: norm(r.at), id: r.id });
   }
   return out.filter(e => !since || e.at.slice(0, 10) >= since).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
@@ -280,7 +281,7 @@ export function findingsByCategory(db: Database.Database, runId: string, prevRun
     // Keyed exactly like auditHistory: check_id + url_key ("site" when null), and leaving out the
     // same regrouped checks, so the change column adds up to the verdict and the health chart.
     const skip = regrouped.length ? ` AND check_id NOT IN (${regrouped.map(id => `'${id.replace(/'/g, "''")}'`).join(', ')})` : '';
-    const keys = `SELECT DISTINCT COALESCE(category,'other') category, check_id, COALESCE(url_key,'site') k FROM findings WHERE run_id = ?${skip}`;
+    const keys = `SELECT DISTINCT COALESCE(category,'other') category, check_id, ${FINDING_KEY_SQL} k FROM findings WHERE run_id = ?${skip}`;
     const diff = (a: string, b: string): { category: string; n: number }[] => db.prepare(
       `SELECT category, COUNT(*) n FROM (${keys} EXCEPT ${keys}) GROUP BY category`).all(a, b) as { category: string; n: number }[];
     for (const r of diff(runId, prevRunId)) delta.set(r.category, { opened: r.n, resolved: 0 });

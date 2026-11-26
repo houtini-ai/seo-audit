@@ -1048,9 +1048,18 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
               | { url: string; redirects: string | null } | undefined;
             let hops: { from: string; to: string }[] = [];
             try { hops = page?.redirects ? JSON.parse(page.redirects) : []; } catch { /* malformed chain */ }
+            let finalUrl = page?.url;
+            if (!hops.length) {
+              // A chain whose final page was first reached another way is keyed by its SOURCE url
+              // and lives in redirect_sources, not on a pages row.
+              const src = db.db.prepare('SELECT final_url, chain FROM redirect_sources WHERE url_key = ?').get(affectedKey) as
+                | { final_url: string | null; chain: string | null } | undefined;
+              try { hops = src?.chain ? JSON.parse(src.chain) : []; } catch { /* malformed chain */ }
+              finalUrl = src?.final_url ?? undefined;
+            }
             kind = 'redirect';
-            fix = page && hops.length
-              ? { ...collapseChainRules(page.url, hops, redirectFormat ?? 'htaccess'), chain: hops }
+            fix = finalUrl && hops.length
+              ? { ...collapseChainRules(finalUrl, hops, redirectFormat ?? 'htaccess'), chain: hops }
               : { explanation: 'Redirect chain no longer present in the latest crawl — re-crawl and re-audit.' };
             break;
           }
@@ -2991,7 +3000,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
         `${fmtNum(result.totalCount)} domains link to the target set; pulled ${result.poolFetched}, ${result.kept} passed filters, showing top ${result.prospects.length}. Sorted by ${result.sortedBy} (followed-first).` +
         `${enriched ? ` Majestic-enriched ${result.majesticEnriched}${result.enrichCapped ? ` (top by domain rank; ${result.kept - result.majesticEnriched} more qualified but weren’t enriched — raise enrichLimit or topN)` : ''}.` : ''}\n\n` +
         `| Prospect domain | Links to | ${trustHead} | Link | Spam | Backlinks${topicCol} |\n|---|---|---|---|---|---${topicSep} |`;
-      const footer = `\n\n${enriched ? 'Trust Flow = Majestic (0-100); Topical Trust Flow shows whether that authority is on-topic.' : `Domain trust = DataForSEO domain rank (0-1000). Set MAJESTIC_API_KEY to re-sort by Trust Flow + Topical Trust Flow (the directory-killer signal).`} ` +
+      const footer = `\n\n${enriched ? 'Trust Flow = Majestic (0-100); Topical Trust Flow shows whether that authority is on-topic.' : result.majesticError ? `Domain trust = DataForSEO domain rank (0-1000). Majestic failed (${result.majesticError}), so this list is sorted by DataForSEO domain rank instead of Trust Flow.` : `Domain trust = DataForSEO domain rank (0-1000). Set MAJESTIC_API_KEY to re-sort by Trust Flow + Topical Trust Flow (the directory-killer signal).`} ` +
         `${result.cached ? 'DataForSEO cached.' : `Live cost $${totalCost.toFixed(4)}.`} Persisted to link_prospects.` + browserLink(siteUrl);
       return {
         content: [{ type: 'text', text: capMdRows(header, rows, footer) }],

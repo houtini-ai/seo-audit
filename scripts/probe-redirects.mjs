@@ -153,8 +153,8 @@ try {
     check('redirect-loop: the off-site auth bounce does not fire', !loop.some(f => f.urlKey.includes('customer_authentication')));
 
     const chain = runCheck(db, 'redirect-chain');
-    check('redirect-chain (extended): the resolved internal 2-hop chain recorded on its final page', JSON.stringify(paths(chain)) === JSON.stringify(['/norm2']), JSON.stringify(paths(chain)));
-    check('redirect-chain (extended): keyed by the FINAL page (what fix_finding reads), with the hop list', chain[0]?.evidence.chain.length === 2 && chain[0].evidence.source === 'http://www.example.test/norm2' && chain[0].evidence.hops === 2, JSON.stringify(chain[0]?.evidence));
+    check('redirect-chain (extended): resolved internal 2-hop chains — on the final page, and from redirect_sources when the final page was reached another way first', JSON.stringify(paths(chain).sort()) === JSON.stringify(['/norm2', '/old-chain']), JSON.stringify(paths(chain)));
+    check('redirect-chain (extended): keyed by the FINAL page (what fix_finding reads), with the hop list', (chain.find(f => f.urlKey === K('/norm2')) ?? chain[0])?.evidence.chain.length === 2 && (chain.find(f => f.urlKey === K('/norm2')) ?? chain[0]).evidence.source === 'http://www.example.test/norm2' && (chain.find(f => f.urlKey === K('/norm2')) ?? chain[0]).evidence.hops === 2, JSON.stringify(chain.map(f => f.evidence)));
     check('redirect-chain (extended): loops, hop-cap chains and the off-site login bounce are not chains', !paths(chain).some(p => ['/loopa', '/cap1'].includes(p) || p.includes('customer_authentication')));
 
     const tmpr = runCheck(db, 'temporary-redirect-with-equity');
@@ -175,7 +175,7 @@ try {
     const adb2 = new AuditDatabase(dbPathFor(dir, SITE));
     const stored = adb2.db.prepare(`SELECT check_id, url_key FROM findings WHERE run_id=? AND check_id='redirect-chain'`).all(audit.runId);
     adb2.close();
-    check('run_audit: redirect-chain stores 1 finding (the off-site auth bounce row with 2 hops no longer counts)', stored.length === 1, JSON.stringify(stored));
+    check('run_audit: redirect-chain stores 2 findings (the off-site auth bounce row with 2 hops does not count)', stored.length === 2, JSON.stringify(stored));
   }
 
   // ── 3. Missing data = no finding; registry entries complete ──────────────────────────────────
