@@ -10,6 +10,8 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-27
+
 ### Added
 - **`schema-only-rendered` check** (#79): from the render tier, the JSON-LD types on each side of JavaScript. Fires when JS adds structured data the raw HTML lacks, or removes what the server sent, and names the rich-result types involved (Product, FAQPage, BreadcrumbList...). Needs `render_pages` run since this release (older rows are reported as not collected). 158 checks.
 - **Competitor suggestions for an owned property** (`portfolio` action `suggest`, #79). One DataForSEO Labs `competitors_domain` call in the property's saved location, about $0.015 (observed $0.01452 for 21 rows), cached 20 days. Quotes first; `confirm: true` runs it. Ranked by shared keywords, with DataForSEO's evidence for each: shared keywords, their average position on them, their estimated traffic from those keywords, and their whole-domain keywords and traffic against yours. The property, its www twin and its subdomains are excluded (listed, with the reason); domains already in the portfolio are listed as already watched, not proposed again; how many DataForSEO holds beyond the limit is stated. Nothing is added automatically.
