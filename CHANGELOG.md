@@ -10,6 +10,12 @@ Each release is tagged `vX.Y.Z` on the release commit (tagging lapsed between 0.
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-11-27
+
+### Fixed
+- **A finished job's result is in the status text.** `check_sync_status` on a finished recon, keyword-check, AI-panel or portfolio job printed only its last progress line; the readable summary (recon) or note (spend, answers stored) was only in `structuredContent`, which many clients don't show. Found in the 1.1.0 live test.
+- **Content recon no longer fetches Google's own links as competitors.** AI Overview citations can be Google Shopping product cards (`google.com/search?...ibp=oshop`); recon fetched them as competitor pages. Links to Google itself are now listed under `competitorFetch.googleOwn` and never fetched.
+
 ## [1.1.0] — 2026-11-27
 
 ### Added
