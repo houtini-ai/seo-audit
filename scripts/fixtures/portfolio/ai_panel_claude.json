@@ -1,0 +1,297 @@
+{
+ "note": "Live capture 27 Nov 2026, ai_optimization/claude/llm_responses/live, claude-haiku-5-5 with web_search. The answer is split over many text sections; cited sections carry annotations (title, url; indexes/text always null for Claude). search_results trimmed. Cost $0.012686.",
+ "endpoint": "/v3/ai_optimization/claude/llm_responses/live",
+ "request": [
+  {
+   "user_prompt": "What are the best sim racing cockpits to buy in 2026?",
+   "model_name": "claude-haiku-5-5",
+   "web_search": true,
+   "web_search_country_iso_code": "US",
+   "max_output_tokens": 2048
+  }
+ ],
+ "capturedAt": "2026-11-27T07:50:38.540Z",
+ "cost": 0.012686,
+ "tasks": [
+  {
+   "id": "11270750-1165-0612-0000-e08aa7cf39ea",
+   "status_code": 20000,
+   "status_message": "Ok.",
+   "time": "6.0017 sec.",
+   "cost": 0.012686,
+   "result_count": 1,
+   "path": [
+    "v3",
+    "ai_optimization",
+    "claude",
+    "llm_responses",
+    "live"
+   ],
+   "data": {
+    "api": "ai_optimization",
+    "function": "llm_responses",
+    "se": "claude",
+    "user_prompt": "What are the best sim racing cockpits to buy in 2026?",
+    "model_name": "claude-haiku-5-5",
+    "web_search": true,
+    "web_search_country_iso_code": "US",
+    "max_output_tokens": 2048
+   },
+   "result": [
+    {
+     "model_name": "claude-haiku-5-5",
+     "input_tokens": 15118,
+     "output_tokens": 1148,
+     "reasoning_tokens": 0,
+     "web_search": true,
+     "money_spent": 0.0120858,
+     "datetime": "2026-11-27 07:50:39 +00:00",
+     "items": [
+      {
+       "type": "message",
+       "sections": [
+        {
+         "type": "text",
+         "text": "I'll search for current recommendations on sim racing cockpits.",
+         "annotations": null
+        }
+       ]
+      },
+      {
+       "type": "message",
+       "sections": [
+        {
+         "type": "text",
+         "text": "Based on the search results, here are the sim racing cockpits that come up most often in 2026 guides. Recommendations vary between sites, so I've grouped them by budget. Note that these are secondhand summaries from review sites, not my own testing, and some pages contain inconsistent prices and details.\n\n**Best overall / most recommended**\n- **Sim-Lab GT1 Evo**: Several guides name it the top pick. One says ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "it offers the best balance of rigidity, value, compatibility, and long-term upgrade potential for most sim racers.",
+         "annotations": [
+          {
+           "title": "Top 10 Best Sim Racing Cockpits in 2026",
+           "url": "https://simracingenthusiast.com/best-sim-racing-cockpits/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": " It is an aluminum-profile (8020) frame, and one guide says it ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "supports any DD wheelbase up to 25Nm.",
+         "annotations": [
+          {
+           "title": "Best Sim Racing Cockpit 2026 - Simracinggearguide.com",
+           "url": "https://www.simracinggearguide.com/rigs/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": " Frame prices cited range from about $445 to $600.\n- **Trak Racer TR160 V5**: One guide lists it as its best overall pick, noting it is ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "built on double-walled 160 mm extrusion that handles any consumer torque level",
+         "annotations": [
+          {
+           "title": "The Best Sim Racing Cockpits for Every Budget (2026)",
+           "url": "https://setupgearguide.com/sim-racing/guides/best-cockpits-sim-racing",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": ", at around $730.\n\n**Best premium**\n- **Sim-Lab P1X Pro**: Described as ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "the gold standard for serious sim racers.",
+         "annotations": [
+          {
+           "title": "Best Sim Racing Cockpit 2026 - Simracinggearguide.com",
+           "url": "https://www.simracinggearguide.com/rigs/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": " Frame prices cited are about $850–$900.\n- **Next Level Racing F-GT Elite**: Listed as best premium by another guide for ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "professional-level setups",
+         "annotations": [
+          {
+           "title": "Top 10 Best Sim Racing Cockpits in 2026",
+           "url": "https://simracingenthusiast.com/best-sim-racing-cockpits/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": ".\n\n**Best budget / beginners**\n- **Next Level Racing F-GT Lite**: A foldable cockpit at roughly $280–$300. One guide says it ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "supports DD up to 10Nm",
+         "annotations": [
+          {
+           "title": "Best Sim Racing Cockpit and Rig Guide (2026)",
+           "url": "https://gamerhardware.org/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": ", and it is frequently named the best entry point.\n- **Playseat Trophy**: Repeatedly cited as a good value pick, at around $599 in one guide.\n- **Next Level Racing GT Track**: A fixed all-in-one with seat included, ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "supports up to 15Nm DD.",
+         "annotations": [
+          {
+           "title": "Best Sim Racing Cockpit 2026 - Simracinggearguide.com",
+           "url": "https://www.simracinggearguide.com/rigs/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": "\n\n**Specialty picks**\n- **Best F1-style:** Playseat Formula Intelligence (about $1,200) or Trak Racer TR8 Pro.\n- **Best motion:** Next Level Racing Motion Platform v3 (about $2,999).\n- **Best luxury:** RSeat RS1 (about $1,499+).\n\n**How to choose:** Match the cockpit to your wheel. One guide's rule of thumb is that ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "Wheel Stand ($100-200)",
+         "annotations": [
+          {
+           "title": "Best Sim Racing Cockpit and Rig Guide (2026)",
+           "url": "https://gamerhardware.org/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": " setups are ",
+         "annotations": null
+        },
+        {
+         "type": "text",
+         "text": "wobbly above 10 Nm force",
+         "annotations": [
+          {
+           "title": "Best Sim Racing Cockpit and Rig Guide (2026)",
+           "url": "https://gamerhardware.org/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        },
+        {
+         "type": "text",
+         "text": ", so if you plan to use a strong direct-drive wheel, an aluminum or fixed rig is safer. Also check whether you need a seat, since many frames (like the Sim-Lab models) don't include one, which adds roughly $250–$400.\n\nPrices shift frequently and these guides disagree on specifics, so verify current pricing and specs with the manufacturer before buying.",
+         "annotations": null
+        }
+       ]
+      }
+     ],
+     "fan_out_queries": [
+      "best sim racing cockpits 2026",
+      "best sim racing cockpit review"
+     ],
+     "search_results": [
+      {
+       "title": "Best Sim Racing Cockpits In 2026: Complete Buyers Guide",
+       "url": "https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/",
+       "date": "2026-01-14 07:50:39 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "RaceRoom",
+       "url": "https://en.wikipedia.org/wiki/RaceRoom",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "10 Best Sim Racing Cockpits (October 2026) - Home Racing Guide",
+       "url": "https://www.skywarriorbooks.com/best-sim-racing-cockpits-for-home-racers/",
+       "date": "2026-08-02 07:50:39 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "2026 F1 Sim Racing World Championship",
+       "url": "https://en.wikipedia.org/wiki/2026_F1_Sim_Racing_World_Championship",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "Top 10 Best Sim Racing Cockpits in 2026",
+       "url": "https://simracingenthusiast.com/best-sim-racing-cockpits/",
+       "date": "2026-07-16 07:50:39 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "The Best Sim Racing Cockpits for Every Budget (2026)",
+       "url": "https://setupgearguide.com/sim-racing/guides/best-cockpits-sim-racing",
+       "date": "2026-06-21 07:50:39 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpit 2026 - Simracinggearguide.com",
+       "url": "https://www.simracinggearguide.com/rigs/best-sim-racing-cockpit/",
+       "date": "2026-05-13 07:50:39 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpit and Rig Guide (2026)",
+       "url": "https://gamerhardware.org/best-sim-racing-cockpit/",
+       "date": "2026-07-18 07:50:39 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "12 Best Sim Racing Cockpits (November 2026) Honest Reviews",
+       "url": "https://ovrclock.com/best-sim-racing-cockpits/",
+       "date": "2026-07-15 07:50:39 +00:00",
+       "snippet": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

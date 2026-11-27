@@ -109,7 +109,7 @@ const DAY_MS = 86_400_000;
 /** Results above this are not persisted (the in-process copy is kept); a crawl result is a few KB. */
 const MAX_RESULT_BYTES = 2_000_000;
 
-type JobFn = (update: (p: Record<string, unknown>) => void, signal: AbortSignal) => Promise<unknown>;
+type JobFn = (update: (p: Record<string, unknown>) => void, signal: AbortSignal, jobId: string) => Promise<unknown>;
 
 export interface JobManagerOptions {
   /** SQLite file for the durable registry. Omit for memory-only (tests, one-off scripts). */
@@ -304,7 +304,7 @@ export class JobManager {
   submit(
     type: string,
     args: Record<string, unknown>,
-    run: (args: Record<string, unknown>, update: (p: Record<string, unknown>) => void, signal: AbortSignal) => Promise<unknown>,
+    run: (args: Record<string, unknown>, update: (p: Record<string, unknown>) => void, signal: AbortSignal, jobId: string) => Promise<unknown>,
     opts: { scope?: string } = {},
   ): string {
     const plain = JSON.parse(JSON.stringify(args ?? {})) as Record<string, unknown>;
@@ -322,7 +322,7 @@ export class JobManager {
         throw new Error(`A ${busy.type} job is already running for this property. Wait for it to finish (poll check_sync_status) or cancel it, then start the ${type} again — two collection jobs on one property would corrupt the crawl and Search Console tables.`);
       }
     }
-    return this.start(type, (update, signal) => run(plain, update, signal), opts);
+    return this.start(type, (update, signal, jobId) => run(plain, update, signal, jobId), opts);
   }
 
   /** Insert a `queued` row for a job runner to claim. Null if the registry write failed. */
@@ -395,7 +395,7 @@ export class JobManager {
     // Run through a promise so a synchronous throw in fn becomes a rejection (caught below)
     // rather than an uncaught exception that crashes the MCP process.
     return new Promise<void>(resolve => setImmediate(resolve))
-      .then(() => fn(update, controller.signal))
+      .then(() => fn(update, controller.signal, id))
       .then(result => {
         job.result = result;
         job.state = controller.signal.aborted ? 'cancelled' : 'completed';

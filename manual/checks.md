@@ -1,6 +1,6 @@
 # The check registry
 
-All 157 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
+All 158 checks `run_audit` evaluates, grouped by category. This list is generated from the registry in `src/audit/checks.ts` - if the code and this page ever disagree, the code wins, and `list_checks` always returns the live list.
 
 ## Reading the labels
 
@@ -14,7 +14,7 @@ Every finding is priced the same way: priority = (traffic at stake × expected y
 
 Traffic at stake is the page's own real clicks - the traffic the fix protects or recovers. (The curve-implied "what the impressions could earn at this position" is used only by the CTR and page-2 opportunity checks, `ctr-below-expected`, `title-missing-top-query` and `striking-distance`, and there it's the *recoverable gap*, impressions times expected-CTR minus the clicks already earned. Pricing every check at the curve let a well-ranking page with a SERP-feature CTR gap claim its whole curve traffic for, say, an oversized image - up to 75 times the page's real clicks.) One further adjustment, since 0.16.1: **page-experience findings stake a tenth of the page's clicks, not all of them.** The asset checks (`image-oversized`, `image-legacy-format`, `static-asset-uncached`, `render-blocking-head-resources`, `broken-image`) and the accessibility checks are about one file or element of a page, and they're keyed to the page with the most clicks. Before 0.16.1 that gave an oversized image on your top page the page's full click count, so it outranked a high-severity CTR or traffic-decay finding on the same page. Fixing one image or one cache header doesn't put a page's clicks at stake the way a snippet, indexation or content fix does: page experience is a light ranking signal next to relevance, accessibility isn't one, and the file is one of many the page loads. The right share would be the part of the page's weight or LCP the file accounts for, but the crawl doesn't download bodies or know the LCP element, so 10% is a stated assumption (`PAGE_EXPERIENCE_STAKE_SHARE` in `src/audit/stakes.ts`), shown on each finding as `stakeShare`. It changes the order only: every finding is still reported, and a perf problem on a genuinely big page still ranks high. `high-yield-cwv-fail`, which reads measured field data per page, keeps the full stake.
 
-Zero findings from a check normally means it passed. The exception is a check whose source table is empty because the data was never collected (the asset checks read `page_resources`, `resource_assets` and `image_assets`; `soft-404-handling` and `host-variant-split` read the crawl's site probes; the four JS-render divergence checks read `render_audit`, filled by `render_pages`): `run_audit` lists those under **Not collected** with the step that collects the data, so an empty table never reads as a clean bill of health.
+Zero findings from a check normally means it passed. The exception is a check whose source table is empty because the data was never collected (the asset checks read `page_resources`, `resource_assets` and `image_assets`; `soft-404-handling` and `host-variant-split` read the crawl's site probes; the five JS-render divergence checks read `render_audit`, filled by `render_pages`): `run_audit` lists those under **Not collected** with the step that collects the data, so an empty table never reads as a clean bill of health.
 
 ## Thresholds we chose
 
@@ -136,7 +136,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `content-bloat` | D+N (0.6) | Very long unbroken sections | Split into focused, headed passages - AI grounding has sharp diminishing returns past a certain length, and density beats length. |
 | `ai-slop-signals` | N (0.5) | Copy tripping statistical tells of generic AI text (stock filler, uniform sentence lengths, identical section openers) | Rewrite the flagged sections with specifics only you can supply - and verify by reading first; competent human writing can trip these tells. |
 
-## Structured data (17)
+## Structured data (18)
 
 | Check | Labels | What it catches | The fix, in one line |
 |---|---|---|---|
@@ -157,6 +157,7 @@ Most thresholds here are Google's (Core Web Vitals bands, snippet rules, redirec
 | `product-schema-missing` | D (0.8) | The page declares itself a product (`og:type=product` or a `product:price:amount` tag) but its JSON-LD has no Product. The crawl reads the HTML as served, so markup added by a script after load isn't seen | Add Product JSON-LD with offers to the template; confirm with `render_pages` first if a script may add it. |
 | `review-markup-opportunity` | N (0.6) | A page whose title or H1 calls it a review of one thing, with no Review, rating or `review` property in its JSON-LD. Roundups ("best", "top 10") and comparisons ("vs") are skipped. FAQPage and HowTo are not suggested, since Google retired those rich results for most sites in 2023 | Add a Review with `reviewRating` on the reviewed Product, using only a rating the page states. |
 | `org-entity-incomplete` | D | The homepage's own Organization (any subtype, nested included) has no `logo`, no `sameAs`, or no contact route (`contactPoint`, `telephone` or `email`). A field counts if any of its own Organization nodes carries it, so a Yoast-style `@id` reference plus full declaration is fine. Silent when there's no Organization at all (`homepage-missing-org-schema` covers that) | Add the missing fields to the homepage Organization. |
+| `schema-only-rendered` | D | JSON-LD @types differ between the raw HTML and the rendered DOM: JavaScript adds the markup, or removes what the server sent. Google reads JS-injected structured data only after rendering, and warns that JS-generated Product markup makes Shopping crawls less reliable | Output the JSON-LD in the server HTML; needs `render_pages` |
 
 ## Security (4)
 

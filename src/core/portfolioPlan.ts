@@ -21,7 +21,37 @@ export const DFS_PRICES = {
   llmHistorical: 0.076,   // live: $0.0758 per domain per platform
 
   llmTopList: 0.121,      // $0.10/task + $0.001/row; 20-21 rows requested (live: $0.121)
+  // Competitor suggestions (Labs competitors_domain): $0.012/task + $0.00012/row. Live 27 Nov 2026:
+  // 21 rows $0.01452; cached 9-12 Nov: 15 rows $0.0138, 20 rows $0.0144.
+  labsCompetitorsTask: 0.012,
+  labsCompetitorsRow: 0.00012,
+  // Live Google organic SERP (live/advanced), billed per 10 ORGANIC results: $0.002 for the first 10,
+  // $0.0015 for each further 10 (cached depth-30 calls: $0.005), plus a flat $0.002 for
+  // resolve_poisoned_results. Live 27 Nov 2026: depth 100 + resolve_poisoned_results = $0.0175.
+  serpFirstPage: 0.002,
+  serpExtraPage: 0.0015,
+  serpResolvePoisoned: 0.002,
+  // AI prompt panel, one answer per prompt per engine (scripts/fixtures/portfolio/ai_panel_*.json, live
+  // 27 Nov 2026, a ~3,800-character answer with web search). LLM Responses bill $0.0006/task + the
+  // model's token cost (money_spent), so these move with answer length; AI Mode is a flat SERP task.
+  aiPanelChatgpt: 0.0328,     // gpt-5.4-mini: $0.03284
+  aiPanelClaude: 0.0127,      // claude-haiku-5-5: $0.012686
+  aiPanelGemini: 0.0331,      // gemini-3.6-flash: $0.033093
+  aiPanelPerplexity: 0.0066,  // sonar: $0.00657
+  aiPanelAiMode: 0.004,       // serp/google/ai_mode/live/advanced: $0.004
 } as const;
+
+/** One keyword-position check: a live SERP at this organic depth, with poisoned-result repair. */
+export function serpCheckPrice(depth: number): number {
+  const pages = Math.max(1, Math.ceil(depth / 10));
+  return round(DFS_PRICES.serpFirstPage + (pages - 1) * DFS_PRICES.serpExtraPage + DFS_PRICES.serpResolvePoisoned);
+}
+
+/** competitors_domain for `rows` rows (the target itself is usually row 1, so ask for limit + 1). */
+export function competitorsPrice(rows: number): number {
+  // Five decimals: the per-row fee is $0.00012, so four would misstate the observed $0.01452.
+  return Math.round((DFS_PRICES.labsCompetitorsTask + rows * DFS_PRICES.labsCompetitorsRow) * 100000) / 100000;
+}
 
 export type PortfolioTierSel = 'weekly' | 'monthly' | 'all';
 

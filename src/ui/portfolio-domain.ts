@@ -3,7 +3,7 @@
 // "no"; no AI visibility score.
 import { esc, fmtNum, fmtCompact, fmtDate, fmtMonth } from './lib/h.js';
 import { EChartWrapper, chartPalette, axisDefaults, tooltipDefaults, monoFont } from './lib/echart.js';
-import { askText, askClaudePrompt } from './askClaude.js';
+import { askText, askChip, askClaudePrompt } from './askClaude.js';
 
 type Change = { from: string; to: string; mode: 'pct' | 'abs'; value: number; diff: number };
 type Metric = { value: number | null; source: 'snapshot' | 'history' | null; asOf: string | null; month: Change | null; year: Change | null; spark: (number | null)[]; partial: number | null; empty?: string };
@@ -38,6 +38,15 @@ type DomainOverview = {
   citedSources: { domain: string; mentions: number | null; volume: number | null }[];
   rankCitation: { keyword: string; url: string; aioPresent: boolean | null; aioCitesUs: boolean | null; organicRank: number | null; gscPosition: number | null; impressions: number | null; researchedAt: string | null }[];
   gsc: { clicks28: number; impressions28: number; pagesWithClicks: number; window: { start: string; end: string } } | null;
+  trackedKeywords?: {
+    total: number; unchecked: number;
+    rows: { keyword: string; position: number | null; serpDepth: number | null; previous: number | null; change: number | null; status: string; url: string | null; shownAs: string | null; checkedAt: string | null; unattributed: number | null }[];
+  };
+  aiPanel?: {
+    prompts: number;
+    engines: { engine: string; label: string; model: string | null; month: string | null; months: string[]; promptsRun: number; mentioned: number; cited: number; citeUnknown?: number; phraseOnly: number; noAnswer: number; lastError: { status: string; error: string | null; at: string } | null }[];
+    rows: { prompt: string; locationCode: number; cells: { engine: string; state: string; month: string | null; model: string | null; citedUrls: string[] }[] }[];
+  };
   capturedAt: { weekly: string | null; monthly: string | null };
   notes: string[];
 };
@@ -134,6 +143,8 @@ function ensureStyles(): void {
     .pf-domain .pf-src-d{font-family:var(--font-mono);color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
     .pf-domain .pf-src-n{font-family:var(--font-mono);color:var(--text-secondary);white-space:nowrap;}
     .pf-domain .pf-caption{color:var(--text-muted);font-size:12px;margin-top:8px;}
+    .pf-domain .pf-ai-panel{margin-top:18px;}
+    .pf-domain .pf-muted-inline{color:var(--text-secondary);font-size:12px;word-break:break-word;}
     .pf-domain .pf-tabs{display:flex;gap:6px;border-bottom:1px solid var(--border-subtle);width:100%;flex-wrap:wrap;margin-bottom:12px;}
     .pf-domain .pf-tab{appearance:none;background:transparent;border:0;color:var(--text-secondary);padding:8px 10px;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;}
     .pf-domain .pf-tab.is-active{color:var(--text-primary);border-color:var(--accent);}
@@ -296,7 +307,8 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
           ${showAi ? '<button class="pf-tab" type="button" data-tab="cited">Cited in AI Overviews</button>' : ''}
         </div>
         <div id="pf-top-pages-body"></div>
-      </section>` : ''}
+      </section>
+      <section class="pf-card"><div class="pf-section-label">Tracked keywords (live Google results, ${esc(data.row.countryName)})</div><div id="pf-tracked-body"></div></section>` : ''}
     </div></div>`;
 
   const rootEl = root.querySelector<HTMLElement>('.pf-domain');
@@ -341,6 +353,41 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
     body.innerHTML = !rows.length ? '<div class="pf-muted">No pages cited in AI Overviews yet.</div>' : `<table class="pf-table">
       <thead><tr><th>Page</th><th class="n">Mentions</th><th>Our crawl status</th><th class="n">Clicks, 28 days</th></tr></thead>
       <tbody>${rows.map(r => `<tr><td>${pageCell(r.url)}</td><td class="n">${n(r.mentions)}</td><td>${crawlPillHtml(r.crawl, isOwned)}</td>${clicksCell(r.clicks28)}</tr>`).join('')}</tbody></table>`;
+  };
+
+  // The AI prompt panel (ai_prompt_panel): answers the user paid for, read for this domain. Counts are
+  // out of the prompts that got an answer, never a score; a spaced spelling of the name is shown apart.
+  const promptPanelHtml = (): string => {
+    const ap = data.aiPanel;
+    if (!ap || !ap.prompts) {
+      return `<div class="pf-muted">No AI prompt panel yet. Google AI Mode, Gemini, Perplexity and Claude are measured only through one: a short list of your own prompts, asked of each engine on request (paid, quoted first).</div>${askChip(`Set up an AI prompt panel for ${data.row.domain}: suggest 10 prompts a customer would ask, add them, then quote the cost of a run.`)}`;
+    }
+    const monthLabel = (e: NonNullable<DomainOverview['aiPanel']>['engines'][number]): string =>
+      !e.months.length ? 'not run' : e.months.length > 1 ? `${fmtMonth(e.months[0])} to ${fmtMonth(e.months[e.months.length - 1])}` : fmtMonth(e.months[0]);
+    const engineRows = ap.engines.map(e => `<tr><td>${esc(e.label)}</td><td class="pf-muted-inline">${esc(e.model ?? '-')}</td><td>${esc(monthLabel(e))}</td>
+      <td class="n">${e.promptsRun || '<span class="pf-null">-</span>'}</td><td class="n">${e.promptsRun ? e.mentioned : '<span class="pf-null">-</span>'}</td><td class="n">${e.promptsRun ? `${e.cited}${e.citeUnknown ? ` <span class="pf-null" title="These answers cite a source whose site could not be read, so whether they cite this domain is unknown">(+${e.citeUnknown} unknown)</span>` : ''}` : '<span class="pf-null">-</span>'}</td>
+      <td class="n">${e.promptsRun ? e.phraseOnly : '<span class="pf-null">-</span>'}</td><td>${e.lastError ? `<span class="pf-null" title="${esc(e.lastError.error ?? '')}">last run: ${esc(e.lastError.status)}</span>` : ''}</td></tr>`).join('');
+    const chip = (state: string, urls: string[]): string => {
+      const t = urls.length ? ` title="${esc(urls.join('\n'))}"` : '';
+      switch (state) {
+        case 'cited-and-mentioned': return `<span class="pf-chip pf-up"${t}>cited and mentioned</span>`;
+        case 'cited': return `<span class="pf-chip pf-up"${t}>cited</span>`;
+        case 'mentioned': return '<span class="pf-chip pf-neutral">mentioned</span>';
+        case 'phrase-only': return '<span class="pf-null" title="Only a spaced spelling of the name appeared, which may be the topic rather than the brand">name phrase only</span>';
+        case 'neither': return '<span class="pf-null">neither</span>';
+        case 'no-answer': return '<span class="pf-null">no answer</span>';
+        default: return '<span class="pf-null">not run</span>';
+      }
+    };
+    const labels = ap.engines.map(e => e.label);
+    const promptRows = ap.rows.map(r => `<tr><td>${esc(r.prompt)}</td>${ap.engines.map(e => { const c = r.cells.find(x => x.engine === e.engine); return `<td>${chip(c?.state ?? 'not-run', c?.citedUrls ?? [])}</td>`; }).join('')}</tr>`).join('');
+    return `<table class="pf-table">
+      <thead><tr><th>Engine</th><th>Model that answered</th><th>Run month</th><th class="n">Prompts with an answer</th><th class="n">Mentioned in</th><th class="n">Cited in</th><th class="n">Name phrase only</th><th>Errors</th></tr></thead>
+      <tbody>${engineRows}</tbody></table>
+      <table class="pf-table" style="margin-top:12px">
+      <thead><tr><th>Prompt</th>${labels.map(l => `<th>${esc(l)}</th>`).join('')}</tr></thead>
+      <tbody>${promptRows}</tbody></table>
+      <div class="pf-caption">${ap.prompts} prompt${ap.prompts === 1 ? '' : 's'}, one answer per prompt per engine from the API model named (a sample, not what every user sees). Mentioned: the domain, or its name (one word in any case, or separate words each capitalised like a name), appears in the answer text; citation links do not count. Cited: a source the answer cites is this domain or a subdomain of it. Name phrase only: just a lower-case spaced spelling of the name, which may be the topic rather than the brand, so it is not counted as a mention.</div>`;
   };
 
   const renderAiSection = (platform: 'google' | 'chatgpt'): void => {
@@ -395,7 +442,8 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
       <div class="pf-ai-grid-two">
         <div><div class="pf-section-label">Top cited pages</div>${citedHtml}</div>
         <div><div class="pf-section-label">Sources cited alongside</div>${sourcesHtml}<div class="pf-caption">Sources, not competitors.</div></div>
-      </div>`;
+      </div>
+      <div class="pf-ai-panel"><div class="pf-section-label">AI prompt panel: ChatGPT, Claude, Gemini, Perplexity and Google AI Mode</div>${promptPanelHtml()}</div>`;
 
     const combo = addChart(body.querySelector<HTMLElement>('#pf-ai-combo'), st.ai);
     if (combo) {
@@ -564,8 +612,44 @@ export function renderDomainOverview(root: HTMLElement, o: any, opts: { onBack: 
     } as any);
   };
 
+  // Tracked keywords: positions read from live SERPs the user paid for (track_keywords). Not in the
+  // top N is its own state, never a 0 or a made-up rank.
+  const renderTracked = (): void => {
+    const body = rootEl.querySelector<HTMLElement>('#pf-tracked-body');
+    if (!body) return;
+    const tk = data.trackedKeywords;
+    if (!tk || !tk.total) {
+      body.innerHTML = `<div class="pf-muted">No keywords tracked in ${esc(data.row.countryName)} yet.</div>${askChip(`Track keyword positions for ${data.row.domain} in ${data.row.countryName}: add my list of keywords, then quote the cost of a check.`)}`;
+      return;
+    }
+    const posCell = (r: NonNullable<DomainOverview['trackedKeywords']>['rows'][number]): string =>
+      r.status === 'not-checked' ? '<span class="pf-null">not checked yet</span>'
+        : r.position !== null ? esc(`#${r.position}`) : `<span class="pf-null">not in top ${r.serpDepth}</span>`;
+    const changeCell = (r: NonNullable<DomainOverview['trackedKeywords']>['rows'][number]): string => {
+      switch (r.status) {
+        case 'up': return `<span class="pf-chip pf-up">up ${r.change}</span>`;
+        case 'down': return `<span class="pf-chip pf-down">down ${Math.abs(r.change ?? 0)}</span>`;
+        case 'same': return '<span class="pf-chip pf-neutral">no change</span>';
+        case 'entered': return `<span class="pf-chip pf-up">new in top ${r.serpDepth}</span>`;
+        case 'dropped-out': return `<span class="pf-chip pf-down">was #${r.previous}</span>`;
+        case 'still-absent': return '<span class="pf-null">-</span>';
+        case 'depth-changed': return '<span class="pf-null" title="The check depth changed between the two checks">not comparable</span>';
+        case 'first-check': return '<span class="pf-null">first check</span>';
+        default: return '<span class="pf-null">-</span>';
+      }
+    };
+    const pageCellTk = (r: NonNullable<DomainOverview['trackedKeywords']>['rows'][number]): string =>
+      r.url ? pageCell(r.url) : r.shownAs && r.position !== null ? `<span class="pf-muted-inline" title="Google showed a redirect link; this is the address it displayed">${esc(r.shownAs)}</span>` : '<span class="pf-null">-</span>';
+    const unattr = tk.rows.reduce((m, r) => Math.max(m, r.unattributed ?? 0), 0);
+    body.innerHTML = `<table class="pf-table">
+      <thead><tr><th>Keyword</th><th class="n">Position</th><th>Change vs previous check</th><th>Ranking page</th><th>Checked</th></tr></thead>
+      <tbody>${tk.rows.map(r => `<tr><td>${esc(r.keyword)}</td><td class="n">${posCell(r)}</td><td>${changeCell(r)}</td><td>${pageCellTk(r)}</td><td>${r.checkedAt ? esc(fmtDate(r.checkedAt)) : '-'}</td></tr>`).join('')}</tbody></table>
+      <div class="pf-caption">${tk.total} keyword${tk.total === 1 ? '' : 's'} tracked${tk.unchecked ? `, ${tk.unchecked} not checked yet` : ''}. Organic positions from one live Google results page per keyword, checked on request (paid, quoted first). "Not in top N" means absent from the top N organic results; nothing is known below that.${unattr ? ` Up to ${unattr} result${unattr === 1 ? '' : 's'} per page had no readable address and could not be attributed to a domain.` : ''}</div>`;
+  };
+
   renderCountries();
   renderTopPages('traffic');
+  renderTracked();
   renderAiSection('google');
   trafficTrend();
   positions();

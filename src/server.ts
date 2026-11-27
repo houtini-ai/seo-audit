@@ -95,6 +95,16 @@ import { pdfFromHtml, RendererUnavailableError } from './core/render.js';
 import { quotePortfolioRefresh } from './core/PortfolioRefresh.js';
 import { getPortfolioData, getDomainOverview, readSchedule } from './core/portfolioData.js';
 import { previewSchedule, saveSchedule, disableSchedule, startPortfolioScheduler } from './core/portfolioSchedule.js';
+import { quoteSuggest, runSuggest, ownedRowFor, SUGGEST_DEFAULT_LIMIT, SUGGEST_MAX_LIMIT } from './core/competitorSuggest.js';
+import {
+  addTrackedKeywords, removeTrackedKeywords, readTrackedPositions, quoteKeywordCheck, runKeywordCheck,
+  positionLabel, changeLabel, normalizeKeyword, MAX_TRACKED_KEYWORDS, DEFAULT_TRACK_DEPTH, SYNC_MAX_KEYWORDS,
+} from './core/keywordTracking.js';
+import {
+  addPrompts, removePrompts, readPanel, summarizePanel, engineStatus, cellState, quotePanelRun, runPanel,
+  AI_ENGINES, AI_ENGINE_IDS, CELL_LABEL, MAX_AI_PROMPTS, MAX_AI_PROMPT_LENGTH, SYNC_MAX_CALLS as AI_PANEL_SYNC_MAX_CALLS,
+  type AiEngine, type EngineSummary,
+} from './core/aiPromptPanel.js';
 
 /** suggest_pages / content_opportunities while a crawl is refilling `pages` (BUG-3). */
 const crawlInProgressText = (c: { crawlId: string; startedAt: string }): string =>
@@ -171,7 +181,7 @@ COST DISCIPLINE (behave like a strategist who knows the margins):
 - Paid but CHEAP and 20-day cached (Labs/Keywords, ~$0.01–0.13 a call): keyword_volume, topic_trend, search_intent, ranked_keywords, serp_features, domain_visibility (billed per month returned: about $0.13 for the default 12), top_pages, competitors_domain, page_intersection, topic_gaps. Top-down pulls only — ONE ranked_keywords call answers "what does this domain rank for"; NEVER loop keywords through SERP endpoints to reconstruct what a Labs call returns.
 - Paid per-keyword (SERP): related_terms, youtube_discovery (ranking videos for a topic — pair with a transcript tool), news_discovery (recent coverage / freshness), and AI-Overview CITATION checks. On-demand for a handful of clicked/explicit keywords, never a list.
 - Content research (what to write / what changed): topic_trend (is a topic rising/seasonal; with a categoryCode from the free trend_categories, is a whole market growing and what is breaking out in it) → youtube_discovery + news_discovery (what the winning videos/articles cover) → draft_content.
-- Also paid (quote or cap first): recon_targets (a live SERP per page), market_sizing, page_lighthouse, track_ranks (about $0.21 uncached: the full monthly history, billed per month returned), link_intersect, refresh_portfolio (quotes, then needs confirm).
+- Also paid (quote or cap first): recon_targets (a live SERP per page), market_sizing, page_lighthouse, track_ranks (about $0.21 uncached: the full monthly history, billed per month returned), link_intersect, refresh_portfolio (quotes, then needs confirm), portfolio action "suggest" (competitor suggestions, about $0.015, quotes first), track_keywords action "check" (about $0.0175 per keyword, one live SERP gives every portfolio domain's position; quotes first), ai_prompt_panel action "run" (about $0.09 per prompt across ChatGPT, Claude, Gemini, Perplexity and AI Mode; quotes first).
 - Separate subscription: pull_backlinks and link_intersect (DataForSEO Backlinks — a 40204 error means it isn't activated).
 
 AGENCY MACRO-WORKFLOWS (the engagement arc — each stage feeds the next):
@@ -316,8 +326,10 @@ A technical-SEO audit that fuses **Search Console + a site crawl + DataForSEO**,
 - **get_dashboard** — interactive dashboard (renders in chat). _"Show the dashboard for example.com"_
 - **serve_dashboard / open_dashboard** — the same dashboard in a local browser tab (live data, CSV downloads). _"Open the dashboard for example.com"_
 - **export_report** — self-contained shareable HTML to send a client. _"Export the report for example.com"_
-- **portfolio / get_portfolio** — every domain you look after (owned + watched competitors) in one table: Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions, needs-attention; plus a per-domain overview. Free to read. _"Show my portfolio"_ · _"Watch rival.com as a competitor"_
+- **portfolio / get_portfolio** — every domain you look after (owned + watched competitors) in one table: Search Console clicks (measured) beside DataForSEO estimates, Domain Rank, AI mentions, needs-attention; plus a per-domain overview. Free to read. _"Show my portfolio"_ · _"Watch rival.com as a competitor"_ · [paid] action suggest proposes competitors for an owned site (quotes first), add takes several domains at once. _"Suggest competitors for example.com"_
 - **refresh_portfolio / schedule_portfolio_refresh** — [paid] fetch the portfolio data (quotes first; confirm to run) · schedule it under a monthly budget cap (preview, then confirm). _"Refresh my SEO Console portfolio"_
+- **track_keywords** — a keyword list per country; [paid] a check reads one live Google results page per keyword and reports every portfolio domain's position, with change since the last check (quotes first; list/add/remove free). _"Track these keywords for my sites and competitors"_
+- **ai_prompt_panel** — your own prompts (up to 25) asked of ChatGPT, Claude, Gemini, Perplexity and Google AI Mode; per portfolio domain, how many answers mention it and cite it, by month. [paid] a run quotes first, once a month by default (list/add/remove free). _"Set up an AI prompt panel for my sites and competitors"_
 
 ## 7. Utilities
 - **data_location** — where DBs are stored (set with a path). · **normalize_url** — the join key for a URL. · **composition_cookbook** — the data-surface map and multi-source recipes. · **seo_audit_help** — this page.
@@ -505,7 +517,7 @@ export function createServer(): { server: McpServer; run: () => Promise<void> } 
     'data_storage',
     {
       title: 'Data storage summary + pruning',
-      description: 'Data hygiene. No args: list every per-property database in the data dir — size (incl. WAL), key row counts (search_analytics, pages, links, page_snapshots, findings), last sync and last crawl, and any link_intersect prospect set with its capture date (flagged when it is going stale) — plus the DataForSEO/Majestic caches and reports folder sizes. Optional siteUrl narrows to one property. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (keep the 5 most recent completed audit runs with their findings and the page_snapshots of the 5 most recent crawls; delete older ones and any failed or unfinished runs, then vacuum), "delete-property" (remove the DB files entirely, together with its .bak-* backups). Destructive actions (clear-crawl-history, delete-property) are for the USER to decide: without confirm they refuse, naming what would be deleted; ask the user, and only on their yes pass confirm. The server then asks the user directly where the client supports it, and otherwise needs confirm set to the property name exactly. Refuses to prune while any job is running. Integrity: `check:true` (with siteUrl) starts an async job running SQLite\'s full integrity_check (minutes on a multi-GB DB; check:"quick" is faster but misses missing-index-row damage) and reports damaged indexes. `prune:{siteUrl, action:"repair"}` with confirm:true backs up the DB file, REINDEXes the damaged indexes and re-checks (async job) — the fix for a sync failing with "database disk image is malformed".',
+      description: 'Data hygiene. No args: every property database in the data dir (size incl. WAL, key row counts, last sync and crawl, link_intersect prospect set age) plus cache and reports folder sizes. siteUrl narrows to one. Pruning via `prune:{siteUrl, action}`: "vacuum" (compact the DB, reports bytes reclaimed), "clear-crawl-history" (keep the 5 most recent completed audit runs with their findings and the page_snapshots of the 5 most recent crawls; delete older ones and any failed or unfinished runs, then vacuum), "delete-property" (remove the DB files entirely, together with its .bak-* backups). Destructive actions (clear-crawl-history, delete-property) are for the USER to decide: without confirm they refuse, naming what would be deleted; ask the user, and only on their yes pass confirm. The server then asks the user directly where the client supports it, and otherwise needs confirm set to the property name exactly. Refuses to prune while any job is running. Integrity: `check:true` (with siteUrl) starts an async job running SQLite\'s full integrity_check (minutes on a multi-GB DB; check:"quick" is faster but misses missing-index-row damage) and reports damaged indexes. `prune:{siteUrl, action:"repair"}` with confirm:true backs up the DB file, REINDEXes the damaged indexes and re-checks (async job) — the fix for a sync failing with "database disk image is malformed".',
       inputSchema: {
         siteUrl: z.string().optional(),
         prune: z.object({
@@ -714,7 +726,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'query_data',
     {
       title: 'Query the raw data (aggregate first)',
-      description: 'Direct read-only access to the property database — the composition layer\'s escape hatch. AGGREGATE IN THE DATABASE and return answers, not rows: default mode groups by the columns you name and returns counts, percentages and sum/avg/min/max metrics (classic crawler-style distributions in one call — "status codes by folder", "clicks by page_key"). mode:rows returns raw rows with strict token discipline (curated default columns, 120-char cells, loud paging footer). Filters are exact/range/like/in/match and always parameterised; op:"match" is full-text search via FTS5 (words, "phrases", prefix*, AND/OR/NOT, NEAR(a b, 5)) on search_analytics.query, pages.title / h1 / body_chunks and links.anchor_text — use it instead of like for text on big tables; column names are validated against the live table schema. Grain: per table — search_analytics = date × query × page; pages/links = latest crawl per url_key; url_inspection / sitemap_urls / page_backlinks = one row per URL; findings = check × URL per audit run. Joins: url_key across pages/links/search_analytics.page_key/url_inspection/sitemap_urls/page_backlinks; query → keyword tools; run_id → audit runs.',
+      description: 'Direct read-only access to the property database — the composition layer\'s escape hatch. AGGREGATE IN THE DATABASE: the default mode groups by the columns you name and returns counts, percentages and sum/avg/min/max ("status codes by folder", "clicks by page_key"). mode:rows returns raw rows (curated columns, 120-char cells, paging footer). Filters exact/range/like/in/match, parameterised; op:"match" is FTS5 full-text (words, "phrases", prefix*, AND/OR/NOT, NEAR) on search_analytics.query, pages.title / h1 / body_chunks and links.anchor_text, faster than like on big tables; columns are validated against the live schema. Grain: per table — search_analytics = date × query × page; pages/links = latest crawl per url_key; url_inspection / sitemap_urls / page_backlinks = one row per URL; findings = check × URL per audit run. Joins: url_key across pages/links/search_analytics.page_key/url_inspection/sitemap_urls/page_backlinks; query → keyword tools; run_id → audit runs.',
       inputSchema: {
         siteUrl: z.string(),
         table: z.enum(QUERYABLE_TABLES),
@@ -1268,7 +1280,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'start_crawl',
     {
       title: 'Crawl a site (just the crawl)',
-      description: 'Update just the crawl: fetch the site into the local database (async job — poll with check_crawl_status every 60-120 s; it reports the stage, pages crawled vs maxPages, pages/sec and an ETA). Large sites: maxPages up to 50000 (default 4000); a 10k-page crawl is typically 20-40 minutes and streams pages/links to SQLite as it goes, then runs the post-crawl stages (link graph, snapshot, outbound-link check). Rate limits are adapted to (#54): a 429 (or 503 with Retry-After) halves the effective concurrency and honours Retry-After, 20 clean responses add one back up to maxConcurrency, and rate-limited URLs are re-queued at the end (2 more attempts); a URL still limited is stored with fetch_state "rate_limited" and no status, never as a 429 error. Shopify hosts are detected from their headers and start at concurrency 3 unless maxConcurrency is set. HTTP crawl; respects robots.txt; asset file-types are fetched with GET and the body is aborted unread (no download; HEAD can lie about status); internal-search / cart / wp-json / builder junk URLs are skipped by default. For a full refresh use refresh_property. excludePatterns adds extra URL regexes to skip (e.g. ["/author/","/tag/","/page/"]) to keep big crawls light. Every crawl also records each page\'s subresources (CSS, JS, fonts, images: type, first/third party, head/body, async/defer/preload) into page_resources without downloading them; headResources:true adds a header-only pass over the CSS/JS/font ones. After the crawl, every distinct outbound link target is checked (HEAD, ranged-GET fallback, host-throttled, cached 7 days in external_link_status; bot walls are "unverifiable", not broken) and run_audit reports external-broken / external-redirected — checkExternal:false skips it. Grain: one row per url_key, latest crawl. Joins: url_key → GSC/inspection/backlinks.',
+      description: 'Update just the crawl into the local database (async job: poll check_crawl_status every 60-120 s for stage, pages vs maxPages, pages/sec, ETA). maxPages up to 50000 (default 4000); 10k pages take about 20-40 min, then the post-crawl stages run (link graph, snapshot, outbound-link check). Rate limits adapt: a 429 (or 503 with Retry-After) halves concurrency and honours Retry-After, 20 clean responses add one back; limited URLs are re-queued (2 more tries), and one still limited is stored as fetch_state "rate_limited", never a 429. Shopify starts at concurrency 3 unless maxConcurrency is set. Respects robots.txt; asset types are GET with the body aborted unread; search/cart/wp-json/builder junk is skipped. excludePatterns adds URL regexes to skip (e.g. ["/author/","/tag/"]). Each page\'s subresources (CSS, JS, fonts, images) go to page_resources without download; headResources:true adds a header-only pass. Outbound link targets are then checked (HEAD, ranged-GET fallback, cached 7 days; bot walls are "unverifiable", not broken) for run_audit\'s external-broken / external-redirected; checkExternal:false skips. Full refresh: refresh_property. Grain: one row per url_key, latest crawl.',
       inputSchema: {
         siteUrl: z.string(),
         maxPages: z.number().int().min(1).max(50000).optional(),
@@ -1347,7 +1359,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'triage_404s',
     {
       title: 'Triage 404s into a redirect map',
-      description: 'Turn the crawl\'s 404/410 list into a short redirect map. A GSC-seeded crawl reports every URL Google has seen, so real lost pages (traffic, backlinks) sit among many mangled variants of real slugs from scraped or AI-rewritten links. Each 404 gets its discovery sources (internal link / sitemap / GSC / backlink), clicks, impressions and last-seen date from search_analytics, backlinks and referring domains, and the closest live indexable URL by slug similarity (token overlap or edit distance, 0-1). Buckets: redirect (has clicks, ≥minImpressions impressions or referring domains, AND a match ≥minScore), ignore (no clicks, <10 impressions, no internal links, not in sitemap, no backlinks), review (everything else, e.g. internal links pointing at it: fix those at source). Before bucketing, the redirect and review candidates are probed live (verify:true, default; up to 50 URLs, 30s): a URL that already 3xx\'s to a live page is reported as already-redirected with its live destination (so a suggestion never replaces a correct redirect), and one that answers 200 now as live-now. Slug scores weight rare tokens (a brand or model) over ones shared across the site (buyers-guide, review), and archive targets (/tag/, /category/, /author/, /page/N) are discounted and flagged. Needs a crawl; GSC and pull_backlinks data sharpen it. Free: local data plus requests to your own host.',
+      description: 'Turn the crawl\'s 404/410 list into a short redirect map (real lost pages sit among many mangled slug variants from scraped links). Each 404 gets its discovery sources (internal link / sitemap / GSC / backlink), clicks, impressions and last-seen date from search_analytics, backlinks and referring domains, and the closest live indexable URL by slug similarity (token overlap or edit distance, 0-1). Buckets: redirect (has clicks, ≥minImpressions impressions or referring domains, AND a match ≥minScore), ignore (no clicks, <10 impressions, no internal links, not in sitemap, no backlinks), review (everything else, e.g. internal links pointing at it: fix those at source). Before bucketing, the redirect and review candidates are probed live (verify:true, default; up to 50 URLs, 30s): a URL that already 3xx\'s to a live page is reported as already-redirected with its live destination (so a suggestion never replaces a correct redirect), and one that answers 200 now as live-now. Slug scores weight rare tokens (a brand or model) over site-wide ones; archive targets (/tag/, /category/, /page/N) are discounted. Needs a crawl; GSC and pull_backlinks data sharpen it. Free: local data plus requests to your own host.',
       inputSchema: {
         siteUrl: z.string(),
         minImpressions: z.number().int().min(1).optional().describe('Impressions that count as real value (default 50)'),
@@ -2540,23 +2552,93 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     return `\n\nSee it in chat with get_portfolio${domain ? ` (domain: ${domain})` : ''}, or in the browser via serve_dashboard (All domains is the first entry in the domain dropdown).`;
   };
 
+  /** The portfolio's monthly cap (null = no schedule) and this month's ledger spend. Keyword checks and
+   * competitor suggestions are portfolio spend too: they are recorded in the same ledger and refused
+   * over the cap like refresh_portfolio, unless the user explicitly agrees (overBudget). */
+  const portfolioBudget = (): { cap: number | null; spent: number } => {
+    const st = PortfolioStore.openReadonly(dataDir());
+    if (!st) return { cap: null, spent: 0 };
+    try { const s = readSchedule(st.db); return { cap: s?.enabled ? s.budgetUsd : null, spent: st.spentThisMonth() }; } finally { st.close(); }
+  };
+  const usd = (v: number | null | undefined): string => (v == null ? '-' : `$${v < 0.1 ? v.toFixed(4) : v.toFixed(2)}`);
+
+  const portfolioSuggest = async (domain: string | undefined, limit: number | undefined, confirm: boolean | undefined, overBudget: boolean | undefined) => {
+    if (!domain) throw new Error('suggest needs domain: an owned property (e.g. example.com or sc-domain:example.com).');
+    const st = new PortfolioStore(dataDir());
+    let owned;
+    try { owned = ownedRowFor(st, domain); } finally { st.close(); }
+    const n = limit ?? SUGGEST_DEFAULT_LIMIT;
+    const q = quoteSuggest(n);
+    const where = LOCATION_LABEL[owned.locationCode] ?? `location ${owned.locationCode}`;
+    const { cap, spent } = portfolioBudget();
+    const quoteMd = `Competitor suggestions for ${owned.domain} in ${where} (its saved DataForSEO location): one Labs competitors_domain call for the top ${n} competitors by shared keywords (${q.rows} rows incl. ${owned.domain} itself), about ${usd(q.usd)}. Cached for 20 days: asking again within that is free.`
+      + (cap != null ? `\nBudget: $${cap}/month, ${usd(spent)} spent so far this month.` : '');
+    if (!confirm) return { content: [{ type: 'text' as const, text: `${quoteMd}\n\nNothing has been spent. Ask the user to confirm, then call portfolio action "suggest" again with confirm:true.` }], structuredContent: { quote: { ...q, domain: owned.domain, locationCode: owned.locationCode }, confirmed: false } };
+    const client = requireDfs(dfs);
+    if (cap != null && spent + q.usd > cap && !overBudget) {
+      return { content: [{ type: 'text' as const, text: `${quoteMd}\n\nNot run: ${usd(spent)} spent + ${usd(q.usd)} would exceed the $${cap} monthly portfolio budget. Pass overBudget:true only if the user explicitly agrees.` }], structuredContent: { quote: q, confirmed: false, overBudget: true } };
+    }
+    const r = await runSuggest(dataDir(), client, owned.domain, n);
+    const f = (v: number | null) => (v == null ? '-' : fmtN(v));
+    const rows = r.suggestions.map(s => `| ${s.rank} | ${s.domain} | ${f(s.sharedKeywords)} | ${s.avgPosition ?? '-'} | ${f(s.sharedEtv)} | ${f(s.domainKeywords)} | ${f(s.domainEtv)} | ${s.sizeVsYou == null ? '-' : `${s.sizeVsYou}x`} |`);
+    const capLine = r.totalAvailable != null && r.totalAvailable > r.returned
+      ? `DataForSEO lists ${fmtN(r.totalAvailable)} domains sharing keywords with ${r.target}; this is the top ${r.returned} rows by shared keywords (raise limit, max ${SUGGEST_MAX_LIMIT}, for more).`
+      : `${r.returned} rows returned.`;
+    const text = `Competitor suggestions for ${r.target} in ${r.location}${r.cached ? ' (from cache, $0)' : ` (live, ${usd(r.cost)})`}. Your whole-domain estimate there: ${f(r.you.domainKeywords)} keywords, ${f(r.you.domainEtv)} traffic (ETV).\n\n`
+      + (rows.length
+        ? `| # | Domain | Shared keywords | Their avg position on them | Their traffic from shared keywords (est.) | Their keywords (whole domain) | Their traffic (whole domain, est.) | Size vs you |\n|---|---|---|---|---|---|---|---|\n${rows.join('\n')}`
+        : 'No new competitors: every domain returned is already in the portfolio or excluded.')
+      + (r.alreadyInPortfolio.length ? `\n\nAlready in the portfolio (not proposed again): ${r.alreadyInPortfolio.map(a => `${a.domain} (${a.kind}${a.group ? `, ${a.group}` : ''}, ${f(a.sharedKeywords)} shared keywords)`).join('; ')}.` : '')
+      + (r.excluded.length ? `\nExcluded: ${r.excluded.map(x => `${x.domain} (${x.reason})`).join('; ')}.` : '')
+      + `\n${capLine}`
+      + `\n\nDeterministic: the overlap counts and positions (DataForSEO Labs index). Judgement: traffic figures are DataForSEO estimates, and a large general site (marketplace, retailer, publisher) can share many keywords without being a direct rival; the size column is there to help you decide. Nothing was added. To watch some, ask the user which, then call portfolio action "add" with domains:[...] and location ${owned.locationCode} (group defaults to "competitors").`;
+    return { content: [{ type: 'text' as const, text }], structuredContent: { ...r, confirmed: true } as unknown as Record<string, unknown> };
+  };
+
   server.registerTool(
     'portfolio',
     {
       title: 'Portfolio: list and edit the monitored domains (free)',
-      description: 'The domains table (owned properties + watched domains such as competitors). Free: reads and edits only, never calls DataForSEO. action "list" (default) shows every domain with organic keywords and traffic (DataForSEO estimates), referring domains, Domain Rank (the DataForSEO rank), AI mentions (AI Overviews + ChatGPT) and, for owned sites, Search Console clicks (measured) and audit health, plus "needs attention" reasons. Changes compare the last COMPLETE month with the month before. "add" watches a domain (location = DataForSEO location code or country name, default United States; group e.g. "competitors"). "remove" stops watching. "group" sets a group label. "location" changes a watched domain\'s country, or an owned property\'s saved DataForSEO location. Owned domains come from the local property databases automatically. To fetch data use refresh_portfolio (paid, quotes first).',
+      description: 'The domains table (owned properties + watched domains such as competitors). Free except action "suggest": reads and edits never call DataForSEO. action "list" (default): every domain with organic keywords and traffic (DataForSEO estimates), referring domains, Domain Rank, AI mentions (AI Overviews + ChatGPT), and for owned sites Search Console clicks (measured) and audit health, plus "needs attention" reasons; changes compare the last COMPLETE month with the one before. "add" watches a domain, or several at once with domains:[...] (location = DataForSEO location code or country name, default United States; group e.g. "competitors", the default group when domains is used). "remove" stops watching. "group" sets a group label. "location" changes a watched domain\'s country, or an owned property\'s saved DataForSEO location. "suggest" [Paid: one Labs competitors_domain call, ~$0.015, cached 20d] proposes competitors for an OWNED domain, ranked by shared keywords. Quotes unless confirm:true (ask first). Adds nothing: the user picks, then "add" with domains. Owned domains come from the local property databases. Data: refresh_portfolio (paid, quotes first).',
       inputSchema: {
-        action: z.enum(['list', 'add', 'remove', 'group', 'location']).optional(),
+        action: z.enum(['list', 'add', 'remove', 'group', 'location', 'suggest']).optional(),
         domain: z.string().optional(),
+        domains: z.array(z.string()).min(1).max(50).optional().describe('add: several at once (group default "competitors")'),
         location: z.union([z.number().int(), z.string()]).optional().describe('DataForSEO location code (2840 US, 2826 UK, 2036 AU) or country name'),
         group: z.string().max(60).optional(),
+        limit: z.number().int().min(1).max(SUGGEST_MAX_LIMIT).optional().describe(`suggest: competitors to fetch (default ${SUGGEST_DEFAULT_LIMIT})`),
+        confirm: z.boolean().optional(),
+        overBudget: z.boolean().optional(),
       },
     },
-    async ({ action = 'list', domain, location, group }) => {
+    async ({ action = 'list', domain, domains, location, group, limit, confirm, overBudget }) => {
+      if (action === 'suggest') return portfolioSuggest(domain, limit, confirm, overBudget);
       const store = new PortfolioStore(dataDir());
       try {
         const loc = location != null ? resolveLocation(location) : null;
-        if (action !== 'list' && !domain) throw new Error(`${action} needs a domain.`);
+        if (action === 'add' && domains?.length) {
+          const g = group ?? 'competitors';
+          const list = [...new Set([...(domain ? [domain] : []), ...domains].map(d => normaliseDomain(d)))];
+          const at = loc?.code ?? 2840;
+          const before = new Set(store.list().filter(d => d.kind === 'watched' && d.locationCode === at).map(d => d.domain));
+          const added: string[] = [], regrouped: string[] = [], skipped: { domain: string; reason: string }[] = [];
+          for (const d of list) {
+            try {
+              store.addWatched(d, { locationCode: at, group: g });
+              (before.has(d) ? regrouped : added).push(d);
+            } catch (e) { skipped.push({ domain: d, reason: e instanceof Error ? e.message : String(e) }); }
+          }
+          const where = LOCATION_LABEL[at] ?? at;
+          const text = [
+            added.length ? `Watching ${added.length} new domain${added.length === 1 ? '' : 's'} in ${where}, group "${g}": ${added.join(', ')}.` : `No new domains added.`,
+            regrouped.length ? `Already watched (group set to "${g}"): ${regrouped.join(', ')}.` : '',
+            skipped.length ? `Not added (${skipped.length}):\n${skipped.map(s => `- ${s.domain}: ${s.reason}`).join('\n')}` : '',
+            loc?.note ? `Note: ${loc.note}.` : '',
+            added.length ? 'They have no data until the next refresh: refresh_portfolio quotes the cost first.' : '',
+          ].filter(Boolean).join('\n');
+          return { content: [{ type: 'text' as const, text }], structuredContent: { added, regrouped, skipped, locationCode: at, group: g } };
+        }
+        if (action !== 'list' && !domain) throw new Error(`${action} needs a domain${action === 'add' ? ' (or domains)' : ''}.`);
         if (action === 'add') {
           const d = store.addWatched(domain!, { locationCode: loc?.code, group: group ?? null });
           return { content: [{ type: 'text' as const, text: `Watching ${d.domain} (${LOCATION_LABEL[d.locationCode] ?? d.locationCode})${d.groupLabel ? ` in group "${d.groupLabel}"` : ''}.${loc?.note ? ` Note: ${loc.note}.` : ''} It has no data until the next refresh: refresh_portfolio quotes the cost first.` }], structuredContent: { added: d } };
@@ -2608,7 +2690,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'refresh_portfolio',
     {
       title: 'Refresh the portfolio from DataForSEO (paid: quotes first)',
-      description: '[Paid: DataForSEO Labs + Backlinks + LLM Mentions. Default is a QUOTE only, nothing spent] Fetch the portfolio data. tier "weekly" = current traffic estimates, Domain Rank, referring domains, backlinks, new/lost, search-results mix (bulk calls, cents for the whole portfolio); "monthly" = monthly history (keywords, traffic, positions, referring domains, AI mentions per platform), countries, top pages by traffic and by links, AI-cited pages and co-cited sources (per domain); "all" = both (default). Without confirm:true it returns the call count and estimated cost per family and spends nothing: show the user the quote and ask before confirming. With confirm:true it runs as an async job (poll check_sync_status) and records actual spend; cached responses cost nothing. If a refresh schedule with a monthly budget exists, a manual run counts toward it and is refused over the cap unless overBudget:true (only when the user explicitly agrees). An API family that is not enabled on the DataForSEO account fails on its own and the rest continues.',
+      description: '[Paid: DataForSEO Labs + Backlinks + LLM Mentions. Default is a QUOTE only, nothing spent] Fetch the portfolio data. tier "weekly" = current traffic estimates, Domain Rank, referring domains, backlinks, new/lost, search-results mix (bulk calls, cents for the whole portfolio); "monthly" = monthly history (keywords, traffic, positions, referring domains, AI mentions per platform), countries, top pages by traffic and by links, AI-cited pages and co-cited sources (per domain); "all" = both (default). Without confirm:true it returns the call count and estimated cost per family and spends nothing: show the user the quote and ask before confirming. confirm:true runs it as an async job (poll check_sync_status) and records actual spend; cache hits are free. A scheduled monthly budget counts manual runs too, refused over the cap unless overBudget:true (only when the user explicitly agrees). An API family not enabled on the account fails alone; the rest continues.',
       inputSchema: {
         tier: z.enum(['weekly', 'monthly', 'all']).optional(),
         domains: z.array(z.string()).max(60).optional().describe('Limit to these domains (default: the whole portfolio)'),
@@ -2635,6 +2717,208 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
       }
       const jobId = submitJob(jobs, 'portfolio', { tier, trigger: 'manual', domains, budgetUsd: overBudget ? null : cap }, jobDeps, PORTFOLIO_JOB_SCOPE);
       return jobStarted({ jobId, status: 'running', tier, quotedUsd: q.usd }, `Portfolio ${tier} refresh started (job ${jobId}), quoted about ${q.usd.toFixed(2)}. Poll check_sync_status; then portfolio or get_portfolio shows the table.`);
+    },
+  );
+
+  server.registerTool(
+    'track_keywords',
+    {
+      title: 'Portfolio keyword positions (check is paid)',
+      description: `Keyword positions for every portfolio domain. Keywords per location (max ${MAX_TRACKED_KEYWORDS}); a check reads ONE live Google SERP per keyword (top ${DEFAULT_TRACK_DEPTH} organic) for every portfolio domain there. "list" (free, default): latest position per domain + change vs the previous check; "not in top N" = absent from the top N, never 0. "add"/"remove" (free; location default US). "check" [Paid: ~$0.0175/keyword; checked in the last 24h = free from cache]: quotes unless confirm:true (ask first); runs as a job (poll check_sync_status). Never scheduled. Counts toward the portfolio budget.`,
+      inputSchema: {
+        action: z.enum(['list', 'add', 'remove', 'check']).optional(),
+        keywords: z.array(z.string().min(1).max(200)).min(1).max(MAX_TRACKED_KEYWORDS).optional().describe('add/remove: the keywords; check: only these'),
+        location: z.union([z.number().int(), z.string()]).optional().describe('Location code or country name'),
+        language: z.string().regex(/^[a-z]{2}$/).optional().describe('add: language code (default en)'),
+        domain: z.string().optional().describe('list: one domain'),
+        depth: z.number().int().min(10).max(100).multipleOf(10).optional().describe(`check: organic results per keyword (default ${DEFAULT_TRACK_DEPTH})`),
+        confirm: z.boolean().optional(),
+        overBudget: z.boolean().optional(),
+      },
+    },
+    async ({ action = 'list', keywords, location, language, domain, depth = DEFAULT_TRACK_DEPTH, confirm, overBudget }) => {
+      const loc = location != null ? resolveLocation(location) : null;
+      if (loc?.note) throw new Error(loc.note);
+      const where = (c: number) => LOCATION_LABEL[c] ?? `location ${c}`;
+      if (action === 'add' || action === 'remove') {
+        if (!keywords?.length) throw new Error(`${action} needs keywords.`);
+        const st = new PortfolioStore(dataDir());
+        try {
+          if (action === 'remove') {
+            const r = removeTrackedKeywords(st, keywords, loc?.code);
+            return { content: [{ type: 'text' as const, text: `${r.removed.length ? `Stopped tracking ${r.removed.length}: ${r.removed.join(', ')}. Their check history is kept.` : 'Nothing removed.'}${r.notTracked.length ? `\nNot tracked${loc ? ` in ${where(loc.code)}` : ''}: ${r.notTracked.join(', ')}.` : ''}` }], structuredContent: r };
+          }
+          const at = loc?.code ?? 2840;
+          const r = addTrackedKeywords(st, keywords, at, language ?? 'en');
+          st.syncOwned();
+          const doms = [...new Set(st.list().filter(d => d.locationCode === at).map(d => d.domain))];
+          const text = [
+            r.added.length ? `Tracking ${r.added.length} new keyword${r.added.length === 1 ? '' : 's'} in ${where(at)}: ${r.added.join(', ')}.` : 'No new keywords added.',
+            r.alreadyTracked.length ? `Already tracked: ${r.alreadyTracked.join(', ')}.` : '',
+            r.overCap.length ? `Not added, the list is capped at ${MAX_TRACKED_KEYWORDS} keywords (${r.overCap.length}): ${r.overCap.join(', ')}. Remove some first.` : '',
+            r.invalid.length ? `Invalid: ${r.invalid.map(i => `${i.keyword} (${i.reason})`).join(', ')}.` : '',
+            `${r.total} of ${MAX_TRACKED_KEYWORDS} tracked in total.`,
+            doms.length ? `A check in ${where(at)} reports positions for ${doms.length} portfolio domain${doms.length === 1 ? '' : 's'}: ${doms.join(', ')}.` : `No portfolio domain is in ${where(at)} yet, so a check there would find no domain to report: add one with portfolio action "add" (location ${at}).`,
+            'Nothing is checked yet: track_keywords action "check" quotes the cost first.',
+          ].filter(Boolean).join('\n');
+          return { content: [{ type: 'text' as const, text }], structuredContent: { ...r, locationCode: at, domains: doms } };
+        } finally { st.close(); }
+      }
+      if (action === 'check') {
+        const st = new PortfolioStore(dataDir());
+        let q;
+        try { q = quoteKeywordCheck(st, { keywords, locationCode: loc?.code }, depth); } finally { st.close(); }
+        if (!q.keywords) return { content: [{ type: 'text' as const, text: `Nothing to check: no tracked keywords${keywords?.length ? ' match' : ''}${loc ? ` in ${where(loc.code)}` : ''}. Add some with track_keywords action "add".` }], structuredContent: { quote: q } };
+        const { cap, spent } = portfolioBudget();
+        const locLines = q.byLocation.map(l => `| ${l.label} | ${l.keywords} | ${l.domains.length ? l.domains.join(', ') : '(no portfolio domain here)'} |`).join('\n');
+        const quoteMd = `Quote: ${q.keywords} keyword${q.keywords === 1 ? '' : 's'} x ${usd(q.usdPerKeyword)} = about ${usd(q.usd)} (top ${q.depth} organic results each).\n\n| Location | Keywords | Domains reported |\n|---|---|---|\n${locLines}\n\n${q.note}`
+          + (q.notTracked.length ? `\nNot tracked, so not in the quote: ${q.notTracked.join(', ')}.` : '')
+          + (cap != null ? `\nBudget: $${cap}/month, ${usd(spent)} spent so far this month.` : '');
+        if (!confirm) return { content: [{ type: 'text' as const, text: `${quoteMd}\n\nNothing has been spent. Ask the user to confirm, then call track_keywords action "check" again with confirm:true.` }], structuredContent: { quote: q, confirmed: false } };
+        const client = requireDfs(dfs);
+        if (cap != null && spent + q.usd > cap && !overBudget) {
+          return { content: [{ type: 'text' as const, text: `${quoteMd}\n\nNot started: ${usd(spent)} spent + ${usd(q.usd)} would exceed the $${cap} monthly portfolio budget. Check fewer keywords, or pass overBudget:true only if the user explicitly agrees.` }], structuredContent: { quote: q, confirmed: false, overBudget: true } };
+        }
+        const args = { keywords, locationCode: loc?.code, depth, trigger: 'manual' as const, budgetUsd: overBudget ? null : cap };
+        if (q.keywords <= SYNC_MAX_KEYWORDS) {
+          const r = await runKeywordCheck(dataDir(), client, args, () => {}, new AbortController().signal);
+          const want = new Set((keywords ?? []).map(normalizeKeyword));
+          const rs = new PortfolioStore(dataDir());
+          let view;
+          try { view = readTrackedPositions(rs.db, { locationCode: loc?.code }).filter(k => !want.size || want.has(k.keyword)); } finally { rs.close(); }
+          const lines = view.flatMap(k => k.positions.map(p => `| ${k.keyword} | ${where(k.locationCode)} | ${p.domain} | ${positionLabel(p)} | ${changeLabel(p)} | ${p.url ?? p.shownAs ?? '-'} |`));
+          const text = `${r.note}.${r.failed.length ? `\nFailed: ${r.failed.map(f => `${f.keyword}: ${f.error}`).join('; ')}` : ''}\n\n| Keyword | Location | Domain | Position | Change vs previous check | Ranking page |\n|---|---|---|---|---|---|\n${lines.join('\n')}`
+            + `${view.some(k => k.unattributed) ? `\n\n${Math.max(...view.map(k => k.unattributed ?? 0))} organic result(s) on a page had no readable address and could not be attributed to a domain.` : ''}${view.some(k => k.fromWeb) ? '\nGoogle served a poisoned results page for at least one keyword; DataForSEO restored the organic results from Google\'s Web mode, so those are Web-mode ranks.' : ''}` + portfolioLink();
+          return { content: [{ type: 'text' as const, text }], structuredContent: { result: r } as unknown as Record<string, unknown> };
+        }
+        const live = liveJobTypes(dataDir(), PORTFOLIO_JOB_SCOPE);
+        if (live && (live.has('keywords') || live.queued?.has('keywords'))) throw new Error('A keyword check is already running or queued: poll check_sync_status.');
+        const jobId = submitJob(jobs, 'keywords', args, jobDeps, PORTFOLIO_JOB_SCOPE);
+        return jobStarted({ jobId, status: 'running', keywords: q.keywords, quotedUsd: q.usd }, `Keyword check started (job ${jobId}) for ${q.keywords} keywords, quoted about ${usd(q.usd)}. Poll check_sync_status; then track_keywords action "list" shows the positions.`);
+      }
+      // list (free)
+      const st = PortfolioStore.openReadonly(dataDir());
+      if (!st) return { content: [{ type: 'text' as const, text: 'No keywords tracked: the portfolio has not been set up. Add keywords with track_keywords action "add".' }], structuredContent: { keywords: 0 } };
+      try {
+        let view: ReturnType<typeof readTrackedPositions>;
+        // An older portfolio DB opened read-only has no tracking tables yet: nothing tracked.
+        try { view = readTrackedPositions(st.db, { locationCode: loc?.code, domain: domain ? normaliseDomain(domain) : undefined }); } catch { view = []; }
+        if (!view.length) return { content: [{ type: 'text' as const, text: `No keywords tracked${loc ? ` in ${where(loc.code)}` : ''}. Add some with track_keywords action "add".` }], structuredContent: { keywords: 0 } };
+        const out: string[] = [];
+        for (const lc of [...new Set(view.map(k => k.locationCode))]) {
+          const ks = view.filter(k => k.locationCode === lc);
+          const doms = [...new Set(ks.flatMap(k => k.positions.map(p => p.domain)))].sort();
+          out.push(`### ${where(lc)}: ${ks.length} keyword${ks.length === 1 ? '' : 's'}`);
+          if (!doms.length) { out.push(`Not checked yet: ${ks.map(k => k.keyword).join(', ')}.`); continue; }
+          out.push(`| Keyword | Last checked | ${doms.join(' | ')} |\n|---|---|${doms.map(() => '---|').join('')}\n${ks.map(k => `| ${k.keyword} | ${k.lastCheckedAt ?? 'never'} | ${doms.map(d => { const p = k.positions.find(x => x.domain === d); return p ? `${positionLabel(p)} (${changeLabel(p)})` : 'not checked'; }).join(' | ')} |`).join('\n')}`);
+        }
+        const text = `${out.join('\n\n')}\n\nPositions are organic ranks on one live Google results page per keyword; "not in top N" means absent from the top N organic results. Change compares each domain with the previous check of that keyword. To update: track_keywords action "check" (paid, quotes first).` + portfolioLink();
+        return { content: [{ type: 'text' as const, text }], structuredContent: { keywords: view } as unknown as Record<string, unknown> };
+      } finally { st.close(); }
+    },
+  );
+
+  server.registerTool(
+    'ai_prompt_panel',
+    {
+      title: 'AI prompt panel: ChatGPT, Claude, Gemini, Perplexity, AI Mode (run is paid)',
+      description: `Your prompts (max ${MAX_AI_PROMPTS}, per location) asked of ChatGPT, Claude, Gemini, Perplexity (DataForSEO LLM Responses, web search on) and Google AI Mode; each answer is read for EVERY portfolio domain: mentioned (domain or brand name in the prose) and cited (a source host, exact or subdomain). "list" (free, default): per domain and engine, mentioned/cited out of prompts run, by month; domain adds per-prompt cells. "add"/"remove" (free). "run" [Paid: ~$0.09 per prompt for all 5 engines]: quotes per engine unless confirm:true (ask first); pairs answered this month are skipped unless rerun:true; runs as a job (poll check_sync_status). A failing engine fails alone. Counts toward the portfolio budget.`,
+      inputSchema: {
+        action: z.enum(['list', 'add', 'remove', 'run']).optional(),
+        prompts: z.array(z.string().min(1).max(MAX_AI_PROMPT_LENGTH)).min(1).max(MAX_AI_PROMPTS).optional().describe('add/remove; run: only these'),
+        location: z.union([z.number().int(), z.string()]).optional().describe('Location code or country name (default US)'),
+        language: z.string().regex(/^[a-z]{2}$/).optional().describe('add: language code (default en)'),
+        engines: z.array(z.enum(['chatgpt', 'claude', 'gemini', 'perplexity', 'ai_mode'])).min(1).optional().describe('run: only these'),
+        domain: z.string().optional().describe('list: per-prompt detail'),
+        rerun: z.boolean().optional(),
+        confirm: z.boolean().optional(),
+        overBudget: z.boolean().optional(),
+      },
+    },
+    async ({ action = 'list', prompts, location, language, engines, domain, rerun, confirm, overBudget }) => {
+      const loc = location != null ? resolveLocation(location) : null;
+      if (loc?.note) throw new Error(loc.note);
+      const where = (c: number) => LOCATION_LABEL[c] ?? `location ${c}`;
+      if (action === 'add' || action === 'remove') {
+        if (!prompts?.length) throw new Error(`${action} needs prompts.`);
+        const st = new PortfolioStore(dataDir());
+        try {
+          if (action === 'remove') {
+            const r = removePrompts(st, prompts, loc?.code);
+            return { content: [{ type: 'text' as const, text: `${r.removed.length ? `Removed ${r.removed.length} prompt${r.removed.length === 1 ? '' : 's'}; their answers are kept.` : 'Nothing removed.'}${r.notInPanel.length ? `\nNot in the panel${loc ? ` for ${where(loc.code)}` : ''}: ${r.notInPanel.join(' | ')}` : ''}` }], structuredContent: r };
+          }
+          const at = loc?.code ?? 2840;
+          const r = addPrompts(st, prompts, at, language ?? 'en');
+          const text = [
+            r.added.length ? `Added ${r.added.length} prompt${r.added.length === 1 ? '' : 's'} for ${where(at)}.` : 'No new prompts added.',
+            r.alreadyInPanel.length ? `Already in the panel: ${r.alreadyInPanel.join(' | ')}` : '',
+            r.overCap.length ? `Not added, the panel is capped at ${MAX_AI_PROMPTS} prompts (${r.overCap.length}): ${r.overCap.join(' | ')}. Remove some first.` : '',
+            r.invalid.length ? `Invalid: ${r.invalid.map(i => `${i.prompt} (${i.reason})`).join(' | ')}` : '',
+            `${r.total} of ${MAX_AI_PROMPTS} prompts in the panel. Nothing has been asked yet: ai_prompt_panel action "run" quotes the cost first.`,
+          ].filter(Boolean).join('\n');
+          return { content: [{ type: 'text' as const, text }], structuredContent: { ...r, locationCode: at } };
+        } finally { st.close(); }
+      }
+      if (action === 'run') {
+        const sel = { prompts, locationCode: loc?.code, engines: engines as AiEngine[] | undefined, rerun: !!rerun };
+        const st = new PortfolioStore(dataDir());
+        let q;
+        try { q = quotePanelRun(st, sel); } finally { st.close(); }
+        const n = q.alreadyThisMonth.length;
+        const doneLine = n ? `${n} prompt x engine pair${n === 1 ? ' was' : 's were'} already answered in ${q.month} and ${n === 1 ? 'is' : 'are'} left out; pass rerun:true to ask again (paid).` : '';
+        if (!q.calls) return { content: [{ type: 'text' as const, text: q.prompts ? `Nothing to run for ${q.month}. ${doneLine}` : `No prompts${prompts?.length ? ' match' : ''}${loc ? ` for ${where(loc.code)}` : ''}. Add some with ai_prompt_panel action "add".` }], structuredContent: { quote: q } };
+        const { cap, spent } = portfolioBudget();
+        const engineRows = q.byEngine.map(e => `| ${e.label} | ${e.model ?? '(Google AI Mode has no model choice)'} | ${e.calls} | ${usd(e.usdPerCall)} | ${usd(e.usd)} |`).join('\n');
+        const quoteMd = `Quote for the ${q.month} run: ${q.prompts} prompt${q.prompts === 1 ? '' : 's'}, ${q.calls} answer${q.calls === 1 ? '' : 's'}, about ${usd(q.usd)}. Each answer is read for ${q.domains.length} portfolio domain${q.domains.length === 1 ? '' : 's'}.\n\n| Engine | Model asked | Answers | Price each (observed) | Estimate |\n|---|---|---|---|---|\n${engineRows}\n\n${q.note}`
+          + (doneLine ? `\n${doneLine}` : '') + (q.notInPanel.length ? `\nNot in the panel, so not quoted: ${q.notInPanel.join(' | ')}` : '')
+          + (cap != null ? `\nBudget: $${cap}/month, ${usd(spent)} spent so far this month.` : '');
+        if (!confirm) return { content: [{ type: 'text' as const, text: `${quoteMd}\n\nNothing has been spent. Ask the user to confirm, then call ai_prompt_panel action "run" again with confirm:true.` }], structuredContent: { quote: q, confirmed: false } };
+        const client = requireDfs(dfs);
+        if (cap != null && spent + q.usd > cap && !overBudget) {
+          return { content: [{ type: 'text' as const, text: `${quoteMd}\n\nNot started: ${usd(spent)} spent + ${usd(q.usd)} would exceed the $${cap} monthly portfolio budget. Run fewer prompts or engines, or pass overBudget:true only if the user explicitly agrees.` }], structuredContent: { quote: q, confirmed: false, overBudget: true } };
+        }
+        const live = liveJobTypes(dataDir(), PORTFOLIO_JOB_SCOPE);
+        if (live && (live.has('ai_panel') || live.queued?.has('ai_panel'))) throw new Error('An AI prompt panel run is already running or queued: poll check_sync_status.');
+        const args = { ...sel, trigger: 'manual' as const, budgetUsd: overBudget ? null : cap };
+        if (q.calls <= AI_PANEL_SYNC_MAX_CALLS) {
+          const r = await runPanel(dataDir(), client, args, () => {}, new AbortController().signal);
+          const failed = r.failed.length ? `\nFailed: ${r.failed.map(f => `${AI_ENGINES[f.engine].label} on "${f.prompt}": ${f.error}`).join('; ')}` : '';
+          return { content: [{ type: 'text' as const, text: `${r.note}.${failed}\n\nai_prompt_panel action "list" shows the results.` + portfolioLink() }], structuredContent: { result: r } as unknown as Record<string, unknown> };
+        }
+        const jobId = submitJob(jobs, 'ai_panel', args, jobDeps, PORTFOLIO_JOB_SCOPE);
+        return jobStarted({ jobId, status: 'running', calls: q.calls, quotedUsd: q.usd, month: q.month }, `AI prompt panel run for ${q.month} started (job ${jobId}): ${q.calls} answers, quoted about ${usd(q.usd)}. Poll check_sync_status; then ai_prompt_panel action "list" shows the results.`);
+      }
+      // list (free)
+      const empty = 'No AI prompt panel yet. Add prompts with ai_prompt_panel action "add" (written the way a customer would ask), then "run" quotes the cost.';
+      const st = PortfolioStore.openReadonly(dataDir());
+      if (!st) return { content: [{ type: 'text' as const, text: empty }], structuredContent: { prompts: 0 } };
+      try {
+        let rows: ReturnType<typeof readPanel>;
+        try { rows = readPanel(st.db, { locationCode: loc?.code }); } catch { rows = []; } // an older portfolio DB opened read-only has no panel tables yet
+        if (!rows.length) return { content: [{ type: 'text' as const, text: empty }], structuredContent: { prompts: 0 } };
+        const errors = engineStatus(st);
+        const doms = domain ? [normaliseDomain(domain)] : [...new Set(st.list().map(d => d.domain))].sort();
+        const cell = (e: EngineSummary) => (e.promptsRun ? `${e.mentioned} / ${e.cited} of ${e.promptsRun}${e.citeUnknown ? ` (citation unknown in ${e.citeUnknown}: a cited site could not be read)` : ''}${e.phraseOnly ? ` (+${e.phraseOnly} phrase only)` : ''}` : 'not run');
+        const sums = doms.map(d => ({ d, s: summarizePanel(rows, d, errors) }));
+        const engs = sums[0]?.s ?? summarizePanel(rows, '', errors);
+        const monthOf = (e: EngineSummary) => (e.months.length > 1 ? `${e.months[0]} to ${e.months[e.months.length - 1]}` : e.month ?? 'not run');
+        const out: string[] = [];
+        out.push(`AI prompt panel: ${rows.length} prompt${rows.length === 1 ? '' : 's'}. Each cell is mentioned / cited out of the prompts with an answer.\n\n| Domain | ${engs.map(e => `${e.label} (${monthOf(e)})`).join(' | ')} |\n|---|${engs.map(() => '---|').join('')}\n${sums.map(x => `| ${x.d} | ${x.s.map(cell).join(' | ')} |`).join('\n')}`);
+        out.push(`Models that answered: ${engs.map(e => `${e.label} ${e.model ?? '-'}`).join('; ')}.`);
+        const errs = engs.filter(e => e.lastError);
+        if (errs.length) out.push(`Last run errors: ${errs.map(e => `${e.label}: ${e.lastError!.status}${e.lastError!.error ? ` (${e.lastError!.error.slice(0, 160)})` : ''}`).join('; ')}.`);
+        if (domain) {
+          const d = doms[0];
+          const lines = rows.map(r => `| ${r.prompt.replace(/\|/g, '/')} | ${where(r.locationCode)} | ${r.cells.map(c => {
+            const now = cellState(c.latest, d).state;
+            const before = c.previous ? cellState(c.previous, d).state : null;
+            return `${CELL_LABEL[now]}${before && before !== now ? ` (was ${CELL_LABEL[before]})` : ''}`;
+          }).join(' | ')} |`);
+          out.push(`### ${d}, per prompt\n\n| Prompt | Location | ${AI_ENGINE_IDS.map(e => AI_ENGINES[e].label).join(' | ')} |\n|---|---|${AI_ENGINE_IDS.map(() => '---|').join('')}\n${lines.join('\n')}`);
+        }
+        out.push('Mentioned = the domain, or its name, appears in the answer prose: as one word in any case ("Pimax", "SimRacingCockpit") or as separate words each capitalised like a name ("Next Level Racing"); citation links are not prose. Phrase only = just a lower-case spaced spelling ("sim racing cockpit"), which may be the topic rather than the brand, so it is not counted (a Title Case heading can still read as a name). Cited = a cited source is the domain or a subdomain of it. One answer per prompt per engine, from the API models named: a sample, not what every user sees. To update: ai_prompt_panel action "run" (paid, quotes first).');
+        return { content: [{ type: 'text' as const, text: out.join('\n\n') + portfolioLink(domain ? doms[0] : undefined) }], structuredContent: { prompts: rows.length, domains: sums.map(x => ({ domain: x.d, engines: x.s })) } as unknown as Record<string, unknown> };
+      } finally { st.close(); }
     },
   );
 
@@ -2895,7 +3179,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'pull_backlinks',
     {
       title: 'Pull backlink profile (DataForSEO)',
-      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), cached 20d | Use for: authority + dead-backlink recovery] Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Also collects the profile behind the dashboard\'s Links tab (#47): referring domains (live and lost, with rank, spam score, first seen) into referring_domains, anchor texts classified branded / keyword / url / generic / empty into backlink_anchors, and 12 months of monthly new/lost history into backlink_history — three more cheap Backlinks calls, each reported separately if it fails (profile:false skips them). Paid DataForSEO calls, 20-day cached, on-demand only. Async job — poll check_sync_status. Grain: one row per backlinked URL (page_backlinks), per domain / anchor per pull (snapshot_at), per month (history). Joins: url_key → pages/GSC; domain → Labs tools.',
+      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), cached 20d | Use for: authority + dead-backlink recovery] Fetch the property’s backlink profile (overall summary — total backlinks, referring domains, Domain Rank, broken backlinks/pages, nofollow share — plus per-page backlink/referring-domain counts) into page_backlinks, and resolve each backlinked page’s live HTTP status so run_audit can flag external backlinks pointing to dead (4xx/5xx) pages. Also fills the dashboard\'s Links tab: referring domains (live and lost, rank, spam score, first seen), anchors classified branded / keyword / url / generic / empty, and 12 months of new/lost history - three more cheap calls, each reported if it fails (profile:false skips them). Async job — poll check_sync_status. Grain: one row per backlinked URL (page_backlinks), per domain / anchor per pull (snapshot_at), per month (history). Joins: url_key → pages/GSC; domain → Labs tools.',
       inputSchema: {
         siteUrl: z.string(),
         limit: z.number().int().min(1).max(1000).optional().describe('Backlinked pages to store (default 1000)'),
@@ -2920,7 +3204,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'link_intersect',
     {
       title: 'Link intersect — links your competitors have that you don’t (DataForSEO + Majestic)',
-      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), one cached call ~$0.024 | Use for: prospect list for link outreach] Answers "what links do our competitors have that we don’t?" - and for a SINGLE company, "what links does company X have that we don’t?" (pass competitors:["companyx.com"]). One DataForSEO domain_intersection call over the target set (excluding your domain), aggregated per prospect domain: how many of the targets it links to, its DataForSEO domain trust (rank 0-1000), worst spam score, whether the link is followed, the anchor/link-type mix. Default sort is the link-builder’s view - FOLLOWED links first, then domain trust - with spam filtered out. When MAJESTIC_API_KEY is set, prospects are enriched with Majestic Trust Flow + Topical Trust Flow and RE-SORTED by Trust Flow (the directory-killer: a DataForSEO rank-227 domain is often Trust Flow 0). Results persist to link_prospects. Pass targets explicitly (max 20) or let it derive the top few via competitors_domain. Grain: one row per prospect domain. Join: domain.',
+      description: '[Paid: Backlinks subscription (separate - 40204 = not activated), one cached call ~$0.024 | Use for: prospect list for link outreach] Answers "what links do our competitors have that we don’t?" - and for a SINGLE company, "what links does company X have that we don’t?" (pass competitors:["companyx.com"]). One domain_intersection call over the targets (excluding your domain), aggregated per prospect: targets linked, domain trust (rank 0-1000), worst spam score, followed or not, anchor mix. Sorted FOLLOWED first, then domain trust, spam filtered out. When MAJESTIC_API_KEY is set, prospects are enriched with Majestic Trust Flow + Topical Trust Flow and RE-SORTED by Trust Flow (the directory-killer: a DataForSEO rank-227 domain is often Trust Flow 0). Results persist to link_prospects. Pass targets explicitly (max 20) or let it derive the top few via competitors_domain. Grain: one row per prospect domain. Join: domain.',
       inputSchema: {
         siteUrl: z.string(),
         competitors: z.array(z.string()).max(20).optional().describe('Target domains - your competitors, or a single company (max 20, e.g. ["rival.com"]). Omitted → top few derived via competitors_domain'),
@@ -3100,7 +3384,7 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
     'sync_crux',
     {
       title: 'Sync CrUX field data (Core Web Vitals)',
-      description: `[Free: Google API key in CRUX_API_KEY | Use for: real-user Core Web Vitals, incl. INP, which lab tools cannot measure] Pull Chrome UX Report field data (p75 + good/needs-improvement/poor shares for LCP, INP, CLS, plus FCP, TTFB, RTT, the LCP sub-parts, LCP resource type and navigation types) for the property's origin and its top URLs by GSC clicks (default ${CRUX_DEFAULT_URL_LIMIT}), each on PHONE and DESKTOP, into crux_metrics / crux_fractions / crux_targets. A target's first pull backfills ~25 weekly 28-day windows of history; later pulls add the newest window, at most once per 7 days per target (force:true overrides). A URL without enough Chrome traffic is recorded as insufficient_data (not an error) and re-asked after 28 days. Throttled under the API's 150 queries/min. Async job - poll check_sync_status, then run_audit for crux-field-lcp / -inp / -cls and crux-regression. refresh_property runs this too when the key is set. Grain: target x form factor x metric x 28-day window (windows overlap - a trend, never a sum). Joins: target = url_key -> pages/GSC.`,
+      description: `[Free: Google API key in CRUX_API_KEY | Use for: real-user Core Web Vitals, incl. INP, which lab tools cannot measure] Pull Chrome UX Report field data (p75 + good/needs-improvement/poor shares for LCP, INP, CLS, FCP, TTFB, RTT, LCP sub-parts and more) for the property's origin and its top URLs by GSC clicks (default ${CRUX_DEFAULT_URL_LIMIT}), each on PHONE and DESKTOP, . A target's first pull backfills ~25 weekly 28-day windows of history; later pulls add the newest window, at most once per 7 days per target (force:true overrides). A URL without enough Chrome traffic is recorded as insufficient_data (not an error) and re-asked after 28 days. Throttled under the API's 150 queries/min. Async job - poll check_sync_status, then run_audit for crux-field-lcp / -inp / -cls and crux-regression. refresh_property runs this too when the key is set. Grain: target x form factor x metric x 28-day window (windows overlap - a trend, never a sum). Joins: target = url_key -> pages/GSC.`,
       inputSchema: {
         siteUrl: z.string(),
         urls: z.array(z.string()).max(500).optional().describe('Collect these URLs instead of the top pages by GSC clicks'),

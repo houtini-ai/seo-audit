@@ -84,7 +84,7 @@ One named check, with every affected URL and its full evidence. The drill-down a
 > Run the keyword-cannibalisation check on mysite.com with evidence
 
 ### `list_checks`
-The whole check catalogue - all 157, with categories and labels; `category` narrows it to one. The same list, annotated, is [checks.md](checks.md).
+The whole check catalogue - all 158, with categories and labels; `category` narrows it to one. The same list, annotated, is [checks.md](checks.md).
 > What does the audit check for?
 
 ### `list_templates`
@@ -147,11 +147,14 @@ Is your site ready for AI agents? Live HTTP probes of your origin scoring four c
 Every domain you look after on one page: owned properties automatically, plus watched domains. The full picture is in [portfolio.md](portfolio.md).
 
 ### `portfolio`
-List and edit the portfolio. Free: it never calls DataForSEO.
+List and edit the portfolio. Free, except `action: "suggest"`.
 - The list shows Search Console clicks (measured) beside DataForSEO estimates: organic keywords and traffic, referring domains, Domain Rank (DataForSEO's, not an Authority Score), AI mentions (AI Overviews + ChatGPT) and audit health.
 - Each row carries its "needs attention" reasons. Changes compare the last complete month.
-- `action`: `add` (with `location`, `group`), `remove`, `group` or `location`.
+- `action`: `add` (with `location`, `group`; `domains: [...]` adds several at once, group "competitors" by default), `remove`, `group`, `location` or `suggest`.
+- **`suggest` [paid, about $0.015]:** competitors for an owned property, from one DataForSEO Labs `competitors_domain` call in its saved location (cached 20 days). Quotes first; `confirm: true` to run. Ranked by shared keywords, with the evidence: shared keywords, their average position on them, their estimated traffic from those keywords, and their whole-domain size against yours. The property itself, its www twin and its subdomains are excluded; domains already in the portfolio are listed as already watched. `limit` (default 20, max 50); the reply says how many DataForSEO holds beyond that. Nothing is added: you pick, then `add` with `domains`.
 > Add rival.com to my portfolio as a competitor in the UK
+
+> Suggest competitors for mysite.com, then add the three closest
 
 ### `refresh_portfolio` [paid]
 Fetch the portfolio data.
@@ -166,6 +169,24 @@ Weekly and monthly refreshes under a monthly budget cap, set up in two steps: a 
 - A run whose cost grew more than 25% since you agreed is skipped until you re-confirm.
 - `enabled: false` turns scheduling off.
 > Schedule a weekly portfolio refresh with a $10 a month budget
+
+### `track_keywords` [paid check]
+Keyword positions across the portfolio. Keep a list of keywords per country (up to 200 in total); a check reads one live Google results page per keyword and gives the position of every portfolio domain in that country at once.
+- **`action`:** `list` (free, default: latest position per keyword and domain, and the change since the previous check), `add` / `remove` (free; `keywords`, `location`), `check` (paid).
+- **`check` quotes first:** keywords x about $0.0175 (top 100 organic results, with DataForSEO's poisoned-page repair). `confirm: true` runs it as a background job (poll `check_sync_status`). A keyword checked in the last 24 hours is read from the cache for free. `depth` (10 to 100) trades cost for how far down it looks.
+- **Honest positions:** a domain not found is "not in top 100", never 0, and nothing is known below that. Results Google showed without a readable address are counted and reported.
+- Never scheduled. Spend goes in the portfolio ledger and respects the portfolio budget. Positions show on each domain's overview.
+> Track "sim racing cockpit" and "racing seat" for my portfolio in the US, then quote a check
+
+### `ai_prompt_panel` [paid run]
+The AI platforms the mentions data doesn't cover. You write the prompts (up to 25, per country, 500 characters each); a run asks each one of ChatGPT, Claude, Gemini and Perplexity (DataForSEO LLM Responses, web search on) and Google AI Mode (DataForSEO SERP API), once, and reads every answer for every portfolio domain.
+- **`action`:** `list` (free, default: per domain and engine, prompts that mention / cite it out of the prompts with an answer, and the run month; with `domain`, one row per prompt), `add` / `remove` (free; `prompts`, `location`), `run` (paid).
+- **`run` quotes first**, broken down by engine: prompts x engines at the observed prices (ChatGPT about $0.033, Gemini $0.033, Claude $0.013, Perplexity $0.007, AI Mode $0.004; about $0.09 a prompt for all five). The LLM engines bill a small task fee plus the model's own token cost, so a long answer costs more; the run records what it really spent. `confirm: true` runs it as a background job (poll `check_sync_status`). `engines` and `prompts` narrow it.
+- **Monthly:** each run belongs to a calendar month (UTC). A prompt and engine already answered this month is left out of the quote and named; `rerun: true` asks again.
+- **Mentioned:** the domain (or a subdomain) appears in the answer text, or its name does: as one word in any case ("Pimax", "SimRacingCockpit") or as separate words each capitalised like a name ("Next Level Racing"). Citation links are not counted as text. A lower-case spaced spelling ("sim racing cockpit") is shown as "name phrase only" and not counted, because it may just be the topic. **Cited:** a source the answer cites is the domain or a subdomain of it (never a substring: x.com doesn't match pimax.com).
+- **Honest limits:** one answer per prompt per engine, from the API model named in the output (ChatGPT `gpt-5.4-mini`, Claude `claude-haiku-5-5`, Gemini `gemini-3.6-flash`, Perplexity `sonar`), so it's a sample, not what every user sees, and not the consumer apps. Gemini takes no location; ChatGPT, Claude and Perplexity take the country for web search; AI Mode uses the full Google location. The answer text is kept, so a domain you add later is matched against past answers.
+- An engine that fails (for example not enabled on your account) fails on its own with the reason, and the others carry on. Never scheduled. Spend goes in the portfolio ledger and respects the portfolio budget. Results show in each domain's overview, in the AI search section.
+> Set up an AI prompt panel for my portfolio with these 10 prompts, then quote a run
 
 ### `get_portfolio`
 The portfolio dashboard in chat. Give it a `domain` to open that domain's overview. Free: stored data only.

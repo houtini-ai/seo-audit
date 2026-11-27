@@ -1,0 +1,191 @@
+{
+ "note": "Live capture 27 Nov 2026, serp/google/ai_mode/live/advanced, location 2840, en. The answer is items[type=ai_overview].markdown; citations are ai_overview.references plus per-element references (union both); inline [[n]](url) chips repeat them; shopping elements link to google.com/search product pages (not citations). Reference domain/url are the real host (no google.com/goto wrapper here). images, rectangles, xpath and shopping item details dropped. Cost $0.004.",
+ "endpoint": "/v3/serp/google/ai_mode/live/advanced",
+ "request": [
+  {
+   "keyword": "What are the best sim racing cockpits to buy in 2026?",
+   "location_code": 2840,
+   "language_code": "en"
+  }
+ ],
+ "capturedAt": "2026-11-27T07:50:11.857Z",
+ "cost": 0.004,
+ "tasks": [
+  {
+   "id": "11270750-1165-0139-0000-dc68dd2ada1e",
+   "status_code": 20000,
+   "status_message": "Ok.",
+   "time": "9.7788 sec.",
+   "cost": 0.004,
+   "result_count": 1,
+   "path": [
+    "v3",
+    "serp",
+    "google",
+    "ai_mode",
+    "live",
+    "advanced"
+   ],
+   "data": {
+    "api": "serp",
+    "function": "live",
+    "se": "google",
+    "se_type": "ai_mode",
+    "keyword": "What are the best sim racing cockpits to buy in 2026?",
+    "location_code": 2840,
+    "language_code": "en",
+    "device": "desktop",
+    "os": "windows"
+   },
+   "result": [
+    {
+     "keyword": "What are the best sim racing cockpits to buy in 2026?",
+     "type": "ai_mode",
+     "se_domain": "google.com",
+     "location_code": 2840,
+     "language_code": "en",
+     "check_url": "https://www.google.com/search?q=What%20are%20the%20best%20sim%20racing%20cockpits%20to%20buy%20in%202026%3F&hl=en&gl=US&udm=50&uule=w+CAIQIFISCQs2MuSEtepUEUK33kOSuTsc",
+     "datetime": "2026-11-27 07:50:12 +00:00",
+     "spell": null,
+     "item_types": [
+      "ai_overview"
+     ],
+     "se_results_count": 0,
+     "items_count": 1,
+     "items": [
+      {
+       "type": "ai_overview",
+       "rank_group": 1,
+       "rank_absolute": 1,
+       "page": 1,
+       "position": "left",
+       "markdown": "Choosing the right sim racing cockpit  [Highlight start] depends on your **budget**, **space** , and **force feedback (FFB) power** [Highlight end] (entry-level gear drive vs. high-torque direct-drive wheelbases).\n\nThe top sim racing cockpits span across different categories for 2026, highlighted according to build quality and use case:[[1]](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/)\n\n### **Best 80/20 (Aluminum Profile) Rigs** \n\n\n\n---\n\nWidely regarded as the gold standard for rock-solid rigidity, clean aesthetics, and zero flex. It easily handles heavy direct-drive wheelbases (25Nm+) and high-load load-cell pedals.\n\n---\n\nHeavy-duty thick-wall extrusion with extensive adjustability and hybrid seating positions (GT and Formula).\n\n---\n\nDelivers true aluminum extrusion stiffness at a lower price point, making it a great entry point into modular 80/20 building.[[1]](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/)\n\n### **Best Tube-Frame & Pre-Built Rigs** \n\n\n\n---\n\nA rigid tubular-style chassis featuring integrated seat sliders, multi-position pedal plates, and great stability without going full 80/20.[[1]](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/)\n\n### **Best Foldable / Budget / Space-Saving Options** \n\n\n\n---\n\nFeatures a clever hub-locking design that lets you fold it up with the electronics attached or store it away in a tight space. Ideal for entry-to-mid tier wheels.[[1]](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/)\n\n---\n\nIf you aren't ready for a full cockpit, this heavy-duty stand clamps your wheel and pedals securely and can be upgraded later with a rear seat frame.[[1]](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/)\n\n### **Quick Comparison by Tier** \n\n| Category | Top Recommendation | Ideal For |\n|---|---|---|\n| **End-Game / Heavy Duty** | [Sim-Lab P1X Pro](https://www.google.com/search?ibp=oshop&prds=pvt:hg,pvo:29,mid:576462894452354854,imageDocid:1900336149722807296,gpcid:3746225175180122359,headlineOfferDocid:13114540280867661305,catalogid:13496266194086142175,productDocid:11165286555613122354,rds:PC_3746225175180122359%7CPROD_PC_3746225175180122359&q=product&sa=X&ved=2ahUKEwjmiOH31KeYAxVab0EAHb0QE-wQxa4PeggIAggBCCkQAw) | High-torque direct drive, zero flex |\n| **Mid-Range / Hybrid** | [Trak Racer TR8 Pro](https://www.google.com/search?ibp=oshop&prds=pvt:hg,pvo:29,mid:576462866785028440,imageDocid:5961908729945047577,gpcid:803849472613107722,headlineOfferDocid:6624541646216571095,catalogid:7460781883962179412,productDocid:7674667347902047138,rds:PC_803849472613107722%7CPROD_PC_803849472613107722&q=product&sa=X&ved=2ahUKEwjmiOH31KeYAxVab0EAHb0QE-wQxa4PeggIAggBCCkQBQ) | All-in-one rigid pre-built frame |\n| **Budget Aluminum** | [Sim-Lab GT1 Pro](https://www.google.com/search?ibp=oshop&prds=pvt:hg,pvo:29,mid:576462472613249979,imageDocid:5995212651509797922,gpcid:16251268665765140137,headlineOfferDocid:5187948899064320464,catalogid:2990614555460359750,productDocid:9123279021867164441,rds:PC_16251268665765140137%7CPROD_PC_16251268665765140137&q=product&sa=X&ved=2ahUKEwjmiOH31KeYAxVab0EAHb0QE-wQxa4PeggIAggBCCkQBw) | Entry into 80/20 customizability |\n| **Apartment / Foldable** | [Next Level Racing F-GT Lite](https://www.google.com/search?ibp=oshop&prds=pvt:hg,pvo:29,mid:576462864019491128,imageDocid:8630704778923007610,gpcid:18394645488623645332,headlineOfferDocid:2187403815906286321,catalogid:12100801010829990775,productDocid:2248974969095401262,rds:PC_18394645488623645332%7CPROD_PC_18394645488623645332&q=product&sa=X&ved=2ahUKEwjmiOH31KeYAxVab0EAHb0QE-wQxa4PeggIAggBCCkQCQ) | Temporary setups & small rooms |\n\nTo help narrow this down:\n\n- What kind of **wheelbase and pedals** are you running (or planning to buy)?\n- Are you working with a **dedicated room** or do you need something you can **store away**?",
+       "items": [
+        {
+         "type": "ai_overview_element",
+         "position": "left",
+         "title": null,
+         "text": "Choosing the right sim racing cockpit  [Highlight start] depends on your budget, space, and force feedback (FFB) power [Highlight end]  (entry-level gear drive vs. high-torque direct-drive wheelbases).",
+         "markdown": "Choosing the right sim racing cockpit  [Highlight start] depends on your **budget**, **space** , and **force feedback (FFB) power** [Highlight end] (entry-level gear drive vs. high-torque direct-drive wheelbases).",
+         "links": null,
+         "references": null
+        },
+        {
+         "type": "ai_overview_element",
+         "position": "left",
+         "title": null,
+         "text": "The top sim racing cockpits span across different categories for 2026, highlighted according to build quality and use case:",
+         "markdown": "The top sim racing cockpits span across different categories for 2026, highlighted according to build quality and use case:[[1]](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/)",
+         "links": null,
+         "references": [
+          {
+           "type": "ai_overview_reference",
+           "position": "left",
+           "source": "Sim Racing Setups",
+           "domain": "simracingsetup.com",
+           "url": "https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/",
+           "title": "Best Sim Racing Cockpits In 2026: Complete Buyers Guide",
+           "text": "The different types of sim racing cockpit available Sim-Lab P1X Pro: The best 8020 sim rig Next Level Racing F-GT Elite 160: Best ..."
+          }
+         ]
+        },
+        {
+         "type": "ai_overview_element",
+         "position": "left",
+         "title": "Best 80/20 (Aluminum Profile) Rigs",
+         "text": null,
+         "markdown": "### **Best 80/20 (Aluminum Profile) Rigs**",
+         "links": null,
+         "references": null
+        },
+        {
+         "type": "ai_overview_shopping",
+         "position": "left",
+         "title": null,
+         "markdown": null,
+         "items": []
+        },
+        {
+         "type": "ai_overview_element",
+         "position": "left",
+         "title": "Best Tube-Frame & Pre-Built Rigs",
+         "text": null,
+         "markdown": "### **Best Tube-Frame & Pre-Built Rigs**",
+         "links": null,
+         "references": null
+        },
+        {
+         "type": "ai_overview_shopping",
+         "position": "left",
+         "title": null,
+         "markdown": null,
+         "items": []
+        },
+        {
+         "type": "ai_overview_element",
+         "position": "left",
+         "title": "Best Foldable / Budget / Space-Saving Options",
+         "text": null,
+         "markdown": "### **Best Foldable / Budget / Space-Saving Options**",
+         "links": null,
+         "references": null
+        },
+        {
+         "type": "ai_overview_shopping",
+         "position": "left",
+         "title": null,
+         "markdown": null,
+         "items": []
+        },
+        {
+         "type": "ai_overview_element",
+         "position": "left",
+         "title": "Quick Comparison by Tier",
+         "text": null,
+         "markdown": "### **Quick Comparison by Tier**",
+         "links": null,
+         "references": null
+        },
+        {
+         "type": "ai_overview_table_element",
+         "position": "left",
+         "markdown": "| Category | Top Recommendation | Ideal For |\n|---|---|---|\n| **End-Game / Heavy Duty** | [Sim-Lab P1X Pro](https://www.google.com/search?ibp=oshop&prds=pvt:hg,pvo:29,mid:576462894452354854,imageDocid:1900336149722807296,gpcid:3746225175180122359,headlineOfferDocid:13114540280867661305,catalogid:13496266194086142175,productDocid:11165286555613122354,rds:PC_3746225175180122359%7CPROD_PC_3746225175180122359&q=product&sa=X&ved=2ahUKEwjmiOH31KeYAxVab0EAHb0QE-wQxa4PeggIAggBCCkQAw) | High-torque direct drive, zero flex |\n| **Mid-Range / Hybrid** | [Trak Racer TR8 Pro](https://www.google.com/search?ibp=oshop&prds=pvt:hg,pvo:29,mid:576462866785028440,imageDocid:5961908729945047577,gpcid:803849472613107722,headlineOfferDocid:6624541646216571095,catalogid:7460781883962179412,productDocid:7674667347902047138,rds:PC_803849472613107722%7CPROD_PC_803849472613107722&q=product&sa=X&ved=2ahUKEwjmiOH31KeYAxVab0EAHb0QE-wQxa4PeggIAggBCCkQBQ) | All-in-one rigid pre-built frame |\n| **Budget Aluminum** | [Sim-Lab GT1 Pro](https://www.google.com/search?ibp=oshop&prds=pvt:hg,pvo:29,mid:576462472613249979,imageDocid:5995212651509797922,gpcid:16251268665765140137,headlineOfferDocid:5187948899064320464,catalogid:2990614555460359750,productDocid:9123279021867164441,rds:PC_16251268665765140137%7CPROD_PC_16251268665765140137&q=product&sa=X&ved=2ahUKEwjmiOH31KeYAxVab0EAHb0QE-wQxa4PeggIAggBCCkQBw) | Entry into 80/20 customizability |\n| **Apartment / Foldable** | [Next Level Racing F-GT Lite](https://www.google.com/search?ibp=oshop&prds=pvt:hg,pvo:29,mid:576462864019491128,imageDocid:8630704778923007610,gpcid:18394645488623645332,headlineOfferDocid:2187403815906286321,catalogid:12100801010829990775,productDocid:2248974969095401262,rds:PC_18394645488623645332%7CPROD_PC_18394645488623645332&q=product&sa=X&ved=2ahUKEwjmiOH31KeYAxVab0EAHb0QE-wQxa4PeggIAggBCCkQCQ) | Temporary setups & small rooms |",
+         "table": null
+        },
+        {
+         "type": "ai_overview_element",
+         "position": "left",
+         "title": null,
+         "text": "To help narrow this down:",
+         "markdown": "To help narrow this down:",
+         "links": null,
+         "references": null
+        },
+        {
+         "type": "ai_overview_element",
+         "position": "left",
+         "title": null,
+         "text": "What kind of wheelbase and pedals are you running (or planning to buy)? Are you working with a dedicated room or do you need something you can store away ?",
+         "markdown": "- What kind of **wheelbase and pedals** are you running (or planning to buy)?\n- Are you working with a **dedicated room** or do you need something you can **store away**?",
+         "links": null,
+         "references": null
+        }
+       ],
+       "references": [
+        {
+         "type": "ai_overview_reference",
+         "position": "right",
+         "source": "Sim Racing Setups",
+         "domain": "simracingsetup.com",
+         "url": "https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/",
+         "title": "Best Sim Racing Cockpits In 2026: Complete Buyers Guide",
+         "text": "The different types of sim racing cockpit available. Best wheel stand: GT Omega Apex Wheel Stand Best Formula 1 cockpit: Trak Racer TR8 Pro Best budget F1 cockpit"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

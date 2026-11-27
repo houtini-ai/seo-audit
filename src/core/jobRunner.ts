@@ -171,7 +171,7 @@ export class JobRunner {
     this.log(`claimed ${job.id} ${job.type}${job.scope ? ` (${job.scope})` : ''}`);
     const t0 = Date.now();
     const p = this.jobs
-      .runClaimed(claimed, (update, signal) => runJobKind(job.type, args, this.deps, update, signal))
+      .runClaimed(claimed, (update, signal) => runJobKind(job.type, args, this.deps, update, signal, job.id))
       .then(() => {
         const done = this.jobs.get(job.id);
         this.log(`finished ${job.id} ${job.type}: ${done?.state ?? 'unknown'} in ${Math.round((Date.now() - t0) / 1000)} s${done?.error ? ` (${done.error})` : ''}`);

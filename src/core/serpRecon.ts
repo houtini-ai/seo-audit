@@ -1,4 +1,5 @@
 import type { DfsResponse } from './DataForSeoClient.js';
+import { organicHost, referenceHost, hostMatchesDomain } from './serpHost.js';
 
 /**
  * Parse a DataForSEO SERP-advanced response into the fields content recon needs:
@@ -14,10 +15,16 @@ export interface SerpReconResult {
   aioCitesUs: boolean | null;         // null = UNKNOWN (AIO present but unresolved — never read as "not cited")
   aioAsync: boolean;                  // Google loaded the AIO client-side; without load_async_ai_overview it comes back empty
   aioResolved: boolean;               // did we actually get AIO references to judge citation from?
-  aioReferences: { rank: number | null; domain: string; url: string; title: string; nested: boolean }[];
+  aioReferences: { rank: number | null; domain: string; url: string; title: string; nested: boolean; shownAs?: string | null }[];
+  /** AI Overview references whose site could not be read (Google redirect + a publication name only). */
+  aioUnattributed: number;
+  /** Organic results whose site could not be read (Google redirect, no usable breadcrumb or platform label). */
+  unattributedOrganic: number;
+  /** Organic results that came back as a Google redirect with no destination URL (host read from the breadcrumb, URL unknown). */
+  redirectOnlyOrganic: number;
   videoPresent: boolean;
   restoredFromWeb: boolean;           // DataForSEO found the page poisoned and restored organic from Google's Web mode ('from_web' in checks): the rank is a Web-mode rank and the AIO was NOT repaired
-  organicAbove: { rank: number; domain: string; url: string; title: string }[]; // organic ranked above us (or all, if we're absent)
+  organicAbove: { rank: number; domain: string; url: string; title: string; shownAs?: string | null }[]; // organic ranked above us (or all, if we're absent); url '' = only a Google redirect came back
   videoItems: { url: string; title: string; source: string }[];
 }
 
@@ -44,7 +51,8 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
   const itemTypes: string[] = result.item_types ?? [...new Set(items.map(i => i.type))];
 
   let ourOrganicRank: number | null = null;
-  const organic: { rank: number; domain: string; url: string; title: string }[] = [];
+  const organic: SerpReconResult['organicAbove'] = [];
+  let unattributedOrganic = 0, redirectOnlyOrganic = 0, aioUnattributed = 0;
   let aioPresent = false, aioAsync = false, videoPresent = false, restoredFromWeb = false;
   const aioReferences: SerpReconResult['aioReferences'] = [];
   const videoItems: SerpReconResult['videoItems'] = [];
@@ -53,10 +61,14 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
     const t = it.type;
     if (t === 'organic') {
       if (serpItemHas(it, 'from_web')) restoredFromWeb = true;
-      const domain = hostOf(it.domain || it.url);
+      // Since ~10 Nov 2026 organic items can come back as a google.com/goto redirect with
+      // domain "google.com": the site is read from the breadcrumb / platform label (serpHost.ts).
+      const oh = organicHost(it);
+      if (!oh.host) unattributedOrganic++;
+      if (!oh.url) redirectOnlyOrganic++;
       const rank = Number(it.rank_group) || organic.length + 1;  // rank_group = position among ORGANIC results
-      organic.push({ rank, domain, url: it.url ?? '', title: it.title ?? '' });
-      if (own && domain === own && ourOrganicRank == null) ourOrganicRank = rank;
+      organic.push({ rank, domain: oh.host ?? '', url: oh.url ?? '', title: it.title ?? '', shownAs: oh.shownAs });
+      if (own && hostMatchesDomain(oh.host, own) && ourOrganicRank == null) ourOrganicRank = rank;
     } else if (t === 'ai_overview') {
       aioPresent = true;
       aioAsync = !!it.asynchronous_ai_overview;
@@ -67,10 +79,12 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
       let i = 0;
       const collect = (refs: any[], nested: boolean): void => {
         for (const ref of refs ?? []) {
-          const url = ref?.url ?? '';
-          if (!url || seenRef.has(url)) continue;
-          seenRef.add(url);
-          aioReferences.push({ rank: Number(ref.rank_absolute) || ++i, domain: hostOf(ref.domain || url), url, title: ref.title ?? '', nested });
+          const raw = ref?.url ?? '';
+          if (!raw || seenRef.has(raw)) continue;
+          seenRef.add(raw);
+          const rh = referenceHost(ref);
+          if (!rh.host) aioUnattributed++;
+          aioReferences.push({ rank: Number(ref.rank_absolute) || ++i, domain: rh.host ?? '', url: rh.url ?? '', title: ref.title ?? '', nested, shownAs: rh.shownAs });
         }
       };
       collect(it.references, false);
@@ -82,7 +96,7 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
     } else if (t === 'video' || t === 'short_videos') {
       videoPresent = true;
       for (const v of it.items ?? []) {
-        if (v?.url) videoItems.push({ url: v.url, title: v.title ?? '', source: hostOf(v.source || v.domain || v.url) });
+        if (v?.url) { const vh = organicHost({ url: v.url, domain: v.domain, website_name: v.source }); videoItems.push({ url: vh.url ?? '', title: v.title ?? '', source: vh.host ?? v.source ?? '' }); }
       }
     }
   }
@@ -93,17 +107,21 @@ export function parseSerpForRecon(resp: DfsResponse, ownDomain: string, serpDept
   const aioResolved = aioPresent && aioReferences.length > 0;
   // On a poisoned page DataForSEO restores the organic block only: the AI Overview is the one
   // Google served with the poisoned page, so its citations are not evidence either way.
+  // A reference whose site couldn't be read might be ours, so "not cited" needs every reference attributed.
+  const citedByAttributed = aioReferences.some(r => own && hostMatchesDomain(r.domain, own));
   const aioCitesUs = !aioPresent ? false
     : restoredFromWeb ? null
-    : aioResolved ? aioReferences.some(r => own && r.domain === own)
-    : null;
+    : !aioResolved ? null
+    : citedByAttributed ? true
+    : aioUnattributed > 0 ? null
+    : false;
 
   // Organic ranked above us (the ones actually beating us); if we're absent, the whole top block.
   const organicAbove = ourOrganicRank == null
     ? organic.slice(0, 8)
     : organic.filter(o => o.rank < ourOrganicRank!);
 
-  return { itemTypes, ourOrganicRank, serpDepth, aioPresent, aioCitesUs, aioAsync, aioResolved, aioReferences, videoPresent, restoredFromWeb, organicAbove, videoItems };
+  return { itemTypes, ourOrganicRank, serpDepth, aioPresent, aioCitesUs, aioAsync, aioResolved, aioReferences, aioUnattributed, unattributedOrganic, redirectOnlyOrganic, videoPresent, restoredFromWeb, organicAbove, videoItems };
 }
 
 /**
@@ -116,7 +134,9 @@ export type ReconVerdict = 'defend-and-deepen' | 'accuracy-or-freshness' | 'cons
 /** How to say "we didn't find you" without implying a position we never measured. Rank 11 and
  * rank 80 both come back as null, so the honest phrasing has to carry the depth we fetched. */
 export const rankPhrase = (r: SerpReconResult): string =>
-  r.ourOrganicRank != null ? `#${r.ourOrganicRank}` : `absent from the top ${r.serpDepth} organic results (true position unknown, and unmeasured beyond ${r.serpDepth})`;
+  r.ourOrganicRank != null ? `#${r.ourOrganicRank}`
+    : `absent from the top ${r.serpDepth} organic results (true position unknown, and unmeasured beyond ${r.serpDepth})`
+      + (r.unattributedOrganic ? `; ${r.unattributedOrganic} of them came back as a Google redirect with no readable site, so one could be yours` : '');
 
 export function reconVerdict(r: SerpReconResult): { verdict: ReconVerdict; note: string } {
   const strongOrganic = r.ourOrganicRank != null && r.ourOrganicRank <= 5;

@@ -1,5 +1,5 @@
 // #55 group E, item 9: canonical-changed-by-js, title-changed-by-js, noindex-changed-by-js and
-// hydration-content-loss. Pure cases (mainWordCount, the raw-vs-rendered diff on canned HTML), the
+// hydration-content-loss, plus schema-only-rendered (1.0.8). Pure cases (mainWordCount, the raw-vs-rendered diff on canned HTML), the
 // checks over canned render_audit rows (current and pre-0.16.0 rows, and the not-collected notes), then
 // one real render of a local server's pages in headless Chromium when Playwright and its browser are
 // installed (skipped cleanly otherwise). No network beyond 127.0.0.1.
@@ -15,7 +15,7 @@ import { extractPage } from '../dist/core/extract.js';
 import { CHECKS } from '../dist/audit/checks.js';
 import { runAudit } from '../dist/audit/engine.js';
 import { gscFreshness } from '../dist/core/gscFreshness.js';
-import { mainWordCount, diffRawVsRendered, auditRender } from '../dist/core/renderAudit.js';
+import { mainWordCount, diffRawVsRendered, auditRender, schemaTypeList } from '../dist/core/renderAudit.js';
 import { rendererAvailable, renderHtml, closeRenderer } from '../dist/core/render.js';
 import { HYDRATION_MIN_RAW_WORDS, HYDRATION_MAX_RATIO } from '../dist/audit/checks-render.js';
 
@@ -30,7 +30,7 @@ const ctxOf = (db) => ({ db, gscMaxDate: gscFreshness(db).effectiveMax, brand: n
 const chk = (id) => CHECKS.find(c => c.id === id);
 const runCheck = (db, id) => chk(id).run(ctxOf(db));
 const noteOf = (db, id) => chk(id).collected(ctxOf(db));
-const IDS = ['canonical-changed-by-js', 'title-changed-by-js', 'noindex-changed-by-js', 'hydration-content-loss'];
+const IDS = ['canonical-changed-by-js', 'title-changed-by-js', 'noindex-changed-by-js', 'hydration-content-loss', 'schema-only-rendered'];
 const W = (n) => 'word '.repeat(n).trim();
 const KO = { hostForm: 'apex' };
 
@@ -55,6 +55,12 @@ try {
     check('diff: an X-Robots-Tag noindex holds on both sides, so JS removing the meta is no change; no HTML -> main words null', hdr.rawNoindex && hdr.renderedNoindex && !hdr.robotsChanged && hdr.rawMainWords === null);
     const slash = diffRawVsRendered(extractPage('<link rel="canonical" href="https://example.test/p/">', url, 'example.test', KO), extractPage('<link rel="canonical" href="https://example.test/p">', url, 'example.test', KO));
     check('diff: a trailing-slash-only canonical difference is not a change', !slash.canonicalChanged);
+    const LD = (o) => `<script type="application/ld+json">${JSON.stringify(o)}</script>`;
+    const sRaw = `<html><head>${LD({ '@context': 'https://schema.org', '@type': 'WebPage', mainEntity: { '@type': 'Article' } })}</head><body></body></html>`;
+    const sRen = `<html><head>${LD({ '@context': 'https://schema.org', '@graph': [{ '@type': 'WebPage' }, { '@type': ['Product', 'https://schema.org/Thing'] }] })}</head><body></body></html>`;
+    const sd = diffRawVsRendered(extractPage(sRaw, url, 'example.test', KO), extractPage(sRen, url, 'example.test', KO));
+    check('diff: JSON-LD types on both sides (nested own edges, @graph, array @type, prefix stripped)', same(sd.rawSchemaTypes, ['article', 'webpage']) && same(sd.renderedSchemaTypes, ['product', 'thing', 'webpage']), JSON.stringify([sd.rawSchemaTypes, sd.renderedSchemaTypes]));
+    check('schemaTypeList: no JSON-LD -> []; offers/brand are not walked', same(schemaTypeList(null), []) && same(schemaTypeList(JSON.stringify([JSON.stringify({ '@type': 'Product', brand: { '@type': 'Brand' } })])), ['product']));
   }
 
   // ── 3. Checks over canned render_audit rows ───────────────────────────────────────────────
@@ -96,6 +102,18 @@ try {
       && ev('noindex-changed-by-js', 'noidx-removed').kind === 'noindex-removed-by-js' && ev('noindex-changed-by-js', 'noidx-added').kind === 'noindex-added-by-js');
     check(`hydration-content-loss: <= ${HYDRATION_MAX_RATIO * 100}% of >= ${HYDRATION_MIN_RAW_WORDS} raw main words; the legacy row on whole-body words`, same(keys('hydration-content-loss'), ['hydrate', 'hydrate-edge', 'legacy'])
       && ev('hydration-content-loss', 'hydrate').lostPct === 90 && ev('hydration-content-loss', 'hydrate').basis === 'main content' && /whole body/.test(ev('hydration-content-loss', 'legacy').basis), JSON.stringify(keys('hydration-content-loss')));
+    check('schema-only-rendered: rows from before 1.0.8 -> says re-run', /predates 1.0.8/.test(noteOf(db, 'schema-only-rendered') ?? '') && runCheck(db, 'schema-only-rendered').length === 0);
+    const sset = db.prepare(`UPDATE render_audit SET raw_schema_types = ?, rendered_schema_types = ? WHERE url_key = ?`);
+    for (const k of ['stable', 'title', 'canon', 'hydrate']) sset.run('["organization","website"]', '["organization","website"]', `https://example.test/${k}`);
+    sset.run('["webpage"]', '["product","webpage"]', 'https://example.test/title-wiped');      // added by JS
+    sset.run('["faqpage","webpage"]', '["webpage"]', 'https://example.test/canon-added');      // removed by JS
+    sset.run('["article"]', '["newsarticle"]', 'https://example.test/canon-removed');          // changed
+    sset.run('[]', '["product"]', 'https://example.test/hydrate-ok');                        // differs, but the raw fetch was blocked:
+    db.prepare(`UPDATE render_audit SET raw_status = 403 WHERE url_key = 'https://example.test/hydrate-ok'`).run(); // not a finding
+    check('schema-only-rendered: added, removed and changed; identical sets are not findings', same(keys('schema-only-rendered'), ['canon-added', 'canon-removed', 'title-wiped']), JSON.stringify(keys('schema-only-rendered')));
+    const sa = ev('schema-only-rendered', 'title-wiped'), sr = ev('schema-only-rendered', 'canon-added'), sc = ev('schema-only-rendered', 'canon-removed');
+    check('schema-only-rendered: kinds, the types each way, rich-result types named', sa.kind === 'added-by-js' && same(sa.onlyAfterJs, ['product']) && same(sa.richResultTypes, ['product'])
+      && sr.kind === 'removed-by-js' && same(sr.removedByJs, ['faqpage']) && /lost/.test(sr.note) && sc.kind === 'changed-by-js' && same(sc.onlyAfterJs, ['newsarticle']) && same(sc.removedByJs, ['article']) && !!sa.rule, JSON.stringify({ sa, sr, sc }));
     check('collected() null with current rows', IDS.every(id => noteOf(db, id) === null));
     db.exec(`DELETE FROM render_audit WHERE raw_noindex IS NOT NULL`);
     check('only pre-0.16.0 rows: noindex-changed-by-js says re-run; the others still read', /predates 0.16.0/.test(noteOf(db, 'noindex-changed-by-js') ?? '') && noteOf(db, 'canonical-changed-by-js') === null);
@@ -115,6 +133,7 @@ try {
       '/noidx-removed': page('NR', '<meta name="robots" content="noindex"><link rel="canonical" href="/noidx-removed">', main, `document.querySelector('meta[name=robots]').remove();`),
       '/noidx-added': page('NA', '<link rel="canonical" href="/noidx-added">', main, `var m = document.createElement('meta'); m.name = 'robots'; m.content = 'noindex'; document.head.appendChild(m);`),
       '/hydrate': page('Hydrate', '<link rel="canonical" href="/hydrate">', main, `document.querySelector('main').innerHTML = '<p>Loading</p>';`),
+      '/schema-js': page('Schema', '<link rel="canonical" href="/schema-js">', main, `var s = document.createElement('script'); s.type = 'application/ld+json'; s.textContent = JSON.stringify({ '@context': 'https://schema.org', '@type': 'Product', name: 'X' }); document.head.appendChild(s);`),
     };
     const server = http.createServer((req, res) => {
       const body = routes[req.url];
@@ -143,6 +162,7 @@ try {
         check('real render -> canonical-changed-by-js: /canon only', same(got('canonical-changed-by-js'), [k('/canon')]), JSON.stringify(got('canonical-changed-by-js')));
         check('real render -> noindex-changed-by-js: both directions', same(got('noindex-changed-by-js'), [k('/noidx-added'), k('/noidx-removed')].sort()), JSON.stringify(got('noindex-changed-by-js')));
         check('real render -> hydration-content-loss: /hydrate only', same(got('hydration-content-loss'), [k('/hydrate')]), JSON.stringify(got('hydration-content-loss')));
+        check('real render -> schema-only-rendered: /schema-js only, Product added by JS', same(got('schema-only-rendered'), [k('/schema-js')]) && same(runCheck(db, 'schema-only-rendered')[0]?.evidence.onlyAfterJs, ['product']), JSON.stringify(got('schema-only-rendered')));
         const st = db.prepare(`SELECT raw_status s, raw_main_words rm, rendered_main_words dm FROM render_audit WHERE url_key = ?`).get(k('/stable'));
         check('real render -> stored raw status and main words (stable page unchanged)', st.s === 200 && st.rm === st.dm && st.rm >= 300, JSON.stringify(st));
         adb.close();

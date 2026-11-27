@@ -44,10 +44,12 @@ Click a domain for its overview, including joins only your own data allows:
   - for owned sites, a **rank and citation** table and quadrant from content recon. It shows which keywords show an AI Overview, whether your page is cited (yes / no / unknown, never "no" for unknown), and your organic rank;
   - **Top cited pages**, joined to your crawl status and Search Console clicks;
   - **Sources cited alongside**: sources, not competitors;
-  - not measured by this data, and said so on the page: AI Mode, Gemini, Perplexity, and any 0 to 100 "visibility score".
+  - **AI prompt panel** (once you have one): per engine (ChatGPT, Claude, Gemini, Perplexity, Google AI Mode), how many of your prompts' answers mention the domain and how many cite it, the model that answered and the run month, then one row per prompt;
+  - not measured by the mentions data: AI Mode, Gemini and Perplexity. The page says so for each until the prompt panel has measured it, then states the panel result instead. There is no 0 to 100 "visibility score".
 - **Traffic trend:** estimated traffic plus measured Search Console clicks on their own axis.
 - **Keyword positions** in five bands (1-3, 4-10, 11-20, 21-50, 51-100), the search-results mix (organic, AI Overview references, featured snippets, local pack), countries, and new and lost referring domains.
 - **Top pages by traffic and by links:** for owned sites each URL carries our crawl status, so a heavily linked page that 404s is flagged.
+- **Tracked keywords:** the domain's position on each keyword you track in its country, the change since the previous check, the ranking page, and when it was checked. "Not in top 100" means just that; nothing is known below it.
 
 ## Refreshing, and what it costs
 
@@ -61,6 +63,10 @@ The dashboard never spends. Adding or removing a watched domain is free and work
   - **Where it runs:** in the MCP process, or in the job runner under the Docker gateway. The claim is atomic, so two processes never run it twice.
   - **Within a run**, the cap is checked between endpoint families, and a run that would breach it stops and says so.
   - **If the cost grows** more than 25% since you agreed (domains added), the scheduled run is skipped until you re-confirm.
+- **Competitor suggestions** (`portfolio` action `suggest`, about $0.015): one DataForSEO Labs call proposes competitors for an owned property in its country, ranked by shared keywords, with the evidence. Quoted first, cached 20 days, and nothing is added until you pick.
+- **Keyword positions** (`track_keywords` action `check`, about $0.0175 a keyword): one live Google results page per tracked keyword answers every portfolio domain in that country at once. Quoted first, on request only, never scheduled.
+- **AI prompt panel** (`ai_prompt_panel` action `run`, about $0.09 a prompt for all five engines): each of your prompts asked once of ChatGPT, Claude, Gemini, Perplexity and Google AI Mode. Quoted first per engine, on request only, never scheduled; a prompt already answered this month is not asked again unless you say so.
+- All three are recorded in the same spend ledger as refreshes and count toward the monthly budget if you set one.
 - **The "Copy refresh prompt" button** puts "Refresh my SEO Console portfolio" on your clipboard. In chat, "Ask Claude to refresh" sends it. Either way, Claude quotes before spending.
 
 **DataForSEO needs:** Labs, Backlinks and LLM Mentions enabled on your account. Each is pay-as-you-go, with no monthly minimum since July 2026. A family that isn't enabled fails on its own and the rest of the refresh carries on.
@@ -75,6 +81,14 @@ portfolio action:add domain:rival.com group:competitors location:"United Kingdom
 portfolio action:remove domain:rival.com
 portfolio action:group domain:rival.com group:prospects
 portfolio action:location domain:mysite.com.au location:2036
+portfolio action:suggest domain:mysite.com             quote; then confirm:true (paid)
+portfolio action:add domains:["a.com","b.com"] location:2840   group defaults to competitors
+track_keywords action:add keywords:["sim racing cockpit"] location:2840
+track_keywords action:check                              quote; then confirm:true (paid)
+track_keywords                                           latest positions and change (free)
+ai_prompt_panel action:add prompts:["What are the best sim racing cockpits?"] location:2840
+ai_prompt_panel action:run                               quote per engine; then confirm:true (paid)
+ai_prompt_panel domain:mysite.com                        mentioned / cited per engine and prompt (free)
 ```
 
 **Locations:**

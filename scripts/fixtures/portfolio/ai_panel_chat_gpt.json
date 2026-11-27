@@ -1,0 +1,235 @@
+{
+ "note": "Live capture 27 Nov 2026, ai_optimization/chat_gpt/llm_responses/live, gpt-5.4-mini (resolved to gpt-5.4-mini-2026-03-17) with web_search. Citations are annotations with start/end indexes; the answer text embeds each citation as a markdown chip \"([host](url?utm_source=openai))\". search_results trimmed to 10, snippets dropped. Cost $0.03284 (money_spent $0.03224 + $0.0006 task).",
+ "endpoint": "/v3/ai_optimization/chat_gpt/llm_responses/live",
+ "request": [
+  {
+   "user_prompt": "What are the best sim racing cockpits to buy in 2026?",
+   "model_name": "gpt-5.4-mini",
+   "web_search": true,
+   "web_search_country_iso_code": "US",
+   "max_output_tokens": 2048
+  }
+ ],
+ "capturedAt": "2026-11-27T07:50:21.480Z",
+ "cost": 0.03284,
+ "tasks": [
+  {
+   "id": "11270750-1165-0612-0000-9a1233308e98",
+   "status_code": 20000,
+   "status_message": "Ok.",
+   "time": "9.5560 sec.",
+   "cost": 0.03284,
+   "result_count": 1,
+   "path": [
+    "v3",
+    "ai_optimization",
+    "chat_gpt",
+    "llm_responses",
+    "live"
+   ],
+   "data": {
+    "api": "ai_optimization",
+    "function": "llm_responses",
+    "se": "chat_gpt",
+    "user_prompt": "What are the best sim racing cockpits to buy in 2026?",
+    "model_name": "gpt-5.4-mini",
+    "web_search": true,
+    "web_search_country_iso_code": "US",
+    "max_output_tokens": 2048
+   },
+   "result": [
+    {
+     "model_name": "gpt-5.4-mini-2026-03-17",
+     "input_tokens": 8940,
+     "output_tokens": 1230,
+     "reasoning_tokens": 280,
+     "web_search": true,
+     "money_spent": 0.03224,
+     "datetime": "2026-11-27 07:50:22 +00:00",
+     "items": [
+      {
+       "type": "reasoning",
+       "sections": [
+        {
+         "type": "summary_text",
+         "text": "**Searching for cockpit recommendations**\n\nI need to browse to find the best cockpit recommendations, especially since the user is looking for substantial money spent in 2026. I’ll aim to find current and authoritative product pages and reviews for cockpits. This should guide the user toward finding the most suitable options available right now. Let’s check out some reviews and trusted sources to compile a solid answer!"
+        }
+       ]
+      },
+      {
+       "type": "reasoning",
+       "sections": [
+        {
+         "type": "summary_text",
+         "text": "**Searching for product options**\n\nI think I need to come up with a solid list of categories for products. It seems like checking the official product pages from brands like Sim-Lab, Trak Racer, NLR, GT Omega, and Playseat could be really helpful. I’ll gather the information to make sure I'm covering all the bases when putting this list together. It’s important to get accurate details to help the user find what they need."
+        }
+       ]
+      },
+      {
+       "type": "reasoning",
+       "sections": [
+        {
+         "type": "summary_text",
+         "text": "**Gathering search results for citation**\n\nI need to gather answers based solely on collected sources. One search result should suffice, but I have to ensure I include citations for my claims. I might consider using general advice while also citing snippets from those search results. I can't dive into specific specs unless the sources provide them. I'll focus on the best overall options while noting that my information is based on 2026 buyer guides and that prices can vary."
+        }
+       ]
+      },
+      {
+       "type": "message",
+       "sections": [
+        {
+         "type": "text",
+         "text": "If you’re buying in **2026**, the “best” sim racing cockpit depends mainly on your **wheelbase torque, space, and budget**. In current buyer guides, the most consistently recommended picks cluster around **aluminum profile 80/20 rigs** for serious direct-drive use, with foldable rigs only making sense if you need portability or limited space. ([simracingsetup.com](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai))\n\n## Best sim racing cockpits to buy in 2026\n\n### 1) Best overall: **Trak Racer TR160 V5**\nThis is repeatedly called a top-tier choice for 2026 because it’s a heavy-duty 160 mm-profile rig built for maximum rigidity and high-torque direct drive wheels. ([pitwallgear.com](https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai))\n\n### 2) Best premium all-rounder: **Sim-Lab P1X Pro**\nIf you want a flagship-style cockpit with broad upgrade potential and the usual Sim-Lab adjustability, the P1X Pro is one of the most common “buy once, cry once” recommendations in 2026 guides. ([simrev.com](https://www.simrev.com/news/best-sim-racing-cockpit-2026?utm_source=openai))\n\n### 3) Best mid-range value: **Sim-Lab GT1 Evo**\nThis is still one of the safest recommendations if you want an aluminum-profile cockpit without jumping to the biggest flagship rigs; it’s frequently listed as the best mid-range option. ([setupgearguide.com](https://setupgearguide.com/sim-racing/guides/best-cockpits-sim-racing?utm_source=openai))\n\n### 4) Best all-in-one / seat-included option: **Next Level Racing F-GT Elite**\nFor people who want a more turnkey package, the F-GT Elite is a strong pick and is commonly highlighted among the best “seat-inclusive” or easier-to-buy complete setups. ([simsightline.com](https://simsightline.com/best-sim-racing-cockpit/?utm_source=openai))\n\n### 5) Best foldable cockpit: **Next Level Racing F-GT Lite**\nIf you need something compact or storable, this is one of the most recommended foldable options in 2026 roundups. It’s not the stiffest choice, but it’s the right category if space matters more than ultimate rigidity. ([simracingsetup.com](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai))\n\n### 6) Best compact foldable alternative: **Playseat Challenge X**\nFor a portable setup, this keeps showing up as a top foldable pick in 2026 guides. It’s especially attractive if you want something that folds away quickly. ([simracingradar.com](https://simracingradar.com/best-sim-racing-cockpit/?utm_source=openai))\n\n### 7) Best heavy-duty alternative: **GT Omega PRIME**\nThis is another highly regarded aluminum-profile chassis, often grouped with the strongest “no-flex” style rigs for direct drive use. ([pitwallgear.com](https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai))\n\n### 8) Best for Formula-style seating: **Trak Racer TRX / TR8 Pro**\nIf you care about a more formula-leaning driving position, Trak Racer’s formula-oriented cockpits are often singled out in buyer guides as the better specialist choice. ([simracingsetup.com](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai))\n\n## My short recommendation\n- **Best overall for most serious racers:** **Trak Racer TR160 V5**\n- **Best premium “buy it once” option:** **Sim-Lab P1X Pro**\n- **Best value:** **Sim-Lab GT1 Evo**\n- **Best if you want a full setup with seat:** **Next Level Racing F-GT Elite**\n- **Best if you need foldable:** **F-GT Lite** or **Playseat Challenge X** ([pitwallgear.com](https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai))\n\nIf you want, I can turn this into a **buying guide by budget**:\n- under **$500**\n- **$500–$1,000**\n- **$1,000+**\n- or **best cockpit for a 15–25 Nm direct-drive wheelbase**.",
+         "annotations": [
+          {
+           "title": "Best Sim Racing Cockpits In 2026: Complete Buyers Guide",
+           "url": "https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai",
+           "start_index": 345,
+           "end_index": 456,
+           "text": "([simracingsetup.com](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai))"
+          },
+          {
+           "title": "Best Sim Racing Cockpits and Rigs | Pitwall Gear",
+           "url": "https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai",
+           "start_index": 709,
+           "end_index": 803,
+           "text": "([pitwallgear.com](https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai))"
+          },
+          {
+           "title": "Best Sim Racing Cockpit 2026: Foldable vs GT vs 80/20 Rigs",
+           "url": "https://www.simrev.com/news/best-sim-racing-cockpit-2026?utm_source=openai",
+           "start_index": 1052,
+           "end_index": 1142,
+           "text": "([simrev.com](https://www.simrev.com/news/best-sim-racing-cockpit-2026?utm_source=openai))"
+          },
+          {
+           "title": "The Best Sim Racing Cockpits for Every Budget (2026)",
+           "url": "https://setupgearguide.com/sim-racing/guides/best-cockpits-sim-racing?utm_source=openai",
+           "start_index": 1380,
+           "end_index": 1491,
+           "text": "([setupgearguide.com](https://setupgearguide.com/sim-racing/guides/best-cockpits-sim-racing?utm_source=openai))"
+          },
+          {
+           "title": "Best Sim Racing Cockpit (2026): Aluminium Profile, All-in-One & Foldable Picks",
+           "url": "https://simsightline.com/best-sim-racing-cockpit/?utm_source=openai",
+           "start_index": 1743,
+           "end_index": 1832,
+           "text": "([simsightline.com](https://simsightline.com/best-sim-racing-cockpit/?utm_source=openai))"
+          },
+          {
+           "title": "Best Sim Racing Cockpits In 2026: Complete Buyers Guide",
+           "url": "https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai",
+           "start_index": 2114,
+           "end_index": 2225,
+           "text": "([simracingsetup.com](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai))"
+          },
+          {
+           "title": "The 10 best sim racing cockpits in 2026 | SimRacingRadar",
+           "url": "https://simracingradar.com/best-sim-racing-cockpit/?utm_source=openai",
+           "start_index": 2451,
+           "end_index": 2544,
+           "text": "([simracingradar.com](https://simracingradar.com/best-sim-racing-cockpit/?utm_source=openai))"
+          },
+          {
+           "title": "Best Sim Racing Cockpits and Rigs | Pitwall Gear",
+           "url": "https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai",
+           "start_index": 2735,
+           "end_index": 2829,
+           "text": "([pitwallgear.com](https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai))"
+          },
+          {
+           "title": "Best Sim Racing Cockpits In 2026: Complete Buyers Guide",
+           "url": "https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai",
+           "start_index": 3068,
+           "end_index": 3179,
+           "text": "([simracingsetup.com](https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/?utm_source=openai))"
+          },
+          {
+           "title": "Best Sim Racing Cockpits and Rigs | Pitwall Gear",
+           "url": "https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai",
+           "start_index": 3530,
+           "end_index": 3624,
+           "text": "([pitwallgear.com](https://pitwallgear.com/guides/best-sim-racing-cockpit/?utm_source=openai))"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "fan_out_queries": [
+      "best sim racing cockpit 2026 review GT Omega Next Level Racing Trak Racer Sim-Lab 2026",
+      "2026 sim racing cockpit review aluminum profile cockpit best buy",
+      "official Sim-Lab P1X Pro cockpit specs 2026",
+      "Next Level Racing F-GT Elite cockpit official specs 2026",
+      "site:sim-lab.eu P1X Pro Sim Racing Cockpit official",
+      "site:trakracer.com TR160 V5 official",
+      "site:nextlevelracing.com F-GT Elite official",
+      "site:gtomega.com PRIME cockpit official"
+     ],
+     "search_results": [
+      {
+       "title": "Black Friday gaming chair deals 2026",
+       "url": "https://www.pcgamer.com/black-friday-gaming-chair-deals/",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "Why Mr. Bezos, with these early Black Friday gaming chair deals you are really spoiling us",
+       "url": "https://www.pcgamer.com/hardware/gaming-chairs/why-mr-bezos-with-these-early-black-friday-gaming-chair-deals-you-are-really-spoiling-us/",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "Enve Melee V2 review: Believe the hype, it really is THAT good",
+       "url": "https://www.cyclingnews.com/bikes/road/enve-melee-v2-review/",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "Best gaming chairs of 2026: Top-tier seats for every battlestation",
+       "url": "https://www.tomsguide.com/best-picks/best-gaming-chairs",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpits In 2026: Complete Buyers Guide",
+       "url": "https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "The 10 best sim racing cockpits in 2026 | SimRacingRadar",
+       "url": "https://simracingradar.com/best-sim-racing-cockpit/",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpit 2026: Foldable vs GT vs 80/20 Rigs",
+       "url": "https://www.simrev.com/news/best-sim-racing-cockpit-2026",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpits 2026 | SimplyTheBest",
+       "url": "https://www.simplythebest.com/best-sim-racing-cockpits/",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpits and Rigs | Pitwall Gear",
+       "url": "https://pitwallgear.com/guides/best-sim-racing-cockpit/",
+       "date": null,
+       "snippet": null
+      },
+      {
+       "title": "The Best Sim Racing Cockpits for Every Budget (2026)",
+       "url": "https://setupgearguide.com/sim-racing/guides/best-cockpits-sim-racing",
+       "date": null,
+       "snippet": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

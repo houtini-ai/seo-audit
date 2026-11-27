@@ -213,18 +213,46 @@ export class DataForSeoClient {
    * whether or not poisoning is found (Live/Normal: +$0.002, so a depth-20 call goes from ~$0.004 to ~$0.006). Requests that
    * also set udm=web / udm=14 (url or search_param) return an error. Opt-in for those reasons — used by
    * recon (recon_targets and recon_todos remeasure), where a poisoned page would invent a competitive gap; the
-   * flag is part of the request body, so resolved and unresolved responses are cached separately. */
+   * flag is part of the request body, so resolved and unresolved responses are cached separately.
+   * `resolveGotoUrls` asks DataForSEO to follow Google's google.com/goto result redirects and return the
+   * destination URLs. Google throttles that per results page, so on Live only about half resolve, and it
+   * adds time to the call (documented up to 40 s, max 260 s; measured 96 s on a depth-10 live call, 27 Nov 2026, no extra charge;
+   * https://dataforseo.com/update/new-goto-url-limits-and-how-this-affects-your-results):
+   * only for async jobs that need real competitor URLs (recon_targets), never inside a tool call. */
   async serpOrganic(
     keyword: string, location?: string | number, languageCode = 'en', depth = 20,
-    opts: { loadAsyncAiOverview?: boolean; resolvePoisonedResults?: boolean; maxAgeDays?: number } = {},
+    opts: { loadAsyncAiOverview?: boolean; resolvePoisonedResults?: boolean; resolveGotoUrls?: boolean; maxAgeDays?: number } = {},
   ): Promise<DfsResponse> {
     return this.call('/v3/serp/google/organic/live/advanced', [
       {
         keyword, ...this.loc(location), language_code: languageCode, depth,
         ...(opts.loadAsyncAiOverview ? { load_async_ai_overview: true } : {}),
         ...(opts.resolvePoisonedResults ? { resolve_poisoned_results: true } : {}),
+        ...(opts.resolveGotoUrls ? { resolve_goto_urls: true } : {}),
       },
-    ], opts.maxAgeDays != null ? { maxAgeDays: opts.maxAgeDays } : undefined);
+    ], {
+      // Resolving Google's redirects can take minutes (DataForSEO: max 260 s turnaround; 96 s measured),
+      // so the default 60 s timeout would abort a call DataForSEO still completes and bills.
+      timeoutMs: opts.resolveGotoUrls ? 280_000 : 60_000,
+      ...(opts.maxAgeDays != null ? { maxAgeDays: opts.maxAgeDays } : {}),
+    });
+  }
+
+  /** AI Optimization — LLM Responses (live): one prompt to one model, the answer text and, with
+   * web_search, its citations (annotations). Billed $0.0006 per task plus the model's token cost
+   * (`money_spent`), so the price varies with the answer length. Up to 120 s per task. */
+  async llmResponsesLive(
+    platform: 'chat_gpt' | 'claude' | 'gemini' | 'perplexity', body: Record<string, unknown>, opts: DfsCallOptions = {},
+  ): Promise<DfsResponse> {
+    return this.call(`/v3/ai_optimization/${platform}/llm_responses/live`, [body], { timeoutMs: 150000, ...opts });
+  }
+
+  /** SERP — Google AI Mode (live/advanced): the AI Mode answer (markdown) and its references. One task
+   * per call, $0.004 observed (27 Nov 2026). */
+  async serpAiMode(keyword: string, location?: string | number, languageCode = 'en', opts: DfsCallOptions = {}): Promise<DfsResponse> {
+    return this.call('/v3/serp/google/ai_mode/live/advanced', [
+      { keyword, ...this.loc(location), language_code: languageCode },
+    ], { timeoutMs: 150000, ...opts });
   }
 
   /** SERP — live YouTube organic results for a keyword (video discovery). Same SERP

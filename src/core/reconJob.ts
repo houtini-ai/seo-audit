@@ -76,6 +76,7 @@ export async function runReconJob(
     if (!targets.length) return { siteUrl, targets: [], note: `No recon targets (declining/striking pages, position 3-15, ${minImpressions ?? 300}+ impressions). Lower minImpressions or pass urls.` };
 
     const results: any[] = [];
+    const failed: { urlKey: string; query: string; error: string }[] = [];
     let cost = 0;
     for (let i = 0; i < targets.length; i++) {
       if (signal.aborted) break;
@@ -83,7 +84,14 @@ export async function runReconJob(
       update({ phase: 'recon', done: i, total: targets.length, current: t.urlKey });
       let own = null;
       try { own = await fetchOwnPage(t.urlKey, hostForm === 'asis' ? 'asis' : hostForm); } catch { /* page unreachable — classify on SERP alone */ }
-      const serpResp = await client.serpOrganic(t.query, location, 'en', SERP_DEPTH, { loadAsyncAiOverview: true, resolvePoisonedResults: true });
+      let serpResp;
+      try {
+        serpResp = await client.serpOrganic(t.query, location, 'en', SERP_DEPTH, { loadAsyncAiOverview: true, resolvePoisonedResults: true, resolveGotoUrls: true });
+      } catch (e) {
+        // One SERP failing (a timeout, an API error) must not throw away the targets already done.
+        failed.push({ urlKey: t.urlKey, query: t.query, error: `SERP fetch failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}` });
+        continue;
+      }
       cost += serpResp.cost;
       const serp = parseSerpForRecon(serpResp, ownDomain, SERP_DEPTH);
       // The crawl row overrides the SERP/GSC read: GSC keeps reporting impressions for URLs
@@ -122,6 +130,12 @@ export async function runReconJob(
         };
         serp.organicAbove.forEach(o => add(o.url, `organic #${o.rank}`));
         serp.aioReferences.slice(0, 6).forEach(r => add(r.url, 'aio-reference'));
+        // Google wraps some results in a google.com/goto redirect that DataForSEO could not resolve
+        // in time: the site is known (breadcrumb) but not the page, so it can't be fetched. Named, not dropped.
+        const redirectOnly = [
+          ...serp.organicAbove.filter(o => !o.url).map(o => ({ from: `organic #${o.rank}`, site: o.domain || o.shownAs || null })),
+          ...serp.aioReferences.slice(0, 6).filter(r => !r.url).map(r => ({ from: 'aio-reference', site: r.domain || r.shownAs || null })),
+        ];
         serp.videoItems.slice(0, 2).forEach(v => add(v.url, 'video-pack'));
 
         const lim = competitorLimit ?? 5;
@@ -140,6 +154,7 @@ export async function runReconJob(
         const notes = [
           skipped.length ? `${skipped.length} identified competitor page(s) not fetched (competitorLimit ${lim}) — raise competitorLimit or fetch them directly.` : '',
           videos.length ? `${videos.length} ranking video(s) listed, not fetched (no readable text over HTTP) — watch them; video often wins these SERPs.` : '',
+          redirectOnly.length ? `${redirectOnly.length} competitor result(s) came back only as a Google redirect (google.com/goto) that DataForSEO could not resolve, so the page is unknown and was not fetched: open the SERP to find them.` : '',
         ].filter(Boolean);
         competitorFetch = {
           limit: lim,
@@ -151,6 +166,7 @@ export async function runReconJob(
           routes: chosen.map(c => ({ url: c.url, from: c.from, route: c.route })),
           skipped: skipped.map(c => ({ url: c.url, from: c.from, route: c.route })),
           videos: videos.map(c => ({ url: c.url, from: c.from })),
+          redirectOnly,
           note: notes.length ? notes.join(' ') : undefined,
         };
       }
@@ -159,10 +175,12 @@ export async function runReconJob(
         urlKey: t.urlKey, query: t.query, window: gscWindow,
         impressions: t.impressions, gscPosition: t.position, priorPosition: t.priorPosition, slipped: t.slipped,
         organicRank: serp.ourOrganicRank, serpDepth: SERP_DEPTH,
-        organicRankNote: serp.ourOrganicRank == null ? `absent from the top ${SERP_DEPTH} organic results — position beyond ${SERP_DEPTH} was not measured` : undefined,
+        organicRankNote: serp.ourOrganicRank == null ? `absent from the top ${SERP_DEPTH} organic results — position beyond ${SERP_DEPTH} was not measured${serp.unattributedOrganic ? `; ${serp.unattributedOrganic} result(s) came back as a Google redirect with no readable site, so one could be yours` : ''}` : undefined,
         aioPresent: serp.aioPresent, aioCitesUs: serp.aioCitesUs, aioResolved: serp.aioResolved, aioAsync: serp.aioAsync,
         aioNote: serp.aioCitesUs == null && serp.aioPresent
-          ? (serp.restoredFromWeb ? 'AI Overview came with a poisoned results page and is not repaired — citation status UNKNOWN, not "not cited"' : 'AI Overview present but citations unresolved — citation status UNKNOWN, not "not cited"')
+          ? (serp.restoredFromWeb ? 'AI Overview came with a poisoned results page and is not repaired — citation status UNKNOWN, not "not cited"'
+            : serp.aioResolved && serp.aioUnattributed ? `you are not among the AI Overview sources that could be read, but ${serp.aioUnattributed} came back as a Google redirect naming only a publication — citation status UNKNOWN, not "not cited"`
+            : 'AI Overview present but citations unresolved — citation status UNKNOWN, not "not cited"')
           : undefined,
         restoredFromWeb: serp.restoredFromWeb,
         videoPresent: serp.videoPresent,
@@ -199,6 +217,7 @@ export async function runReconJob(
         if (!blocked.length) return '';
         return `\n\n${blocked.length} competitor(s) couldn't be fetched (bot-protection like Cloudflare, a block, or a fetch error): ${blocked.slice(0, 5).map(c => `${c.url} [${c.via}: ${c.error}]`).join('; ')}. If one matters, paste its copy here or drop a text file and I'll diff it in.`;
       })() +
+      (failed.length ? `\n\n${failed.length} page(s) not analysed because the SERP fetch failed (no to-dos written for them): ${failed.map(f => `${f.urlKey} ("${f.query}": ${f.error})`).join('; ')}. Run recon_targets again for them.` : '') +
       `\n\nNext: research the competitors (transcribe the videos, read the reachable pages), write gaps back with save_recon_todo, and track with recon_todos.` + browserLink(siteUrl);
     // The poll (check_sync_status) injects this result into the model's context, which the
     // host caps (~25k tokens). The full per-page detail (heading lists, competitor URL arrays,
@@ -216,6 +235,6 @@ export async function runReconJob(
       hasProductSchema: r.hasProductSchema, dateModified: r.dateModified, todosInserted: r.todosInserted,
       ...(r.competitorContent ? { competitorContent: r.competitorContent, competitorFetch: r.competitorFetch } : {}),
     }));
-    return { siteUrl, cost, window: gscWindow, serpDepth: SERP_DEPTH, targets: slimTargets, summary: md };
+    return { siteUrl, cost, window: gscWindow, serpDepth: SERP_DEPTH, targets: slimTargets, ...(failed.length ? { failed } : {}), summary: md };
   } finally { db.close(); }
 }

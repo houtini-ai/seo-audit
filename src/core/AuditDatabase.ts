@@ -745,6 +745,8 @@ export class AuditDatabase {
     ensure('render_audit', 'raw_main_words', 'raw_main_words INTEGER');     // words in the main content (mainWordCount)
     ensure('render_audit', 'rendered_main_words', 'rendered_main_words INTEGER');
     ensure('render_audit', 'raw_status', 'raw_status INTEGER');             // HTTP status of the raw fetch
+    ensure('render_audit', 'raw_schema_types', 'raw_schema_types TEXT');     // JSON array of JSON-LD @types in the raw HTML (1.0.8)
+    ensure('render_audit', 'rendered_schema_types', 'rendered_schema_types TEXT'); // ...and after JS
     ensure('pages', 'max_passage_score', 'max_passage_score REAL');
     ensure('pages', 'max_passage_query', 'max_passage_query TEXT');
     ensure('pages', 'max_passage_impr', 'max_passage_impr INTEGER');

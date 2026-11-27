@@ -6,6 +6,7 @@ import { dbPathFor } from './paths.js';
 import { hostFormForProperty } from './url-key.js';
 import { extractPage, decodeHtmlBody, isInternalHost, type ExtractedPage } from './extract.js';
 import { renderHtml, closeRenderer, rendererAvailable, RendererUnavailableError } from './render.js';
+import { scanTypedNodes, typesOf } from '../audit/schemaTypes.js';
 
 const DEFAULT_UA = 'Mozilla/5.0 (compatible; seo-audit-console/0.1; +https://github.com/houtini-ai/seo-audit-console)';
 
@@ -31,6 +32,16 @@ export interface RenderDiff {
   robotsChanged: boolean;           // effective noindex differs between raw and rendered
   rawMainWords: number | null;      // mainWordCount of the raw HTML (null when the HTML wasn't supplied)
   renderedMainWords: number | null;
+  /** Distinct JSON-LD @types (lowercased, schema.org prefix stripped) in the raw HTML and after JS. */
+  rawSchemaTypes: string[] | null;     // null = the scan hit its bound: unknown, not "no types"
+  renderedSchemaTypes: string[] | null;
+}
+
+/** Distinct JSON-LD @types on a page: top-level, @graph and the page's own edges (scanTypedNodes), sorted.
+ * Null when the scan was truncated: a type missing from a cut-short scan is unknown, not absent. */
+export function schemaTypeList(jsonLd: string | null): string[] | null {
+  const scan = scanTypedNodes(jsonLd);
+  return scan.truncated ? null : [...new Set(scan.nodes.flatMap(n => typesOf(n)))].sort();
 }
 
 /**
@@ -79,6 +90,8 @@ export function diffRawVsRendered(raw: ExtractedPage, rendered: ExtractedPage, h
     robotsChanged: raw.noindex !== rendered.noindex,
     rawMainWords: html ? mainWordCount(html.raw) : null,
     renderedMainWords: html ? mainWordCount(html.rendered) : null,
+    rawSchemaTypes: schemaTypeList(raw.jsonLd),
+    renderedSchemaTypes: schemaTypeList(rendered.jsonLd),
   };
 }
 
@@ -138,11 +151,11 @@ export async function auditRender(
       `INSERT INTO render_audit (url_key, raw_word_count, rendered_word_count, raw_internal_links, rendered_internal_links,
          links_only_rendered, sample_new_links, title_changed, raw_title, rendered_title, canonical_changed,
          raw_canonical, rendered_canonical, raw_robots, rendered_robots, x_robots_tag, raw_noindex, rendered_noindex, robots_changed,
-         raw_main_words, rendered_main_words, raw_status, rendered_at)
+         raw_main_words, rendered_main_words, raw_schema_types, rendered_schema_types, raw_status, rendered_at)
        VALUES (@url_key,@raw_word_count,@rendered_word_count,@raw_internal_links,@rendered_internal_links,
          @links_only_rendered,@sample_new_links,@title_changed,@raw_title,@rendered_title,@canonical_changed,
          @raw_canonical,@rendered_canonical,@raw_robots,@rendered_robots,@x_robots_tag,@raw_noindex,@rendered_noindex,@robots_changed,
-         @raw_main_words,@rendered_main_words,@raw_status,datetime('now'))
+         @raw_main_words,@rendered_main_words,@raw_schema_types,@rendered_schema_types,@raw_status,datetime('now'))
        ON CONFLICT(url_key) DO UPDATE SET raw_word_count=excluded.raw_word_count, rendered_word_count=excluded.rendered_word_count,
          raw_internal_links=excluded.raw_internal_links, rendered_internal_links=excluded.rendered_internal_links,
          links_only_rendered=excluded.links_only_rendered, sample_new_links=excluded.sample_new_links,
@@ -150,7 +163,8 @@ export async function auditRender(
          canonical_changed=excluded.canonical_changed, raw_canonical=excluded.raw_canonical, rendered_canonical=excluded.rendered_canonical,
          raw_robots=excluded.raw_robots, rendered_robots=excluded.rendered_robots, x_robots_tag=excluded.x_robots_tag,
          raw_noindex=excluded.raw_noindex, rendered_noindex=excluded.rendered_noindex, robots_changed=excluded.robots_changed,
-         raw_main_words=excluded.raw_main_words, rendered_main_words=excluded.rendered_main_words, raw_status=excluded.raw_status,
+         raw_main_words=excluded.raw_main_words, rendered_main_words=excluded.rendered_main_words, raw_schema_types=excluded.raw_schema_types,
+         rendered_schema_types=excluded.rendered_schema_types, raw_status=excluded.raw_status,
          rendered_at=datetime('now')`,
     );
 
@@ -194,7 +208,8 @@ export async function auditRender(
           title_changed: diff.titleChanged ? 1 : 0, raw_title: diff.rawTitle, rendered_title: diff.renderedTitle, canonical_changed: diff.canonicalChanged ? 1 : 0,
           raw_canonical: diff.rawCanonical, rendered_canonical: diff.renderedCanonical, raw_robots: diff.rawRobots, rendered_robots: diff.renderedRobots,
           x_robots_tag: xRobotsTag, raw_noindex: diff.rawNoindex ? 1 : 0, rendered_noindex: diff.renderedNoindex ? 1 : 0, robots_changed: diff.robotsChanged ? 1 : 0,
-          raw_main_words: diff.rawMainWords, rendered_main_words: diff.renderedMainWords, raw_status: rawStatus,
+          raw_main_words: diff.rawMainWords, rendered_main_words: diff.renderedMainWords,
+          raw_schema_types: diff.rawSchemaTypes ? JSON.stringify(diff.rawSchemaTypes) : null, rendered_schema_types: diff.renderedSchemaTypes ? JSON.stringify(diff.renderedSchemaTypes) : null, raw_status: rawStatus,
         });
         rows.push({ ...diff, urlKey: key });
         if (dependsOnJsFlag(diff)) dependsOnJs++;

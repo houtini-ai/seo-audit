@@ -1,0 +1,364 @@
+{
+ "note": "Live capture 27 Nov 2026, ai_optimization/gemini/llm_responses/live, gemini-3.6-flash with web_search (no location parameter exists for Gemini). Annotation url is a vertexaisearch.cloud.google.com grounding-api-redirect; the real source is direct_url, title is the source domain. Annotations repeat per span. Cost $0.033093.",
+ "endpoint": "/v3/ai_optimization/gemini/llm_responses/live",
+ "request": [
+  {
+   "user_prompt": "What are the best sim racing cockpits to buy in 2026?",
+   "model_name": "gemini-3.6-flash",
+   "web_search": true,
+   "max_output_tokens": 2048
+  }
+ ],
+ "capturedAt": "2026-11-27T07:50:32.445Z",
+ "cost": 0.033093,
+ "tasks": [
+  {
+   "id": "11270750-1165-0612-0000-4705b0cb0939",
+   "status_code": 20000,
+   "status_message": "Ok.",
+   "time": "10.9013 sec.",
+   "cost": 0.033093,
+   "result_count": 1,
+   "path": [
+    "v3",
+    "ai_optimization",
+    "gemini",
+    "llm_responses",
+    "live"
+   ],
+   "data": {
+    "api": "ai_optimization",
+    "function": "llm_responses",
+    "se": "gemini",
+    "user_prompt": "What are the best sim racing cockpits to buy in 2026?",
+    "model_name": "gemini-3.6-flash",
+    "web_search": true,
+    "max_output_tokens": 2048
+   },
+   "result": [
+    {
+     "model_name": "gemini-3.6-flash",
+     "input_tokens": 26,
+     "output_tokens": 1193,
+     "reasoning_tokens": 0,
+     "web_search": true,
+     "money_spent": 0.03249325,
+     "datetime": "2026-11-27 07:50:33 +00:00",
+     "items": [
+      {
+       "type": "message",
+       "sections": [
+        {
+         "type": "text",
+         "text": "Choosing the right sim racing cockpit depends on space, budget, and the power of your force feedback wheel (especially if using a high-torque Direct Drive base).\n\n---\n\n### **1. Best Budget & Foldable Cockpits (Under $300)**\n*Best for beginners, small spaces, or casual setups using gear-driven or light direct-drive wheels (up to ~5 Nm).*\n\n* **Playseat Challenge X (Logitech Edition)**\n  * **Why it’s great:** Highly portable, surprisingly comfortable hammock-style seat, and folds up effortlessly with the wheel and pedals attached. \n  * **Best for:** Apartment dwellers or casual racers on Xbox, PlayStation, or entry-level PC wheels (Logitech G29/G923, Thrustmaster T300).\n* **Next Level Racing GTLite Pro**\n  * **Why it’s great:** Features extra bracing compared to older folding seats, comfortably handling entry-level Direct Drive bases (like the Moza R3/R5 or Fanatec Gran Turismo DD Pro) without excessive flex. \n\n---\n\n### **2. Best Mid-Range & Tubing Cockpits ($300 – $600)**\n*Best for racers who want a fixed, sturdy frame with an included seat without taking up a massive footprint.*\n\n* **Playseat Trophy**\n  * **Why it’s great:** Extremely lightweight, frameless seat design that breathes well and supports high-torque Direct Drive wheels (up to 15 Nm) with minimal flex. It offers great ergonomics and an aggressive GT/Formula seating posture.\n* **Next Level Racing GTRacer 2.0**\n  * **Why it’s great:** An all-in-one steel tube cockpit that comes bundled with a reclining GT-style seat and seat sliders out of the box. Handles wheel bases up to ~13 Nm effortlessly.\n\n---\n\n### **3. Best Value Aluminum Profile Rigs ($450 – $750)**\n*Best for modular flexibility. Standard 80/20 aluminum extrusion rigs allow infinite adjustments, mounting points for handbrakes/shifters, and future-proofing.*\n\n* **Sim-Lab GT1 Evo**\n  * **Why it’s great:** Widely considered the gold standard for value profile rigs. Built using heavy-duty 40x80mm aluminum profiles, it is rigid enough to handle 20+ Nm Direct Drive bases and load-cell pedals. \n  * *Note:* Requires buying a separate seat (or mounting a real car seat from a local junkyard).\n* **GT Omega PRIME Lite / Trak Racer TR80 Mk5**\n  * **Why it’s great:** Excellent alternatives to the GT1 Evo with widespread availability worldwide and affordable bundle packages (including optional recliner or bucket seats).\n\n---\n\n### **4. Best High-End & Professional Rigs ($800+)**\n*Best for hardcore enthusiasts, 25+ Nm Direct Drive wheelbases, heavy load-cell/hydraulic pedal sets, and motion platform integration.*\n\n* **Sim-Lab P1X Pro**\n  * **Why it’s great:** An iteration of the famous P1-X, featuring custom slanted profile uprights, pre-drilled brackets, and unmatched rigidity. It handles violent force feedback and heavy pedal pressure without moving a millimeter.\n* **Advanced Sim Racing ASR 6 / Next Level Racing F-GT Elite 160**\n  * **Why it’s great:** Ultra-heavy-duty 40x160mm profile bases designed for maximum stability. Perfect if you plan to install full motion systems (D-BOX, Actner, etc.) down the line.\n\n---\n\n### **Key Buying Tips**\n1. **Factor in the Seat Cost:** Most aluminum profile cockpits (Sim-Lab, Trak Racer, ASR) only ship as the metal frame. Expect to budget an extra $200–$400 for a bucket seat or a real auto seat.\n2. **Pedal Plate Flex:** Strong load-cell brakes require a rigid pedal plate. Avoid ultra-cheap steel frames if using load-cell pedals exceeding 60kg of resistance.\n3. **Seating Position:** If you switch between F1 and GT racing frequently, look for dual-position cockpits (like the **Next Level Racing F-GT Elite** or **Trak Racer TRX**).",
+         "annotations": [
+          {
+           "title": "mysimrig.nl",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHzrQWWBSIz1OgOaexyByVbucY8TbWCiQgFqWXJZSO_Km2iTTKcTm7lIHw5ROqMDV7UlXYswWXpEVpYqNPP4Alk7tXIBd14LZF4qyj7V7Z3uuHQB4txeVsxFFPTzWdLUUz3w5Gwkddd9IXocRi9Vl081czRjsiuXpMSd-SDMvnuJaFzJDBQ",
+           "direct_url": "https://mysimrig.nl/en/blog/simracing/best-value-aluminum-profile-cockpit-2026/",
+           "start_index": 0,
+           "end_index": 160,
+           "text": "Choosing the right sim racing cockpit depends on space, budget, and the power of your force feedback wheel (especially if using a high-torque Direct Drive base)"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 0,
+           "end_index": 160,
+           "text": "Choosing the right sim racing cockpit depends on space, budget, and the power of your force feedback wheel (especially if using a high-torque Direct Drive base)"
+          },
+          {
+           "title": "simracinggearguide.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGOqpYCTuWayauITGt088gir2Z9p-vf9qDYRcRYIBGTAECKpkyEIqE77p4KGQhMCH29VRZlOaqd45i4jkwDICUXoSdgyFs836wmlmpA8Ov_bf4N65xU6nEgyhnvCYC3nlH8z4XMpoCt58jlI9TJ8LYjlMqeEGJX",
+           "direct_url": "https://www.simracinggearguide.com/rigs/best-sim-racing-cockpit/",
+           "start_index": 342,
+           "end_index": 385,
+           "text": "**Playseat Challenge X (Logitech Edition)**"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 680,
+           "end_index": 712,
+           "text": "**Next Level Racing GTLite Pro**"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 680,
+           "end_index": 712,
+           "text": "**Next Level Racing GTLite Pro**"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 717,
+           "end_index": 922,
+           "text": "**Why it’s great:** Features extra bracing compared to older folding seats, comfortably handling entry-level Direct Drive bases (like the Moza R3/R5 or Fanatec Gran Turismo DD Pro) without excessive flex"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 1104,
+           "end_index": 1123,
+           "text": "**Playseat Trophy**"
+          },
+          {
+           "title": "youtube.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQERmO3JAO8XIijFcwsdizi32ONBJEgSUyshmeIuwUjfrhJHPmHMaNz6VJ35VeLpf6Z-ujrfU7H_yBvsfQ_FlRKxtAfwiwgtCI7s2BOqBQL_D25kdx0Vrt9_qM-5FL14ptg1",
+           "direct_url": "https://www.youtube.com/watch?v=ip7gBdIh7bk",
+           "start_index": 1104,
+           "end_index": 1123,
+           "text": "**Playseat Trophy**"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 1367,
+           "end_index": 1400,
+           "text": "**Next Level Racing GTRacer 2.0**"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 1367,
+           "end_index": 1400,
+           "text": "**Next Level Racing GTRacer 2.0**"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 1405,
+           "end_index": 1541,
+           "text": "**Why it’s great:** An all-in-one steel tube cockpit that comes bundled with a reclining GT-style seat and seat sliders out of the box"
+          },
+          {
+           "title": "setupking.de",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFw5aVe-B9IMfvsTmQ8wCV-pK7D9Pk4G9fpzKaunhg0IHqFwgN1AltiybVj3uQPQKctBVu0lgMY_-giC_CpXV_t0EdslzJ2NrJg6CezjMxSrkjIZzTuW_0eJgj0165CK5AdNwhWpssnT1mp7arN",
+           "direct_url": "https://www.setupking.de/blog/bestes-sim-racing-cockpit",
+           "start_index": 1543,
+           "end_index": 1588,
+           "text": "Handles wheel bases up to ~13 Nm effortlessly"
+          },
+          {
+           "title": "simracingcockpit.gg",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQE7riN3hRwgp7NV2JgNmYi-3roqKa6Sgf7JngqZnqGq2K0MKqJLOpuoQb_0arhlFttCRjBG9SAP5yRIF5TfbO1HqsT-Cbar1yW567Sc8JxTce-JgS70MPdWRuuPbTxBjUHXaxJHl_2-Y7CA4vAMaw==",
+           "direct_url": "https://simracingcockpit.gg/best-sim-rigs-on-the-market/",
+           "start_index": 1820,
+           "end_index": 1839,
+           "text": "**Sim-Lab GT1 Evo**"
+          },
+          {
+           "title": "simracinggearguide.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGOqpYCTuWayauITGt088gir2Z9p-vf9qDYRcRYIBGTAECKpkyEIqE77p4KGQhMCH29VRZlOaqd45i4jkwDICUXoSdgyFs836wmlmpA8Ov_bf4N65xU6nEgyhnvCYC3nlH8z4XMpoCt58jlI9TJ8LYjlMqeEGJX",
+           "direct_url": "https://www.simracinggearguide.com/rigs/best-sim-racing-cockpit/",
+           "start_index": 1820,
+           "end_index": 1839,
+           "text": "**Sim-Lab GT1 Evo**"
+          },
+          {
+           "title": "mysimrig.nl",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHzrQWWBSIz1OgOaexyByVbucY8TbWCiQgFqWXJZSO_Km2iTTKcTm7lIHw5ROqMDV7UlXYswWXpEVpYqNPP4Alk7tXIBd14LZF4qyj7V7Z3uuHQB4txeVsxFFPTzWdLUUz3w5Gwkddd9IXocRi9Vl081czRjsiuXpMSd-SDMvnuJaFzJDBQ",
+           "direct_url": "https://mysimrig.nl/en/blog/simracing/best-value-aluminum-profile-cockpit-2026/",
+           "start_index": 1844,
+           "end_index": 1924,
+           "text": "**Why it’s great:** Widely considered the gold standard for value profile rigs"
+          },
+          {
+           "title": "simracinggearguide.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGOqpYCTuWayauITGt088gir2Z9p-vf9qDYRcRYIBGTAECKpkyEIqE77p4KGQhMCH29VRZlOaqd45i4jkwDICUXoSdgyFs836wmlmpA8Ov_bf4N65xU6nEgyhnvCYC3nlH8z4XMpoCt58jlI9TJ8LYjlMqeEGJX",
+           "direct_url": "https://www.simracinggearguide.com/rigs/best-sim-racing-cockpit/",
+           "start_index": 1844,
+           "end_index": 1924,
+           "text": "**Why it’s great:** Widely considered the gold standard for value profile rigs"
+          },
+          {
+           "title": "mysimrig.nl",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHzrQWWBSIz1OgOaexyByVbucY8TbWCiQgFqWXJZSO_Km2iTTKcTm7lIHw5ROqMDV7UlXYswWXpEVpYqNPP4Alk7tXIBd14LZF4qyj7V7Z3uuHQB4txeVsxFFPTzWdLUUz3w5Gwkddd9IXocRi9Vl081czRjsiuXpMSd-SDMvnuJaFzJDBQ",
+           "direct_url": "https://mysimrig.nl/en/blog/simracing/best-value-aluminum-profile-cockpit-2026/",
+           "start_index": 1926,
+           "end_index": 2051,
+           "text": "Built using heavy-duty 40x80mm aluminum profiles, it is rigid enough to handle 20+ Nm Direct Drive bases and load-cell pedals"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEbKva79IsgE1jn0fID_vZZNnTZrzw0i7vR_cPCfwSd6DGImqmIdZyst4MpuQnta63r-6T_VBIVVSty79hUNdraU2eFjzJfMajAqvMHa72ChBfH47bXC5uAGJX9-5H0KnY8304kWgpf3LSwn4yNuBNG-hCCzalmulWLM2sExQSgOw==",
+           "direct_url": "https://simracingsetup.com/product-guides/best-aluminium-profile-sim-rigs/",
+           "start_index": 1926,
+           "end_index": 2051,
+           "text": "Built using heavy-duty 40x80mm aluminum profiles, it is rigid enough to handle 20+ Nm Direct Drive bases and load-cell pedals"
+          },
+          {
+           "title": "mysimrig.nl",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHzrQWWBSIz1OgOaexyByVbucY8TbWCiQgFqWXJZSO_Km2iTTKcTm7lIHw5ROqMDV7UlXYswWXpEVpYqNPP4Alk7tXIBd14LZF4qyj7V7Z3uuHQB4txeVsxFFPTzWdLUUz3w5Gwkddd9IXocRi9Vl081czRjsiuXpMSd-SDMvnuJaFzJDBQ",
+           "direct_url": "https://mysimrig.nl/en/blog/simracing/best-value-aluminum-profile-cockpit-2026/",
+           "start_index": 2058,
+           "end_index": 2149,
+           "text": "*Note:* Requires buying a separate seat (or mounting a real car seat from a local junkyard)"
+          },
+          {
+           "title": "simgasm.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEjoY1IRq0xrSW_0saxHZeP4Psm5SvUTYXfPkhvFK7u-Sf8L32pUH2RUYckIBMn9zQTWvtF6A2JYiHqxlcx7pmrlqwg819Je77iijygOHZUE6tAnpPljB7gcql9nM6RlmaUJstFPOC2ouECv8sJEj8ANtO0IR__eCRdcvXccOjdMiwT0Ggws03TXvaWvLNWk-NkuAyeXdpdHw==",
+           "direct_url": "https://simgasm.com/blogs/articles/which-aluminium-sim-racing-cockpit-suits-regular-racers-in-2026",
+           "start_index": 2058,
+           "end_index": 2149,
+           "text": "*Note:* Requires buying a separate seat (or mounting a real car seat from a local junkyard)"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEbKva79IsgE1jn0fID_vZZNnTZrzw0i7vR_cPCfwSd6DGImqmIdZyst4MpuQnta63r-6T_VBIVVSty79hUNdraU2eFjzJfMajAqvMHa72ChBfH47bXC5uAGJX9-5H0KnY8304kWgpf3LSwn4yNuBNG-hCCzalmulWLM2sExQSgOw==",
+           "direct_url": "https://simracingsetup.com/product-guides/best-aluminium-profile-sim-rigs/",
+           "start_index": 2153,
+           "end_index": 2198,
+           "text": "**GT Omega PRIME Lite / Trak Racer TR80 Mk5**"
+          },
+          {
+           "title": "reddit.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGBycx_JwXSpRzSmDW2OTYALPVBeQJn1uKqEm86M6Yo3rQieg6aPVr8enBG-Zfql4trVIuOB_MfLVdCtbiVFeR8_m38Hx0feQvY0HIq9ApJfHMlp04by64HrkrTogfDav_rNKn87F1hXamxespNmpTsCb3p4OaI6oSHX-s9NB2Qv6nDtEzolRfBMP7nDK2wsWWcJt0ilfjykQ==",
+           "direct_url": "https://www.reddit.com/r/simracing/comments/1y57we5/thoughts_and_opinions_on_entry_level_aluminum/",
+           "start_index": 2153,
+           "end_index": 2198,
+           "text": "**GT Omega PRIME Lite / Trak Racer TR80 Mk5**"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEbKva79IsgE1jn0fID_vZZNnTZrzw0i7vR_cPCfwSd6DGImqmIdZyst4MpuQnta63r-6T_VBIVVSty79hUNdraU2eFjzJfMajAqvMHa72ChBfH47bXC5uAGJX9-5H0KnY8304kWgpf3LSwn4yNuBNG-hCCzalmulWLM2sExQSgOw==",
+           "direct_url": "https://simracingsetup.com/product-guides/best-aluminium-profile-sim-rigs/",
+           "start_index": 2203,
+           "end_index": 2378,
+           "text": "**Why it’s great:** Excellent alternatives to the GT1 Evo with widespread availability worldwide and affordable bundle packages (including optional recliner or bucket seats)"
+          },
+          {
+           "title": "simracingcockpit.gg",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQE7riN3hRwgp7NV2JgNmYi-3roqKa6Sgf7JngqZnqGq2K0MKqJLOpuoQb_0arhlFttCRjBG9SAP5yRIF5TfbO1HqsT-Cbar1yW567Sc8JxTce-JgS70MPdWRuuPbTxBjUHXaxJHl_2-Y7CA4vAMaw==",
+           "direct_url": "https://simracingcockpit.gg/best-sim-rigs-on-the-market/",
+           "start_index": 2578,
+           "end_index": 2597,
+           "text": "**Sim-Lab P1X Pro**"
+          },
+          {
+           "title": "simracinggearguide.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGOqpYCTuWayauITGt088gir2Z9p-vf9qDYRcRYIBGTAECKpkyEIqE77p4KGQhMCH29VRZlOaqd45i4jkwDICUXoSdgyFs836wmlmpA8Ov_bf4N65xU6nEgyhnvCYC3nlH8z4XMpoCt58jlI9TJ8LYjlMqeEGJX",
+           "direct_url": "https://www.simracinggearguide.com/rigs/best-sim-racing-cockpit/",
+           "start_index": 2578,
+           "end_index": 2597,
+           "text": "**Sim-Lab P1X Pro**"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEbKva79IsgE1jn0fID_vZZNnTZrzw0i7vR_cPCfwSd6DGImqmIdZyst4MpuQnta63r-6T_VBIVVSty79hUNdraU2eFjzJfMajAqvMHa72ChBfH47bXC5uAGJX9-5H0KnY8304kWgpf3LSwn4yNuBNG-hCCzalmulWLM2sExQSgOw==",
+           "direct_url": "https://simracingsetup.com/product-guides/best-aluminium-profile-sim-rigs/",
+           "start_index": 2578,
+           "end_index": 2597,
+           "text": "**Sim-Lab P1X Pro**"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEbKva79IsgE1jn0fID_vZZNnTZrzw0i7vR_cPCfwSd6DGImqmIdZyst4MpuQnta63r-6T_VBIVVSty79hUNdraU2eFjzJfMajAqvMHa72ChBfH47bXC5uAGJX9-5H0KnY8304kWgpf3LSwn4yNuBNG-hCCzalmulWLM2sExQSgOw==",
+           "direct_url": "https://simracingsetup.com/product-guides/best-aluminium-profile-sim-rigs/",
+           "start_index": 2602,
+           "end_index": 2744,
+           "text": "**Why it’s great:** An iteration of the famous P1-X, featuring custom slanted profile uprights, pre-drilled brackets, and unmatched rigidity"
+          },
+          {
+           "title": "mysimrig.nl",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHzrQWWBSIz1OgOaexyByVbucY8TbWCiQgFqWXJZSO_Km2iTTKcTm7lIHw5ROqMDV7UlXYswWXpEVpYqNPP4Alk7tXIBd14LZF4qyj7V7Z3uuHQB4txeVsxFFPTzWdLUUz3w5Gwkddd9IXocRi9Vl081czRjsiuXpMSd-SDMvnuJaFzJDBQ",
+           "direct_url": "https://mysimrig.nl/en/blog/simracing/best-value-aluminum-profile-cockpit-2026/",
+           "start_index": 2746,
+           "end_index": 2832,
+           "text": "It handles violent force feedback and heavy pedal pressure without moving a millimeter"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEbKva79IsgE1jn0fID_vZZNnTZrzw0i7vR_cPCfwSd6DGImqmIdZyst4MpuQnta63r-6T_VBIVVSty79hUNdraU2eFjzJfMajAqvMHa72ChBfH47bXC5uAGJX9-5H0KnY8304kWgpf3LSwn4yNuBNG-hCCzalmulWLM2sExQSgOw==",
+           "direct_url": "https://simracingsetup.com/product-guides/best-aluminium-profile-sim-rigs/",
+           "start_index": 2836,
+           "end_index": 2900,
+           "text": "**Advanced Sim Racing ASR 6 / Next Level Racing F-GT Elite 160**"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEbKva79IsgE1jn0fID_vZZNnTZrzw0i7vR_cPCfwSd6DGImqmIdZyst4MpuQnta63r-6T_VBIVVSty79hUNdraU2eFjzJfMajAqvMHa72ChBfH47bXC5uAGJX9-5H0KnY8304kWgpf3LSwn4yNuBNG-hCCzalmulWLM2sExQSgOw==",
+           "direct_url": "https://simracingsetup.com/product-guides/best-aluminium-profile-sim-rigs/",
+           "start_index": 2905,
+           "end_index": 2997,
+           "text": "**Why it’s great:** Ultra-heavy-duty 40x160mm profile bases designed for maximum stability"
+          },
+          {
+           "title": "mysimrig.nl",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHzrQWWBSIz1OgOaexyByVbucY8TbWCiQgFqWXJZSO_Km2iTTKcTm7lIHw5ROqMDV7UlXYswWXpEVpYqNPP4Alk7tXIBd14LZF4qyj7V7Z3uuHQB4txeVsxFFPTzWdLUUz3w5Gwkddd9IXocRi9Vl081czRjsiuXpMSd-SDMvnuJaFzJDBQ",
+           "direct_url": "https://mysimrig.nl/en/blog/simracing/best-value-aluminum-profile-cockpit-2026/",
+           "start_index": 3120,
+           "end_index": 3235,
+           "text": "**Factor in the Seat Cost:** Most aluminum profile cockpits (Sim-Lab, Trak Racer, ASR) only ship as the metal frame"
+          },
+          {
+           "title": "simgasm.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEjoY1IRq0xrSW_0saxHZeP4Psm5SvUTYXfPkhvFK7u-Sf8L32pUH2RUYckIBMn9zQTWvtF6A2JYiHqxlcx7pmrlqwg819Je77iijygOHZUE6tAnpPljB7gcql9nM6RlmaUJstFPOC2ouECv8sJEj8ANtO0IR__eCRdcvXccOjdMiwT0Ggws03TXvaWvLNWk-NkuAyeXdpdHw==",
+           "direct_url": "https://simgasm.com/blogs/articles/which-aluminium-sim-racing-cockpit-suits-regular-racers-in-2026",
+           "start_index": 3120,
+           "end_index": 3235,
+           "text": "**Factor in the Seat Cost:** Most aluminum profile cockpits (Sim-Lab, Trak Racer, ASR) only ship as the metal frame"
+          },
+          {
+           "title": "mysimrig.nl",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHzrQWWBSIz1OgOaexyByVbucY8TbWCiQgFqWXJZSO_Km2iTTKcTm7lIHw5ROqMDV7UlXYswWXpEVpYqNPP4Alk7tXIBd14LZF4qyj7V7Z3uuHQB4txeVsxFFPTzWdLUUz3w5Gwkddd9IXocRi9Vl081czRjsiuXpMSd-SDMvnuJaFzJDBQ",
+           "direct_url": "https://mysimrig.nl/en/blog/simracing/best-value-aluminum-profile-cockpit-2026/",
+           "start_index": 3237,
+           "end_index": 3312,
+           "text": "Expect to budget an extra $200–$400 for a bucket seat or a real auto seat"
+          },
+          {
+           "title": "reddit.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGBycx_JwXSpRzSmDW2OTYALPVBeQJn1uKqEm86M6Yo3rQieg6aPVr8enBG-Zfql4trVIuOB_MfLVdCtbiVFeR8_m38Hx0feQvY0HIq9ApJfHMlp04by64HrkrTogfDav_rNKn87F1hXamxespNmpTsCb3p4OaI6oSHX-s9NB2Qv6nDtEzolRfBMP7nDK2wsWWcJt0ilfjykQ==",
+           "direct_url": "https://www.reddit.com/r/simracing/comments/1y57we5/thoughts_and_opinions_on_entry_level_aluminum/",
+           "start_index": 3237,
+           "end_index": 3312,
+           "text": "Expect to budget an extra $200–$400 for a bucket seat or a real auto seat"
+          },
+          {
+           "title": "mysimrig.nl",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHzrQWWBSIz1OgOaexyByVbucY8TbWCiQgFqWXJZSO_Km2iTTKcTm7lIHw5ROqMDV7UlXYswWXpEVpYqNPP4Alk7tXIBd14LZF4qyj7V7Z3uuHQB4txeVsxFFPTzWdLUUz3w5Gwkddd9IXocRi9Vl081czRjsiuXpMSd-SDMvnuJaFzJDBQ",
+           "direct_url": "https://mysimrig.nl/en/blog/simracing/best-value-aluminum-profile-cockpit-2026/",
+           "start_index": 3317,
+           "end_index": 3390,
+           "text": "**Pedal Plate Flex:** Strong load-cell brakes require a rigid pedal plate"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHEmsw4bbq5lxJf-1sZc3oh5Rckx2ouP9BhesZbnMMf75VpbOl9FDy8NUfpPTBPXHmO5qC50CitzBKazJdC2LHqGMmvhDo0wFddJNA9pMZ6XbifLpvkjSs_JKWuz48kmjIn2rA9aw2OaZFu8QPSe8TNUl9agztLBi9Kdpk=",
+           "direct_url": "https://simracingsetup.com/product-guides/best-sim-rigs-buyers-guide/",
+           "start_index": 3482,
+           "end_index": 3652,
+           "text": "**Seating Position:** If you switch between F1 and GT racing frequently, look for dual-position cockpits (like the **Next Level Racing F-GT Elite** or **Trak Racer TRX**)"
+          },
+          {
+           "title": "simracingsetup.com",
+           "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEbKva79IsgE1jn0fID_vZZNnTZrzw0i7vR_cPCfwSd6DGImqmIdZyst4MpuQnta63r-6T_VBIVVSty79hUNdraU2eFjzJfMajAqvMHa72ChBfH47bXC5uAGJX9-5H0KnY8304kWgpf3LSwn4yNuBNG-hCCzalmulWLM2sExQSgOw==",
+           "direct_url": "https://simracingsetup.com/product-guides/best-aluminium-profile-sim-rigs/",
+           "start_index": 3482,
+           "end_index": 3652,
+           "text": "**Seating Position:** If you switch between F1 and GT racing frequently, look for dual-position cockpits (like the **Next Level Racing F-GT Elite** or **Trak Racer TRX**)"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "fan_out_queries": [
+      "best aluminum profile rig sim racing 2025 2026",
+      "best sim racing cockpits 2026"
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -26,7 +26,7 @@ you  › run an SEO audit on mysite.com
      ⣾ search console  1.8M rows synced (19s - incremental)
      ⣾ crawl           868 pages · HTTP/2 · robots-polite · 8 parallel
      ⣾ link graph      internal PageRank · click depth · in-degree
-     ✓ 157 checks · 220 findings · ranked by expected clicks per dev-hour
+     ✓ 158 checks · 220 findings · ranked by expected clicks per dev-hour
 
      #1  CTR far below position-expected     /pricing                   XL
      #2  Page losing clicks (trend)          site-wide                  XL
@@ -106,7 +106,7 @@ This README is the story and the quick start. The detail lives in the manual:
 |---|---|
 | [Getting started](manual/getting-started.md) | Install, the GSC service-account setup (and the step everyone misses), Claude Desktop and Claude Code config, your first audit, troubleshooting |
 | [Tool reference](manual/tools.md) | Every tool: what it does, inputs, joins, an example prompt |
-| [The check registry](manual/checks.md) | All 157 checks with what each catches, its D/N label, and the fix |
+| [The check registry](manual/checks.md) | All 158 checks with what each catches, its D/N label, and the fix |
 | [Composition](manual/composition.md) | The join keys, the grains, and fourteen recipes for asking your own questions across the data |
 | [Competitive analysis](manual/competitive.md) | The competitive workflows, DataForSEO setup, link intersect with the Majestic Trust Flow tier, and the real costs |
 | [Architecture](ARCHITECTURE.md) | For contributors and reviewers: how the code fits together (storage, the join key, collection, the audit engine, jobs, the dashboard) and the conventions it follows |
@@ -146,7 +146,7 @@ Yes. The crawl-plus-GSC merge is not a novelty; it's the method. On one property
 
 ## What the audit checks
 
-`run_audit` executes **157 checks** over the joined data and returns a ranked list - not a wall of everything, a priority order with the traffic at stake attached to each finding. The families, briefly:
+`run_audit` executes **158 checks** over the joined data and returns a ranked list - not a wall of everything, a priority order with the traffic at stake attached to each finding. The families, briefly:
 
 | Family | What it catches |
 |---|---|
@@ -401,7 +401,7 @@ The one-line version - full descriptions, inputs and example prompts for every t
 | `market_sizing` · `serp_features` | Share of voice vs named competitors · AI-Overview / snippet / video exposure by volume |
 | `keyword_list` · `content_opportunities` | Cluster a keyword list (own / weak / absent) · the content marketer's report |
 | `recon_targets` · `save_recon_todo` · `recon_todos` | **Content recon:** why a page is losing (live SERP + AI Overview) → a tracked, annotatable to-do board |
-| `portfolio` · `refresh_portfolio` · `schedule_portfolio_refresh` · `get_portfolio` | **The portfolio:** every domain you look after (owned + watched) in one table, measured vs estimated · refresh it (quotes first) · schedule it under a monthly budget cap · see it in chat |
+| `portfolio` · `refresh_portfolio` · `schedule_portfolio_refresh` · `track_keywords` · `ai_prompt_panel` · `get_portfolio` | **The portfolio:** every domain you look after (owned + watched) in one table, measured vs estimated, with competitor suggestions for an owned site (paid, quotes first) · refresh it (quotes first) · schedule it under a monthly budget cap · track keyword positions for every domain from one live results page per keyword (paid check, quotes first) · ask your own prompts of ChatGPT, Claude, Gemini, Perplexity and Google AI Mode and see which domains each answer mentions and cites (paid run, quotes first) · see it in chat |
 | `get_dashboard` · `serve_dashboard` · `export_report` | In-chat dashboard · the same in a local browser tab · shareable HTML or a printable A4 PDF |
 | `get_dashboard_data` · `list_findings` · `get_portfolio_data` · `get_domain_overview` | Internal: the dashboard widgets fetch their data through these; not for direct use |
 | `composition_cookbook` | The data-surface map and recipes for bespoke analyses |

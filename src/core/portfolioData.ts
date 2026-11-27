@@ -4,6 +4,8 @@ import path from 'node:path';
 import { PortfolioStore, LOCATION_ISO, LOCATION_LABEL, type PortfolioDomain } from './PortfolioStore.js';
 import { lastCompleteMonth, isPartialMonth } from './portfolioIngest.js';
 import { countChange } from './displayRules.js';
+import { readTrackedPositions, type PositionStatus } from './keywordTracking.js';
+import { readPanel, summarizePanel, engineStatus, cellState, AI_ENGINE_IDS, type AiEngine, type CellState, type EngineSummary } from './aiPromptPanel.js';
 import { clickWindows, monthlyClicks } from './summaryData.js';
 import { listLocalProperties } from './webServer.js';
 import { urlKey, hostFormForProperty } from './url-key.js';
@@ -429,6 +431,24 @@ export interface DomainOverview {
   /** Owned only: content-recon rows (keyword, AIO shown, our page cited yes/no/unknown, rank, GSC). */
   rankCitation: { keyword: string; url: string; aioPresent: boolean | null; aioCitesUs: boolean | null; organicRank: number | null; gscPosition: number | null; impressions: number | null; researchedAt: string | null }[];
   gsc: { clicks28: number; impressions28: number; pagesWithClicks: number; window: { start: string; end: string } } | null;
+  /** The portfolio's tracked keywords at this domain's location, with this domain's latest position
+   * (null = not in the top serpDepth organic results) and the change against the previous check. */
+  trackedKeywords: {
+    total: number;
+    unchecked: number;
+    rows: {
+      keyword: string; position: number | null; serpDepth: number | null; previous: number | null; change: number | null;
+      status: PositionStatus | 'not-checked'; url: string | null; shownAs: string | null; checkedAt: string | null; unattributed: number | null;
+    }[];
+  };
+  /** The AI prompt panel (ai_prompt_panel) read for this domain: per engine, of the prompts with an
+   * answer, how many mention / cite it; and per prompt, each engine's latest state. Empty when no
+   * prompts exist. Matched on read, so it covers every portfolio domain. */
+  aiPanel: {
+    prompts: number;
+    engines: EngineSummary[];
+    rows: { prompt: string; locationCode: number; cells: { engine: AiEngine; state: CellState; month: string | null; model: string | null; citedUrls: string[] }[] }[];
+  };
   capturedAt: { weekly: string | null; monthly: string | null };
   notes: string[];
 }
@@ -525,11 +545,48 @@ export function getDomainOverview(dataDir: string, domainIn: string, locationCod
 
     const notes: string[] = [];
     if (row.aiMentions.chatgptUsOnly) notes.push('ChatGPT mention data covers the United States only, so the ChatGPT figures for this domain are US figures.');
-    notes.push('AI Mode, Gemini and Perplexity are not measured by this data source.');
+    const panelRows = readPanel(store.db);
+    const panelEngines = summarizePanel(panelRows, row.domain, engineStatus(store));
+    const aiPanel: DomainOverview['aiPanel'] = {
+      prompts: panelRows.length,
+      engines: panelEngines,
+      rows: panelRows.map(r => ({
+        prompt: r.prompt, locationCode: r.locationCode,
+        cells: AI_ENGINE_IDS.map(engine => {
+          const a = r.cells.find(c => c.engine === engine)?.latest ?? null;
+          const s = cellState(a, row.domain);
+          return { engine, state: s.state, month: a?.runMonth ?? null, model: a?.model ?? null, citedUrls: s.match?.citedUrls ?? [] };
+        }),
+      })),
+    };
+    // The mentions data has no AI Mode, Gemini or Perplexity. Say so only for the platforms the
+    // prompt panel has not measured either; for the rest, state what the panel measured.
+    const panelBy = new Map(panelEngines.map(e => [e.engine, e]));
+    const unmeasured = (['ai_mode', 'gemini', 'perplexity'] as const).filter(e => !(panelBy.get(e)?.promptsRun));
+    const label = { ai_mode: 'AI Mode', gemini: 'Gemini', perplexity: 'Perplexity' } as const;
+    if (unmeasured.length) {
+      const names = unmeasured.map(e => label[e]);
+      notes.push(`${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} are` : `${names[0]} is`} not measured by this data source${panelRows.length ? '' : ' (an AI prompt panel can measure them)'}.`);
+    }
+    const measured = panelEngines.filter(e => e.promptsRun > 0);
+    if (measured.length) {
+      notes.push(`AI prompt panel (${measured.map(e => `${e.label}: mentioned in ${e.mentioned} of ${e.promptsRun} prompts, cited in ${e.cited}${e.citeUnknown ? ` (unknown in ${e.citeUnknown})` : ''}, ${e.months.length > 1 ? `${e.months[0]} to ${e.months[e.months.length - 1]}` : e.months[0]}`).join('; ')}). One answer per prompt per engine, so these are samples, not averages.`);
+    }
     const monthlyAt = (store.db.prepare(`SELECT MAX(fetched_at) m FROM domain_month WHERE domain = ? AND location_code = ?`).get(row.domain, row.locationCode) as { m: string | null }).m;
+    const tracked = readTrackedPositions(store.db, { locationCode: row.locationCode, domain: row.domain });
+    const trackedKeywords: DomainOverview['trackedKeywords'] = {
+      total: tracked.length,
+      unchecked: tracked.filter(k => !k.positions.length).length,
+      rows: tracked.map(k => {
+        const p = k.positions[0];
+        return p
+          ? { keyword: k.keyword, position: p.position, serpDepth: p.serpDepth, previous: p.previous, change: p.change, status: p.status, url: p.url, shownAs: p.shownAs, checkedAt: p.checkedAt, unattributed: p.checkedAt === k.lastCheckedAt ? k.unattributed : null }
+          : { keyword: k.keyword, position: null, serpDepth: null, previous: null, change: null, status: 'not-checked' as const, url: null, shownAs: null, checkedAt: null, unattributed: null };
+      }),
+    };
     return {
       version: PORTFOLIO_PAYLOAD_VERSION, row, months: portfolio.months, series, serpMix, trafficShare, countries, topPages,
-      citedSources, rankCitation, gsc, capturedAt: { weekly: snap?.captured_at ?? null, monthly: monthlyAt }, notes,
+      citedSources, rankCitation, gsc, trackedKeywords, aiPanel, capturedAt: { weekly: snap?.captured_at ?? null, monthly: monthlyAt }, notes,
     };
   } finally { ownedDb?.db.close(); store.close(); }
 }

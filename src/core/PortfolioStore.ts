@@ -135,6 +135,44 @@ CREATE TABLE IF NOT EXISTS portfolio_run (
   quoted_usd REAL, spent_usd REAL NOT NULL DEFAULT 0, calls INTEGER NOT NULL DEFAULT 0,
   cache_hits INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, note TEXT, job_id TEXT);
 CREATE INDEX IF NOT EXISTS idx_portfolio_run_started ON portfolio_run(started_at);
+-- Keyword position tracking (keywordTracking.ts). The list the user chose, per location: one live SERP
+-- per (keyword, location) answers the position of every portfolio domain at that location.
+CREATE TABLE IF NOT EXISTS tracked_keyword (
+  keyword TEXT NOT NULL, location_code INTEGER NOT NULL, language_code TEXT NOT NULL DEFAULT 'en',
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (keyword, location_code));
+-- One row per SERP read. checked_at is the SERP's own datetime (a cached response keeps its time).
+-- unattributed = organic results no host could be read from; from_web = DataForSEO restored a
+-- poisoned page from Google's Web mode.
+CREATE TABLE IF NOT EXISTS keyword_check (
+  keyword TEXT NOT NULL, location_code INTEGER NOT NULL, checked_at TEXT NOT NULL,
+  serp_depth INTEGER NOT NULL, organic_results INTEGER NOT NULL, unattributed INTEGER NOT NULL DEFAULT 0,
+  from_web INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, cached INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (keyword, location_code, checked_at));
+-- position NULL = not in the top serp_depth organic results (never 0). url NULL when Google gave only
+-- a redirect; shown_as is the breadcrumb Google displayed. results = how many results the domain held.
+CREATE TABLE IF NOT EXISTS keyword_position (
+  keyword TEXT NOT NULL, location_code INTEGER NOT NULL, checked_at TEXT NOT NULL, domain TEXT NOT NULL,
+  position INTEGER, url TEXT, shown_as TEXT, results INTEGER NOT NULL DEFAULT 0, serp_depth INTEGER NOT NULL,
+  PRIMARY KEY (keyword, location_code, checked_at, domain));
+-- AI prompt panel (aiPromptPanel.ts): user-written prompts, each asked of ChatGPT, Claude, Gemini,
+-- Perplexity and Google AI Mode on request. Removing a prompt keeps its answers.
+CREATE TABLE IF NOT EXISTS ai_prompt (
+  prompt TEXT NOT NULL, location_code INTEGER NOT NULL, language_code TEXT NOT NULL DEFAULT 'en',
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (prompt, location_code));
+-- One row per answer. run_month = the UTC month of the run it belongs to. answer_text is the prose
+-- (citation chips and URLs removed, capped): mentions are matched when read, so a domain added later
+-- is matched against past answers. citations_json = [{host, url, title}], host null = unattributed.
+CREATE TABLE IF NOT EXISTS ai_prompt_answer (
+  prompt TEXT NOT NULL, location_code INTEGER NOT NULL, engine TEXT NOT NULL, run_month TEXT NOT NULL,
+  answered_at TEXT NOT NULL, run_id INTEGER, model TEXT,
+  status TEXT NOT NULL CHECK (status IN ('ok','no-answer')),
+  answer_text TEXT NOT NULL DEFAULT '', text_truncated INTEGER NOT NULL DEFAULT 0,
+  citations_json TEXT NOT NULL DEFAULT '[]', unattributed INTEGER NOT NULL DEFAULT 0, localised TEXT,
+  cost REAL NOT NULL DEFAULT 0, cached INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (prompt, location_code, engine, answered_at));
+CREATE INDEX IF NOT EXISTS idx_ai_prompt_answer_month ON ai_prompt_answer(run_month);
 `;
 
 export class PortfolioStore {

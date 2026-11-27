@@ -5,6 +5,7 @@
  *   - title-changed-by-js       the <title> after JS differs from a non-empty raw title (or JS removed it)
  *   - noindex-changed-by-js     noindex in one version and not the other, either direction
  *   - hydration-content-loss    the rendered main content is much shorter than the raw main content
+ *   - schema-only-rendered      JSON-LD types that exist only after JS (or that JS removes)
  *
  * Google's JavaScript SEO basics say a raw-HTML noindex can stop rendering altogether, and advise
  * against changing the canonical or the robots meta tag with JavaScript:
@@ -35,6 +36,11 @@ const NO_RENDER = 'not collected: render_audit is empty. Run render_pages (a bou
 const OLD_ROWS = 'not collected: every render_audit row predates 0.16.0, which started recording the robots meta tag and main-content words on both sides. Re-run render_pages.';
 const renderCount = (c: CheckContext): number => one(c, `SELECT COUNT(*) n FROM render_audit`)?.n ?? 0;
 function renderNote(c: CheckContext): string | null { return renderCount(c) > 0 ? null : NO_RENDER; }
+const OLD_SCHEMA_ROWS = 'not collected: every render_audit row predates 1.0.8, which started recording the JSON-LD types on both sides. Re-run render_pages.';
+function schemaNote(c: CheckContext): string | null {
+  if (!renderCount(c)) return NO_RENDER;
+  return cols(c).has('raw_schema_types') && (one(c, `SELECT COUNT(*) n FROM render_audit WHERE raw_schema_types IS NOT NULL`)?.n ?? 0) > 0 ? null : OLD_SCHEMA_ROWS;
+}
 function robotsNote(c: CheckContext): string | null {
   if (!renderCount(c)) return NO_RENDER;
   return cols(c).has('raw_noindex') && (one(c, `SELECT COUNT(*) n FROM render_audit WHERE raw_noindex IS NOT NULL`)?.n ?? 0) > 0 ? null : OLD_ROWS;
@@ -108,6 +114,36 @@ function hydrationContentLoss(c: CheckContext): RawFinding[] {
   return withEquity(c, out);
 }
 
+// ── schema-only-rendered ─────────────────────────────────────────────────────────────────────
+/** Types Google can turn into a rich result or that feed its entity understanding: these get named in the note. */
+const RICH_TYPES = new Set(['product', 'productgroup', 'offer', 'aggregateoffer', 'aggregaterating', 'review', 'recipe', 'jobposting',
+  'event', 'faqpage', 'qapage', 'howto', 'article', 'newsarticle', 'blogposting', 'breadcrumblist', 'videoobject', 'course',
+  'softwareapplication', 'localbusiness', 'organization', 'dataset', 'book', 'movie', 'itemlist', 'discussionforumposting', 'profilepage']);
+const parseTypes = (s: unknown): string[] | null => { try { const v = JSON.parse(String(s)); return Array.isArray(v) ? v.map(String) : null; } catch { return null; } };
+
+function schemaOnlyRendered(c: CheckContext): RawFinding[] {
+  if (!cols(c).has('raw_schema_types')) return [];
+  const out: RawFinding[] = [];
+  // Only a raw fetch that returned 200: a 403/5xx or a bot-challenge page has no JSON-LD while the
+  // browser renders the real page, which would read as "added by JS".
+  for (const r of rows(c, `SELECT url_key k, raw_schema_types rs, rendered_schema_types ds, rendered_at at FROM render_audit
+      WHERE raw_schema_types IS NOT NULL AND rendered_schema_types IS NOT NULL AND raw_status = 200`)) {
+    const raw = parseTypes(r.rs), ren = parseTypes(r.ds);
+    if (!raw || !ren) continue;
+    const added = ren.filter(t => !raw.includes(t)), removed = raw.filter(t => !ren.includes(t));
+    if (!added.length && !removed.length) continue;
+    const kind = added.length && removed.length ? 'changed-by-js' : added.length ? 'added-by-js' : 'removed-by-js';
+    out.push({ urlKey: r.k, evidence: {
+      kind, onlyAfterJs: added, removedByJs: removed, rawTypes: raw, renderedTypes: ren,
+      richResultTypes: [...added, ...removed].filter(t => RICH_TYPES.has(t)), renderedAt: r.at,
+      note: removed.length
+        ? 'JS removes structured data the server sent: Google reads the rendered page, so those types are lost to it'
+        : 'the structured data exists only after JS: Google can read it once it renders the page, but rendering is a later, separate step, and Google warns that JS-generated Product markup makes Shopping crawls less frequent and less reliable',
+    } });
+  }
+  return withEquity(c, out);
+}
+
 export const RENDER_CHECKS: CheckDef[] = [
   {
     id: 'canonical-changed-by-js', category: 'indexation', severity: 'high', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
@@ -132,5 +168,11 @@ export const RENDER_CHECKS: CheckDef[] = [
     title: 'JavaScript removes most of the server-rendered content',
     fix: `The rendered main content keeps at most ${HYDRATION_MAX_RATIO * 100}% of the words the raw HTML's main content had (raw at least ${HYDRATION_MIN_RAW_WORDS} words): the server sends the copy, then the client removes it. Usually a hydration mismatch that re-renders empty, a client-side data fetch that fails for the renderer, or a consent or paywall script that replaces the content. Google indexes the rendered version. Fix the client so it keeps the server's content (check the console for hydration errors). Main content = <main> or [role=main], else the body without nav/header/footer/aside; older rows use whole-body words. The threshold is ours (Google publishes none). Needs render_pages.`,
     run: hydrationContentLoss, collected: renderNote,
+  },
+  {
+    id: 'schema-only-rendered', category: 'schema', severity: 'med', labels: ['D'], certainty: 1, effortBase: 3, fixType: 'global',
+    title: 'Structured data only exists after JavaScript',
+    fix: 'JSON-LD @types differ between the raw HTML and the rendered DOM: a tag manager, plugin or client component adds the markup (onlyAfterJs) or removes what the server sent (removedByJs). Google can process structured data that JavaScript injects, but only after it renders the page, and for Product markup it warns that generating it with JavaScript makes Shopping crawls less frequent and less reliable (https://developers.google.com/search/docs/appearance/structured-data/generate-structured-data-with-javascript). Crawlers that do not run JavaScript never see it. Output the JSON-LD in the server HTML; if JS must touch it, make it leave the server copy in place. Compares types (top-level, @graph and the edges a page uses for its own entities), not values. Pages whose raw fetch did not return 200 are skipped. Needs render_pages (rows rendered since 1.0.8).',
+    run: schemaOnlyRendered, collected: schemaNote,
   },
 ];

@@ -1,0 +1,197 @@
+{
+ "note": "Live capture 27 Nov 2026, ai_optimization/perplexity/llm_responses/live, sonar, web_search_country_iso_code US. Citations are a source list in annotations (indexes and text null). search_results snippets dropped. Cost $0.00657.",
+ "endpoint": "/v3/ai_optimization/perplexity/llm_responses/live",
+ "request": [
+  {
+   "user_prompt": "What are the best sim racing cockpits to buy in 2026?",
+   "model_name": "sonar",
+   "web_search_country_iso_code": "US",
+   "max_output_tokens": 2048
+  }
+ ],
+ "capturedAt": "2026-11-27T07:50:01.988Z",
+ "cost": 0.00657,
+ "tasks": [
+  {
+   "id": "11270749-1165-0612-0000-e11598074c7a",
+   "status_code": 20000,
+   "status_message": "Ok.",
+   "time": "6.9387 sec.",
+   "cost": 0.00657,
+   "result_count": 1,
+   "path": [
+    "v3",
+    "ai_optimization",
+    "perplexity",
+    "llm_responses",
+    "live"
+   ],
+   "data": {
+    "api": "ai_optimization",
+    "function": "llm_responses",
+    "se": "perplexity",
+    "user_prompt": "What are the best sim racing cockpits to buy in 2026?",
+    "model_name": "sonar",
+    "web_search_country_iso_code": "US",
+    "max_output_tokens": 2048
+   },
+   "result": [
+    {
+     "model_name": "sonar",
+     "input_tokens": 23,
+     "output_tokens": 947,
+     "reasoning_tokens": 0,
+     "web_search": true,
+     "money_spent": 0.00597,
+     "datetime": "2026-11-27 07:50:02 +00:00",
+     "items": [
+      {
+       "type": "message",
+       "sections": [
+        {
+         "type": "text",
+         "text": "The best sim-racing cockpit depends mainly on your wheelbase, available space, and whether you need a seat included. For most serious racers, the **Sim-Lab GT1 Evo** is the strongest long-term choice; the **Next Level Racing GTTrack** is the best ready-to-use steel rig, while the **Playseat Challenge X** is ideal for small spaces.[1][2][3]\n\n## Best sim-racing cockpits in 2026\n\n| Cockpit | Best for | Why buy it |\n|---|---|---|\n| **Sim-Lab GT1 Evo** | Best overall / serious enthusiasts | Rigid 8020 aluminum profile, excellent adjustability, and a strong foundation for direct-drive wheels and future upgrades.[2][7] |\n| **Next Level Racing GTTrack** | Best complete steel cockpit | Includes a seat, strong wheel and pedal mounting, and broad PC/console compatibility; a good choice if you want minimal customization.[1][3] |\n| **Trak Racer TR120S V2** | Powerful direct drive | Heavy-duty aluminum profile suited to high-torque wheelbases and larger future upgrades.[4] |\n| **Next Level Racing GTRacer 2.0** | Best first full cockpit with seat | A relatively compact steel rig with an included seat and support rated up to 13 Nm, according to comparison guides.[4][9] |\n| **Playseat Trophy** | Living rooms / attractive design | Lightweight, comfortable, and more furniture-friendly than many exposed aluminum rigs while still supporting direct drive.[4][7] |\n| **Next Level Racing F-GT Lite** | Foldable GT and Formula driving | Provides both GT and Formula seating positions and folds for storage, though it is less rigid than a fixed profile rig.[1][4] |\n| **Playseat Challenge X** | Small spaces and lowest hassle | Compact, foldable, and well suited to Logitech- or Thrustmaster-class wheels; not the best choice for strong direct drive.[2][4] |\n| **Next Level Racing F-GT Elite** | Premium / competition builds | A high-end aluminum-profile platform for demanding hardware, multiple monitors, and extensive customization.[7] |\n\n## Recommendations by budget and use\n\n- **Under roughly $300:** Choose the **Playseat Challenge X** if storage matters, or the **Next Level Racing F-GT Lite** if you want both Formula and GT seating positions.[2][4]\n- **Around $400–$600:** The **Sim-Lab GT1 Evo** offers the best upgrade path; the **GTRacer 2.0** is easier if you want a seat bundled in.[2][9]\n- **Around $600–$1,000:** Choose the **Next Level Racing GTTrack** for a complete, sturdy package, or the **Trak Racer TR120S V2** for a more expandable aluminum-profile build.[1][3][4]\n- **For 15 Nm or stronger direct drive:** Buy an aluminum-profile cockpit such as the **GT1 Evo**, TR120S, or a comparable 8040 rig rather than a lighter tubular or folding frame.[8][9]\n- **For motion simulation:** Prioritize a rigid profile frame with suitable mounting points and enough floor space; avoid choosing a cockpit solely by its included seat or appearance.\n\n## What to check before buying\n\n1. **Wheelbase torque:** Folding and lightweight rigs work well with entry-level wheels but can flex under powerful direct drive systems.\n2. **Pedal mounting:** Load-cell and hydraulic pedals need a rigid, adjustable pedal deck.\n3. **Seat inclusion:** Aluminum-profile cockpits often require a separate seat, brackets, and sliders.\n4. **Upgrade compatibility:** Check mounting patterns for your wheelbase, pedals, shifter, handbrake, monitor stand, and motion platform.\n5. **Room size:** Measure the cockpit, seat adjustment range, monitor position, and space needed to enter and exit.\n6. **Future plans:** If direct drive, triple monitors, or motion are likely upgrades, buying a profile rig now is usually more economical than replacing a lightweight cockpit later.[2][8]\n\n**Bottom line:** Buy the **Sim-Lab GT1 Evo** for the best long-term enthusiast setup, the **Next Level Racing GTTrack** for a sturdy all-in-one cockpit with a seat, and the **Playseat Challenge X** if compact storage is your top priority.",
+         "annotations": [
+          {
+           "title": "Best Racing Simulator Cockpits for 2026 - Road & Track",
+           "url": "https://www.roadandtrack.com/gear/lifestyle/g44411326/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "The 10 best sim racing cockpits in 2026 | SimRacingRadar",
+           "url": "https://simracingradar.com/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "Best Sim Racing Cockpit You Can Buy in 2026",
+           "url": "https://www.cnet.com/roadshow/racing-games/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "Best Sim Racing Cockpits (2026): Owner-Reported Picks",
+           "url": "https://racetrackworld.com/gear/best-sim-racing-cockpits/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "Best racing sim cockpit 2026 - PCGamesN",
+           "url": "https://www.pcgamesn.com/best-racing-sim-cockpits",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "10 Best Sim Racing Cockpits For Racing Games (September 2026)",
+           "url": "https://chgr.org/best-sim-racing-cockpits-for-racing-games/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "Top 10 Best Sim Racing Cockpits in 2026 - SimRacingEnthusiast.Com",
+           "url": "https://simracingenthusiast.com/best-sim-racing-cockpits/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "Best Sim Racing Cockpits in 2026: 7 Rigs From Foldable to ...",
+           "url": "https://bestsimracingsetup.com/guides/best-sim-racing-cockpit/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "Best Sim Racing Cockpits | 2026 Picks Compared",
+           "url": "https://wikisimracing.com/best-sim-racing-cockpits/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          },
+          {
+           "title": "10 Best Sim Racing Cockpits (October 2026) Tested & Ranked",
+           "url": "https://whoismcafee.com/best-sim-racing-cockpits/",
+           "start_index": null,
+           "end_index": null,
+           "text": null
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "fan_out_queries": null,
+     "search_results": [
+      {
+       "title": "Best Racing Simulator Cockpits for 2026 - Road & Track",
+       "url": "https://www.roadandtrack.com/gear/lifestyle/g44411326/best-sim-racing-cockpit/",
+       "date": "2026-11-26 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "The 10 best sim racing cockpits in 2026 | SimRacingRadar",
+       "url": "https://simracingradar.com/best-sim-racing-cockpit/",
+       "date": "2026-11-27 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpit You Can Buy in 2026",
+       "url": "https://www.cnet.com/roadshow/racing-games/best-sim-racing-cockpit/",
+       "date": "2026-11-19 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpits (2026): Owner-Reported Picks",
+       "url": "https://racetrackworld.com/gear/best-sim-racing-cockpits/",
+       "date": "2026-10-22 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "Best racing sim cockpit 2026 - PCGamesN",
+       "url": "https://www.pcgamesn.com/best-racing-sim-cockpits",
+       "date": "2026-11-26 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "10 Best Sim Racing Cockpits For Racing Games (September 2026)",
+       "url": "https://chgr.org/best-sim-racing-cockpits-for-racing-games/",
+       "date": "2026-09-19 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "Top 10 Best Sim Racing Cockpits in 2026 - SimRacingEnthusiast.Com",
+       "url": "https://simracingenthusiast.com/best-sim-racing-cockpits/",
+       "date": "2026-11-26 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpits in 2026: 7 Rigs From Foldable to ...",
+       "url": "https://bestsimracingsetup.com/guides/best-sim-racing-cockpit/",
+       "date": "2026-11-25 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "Best Sim Racing Cockpits | 2026 Picks Compared",
+       "url": "https://wikisimracing.com/best-sim-racing-cockpits/",
+       "date": "2026-11-23 00:00:00 +00:00",
+       "snippet": null
+      },
+      {
+       "title": "10 Best Sim Racing Cockpits (October 2026) Tested & Ranked",
+       "url": "https://whoismcafee.com/best-sim-racing-cockpits/",
+       "date": "2026-10-03 00:00:00 +00:00",
+       "snippet": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

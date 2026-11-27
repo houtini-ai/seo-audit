@@ -18,6 +18,8 @@ import { auditRender } from './renderAudit.js';
 import { findNearDuplicates } from './nearDuplicate.js';
 import { runReconJob, type ReconJobArgs } from './reconJob.js';
 import { runPortfolioRefresh, type PortfolioRefreshArgs } from './PortfolioRefresh.js';
+import { runKeywordCheck, type KeywordCheckArgs } from './keywordTracking.js';
+import { runPanel, type PanelRunArgs } from './aiPromptPanel.js';
 import { getDashboardDataAsync } from './dashboardAsync.js';
 
 /**
@@ -97,6 +99,10 @@ export interface JobArgsByKind {
   recon: ReconJobArgs;
   crux: { siteUrl: string } & Parameters<CruxSync['run']>[1];
   portfolio: PortfolioRefreshArgs;
+  /** Keyword position check (track_keywords check): portfolio-scoped, like portfolio. */
+  keywords: KeywordCheckArgs;
+  /** AI prompt panel run (ai_prompt_panel run): portfolio-scoped, like portfolio. */
+  ai_panel: PanelRunArgs;
 }
 export type JobKindName = keyof JobArgsByKind;
 
@@ -133,6 +139,10 @@ export const JOB_KINDS: { [K in JobKindName]: KindFn<K> } = {
     dataJob(deps, siteUrl, (u, s) => need(deps.cruxSync, NO_CRUX).run(siteUrl, opts, u, s))(update, signal),
   portfolio: (args, deps, update, signal) =>
     runPortfolioRefresh(deps.dataDir(), need(deps.dfs, NO_DFS), deps.rankTracker, args, update, signal),
+  keywords: (args, deps, update, signal) =>
+    runKeywordCheck(deps.dataDir(), need(deps.dfs, NO_DFS), args, update, signal),
+  ai_panel: (args, deps, update, signal) =>
+    runPanel(deps.dataDir(), need(deps.dfs, NO_DFS), args, update, signal),
 };
 
 /** The fts-index job's database, resolved in THIS process's data dir from the stored bare file name. */
@@ -146,11 +156,13 @@ export function ftsDbFile(dataDir: string, dbName: string): string {
 export const isJobKind = (type: string): type is JobKindName => Object.prototype.hasOwnProperty.call(JOB_KINDS, type);
 
 /** Run one kind from its (stored) arguments. Unknown kinds fail with a version-skew hint. */
-export function runJobKind(type: string, args: Record<string, unknown>, deps: JobDeps, update: Update, signal: AbortSignal): Promise<unknown> {
+export function runJobKind(type: string, args: Record<string, unknown>, deps: JobDeps, update: Update, signal: AbortSignal, jobId?: string): Promise<unknown> {
   if (!isJobKind(type)) {
     return Promise.reject(new Error(`Unknown job type "${type}". The process running it is older or newer than the MCP server that queued it: run the same @houtini/seo-audit-console version in both.`));
   }
-  return (JOB_KINDS[type] as KindFn<JobKindName>)(args as unknown as JobArgsByKind[JobKindName], deps, update, signal);
+  // The portfolio kinds record their job id in portfolio_run, so a run in the ledger points to its job.
+  const a = (type === 'portfolio' || type === 'keywords' || type === 'ai_panel') && jobId ? { ...args, jobId } : args;
+  return (JOB_KINDS[type] as KindFn<JobKindName>)(a as unknown as JobArgsByKind[JobKindName], deps, update, signal);
 }
 
 /**
@@ -159,5 +171,5 @@ export function runJobKind(type: string, args: Record<string, unknown>, deps: Jo
  * anything in-process that the runner could not have read back from the registry.
  */
 export function submitJob<K extends JobKindName>(jobs: JobManager, kind: K, args: JobArgsByKind[K], deps: JobDeps, scope?: string): string {
-  return jobs.submit(kind, args as unknown as Record<string, unknown>, (a, update, signal) => runJobKind(kind, a, deps, update, signal), scope ? { scope } : {});
+  return jobs.submit(kind, args as unknown as Record<string, unknown>, (a, update, signal, jobId) => runJobKind(kind, a, deps, update, signal, jobId), scope ? { scope } : {});
 }

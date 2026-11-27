@@ -109,6 +109,8 @@ scripts/*
 !scripts/probe-review-0-15.mjs
 !scripts/probe-startup-hints.mjs
 !scripts/probe-portfolio.mjs
+!scripts/probe-portfolio-tracking.mjs
+!scripts/probe-ai-panel.mjs
 !scripts/probe-external.mjs
 !scripts/probe-ssrf.mjs
 !scripts/probe-blocking.mjs
