@@ -851,6 +851,13 @@ Ask the user in chat whether to ${action} ${prune.siteUrl}, and only if they say
       const summary = r ? ` - ${r.audited ?? 0} page(s) rendered, ${r.dependsOnJs ?? 0} depend on JavaScript.` : '';
       return head + summary + (r?.note ? ` ${r.note}` : '') + (r?.audited ? ' Run run_audit to see the render checks.' : '');
     }
+    // A finished job that wrote its own readable result (recon's summary; the portfolio, keyword and
+    // AI-panel runs' note) says it in the text: many clients show only the text, not structuredContent.
+    if (detail && job.state === 'completed' && !DATA_JOBS.has(job.type)) {
+      const r = job.result as { summary?: unknown; note?: unknown } | undefined;
+      if (typeof r?.summary === 'string' && r.summary) return `${head}\n\n${r.summary.length > 12000 ? `${r.summary.slice(0, 12000)}\n... (summary cut at 12,000 characters; the full result is in structuredContent)` : r.summary}`;
+      if (typeof r?.note === 'string' && r.note) return `${head}: ${r.note}.`;
+    }
     if (!detail || job.state !== 'completed' || !DATA_JOBS.has(job.type)) return head + prog;
     const link = (job.result as { dashboard?: string } | undefined)?.dashboard;
     const containerNote = (job.result as { dashboardNote?: string } | undefined)?.dashboardNote;

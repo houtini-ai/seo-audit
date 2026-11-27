@@ -125,8 +125,14 @@ export async function runReconJob(
         // it returned nothing.
         const seen = new Set<string>();
         const candidates: { url: string; from: string; route: string }[] = [];
+        // Google's own links (Shopping product cards in an AI Overview, search refinements) are not a
+        // competitor's page: fetching them means fetching Google search. Listed, never fetched.
+        const googleOwn: { url: string; from: string }[] = [];
         const add = (url: string | undefined, from: string) => {
-          if (url && !seen.has(url) && dfsHost(url) !== ownDomain) { seen.add(url); candidates.push({ url, from, route: routeFor(url) }); }
+          if (!url || seen.has(url) || dfsHost(url) === ownDomain) return;
+          seen.add(url);
+          if (/^google\.[a-z.]+$/.test(dfsHost(url))) { googleOwn.push({ url, from }); return; }
+          candidates.push({ url, from, route: routeFor(url) });
         };
         serp.organicAbove.forEach(o => add(o.url, `organic #${o.rank}`));
         serp.aioReferences.slice(0, 6).forEach(r => add(r.url, 'aio-reference'));
@@ -154,6 +160,7 @@ export async function runReconJob(
         const notes = [
           skipped.length ? `${skipped.length} identified competitor page(s) not fetched (competitorLimit ${lim}) — raise competitorLimit or fetch them directly.` : '',
           videos.length ? `${videos.length} ranking video(s) listed, not fetched (no readable text over HTTP) — watch them; video often wins these SERPs.` : '',
+          googleOwn.length ? `${googleOwn.length} link(s) in the results point to Google itself (Shopping cards, search links), not to a competitor's page, so they were not fetched.` : '',
           redirectOnly.length ? `${redirectOnly.length} competitor result(s) came back only as a Google redirect (google.com/goto) that DataForSEO could not resolve, so the page is unknown and was not fetched: open the SERP to find them.` : '',
         ].filter(Boolean);
         competitorFetch = {
@@ -167,6 +174,7 @@ export async function runReconJob(
           skipped: skipped.map(c => ({ url: c.url, from: c.from, route: c.route })),
           videos: videos.map(c => ({ url: c.url, from: c.from })),
           redirectOnly,
+          googleOwn,
           note: notes.length ? notes.join(' ') : undefined,
         };
       }
